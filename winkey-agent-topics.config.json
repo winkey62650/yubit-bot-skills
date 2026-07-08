@@ -1,0 +1,56 @@
+{
+  "chatTitle": "YUBIT × Winkey Agent Community",
+  "chatDescription": "YUBIT Winkey agent community. New users should complete UID verification first. Admins will never ask for passwords, private keys, seed phrases, or remote-control access. Market content is informational only and not investment advice.",
+  "generalTopicName": "Winkey General",
+  "defaultParseMode": "HTML",
+  "topics": [
+    {
+      "message_thread_id": 6,
+      "name": "1. New Users",
+      "icon_custom_emoji_id": "5312536423851630001",
+      "announcement": "<b>Welcome to YUBIT × Winkey Agent Community</b>\n\nNew users should complete these steps first:\n1. Read the community rules and risk notice.\n2. Go to <b>2. UID Verification</b> and submit your YUBIT UID.\n3. Wait for mod confirmation before joining campaigns or trading discussions.\n\nAdmins will never DM first or ask for passwords, verification codes, private keys, seed phrases, or remote-control access."
+    },
+    {
+      "message_thread_id": 8,
+      "name": "2. UID Verification",
+      "icon_custom_emoji_id": "5237699328843200968",
+      "announcement": "<b>UID Verification</b>\n\nPlease submit your information in this format:\nUID: your YUBIT UID\nSource: Winkey\n\nMods will verify whether your UID belongs to the Winkey agent channel. After verification, you can join campaigns, submit feedback, and enter the next operating flow.\n\nDo not post phone numbers, emails, IDs, passwords, or verification codes in public."
+    },
+    {
+      "message_thread_id": 10,
+      "name": "3. Futures Signals",
+      "icon_custom_emoji_id": "5350305691942788490",
+      "announcement": "<b>Futures Signals</b>\n\nThis topic is for BTC, ETH, and major futures market observations, key levels, volatility alerts, and risk reminders.\n\nAll signals are informational only and are not investment advice. Manage your own position size, leverage, and stop loss. No guaranteed returns, paid signal solicitation, or private-call trading."
+    },
+    {
+      "message_thread_id": 12,
+      "name": "4. TradFi Signals",
+      "icon_custom_emoji_id": "5310107765874632305",
+      "announcement": "<b>TradFi Signals</b>\n\nThis topic is for macro, DXY, U.S. yields, gold, oil, major equity indices, and traditional-market signals.\n\nContent is for market context only and is not investment advice. Watch volatility and liquidity around high-impact events."
+    },
+    {
+      "message_thread_id": 14,
+      "name": "5. Crypto News",
+      "icon_custom_emoji_id": "5434144690511290129",
+      "announcement": "<b>Crypto News</b>\n\nThis topic is for crypto market news, project updates, regulatory headlines, ETF news, on-chain developments, and exchange-related updates.\n\nUse official sources where possible. Avoid rumors, phishing links, and fake announcements."
+    },
+    {
+      "message_thread_id": 16,
+      "name": "6. Stocks & TradFi News",
+      "icon_custom_emoji_id": "5309984423003823246",
+      "announcement": "<b>Stocks & TradFi News</b>\n\nThis topic is for U.S. equities, macro data, FOMC, CPI, NFP, earnings, bonds, FX, and broader traditional-finance news.\n\nMarket volatility can expand around major data releases. Manage risk carefully."
+    },
+    {
+      "message_thread_id": 18,
+      "name": "7. Market Discussion",
+      "icon_custom_emoji_id": "5370870893004203704",
+      "announcement": "<b>Market Discussion</b>\n\nUse this topic to discuss market views, trading reviews, risk control, and community analysis.\n\nKeep the discussion rational. No personal attacks, spam, ads, group poaching, impersonation, DM solicitation, or guaranteed-profit claims."
+    },
+    {
+      "message_thread_id": 20,
+      "name": "8. Campaigns",
+      "icon_custom_emoji_id": "5312241539987020022",
+      "announcement": "<b>Campaigns</b>\n\nThis topic is for Winkey agent-community campaigns, task rules, leaderboards, reward details, and claim reminders.\n\nEligibility follows official announcements and UID verification results. If rewards are delayed, report it here."
+    }
+  ]
+}

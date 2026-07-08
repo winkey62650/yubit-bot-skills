@@ -1,0 +1,17 @@
+{
+  "name": "yubit-bot-skills",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "description": "Telegram bot scripts for the YUBIT x Winkey community: forum setup, signal cards, news posting, and moderator helpers.",
+  "scripts": {
+    "check": "node --check setup-telegram-community.mjs && node --check apply-existing-telegram-topics.mjs && node --check binance-futures-sma-signal.mjs && node --check tradfi-market-signal.mjs && node --check news-poster.mjs && node --check run-15m-cycle.mjs && node --check market-discussion-agents.mjs && node --check mod1-helper.mjs",
+    "signal:futures": "node binance-futures-sma-signal.mjs",
+    "signal:tradfi": "node tradfi-market-signal.mjs",
+    "news": "node news-poster.mjs",
+    "cycle:15m": "node run-15m-cycle.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

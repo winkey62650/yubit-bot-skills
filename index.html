@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>YUBIT Community Console Demo</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <aside class="sidebar" aria-label="YUBIT社群配置导航">
+        <div class="brand">
+          <span class="brand-mark">Y</span>
+          <div>
+            <strong>YUBIT</strong>
+            <span>Community Console</span>
+          </div>
+        </div>
+
+        <nav class="nav">
+          <button class="nav-item active" data-view="groupSystem">群管理系统</button>
+          <button class="nav-item" data-view="botAccess">Bot 接入</button>
+          <button class="nav-item" data-view="setup">Topics 模块</button>
+          <button class="nav-item" data-view="roles">Mod 排班</button>
+          <button class="nav-item" data-view="automation">自动发送</button>
+        </nav>
+
+        <section class="platform-card">
+          <p class="section-label">当前平台</p>
+          <div class="telegram-lock">
+            <strong>Telegram Only</strong>
+            <span>Supergroup + Topics</span>
+          </div>
+        </section>
+
+        <section class="compliance-note">
+          <strong>合规边界</strong>
+          <p>所有自动账号在前台展示为 Bot 或 AI，不伪装真人用户。</p>
+        </section>
+      </aside>
+
+      <section class="workspace">
+        <header class="topbar">
+          <div>
+            <h1>YUBIT 社群配置 Demo</h1>
+            <p>Telegram 群管理、Bot Token 接入、Topics 模块、公告与自动发送配置。</p>
+          </div>
+          <div class="top-actions">
+            <button id="exportBtn" class="ghost-btn">导出配置</button>
+            <button id="runBtn" class="primary-btn">运行预演</button>
+          </div>
+        </header>
+
+        <section class="status-row" aria-label="配置状态">
+          <article>
+            <span>Topics 模块</span>
+            <strong>8</strong>
+            <small>自动创建并写公告</small>
+          </article>
+          <article>
+            <span>Bot 接入</span>
+            <strong id="statusBotReady">0</strong>
+            <small>Token + 群 ID</small>
+          </article>
+          <article>
+            <span>Mods</span>
+            <strong>4</strong>
+            <small>3 班制运营</small>
+          </article>
+          <article>
+            <span>群权限</span>
+            <strong>4</strong>
+            <small>Topics / Pin / Info / Send</small>
+          </article>
+        </section>
+
+        <section class="content-grid">
+          <div class="main-stack">
+            <section class="panel" data-panel="groupSystem">
+              <div class="panel-head">
+                <div>
+                  <p class="section-label">Telegram Group Management</p>
+                  <h2>群管理系统</h2>
+                </div>
+                <button id="generateCommandBtn" class="mini-btn">生成执行命令</button>
+              </div>
+
+              <div class="management-grid">
+                <article>
+                  <span>群资料</span>
+                  <strong>YUBIT Official Community</strong>
+                  <p>自动设置群名、群描述、General Topic 名称和反诈骗提示。</p>
+                </article>
+                <article>
+                  <span>Topics 模块</span>
+                  <strong>8 个模块</strong>
+                  <p>公告、规则、新手、合约、活动、VIP、反馈、AI Traders。</p>
+                </article>
+                <article>
+                  <span>公告置顶</span>
+                  <strong>每个模块 1 条</strong>
+                  <p>写入对应公告，并自动置顶，方便用户进入后先看规则。</p>
+                </article>
+                <article>
+                  <span>管理员权限</span>
+                  <strong>4 项必须</strong>
+                  <p>Manage Topics、Pin Messages、Change Group Info、Send Messages。</p>
+                </article>
+              </div>
+
+              <div class="command-box">
+                <div>
+                  <p class="section-label">Deployment Command</p>
+                  <code id="deployCommand">请先在 Bot 接入里保存 Token 和群 ID</code>
+                </div>
+                <button id="copyCommandBtn" class="ghost-btn" type="button">复制命令</button>
+              </div>
+            </section>
+
+            <section class="panel" data-panel="setup">
+              <div class="panel-head">
+                <div>
+                  <p class="section-label">Telegram Topics</p>
+                  <h2>Topics 模块配置</h2>
+                </div>
+                <button class="mini-btn">新增分区</button>
+              </div>
+
+              <div class="channel-map">
+                <article class="channel official">
+                  <span>Topic 01</span>
+                  <strong>Official Announcements</strong>
+                  <p>平台活动、产品更新、风险提示，只允许官方发布。</p>
+                </article>
+                <article class="channel">
+                  <span>Topic 03</span>
+                  <strong>New User Onboarding</strong>
+                  <p>注册、KYC、首充、首单教程，自动助手答疑。</p>
+                </article>
+                <article class="channel">
+                  <span>Topic 04</span>
+                  <strong>Contract Lab</strong>
+                  <p>行情复盘、策略讨论、仓位纪律，Mod 重点巡检。</p>
+                </article>
+                <article class="channel">
+                  <span>Topic 05</span>
+                  <strong>Campaign Room</strong>
+                  <p>任务提醒、排行榜、bonus 规则与兑奖进度。</p>
+                </article>
+                <article class="channel">
+                  <span>Topic 06</span>
+                  <strong>VIP Desk</strong>
+                  <p>高价值用户工单、手续费方案、专属活动。</p>
+                </article>
+                <article class="channel">
+                  <span>Topic 07</span>
+                  <strong>Feedback & Support</strong>
+                  <p>充值不到账、任务异常、诈骗举报入口。</p>
+                </article>
+              </div>
+            </section>
+
+            <section class="panel" data-panel="botAccess">
+              <div class="panel-head">
+                <div>
+                  <p class="section-label">Telegram Bot Access</p>
+                  <h2>Bot 接入控制台</h2>
+                </div>
+                <span id="botSaveState" class="state-pill">未保存</span>
+              </div>
+
+              <form id="botConfigForm" class="config-form">
+                <label class="wide-field">
+                  <span>Bot Token</span>
+                  <input id="telegramBotToken" name="telegramBotToken" type="password" placeholder="123456789:AA..." autocomplete="off" />
+                </label>
+                <label>
+                  <span>Telegram Bot ID</span>
+                  <input id="telegramBotId" name="telegramBotId" type="text" inputmode="numeric" placeholder="例如 7345123456" autocomplete="off" />
+                </label>
+                <label>
+                  <span>Bot Username</span>
+                  <input id="telegramBotUsername" name="telegramBotUsername" type="text" placeholder="@YUBIT_Community_Bot" autocomplete="off" />
+                </label>
+                <label>
+                  <span>Target Group ID</span>
+                  <input id="telegramGroupId" name="telegramGroupId" type="text" placeholder="例如 -1002288000000" autocomplete="off" />
+                </label>
+                <label>
+                  <span>Webhook URL</span>
+                  <input id="telegramWebhookUrl" name="telegramWebhookUrl" type="url" placeholder="https://api.yubit.example/tg/webhook" autocomplete="off" />
+                </label>
+                <label>
+                  <span>运行环境</span>
+                  <select id="botEnvironment" name="botEnvironment">
+                    <option value="sandbox">Sandbox 测试群</option>
+                    <option value="staging">Staging 预发布</option>
+                    <option value="production">Production 正式群</option>
+                  </select>
+                </label>
+                <label>
+                  <span>默认语言</span>
+                  <select id="botLanguage" name="botLanguage">
+                    <option value="zh-CN">简体中文</option>
+                    <option value="en">English</option>
+                    <option value="vi">Tiếng Việt</option>
+                    <option value="id">Bahasa Indonesia</option>
+                  </select>
+                </label>
+
+                <div class="permission-grid" aria-label="Bot 权限">
+                  <label><input id="canPostAnnouncements" type="checkbox" checked /> 可发公告</label>
+                  <label><input id="canReplyFaq" type="checkbox" checked /> 可回复 FAQ</label>
+                  <label><input id="canModerateRisk" type="checkbox" checked /> 可处理风险词</label>
+                  <label><input id="requiresModApproval" type="checkbox" checked /> 交易观点需 Mod 审核</label>
+                </div>
+
+                <div class="form-actions">
+                  <button class="primary-btn" type="submit">保存 Bot 配置</button>
+                  <button id="loadSampleBtn" class="ghost-btn" type="button">填入示例</button>
+                  <button id="clearBotConfigBtn" class="ghost-btn danger" type="button">清空配置</button>
+                </div>
+
+                <p class="security-copy">Bot Token 仅用于生成本机部署命令，不写入导出 JSON。正式接入时请放到服务端环境变量，例如 <code>TELEGRAM_BOT_TOKEN</code>。</p>
+              </form>
+            </section>
+
+            <section class="panel" data-panel="roles">
+              <div class="panel-head">
+                <div>
+                  <p class="section-label">Mods</p>
+                  <h2>运营排班与职责</h2>
+                </div>
+                <button class="mini-btn">调整班次</button>
+              </div>
+
+              <table class="role-table">
+                <thead>
+                  <tr>
+                    <th>角色</th>
+                    <th>班次</th>
+                    <th>负责区域</th>
+                    <th>SLA</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><strong>Lead Mod</strong><span>总控</span></td>
+                    <td>10:00-19:00</td>
+                    <td>公告、活动、升级问题</td>
+                    <td><b class="ok">5 min</b></td>
+                  </tr>
+                  <tr>
+                    <td><strong>Support Mod</strong><span>客服</span></td>
+                    <td>14:00-23:00</td>
+                    <td>反馈支持、新手引导</td>
+                    <td><b class="ok">8 min</b></td>
+                  </tr>
+                  <tr>
+                    <td><strong>Trading Mod</strong><span>交易</span></td>
+                    <td>18:00-02:00</td>
+                    <td>合约讨论、AI交易员审核</td>
+                    <td><b class="warn">10 min</b></td>
+                  </tr>
+                  <tr>
+                    <td><strong>Night Mod</strong><span>夜班</span></td>
+                    <td>02:00-10:00</td>
+                    <td>反诈骗、违规处理</td>
+                    <td><b class="ok">6 min</b></td>
+                  </tr>
+                </tbody>
+              </table>
+            </section>
+
+            <section class="panel" data-panel="automation">
+              <div class="panel-head">
+                <div>
+                  <p class="section-label">Official Bots</p>
+                  <h2>自动化助手</h2>
+                </div>
+                <label class="toggle">
+                  <input type="checkbox" checked />
+                  <span>启用安全标签</span>
+                </label>
+              </div>
+
+              <div class="bot-grid">
+                <article class="bot-card">
+                  <span class="bot-label">BOT</span>
+                  <strong>Welcome Bot</strong>
+                  <p>入群欢迎、规则确认、风险提示、反诈骗提醒。</p>
+                </article>
+                <article class="bot-card">
+                  <span class="bot-label">BOT</span>
+                  <strong>Campaign Bot</strong>
+                  <p>活动任务推送、排行榜摘要、奖励发放提醒。</p>
+                </article>
+                <article class="bot-card">
+                  <span class="bot-label">BOT</span>
+                  <strong>FAQ Bot</strong>
+                  <p>KYC、充值、合约开通、手续费等标准问答。</p>
+                </article>
+                <article class="bot-card">
+                  <span class="bot-label">BOT</span>
+                  <strong>Risk Guard</strong>
+                  <p>识别广告、假客服、私聊诱导和高风险词。</p>
+                </article>
+              </div>
+            </section>
+
+            <section class="panel" data-panel="traders">
+              <div class="panel-head">
+                <div>
+                  <p class="section-label">AI Traders</p>
+                  <h2>两个 AI 交易员角色</h2>
+                </div>
+                <button class="mini-btn">审核话术</button>
+              </div>
+
+              <div class="trader-grid">
+                <article class="trader-card">
+                  <div class="avatar">A1</div>
+                  <div>
+                    <strong>Alpha Scout</strong>
+                    <span>趋势型 AI 交易员</span>
+                    <p>负责 BTC/ETH 趋势观察、关键位提醒、复盘模板。所有内容附带“非投资建议”。</p>
+                  </div>
+                </article>
+                <article class="trader-card">
+                  <div class="avatar">B2</div>
+                  <div>
+                    <strong>Beta Hedge</strong>
+                    <span>风控型 AI 交易员</span>
+                    <p>负责仓位纪律、止损提醒、波动风险提醒。高风险观点进入 Mod 审核队列。</p>
+                  </div>
+                </article>
+              </div>
+            </section>
+          </div>
+
+          <aside class="inspector">
+            <section class="bot-summary">
+              <div class="preview-head">
+                <p class="section-label">Bot Config</p>
+                <span id="botConnectionState">未配置</span>
+              </div>
+              <dl>
+                <div>
+                  <dt>Token</dt>
+                  <dd id="summaryBotToken">未输入</dd>
+                </div>
+                <div>
+                  <dt>Bot ID</dt>
+                  <dd id="summaryBotId">-</dd>
+                </div>
+                <div>
+                  <dt>Username</dt>
+                  <dd id="summaryBotUsername">-</dd>
+                </div>
+                <div>
+                  <dt>Group ID</dt>
+                  <dd id="summaryGroupId">-</dd>
+                </div>
+                <div>
+                  <dt>环境</dt>
+                  <dd id="summaryEnvironment">Sandbox 测试群</dd>
+                </div>
+              </dl>
+            </section>
+
+            <section class="preview-card">
+              <div class="preview-head">
+                <p class="section-label">Demo Preview</p>
+                <span id="previewState">待预演</span>
+              </div>
+              <div id="chatFeed" class="chat-feed" aria-live="polite">
+                <article class="message bot">
+                  <span>Welcome Bot</span>
+                  <p>欢迎来到 YUBIT 官方社群。请先阅读规则，谨防假客服私聊。</p>
+                </article>
+                <article class="message mod">
+                  <span>Lead Mod</span>
+                  <p>今日活动会在 #campaign-room 更新，奖励规则以公告为准。</p>
+                </article>
+                <article class="message ai">
+                  <span>Alpha Scout · AI</span>
+                  <p>BTC 目前处于震荡区间，关注突破后的成交量确认。非投资建议。</p>
+                </article>
+              </div>
+            </section>
+
+            <section class="checklist">
+              <p class="section-label">上线前需要你操作</p>
+              <label><input type="checkbox" /> 确认 Telegram 群已升级为 Supergroup</label>
+              <label><input type="checkbox" /> 给我管理员权限或创建测试群</label>
+              <label><input type="checkbox" /> 创建 Bot Token，单独发给部署环境</label>
+              <label><input type="checkbox" /> 提供社群规则、活动规则、品牌口径</label>
+              <label><input type="checkbox" /> 确认 AI 交易员免责声明模板</label>
+            </section>
+
+            <section class="concept-card">
+              <p class="section-label">Design Concept</p>
+              <img src="./assets/concept.png" alt="YUBIT 社群控制台概念图" />
+            </section>
+          </aside>
+        </section>
+      </section>
+    </main>
+
+    <script src="./script.js"></script>
+  </body>
+</html>

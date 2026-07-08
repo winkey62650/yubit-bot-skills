@@ -1,0 +1,57 @@
+{
+  "chatTitle": "YUBIT Official Community",
+  "chatDescription": "YUBIT official community. Beware of impersonators. Admins will never DM first. Trading content is for information only and is not investment advice.",
+  "generalTopicName": "General Chat",
+  "defaultParseMode": "HTML",
+  "dryRun": true,
+  "topics": [
+    {
+      "key": "announcements",
+      "name": "Official Announcements",
+      "announcement": "<b>YUBIT Official Announcements</b>\n\nThis topic is for official updates, campaigns, product notices, and risk reminders.\n\nYUBIT admins will never ask for passwords, private keys, seed phrases, or remote-control access.",
+      "pin": true
+    },
+    {
+      "key": "welcome",
+      "name": "Welcome & Rules",
+      "announcement": "<b>Welcome to YUBIT</b>\n\nPlease read the rules before chatting:\n1. No spam, ads, referral flooding, or impersonation.\n2. No private deal solicitation or guaranteed-profit claims.\n3. Never trust users pretending to be support in DMs.\n4. Trading discussions must include risk awareness.\n\nOfficial bot and AI messages will be clearly labeled.",
+      "pin": true
+    },
+    {
+      "key": "onboarding",
+      "name": "New User Onboarding",
+      "announcement": "<b>New User Onboarding</b>\n\nUse this topic for registration, KYC, deposit, first contract trade, and campaign-task questions.\n\nA FAQ bot may answer common questions. Complex issues will be escalated to a human mod.",
+      "pin": true
+    },
+    {
+      "key": "contract_lab",
+      "name": "Contract Lab",
+      "announcement": "<b>Contract Lab</b>\n\nDiscuss market structure, risk control, position sizing, and trading reviews here.\n\nNo guaranteed returns. No private paid signals. AI trader content is informational only and not investment advice.",
+      "pin": true
+    },
+    {
+      "key": "campaign_room",
+      "name": "Campaign Room",
+      "announcement": "<b>Campaign Room</b>\n\nCampaign tasks, reward rules, leaderboard updates, and claim reminders will be posted here.\n\nFinal reward eligibility follows the official announcement.",
+      "pin": true
+    },
+    {
+      "key": "vip_desk",
+      "name": "VIP Desk",
+      "announcement": "<b>VIP Desk</b>\n\nFor VIP service, campaign support, and high-value user escalation.\n\nPlease do not post sensitive account information publicly.",
+      "pin": true
+    },
+    {
+      "key": "feedback_support",
+      "name": "Feedback & Support",
+      "announcement": "<b>Feedback & Support</b>\n\nReport deposit issues, task errors, suspicious users, fake support accounts, or product feedback here.\n\nMods will triage and escalate when needed.",
+      "pin": true
+    },
+    {
+      "key": "ai_traders",
+      "name": "AI Traders",
+      "announcement": "<b>AI Traders</b>\n\nAlpha Scout and Beta Hedge may post market observations after safety checks.\n\nAll AI trader content is informational only and not investment advice. Always manage your own risk.",
+      "pin": true
+    }
+  ]
+}
