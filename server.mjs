@@ -247,11 +247,9 @@ async function readBotGroups() {
     { name: "Jack", role: "市场讨论", token: tokens.JACK_BOT_TOKEN || process.env.JACK_BOT_TOKEN },
     { name: "Tony", role: "风险讨论", token: tokens.TONY_BOT_TOKEN || process.env.TONY_BOT_TOKEN }
   ];
-  const bots = [];
-  for (const bot of botRoles) {
+  const bots = await Promise.all(botRoles.map(async (bot) => {
     if (!bot.token) {
-      bots.push({ name: bot.name, role: bot.role, status: "未配置", username: "", groups: [] });
-      continue;
+      return { name: bot.name, role: bot.role, status: "未配置", username: "", groups: [] };
     }
     try {
       const me = await telegram(bot.token, "getMe", {});
@@ -264,11 +262,11 @@ async function readBotGroups() {
       const updateGroups = collectBotChats(updates.result || []);
       const memberGroups = await collectBotMemberGroups(bot.token, me.result?.id, localGroups);
       const groups = mergeBotGroups(updateGroups, memberGroups);
-      bots.push({ name: bot.name, role: bot.role, status: "在线", username: me.result?.username || "", groups });
+      return { name: bot.name, role: bot.role, status: "在线", username: me.result?.username || "", groups };
     } catch (error) {
-      bots.push({ name: bot.name, role: bot.role, status: "需检查", username: "", groups: [], error: error.message });
+      return { name: bot.name, role: bot.role, status: "需检查", username: "", groups: [], error: error.message };
     }
-  }
+  }));
   return { ok: true, generatedAt: new Date().toISOString(), bots };
 }
 
@@ -638,29 +636,29 @@ function collectBotChats(updates) {
 
 async function collectBotMemberGroups(token, botUserId, groups) {
   if (!token || !botUserId || !Array.isArray(groups)) return [];
-  const visible = [];
-  for (const group of groups) {
-    if (!group?.chatId) continue;
+  const checkedGroups = await Promise.all(groups.map(async (group) => {
+    if (!group?.chatId) return null;
     try {
       const member = await telegram(token, "getChatMember", {
         chat_id: group.chatId,
         user_id: botUserId
       });
       if (["creator", "administrator", "member"].includes(member.result?.status)) {
-        visible.push({
+        return {
           id: group.chatId,
           chatId: String(group.chatId),
           title: group.title || String(group.chatId),
           type: group.type || "supergroup",
           canUseTopics: group.canUseTopics !== false,
           topics: group.topics || []
-        });
+        };
       }
     } catch {
       // The bot is not in this group, or it cannot inspect the member list.
     }
-  }
-  return visible;
+    return null;
+  }));
+  return checkedGroups.filter(Boolean);
 }
 
 function mergeBotGroups(...lists) {

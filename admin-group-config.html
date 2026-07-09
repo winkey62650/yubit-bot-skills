@@ -437,17 +437,28 @@
       }
     }
 
-    async function loadBotGroups() {
+    async function loadBotGroups(options = {}) {
+      const status = document.getElementById("configDiscoverStatus");
+      if (options.showStatus && status) {
+        status.textContent = "正在同步群和机器人状态...";
+      }
       try {
         const response = await fetch("/api/bot-groups");
         const data = await response.json();
         botGroups = Array.isArray(data.bots) ? data.bots : [];
         botMembershipLoaded = true;
         renderConfigMeta();
+        if (options.showStatus && status) {
+          const onlineCount = botGroups.filter((bot) => bot.status === "在线").length;
+          status.textContent = `群配置已刷新，机器人状态已同步：${onlineCount}/${botGroups.length} 在线`;
+        }
       } catch {
         botGroups = [];
         botMembershipLoaded = true;
         renderConfigMeta();
+        if (options.showStatus && status) {
+          status.textContent = "群配置已刷新，但机器人状态同步失败，请稍后再试。";
+        }
       }
     }
 
@@ -471,6 +482,7 @@
         status.textContent = chats.length
           ? `已刷新 ${chats.length} 个群${disabledCount ? `，其中 ${disabledCount} 个还没有开启 Topic` : ""}`
           : "未发现群。请确认管理机器人已加入新群，并在群里发一条消息后再刷新。";
+        if (chats.length) await loadBotGroups({ showStatus: true });
         button.textContent = "配置群刷新";
       } catch (error) {
         status.textContent = `刷新失败：${error.message}`;
