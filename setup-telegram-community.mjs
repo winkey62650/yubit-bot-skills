@@ -24,9 +24,10 @@ const createdTopics = [];
 const warnings = [];
 const state = await readState();
 
-await call("getMe", {});
+const me = await call("getMe", {});
 const chat = await call("getChat", { chat_id: chatId });
 assertForumReady(chat);
+await assertBotTopicPermissions(me);
 
 if (config.chatTitle) {
   await optionalCall("setChatTitle", { chat_id: chatId, title: config.chatTitle });
@@ -203,6 +204,7 @@ function sleep(ms) {
 }
 
 function assertForumReady(chat) {
+  if (dryRun && !chat?.type) return;
   const type = chat?.type || "unknown";
   if (type !== "supergroup") {
     exitWithHelp(`Target chat is "${type}", not a forum supergroup.
@@ -219,5 +221,29 @@ This setup needs Telegram Topics. Please:
     exitWithHelp(`Target supergroup has not enabled Topics yet.
 
 Please enable Topics in Telegram group settings, then run setup again.`);
+  }
+}
+
+async function assertBotTopicPermissions(me) {
+  if (dryRun || !me?.id) return;
+  const member = await call("getChatMember", {
+    chat_id: chatId,
+    user_id: me.id
+  });
+  if (member?.status !== "administrator" && member?.status !== "creator") {
+    exitWithHelp(`Admin bot is currently "${member?.status || "unknown"}", not an administrator.
+
+Please promote the bot to admin before running setup.`);
+  }
+  if (member.status !== "creator" && member.can_manage_topics !== true) {
+    exitWithHelp(`Admin bot is missing Manage Topics permission.
+
+Please open Telegram group admin settings for ${me.username ? `@${me.username}` : "the admin bot"} and enable:
+  - Manage Topics
+  - Pin Messages
+  - Change Group Info
+  - Send Messages
+
+Then run setup again.`);
   }
 }
