@@ -45,7 +45,7 @@
         <div class="overflow-x-auto">
           <table class="w-full min-w-[1080px] text-sm">
             <thead class="bg-[#f9fbfa] text-left text-xs uppercase text-ops-muted">
-              <tr><th class="px-5 py-3">机器人</th><th class="px-5 py-3">机器人 ID</th><th class="px-5 py-3">职责</th><th class="px-5 py-3">所在群</th><th class="px-5 py-3">状态</th></tr>
+              <tr><th class="px-5 py-3">机器人</th><th class="px-5 py-3">机器人账号</th><th class="px-5 py-3">职责</th><th class="px-5 py-3">所在群</th><th class="px-5 py-3">状态</th></tr>
             </thead>
             <tbody id="botGroupRows"></tbody>
           </table>
@@ -55,11 +55,11 @@
   </div>
   <script>
     const fallbackBots = [
-      { name: "YUBITadmin", botId: "8259369776", role: "群管理 / 建群 / 公告", status: "待刷新", groups: [] },
-      { name: "Trader1", botId: "8752765592", role: "新闻 / 信号推送", status: "待刷新", groups: [] },
-      { name: "MOD1", botId: "8915051686", role: "人工管理辅助", status: "待刷新", groups: [] },
-      { name: "Jack", botId: "8928394663", role: "市场讨论", status: "待刷新", groups: [] },
-      { name: "Tony", botId: "8747690079", role: "风险讨论", status: "待刷新", groups: [] }
+      { name: "YUBITadmin", username: "YUBITADMINBOT", role: "群管理 / 建群 / 公告", status: "待刷新", groups: [] },
+      { name: "Trader1", username: "YUBITTRADER1BOT", role: "新闻 / 信号推送", status: "待刷新", groups: [] },
+      { name: "MOD1", username: "YUBITMOD1BOT", role: "人工管理辅助", status: "待刷新", groups: [] },
+      { name: "Jack", username: "yubittest1bot", role: "市场讨论", status: "待刷新", groups: [] },
+      { name: "Tony", username: "YUBitchat1bot", role: "风险讨论", status: "待刷新", groups: [] }
     ];
 
     function renderBots(bots) {
@@ -74,8 +74,8 @@
           : '<span class="text-ops-muted">暂无可见群</span>';
         const tone = bot.status === "在线" ? "bg-[#e6f7ef] text-ops-accent" : bot.status === "未配置" ? "bg-[#f5f7f6] text-ops-muted" : "bg-[#fff4df] text-[#c98118]";
         return `<tr class="border-t border-ops-line align-top">
-          <td class="px-5 py-4"><b>${bot.name}</b>${bot.username ? `<div class="mt-1 text-xs text-ops-muted">@${bot.username}</div>` : ""}</td>
-          <td class="px-5 py-4"><span class="internal-id">${escapeHtml(bot.botId || "待刷新")}</span></td>
+          <td class="px-5 py-4"><b>${bot.name}</b></td>
+          <td class="px-5 py-4"><span class="internal-id">${escapeHtml(formatUsername(bot.username))}</span></td>
           <td class="px-5 py-4">${bot.role}</td>
           <td class="px-5 py-4">${groups}</td>
           <td class="px-5 py-4"><span class="rounded-full ${tone} px-2 py-1 text-xs font-black">${bot.status}</span></td>
@@ -88,6 +88,11 @@
 
     function escapeHtml(value) {
       return String(value || "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
+    }
+
+    function formatUsername(value) {
+      const name = String(value || "").trim();
+      return name ? `@${name.replace(/^@/, "")}` : "待刷新";
     }
 
     async function refreshBotGroups() {
