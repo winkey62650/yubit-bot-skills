@@ -248,8 +248,9 @@ async function readBotGroups() {
     { name: "Tony", role: "风险讨论", token: tokens.TONY_BOT_TOKEN || process.env.TONY_BOT_TOKEN }
   ];
   const bots = await Promise.all(botRoles.map(async (bot) => {
+    const tokenBotId = readBotIdFromToken(bot.token);
     if (!bot.token) {
-      return { name: bot.name, role: bot.role, status: "未配置", username: "", groups: [] };
+      return { name: bot.name, role: bot.role, botId: "", status: "未配置", username: "", groups: [] };
     }
     try {
       const me = await telegram(bot.token, "getMe", {});
@@ -262,12 +263,17 @@ async function readBotGroups() {
       const updateGroups = collectBotChats(updates.result || []);
       const memberGroups = await collectBotMemberGroups(bot.token, me.result?.id, localGroups);
       const groups = mergeBotGroups(updateGroups, memberGroups);
-      return { name: bot.name, role: bot.role, status: "在线", username: me.result?.username || "", groups };
+      return { name: bot.name, role: bot.role, botId: String(me.result?.id || tokenBotId || ""), status: "在线", username: me.result?.username || "", groups };
     } catch (error) {
-      return { name: bot.name, role: bot.role, status: "需检查", username: "", groups: [], error: error.message };
+      return { name: bot.name, role: bot.role, botId: tokenBotId, status: "需检查", username: "", groups: [], error: error.message };
     }
   }));
   return { ok: true, generatedAt: new Date().toISOString(), bots };
+}
+
+function readBotIdFromToken(token) {
+  const match = String(token || "").match(/^(\d+):/);
+  return match?.[1] || "";
 }
 
 async function previewNewsSource(body) {
