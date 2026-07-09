@@ -50,6 +50,7 @@
               <label class="grid gap-2 text-sm font-bold text-ops-muted">包名称<input id="packageNameInput" class="min-h-11 rounded-lg border border-ops-line px-3" placeholder="Ricky 社媒转发包"/></label>
               <label class="grid gap-2 text-sm font-bold text-ops-muted">代理名称<input id="agentNameInput" class="min-h-11 rounded-lg border border-ops-line px-3" placeholder="Ricky / Jack / Tony"/></label>
               <label class="grid gap-2 text-sm font-bold text-ops-muted">平台<select id="platformSelect" class="min-h-11 rounded-lg border border-ops-line px-3"><option>Twitter / X</option><option>YouTube</option><option>Twitter / X + YouTube</option></select></label>
+              <label class="grid gap-2 text-sm font-bold text-ops-muted">Twitter User ID<input id="userIdInput" class="min-h-11 rounded-lg border border-ops-line px-3" placeholder="430625812000956416"/></label>
               <label class="grid gap-2 text-sm font-bold text-ops-muted">账号链接<input id="accountUrlInput" class="min-h-11 rounded-lg border border-ops-line px-3" placeholder="https://x.com/handle 或 YouTube Channel URL"/></label>
               <label class="grid gap-2 text-sm font-bold text-ops-muted">内容类型<select id="contentTypeSelect" class="min-h-11 rounded-lg border border-ops-line px-3"><option>全部新内容</option><option>仅含关键词</option><option>排除转发 / Repost</option></select></label>
             </div>
@@ -71,9 +72,9 @@
         <div class="border-b border-ops-line p-5"><h2 class="text-xl font-black">当前代理社媒包</h2><p class="mt-1 text-sm text-ops-muted">这些包会作为「代理社媒」配置出现在群配置绑定里。</p></div>
         <div class="overflow-x-auto">
           <table class="w-full min-w-[940px] text-sm">
-            <thead class="bg-[#f9fbfa] text-left text-xs uppercase text-ops-muted"><tr><th class="px-5 py-3">包名称</th><th class="px-5 py-3">代理</th><th class="px-5 py-3">平台</th><th class="px-5 py-3">账号链接</th><th class="px-5 py-3">状态</th></tr></thead>
+            <thead class="bg-[#f9fbfa] text-left text-xs uppercase text-ops-muted"><tr><th class="px-5 py-3">包名称</th><th class="px-5 py-3">代理</th><th class="px-5 py-3">平台</th><th class="px-5 py-3">User ID</th><th class="px-5 py-3">账号链接</th><th class="px-5 py-3">状态</th></tr></thead>
             <tbody id="socialPackagesRows">
-              <tr class="border-t border-ops-line"><td class="px-5 py-4 font-bold" colspan="5">正在读取社媒包...</td></tr>
+              <tr class="border-t border-ops-line"><td class="px-5 py-4 font-bold" colspan="6">正在读取社媒包...</td></tr>
             </tbody>
           </table>
         </div>
@@ -97,6 +98,8 @@
         name: document.getElementById("packageNameInput").value.trim(),
         agent: document.getElementById("agentNameInput").value.trim(),
         platform: document.getElementById("platformSelect").value,
+        provider: document.getElementById("platformSelect").value.includes("Twitter") ? "twitterapi.io" : "",
+        userId: document.getElementById("userIdInput").value.trim(),
         accountUrl: document.getElementById("accountUrlInput").value.trim(),
         contentType: document.getElementById("contentTypeSelect").value,
         frequency: document.getElementById("frequencySelect").value,
@@ -146,15 +149,17 @@
           <td class="px-5 py-4 font-bold">${escapeHtml(pkg.name)}</td>
           <td class="px-5 py-4">${escapeHtml(pkg.agent)}</td>
           <td class="px-5 py-4">${escapeHtml(pkg.platform)}</td>
+          <td class="px-5 py-4 font-mono text-xs">${escapeHtml(pkg.userId || "-")}</td>
           <td class="px-5 py-4">${escapeHtml(pkg.accountUrl || "待录入")}</td>
           <td class="px-5 py-4"><span class="rounded-full ${enabled ? "bg-[#e6f7ef] text-ops-accent" : "bg-[#fff4df] text-[#c98118]"} px-2 py-1 text-xs font-black">${escapeHtml(pkg.status)}</span></td>
         </tr>`;
-      }).join("") || '<tr class="border-t border-ops-line"><td class="px-5 py-4 font-bold" colspan="5">暂无社媒包</td></tr>';
+      }).join("") || '<tr class="border-t border-ops-line"><td class="px-5 py-4 font-bold" colspan="6">暂无社媒包</td></tr>';
     }
 
     function clearForm() {
       document.getElementById("packageNameInput").value = "";
       document.getElementById("agentNameInput").value = "";
+      document.getElementById("userIdInput").value = "";
       document.getElementById("accountUrlInput").value = "";
       document.getElementById("platformSelect").value = "Twitter / X";
       document.getElementById("contentTypeSelect").value = "全部新内容";
@@ -168,7 +173,7 @@
 
     document.getElementById("saveSocialPackageBtn").addEventListener("click", saveSocialPackage);
     loadSocialPackages().catch((error) => {
-      document.getElementById("socialPackagesRows").innerHTML = `<tr class="border-t border-ops-line"><td class="px-5 py-4 font-bold text-[#c98118]" colspan="5">读取失败：${escapeHtml(error.message)}</td></tr>`;
+      document.getElementById("socialPackagesRows").innerHTML = `<tr class="border-t border-ops-line"><td class="px-5 py-4 font-bold text-[#c98118]" colspan="6">读取失败：${escapeHtml(error.message)}</td></tr>`;
     });
   </script>
 </body>

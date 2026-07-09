@@ -743,6 +743,8 @@ function normalizeSocialPackages(packages) {
       name: String(item?.name || `社媒转发包 ${index + 1}`).trim(),
       agent: String(item?.agent || "").trim(),
       platform: String(item?.platform || "Twitter / X").trim(),
+      provider: String(item?.provider || "").trim(),
+      userId: String(item?.userId || item?.twitterUserId || "").trim(),
       accountUrl: String(item?.accountUrl || item?.url || "").trim(),
       contentType: String(item?.contentType || "全部新内容").trim(),
       frequency: String(item?.frequency || "每 5 分钟").trim(),
