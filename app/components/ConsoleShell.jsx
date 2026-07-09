@@ -10,6 +10,7 @@ const navItems = [
   { href: "/signals", label: "信号配置" },
   { href: "/forward-broadcast", label: "广播转发" },
   { href: "/forward-social", label: "代理社媒转发" },
+  { href: "/academy", label: "交易学院模板" },
   { href: "/bots", label: "机器人配置" },
   { href: "/groups", label: "群数据" },
   { href: "/settings", label: "系统设置" }
