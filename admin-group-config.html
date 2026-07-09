@@ -458,7 +458,7 @@
       try {
         const response = await fetch("/api/chats");
         const data = await response.json();
-        const chats = (data.chats || []).filter((chat) => chat.canUseTopics);
+        const chats = data.chats || [];
         const saveResponse = await fetch("/api/group-config", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -466,7 +466,10 @@
         });
         const saved = await saveResponse.json();
         renderKnownGroups(saved.groups || []);
-        status.textContent = chats.length ? `已刷新 ${chats.length} 个可配置群` : "未发现可配置群";
+        const disabledCount = chats.filter((chat) => !chat.canUseTopics).length;
+        status.textContent = chats.length
+          ? `已刷新 ${chats.length} 个群${disabledCount ? `，其中 ${disabledCount} 个还没有开启 Topic` : ""}`
+          : "未发现群。请确认管理机器人已加入新群，并在群里发一条消息后再刷新。";
         button.textContent = "配置群刷新";
       } catch (error) {
         status.textContent = `刷新失败：${error.message}`;

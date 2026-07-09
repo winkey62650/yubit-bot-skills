@@ -155,6 +155,9 @@ async function runScript(body) {
   if (!script) return { ok: false, error: "Unknown scriptId" };
   const env = buildEnv(body.payload || {});
   const result = await runNode(script.command, env);
+  if (body?.scriptId === "newGroup" && body?.payload?.chatId) {
+    await rememberChatById(body.payload.chatId).catch(() => {});
+  }
   return { ok: result.code === 0, label: script.label, ...result };
 }
 
@@ -186,7 +189,10 @@ async function discoverChats() {
       });
     }
   }
-  const discovered = [...chats.values()].map((chat) => normalizeGroup(chat));
+  const discovered = [];
+  for (const chat of chats.values()) {
+    discovered.push(normalizeGroup(await enrichDiscoveredChat(token, chat)));
+  }
   if (!discovered.length) {
     const local = await readLocalGroupConfig();
     return { ok: true, chats: local.groups || [], source: "local-fallback" };
@@ -194,6 +200,34 @@ async function discoverChats() {
   const local = await readLocalGroupConfig();
   const merged = normalizeGroups([...discovered, ...(local.groups || [])]);
   return { ok: true, chats: merged, source: "telegram-updates" };
+}
+
+async function enrichDiscoveredChat(token, chat) {
+  try {
+    const result = await telegram(token, "getChat", { chat_id: chat.chatId || chat.id });
+    return {
+      ...chat,
+      type: result.type || chat.type,
+      title: result.title || chat.title,
+      canUseTopics: result.type === "supergroup" && result.is_forum === true
+    };
+  } catch {
+    return chat;
+  }
+}
+
+async function rememberChatById(chatId) {
+  const tokens = readTokenEnv(".env.telegram-tokens.local");
+  const token = tokens.YUBITADMIN_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN;
+  if (!token || !chatId) return null;
+  const chat = await telegram(token, "getChat", { chat_id: chatId });
+  return saveLocalGroupConfig({
+    chatId: String(chat.id || chatId),
+    title: chat.title || String(chatId),
+    type: chat.type || "unknown",
+    canUseTopics: chat.type === "supergroup" && chat.is_forum === true,
+    topics: []
+  });
 }
 
 async function readGroupMetrics() {

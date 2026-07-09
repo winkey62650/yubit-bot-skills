@@ -25,7 +25,8 @@ const warnings = [];
 const state = await readState();
 
 await call("getMe", {});
-await call("getChat", { chat_id: chatId });
+const chat = await call("getChat", { chat_id: chatId });
+assertForumReady(chat);
 
 if (config.chatTitle) {
   await optionalCall("setChatTitle", { chat_id: chatId, title: config.chatTitle });
@@ -199,4 +200,24 @@ Required Telegram setup:
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function assertForumReady(chat) {
+  const type = chat?.type || "unknown";
+  if (type !== "supergroup") {
+    exitWithHelp(`Target chat is "${type}", not a forum supergroup.
+
+This setup needs Telegram Topics. Please:
+  1. Open the target group in Telegram.
+  2. Convert/upgrade it to a supergroup if Telegram has not done that yet.
+  3. Enable Topics in group settings.
+  4. Make sure the admin bot is an admin with Manage Topics permission.
+  5. Send one message in the group, then click "配置群刷新" in the console.`);
+  }
+
+  if (chat.is_forum !== true) {
+    exitWithHelp(`Target supergroup has not enabled Topics yet.
+
+Please enable Topics in Telegram group settings, then run setup again.`);
+  }
 }
