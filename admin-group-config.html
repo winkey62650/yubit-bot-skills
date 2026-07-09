@@ -6,6 +6,7 @@
   <title>群配置</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>tailwind.config={theme:{extend:{colors:{ops:{line:"#dbe4df",soft:"#edf4f0",accent:"#15956b",muted:"#63716b",ink:"#101815"}},boxShadow:{ops:"0 16px 40px rgba(28,49,40,.07)"}}}}</script>
+<link rel="stylesheet" href="admin-polish.css"/>
 </head>
 <body class="bg-[#fbfcfb] text-ops-ink">
   <div class="min-h-screen lg:grid lg:grid-cols-[258px_minmax(0,1fr)]">
@@ -25,7 +26,7 @@
     </aside>
     <main class="p-8">
       <h1 class="text-3xl font-black">群配置</h1>
-      <p class="mt-3 text-ops-muted">配置当前群、Topic 绑定、代理 Topic 和内容分发规则。</p>
+      <p class="mt-3 page-kicker text-ops-muted">管理群、Topic 和内容投放规则。先确认群和机器人，再把新闻、信号、广播或社媒包绑定到目标 Topic。</p>
 
       <section class="mt-6 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops">
         <div class="flex flex-col gap-4 border-b border-ops-line p-5 xl:flex-row xl:items-center xl:justify-between">
@@ -35,7 +36,7 @@
         <div class="overflow-x-auto">
           <table class="w-full min-w-[760px] text-sm">
             <thead class="bg-[#f9fbfa] text-left text-xs uppercase text-ops-muted">
-              <tr><th class="px-5 py-3">群名称</th><th class="px-5 py-3">群 ID</th><th class="px-5 py-3">类型</th><th class="px-5 py-3">Topic</th></tr>
+              <tr><th class="px-5 py-3">群名称</th><th class="px-5 py-3">群标识</th><th class="px-5 py-3">类型</th><th class="px-5 py-3">Topic</th></tr>
             </thead>
             <tbody id="knownGroupRows"><tr><td colspan="4" class="px-5 py-6 font-bold text-ops-muted">暂无已配置群。</td></tr></tbody>
           </table>
@@ -161,7 +162,7 @@
       rows.innerHTML = visibleRows.map((row) => `
         <tr class="border-t border-ops-line align-top" data-id="${row.id}">
           <td class="px-5 py-4 font-bold">${row.group}</td>
-          <td class="px-5 py-4">${escapeHtml(row.topic)}${row.topicId ? `<div class="mt-1 font-mono text-xs text-ops-muted">thread ${row.topicId}</div>` : ""}</td>
+          <td class="px-5 py-4">${escapeHtml(row.topic)}${row.topicId ? `<div class="mt-1"><span class="internal-id">Topic ${row.topicId}</span></div>` : ""}</td>
           <td class="px-5 py-4"><strong>${escapeHtml(row.config)}</strong><div class="mt-1 text-xs text-ops-muted">${escapeHtml(row.type || "")}${row.frequency ? ` · ${escapeHtml(row.frequency)}` : ""}</div></td>
           <td class="px-5 py-4">${escapeHtml(row.bot)}</td>
           <td class="px-5 py-4"><button data-action="unlink" class="rounded-lg border border-[#d85f5f] px-3 py-2 text-xs font-black text-[#b94141]">解绑</button></td>
@@ -207,8 +208,8 @@
       rows.innerHTML = groups.length ? groups.map((group) => `
         <tr class="border-t border-ops-line">
           <td class="px-5 py-4 font-bold">${escapeHtml(group.title)}</td>
-          <td class="px-5 py-4 font-mono text-xs">${escapeHtml(group.chatId)}</td>
-          <td class="px-5 py-4">${escapeHtml(group.type)}</td>
+          <td class="px-5 py-4"><span class="internal-id">${escapeHtml(group.chatId)}</span></td>
+          <td class="px-5 py-4">${escapeHtml(group.canUseTopics ? "Forum 群" : "普通群")}</td>
           <td class="px-5 py-4">${group.canUseTopics ? `${(group.topics || []).length || 0} 个 Topic` : "不支持 Topic"}</td>
         </tr>
       `).join("") : '<tr><td colspan="4" class="px-5 py-6 font-bold text-ops-muted">暂无已配置群。</td></tr>';

@@ -6,6 +6,7 @@
   <title>代理社媒转发</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>tailwind.config={theme:{extend:{colors:{ops:{line:"#dbe4df",soft:"#edf4f0",accent:"#15956b",muted:"#63716b",ink:"#101815"}},boxShadow:{ops:"0 16px 40px rgba(28,49,40,.07)"}}}}</script>
+<link rel="stylesheet" href="admin-polish.css"/>
 </head>
 <body class="bg-[#fbfcfb] text-ops-ink">
   <div class="min-h-screen lg:grid lg:grid-cols-[258px_minmax(0,1fr)]">
@@ -38,7 +39,7 @@
       <section class="mt-6 grid gap-0 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops md:grid-cols-3">
         <div class="border-b border-ops-line p-5 md:border-b-0 md:border-r"><div class="text-sm font-bold text-ops-muted">监控账号</div><div class="mt-1 text-2xl font-black">4</div><div class="mt-1 text-xs text-ops-muted">Twitter / YouTube</div></div>
         <div class="border-b border-ops-line p-5 md:border-b-0 md:border-r"><div class="text-sm font-bold text-ops-muted">转发包</div><div class="mt-1 text-2xl font-black">代理维度</div><div class="mt-1 text-xs text-ops-muted">群配置里绑定 Topic</div></div>
-        <div class="p-5"><div class="text-sm font-bold text-ops-muted">检查频率</div><div class="mt-1 text-2xl font-black">5 分钟</div><div class="mt-1 text-xs text-ops-muted">可接后端任务</div></div>
+        <div class="p-5"><div class="text-sm font-bold text-ops-muted">检查频率</div><div class="mt-1 text-2xl font-black">5 分钟</div><div class="mt-1 text-xs text-ops-muted">保存后自动检查</div></div>
       </section>
 
       <section class="mt-6 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops">
@@ -72,7 +73,7 @@
         <div class="border-b border-ops-line p-5"><h2 class="text-xl font-black">当前代理社媒包</h2><p class="mt-1 text-sm text-ops-muted">这些包会作为「代理社媒」配置出现在群配置绑定里。</p></div>
         <div class="overflow-x-auto">
           <table class="w-full min-w-[940px] text-sm">
-            <thead class="bg-[#f9fbfa] text-left text-xs uppercase text-ops-muted"><tr><th class="px-5 py-3">包名称</th><th class="px-5 py-3">代理</th><th class="px-5 py-3">平台</th><th class="px-5 py-3">User ID</th><th class="px-5 py-3">账号链接</th><th class="px-5 py-3">状态</th></tr></thead>
+            <thead class="bg-[#f9fbfa] text-left text-xs uppercase text-ops-muted"><tr><th class="px-5 py-3">包名称</th><th class="px-5 py-3">代理</th><th class="px-5 py-3">平台</th><th class="px-5 py-3">账号标识</th><th class="px-5 py-3">账号链接</th><th class="px-5 py-3">状态</th></tr></thead>
             <tbody id="socialPackagesRows">
               <tr class="border-t border-ops-line"><td class="px-5 py-4 font-bold" colspan="6">正在读取社媒包...</td></tr>
             </tbody>
@@ -149,8 +150,8 @@
           <td class="px-5 py-4 font-bold">${escapeHtml(pkg.name)}</td>
           <td class="px-5 py-4">${escapeHtml(pkg.agent)}</td>
           <td class="px-5 py-4">${escapeHtml(pkg.platform)}</td>
-          <td class="px-5 py-4 font-mono text-xs">${escapeHtml(pkg.userId || "-")}</td>
-          <td class="px-5 py-4">${escapeHtml(pkg.accountUrl || "待录入")}</td>
+          <td class="px-5 py-4"><span class="internal-id">${escapeHtml(pkg.userId || "待识别")}</span></td>
+          <td class="px-5 py-4"><span class="truncate-link">${escapeHtml(pkg.accountUrl || "待录入")}</span></td>
           <td class="px-5 py-4"><span class="rounded-full ${enabled ? "bg-[#e6f7ef] text-ops-accent" : "bg-[#fff4df] text-[#c98118]"} px-2 py-1 text-xs font-black">${escapeHtml(pkg.status)}</span></td>
         </tr>`;
       }).join("") || '<tr class="border-t border-ops-line"><td class="px-5 py-4 font-bold" colspan="6">暂无社媒包</td></tr>';

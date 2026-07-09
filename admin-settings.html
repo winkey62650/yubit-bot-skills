@@ -6,6 +6,7 @@
   <title>系统设置</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>tailwind.config={theme:{extend:{colors:{ops:{line:"#dbe4df",soft:"#edf4f0",accent:"#15956b",muted:"#63716b",ink:"#101815"}},boxShadow:{ops:"0 16px 40px rgba(28,49,40,.07)"}}}}</script>
+<link rel="stylesheet" href="admin-polish.css"/>
 </head>
 <body class="bg-[#fbfcfb] text-ops-ink">
   <div class="min-h-screen lg:grid lg:grid-cols-[258px_minmax(0,1fr)]">
@@ -25,7 +26,7 @@
     </aside>
     <main class="p-8">
       <h1 class="text-3xl font-black">系统设置</h1>
-      <p class="mt-3 text-ops-muted">配置程序健康检查、定时监控和 Lark 告警推送。</p>
+      <p class="mt-3 page-kicker text-ops-muted">配置健康检查、定时监控和 Lark 告警推送。这里关注服务是否正常，不展示内部命令。</p>
 
       <section class="mt-6 grid gap-0 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops md:grid-cols-4">
         <div class="border-b border-ops-line p-5 last:border-b-0 md:border-b-0 md:border-r"><div class="text-sm font-bold text-ops-muted">检查频率</div><div class="mt-1 text-2xl font-black">每 5 分钟</div><div class="mt-1 text-xs text-ops-muted">可按业务低频调整</div></div>
@@ -51,31 +52,39 @@
       </section>
 
       <section class="mt-5 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops">
-        <div class="border-b border-ops-line p-5"><h2 class="text-xl font-black">程序健康检查</h2><p class="mt-1 text-sm text-ops-muted">定时检查脚本是否可运行、控制台是否可访问，并把结果发到 Lark。</p></div>
+        <div class="border-b border-ops-line p-5"><h2 class="text-xl font-black">健康检查项目</h2><p class="mt-1 text-sm text-ops-muted">定时检查关键能力是否可用，并把异常发到 Lark。</p></div>
         <div class="overflow-x-auto">
           <table class="w-full min-w-[900px] text-sm">
-            <thead class="bg-[#f9fbfa] text-left text-xs uppercase text-ops-muted"><tr><th class="px-5 py-3">项目</th><th class="px-5 py-3">检查对象</th><th class="px-5 py-3">检查方式</th><th class="px-5 py-3">状态</th></tr></thead>
+            <thead class="bg-[#f9fbfa] text-left text-xs uppercase text-ops-muted"><tr><th class="px-5 py-3">项目</th><th class="px-5 py-3">检查内容</th><th class="px-5 py-3">异常动作</th><th class="px-5 py-3">状态</th></tr></thead>
             <tbody>
-              <tr class="border-t border-ops-line"><td class="px-5 py-4">本地控制台</td><td class="px-5 py-4">server.mjs</td><td class="px-5 py-4">http://localhost:4173/admin-preview.html</td><td class="px-5 py-4"><span class="rounded-full bg-[#e6f7ef] px-2 py-1 text-xs font-black text-ops-accent">正常</span></td></tr>
-              <tr class="border-t border-ops-line"><td class="px-5 py-4">新闻脚本</td><td class="px-5 py-4">news-poster.mjs</td><td class="px-5 py-4">npm run news</td><td class="px-5 py-4"><span class="rounded-full bg-[#e6f7ef] px-2 py-1 text-xs font-black text-ops-accent">正常</span></td></tr>
-              <tr class="border-t border-ops-line"><td class="px-5 py-4">信号脚本</td><td class="px-5 py-4">run-15m-cycle.mjs</td><td class="px-5 py-4">npm run cycle:15m</td><td class="px-5 py-4"><span class="rounded-full bg-[#e6f7ef] px-2 py-1 text-xs font-black text-ops-accent">正常</span></td></tr>
-              <tr class="border-t border-ops-line"><td class="px-5 py-4">新群初始化</td><td class="px-5 py-4">scripts/new-group-setup.mjs</td><td class="px-5 py-4">npm run manage:new-group</td><td class="px-5 py-4"><span class="rounded-full bg-[#e6f7ef] px-2 py-1 text-xs font-black text-ops-accent">正常</span></td></tr>
-              <tr class="border-t border-ops-line"><td class="px-5 py-4">Lark 推送</td><td class="px-5 py-4">monitor-health-to-lark.mjs</td><td class="px-5 py-4">npm run monitor:health</td><td class="px-5 py-4"><span class="rounded-full bg-[#fff4df] px-2 py-1 text-xs font-black text-[#c98118]">待配置</span></td></tr>
+              <tr class="border-t border-ops-line"><td class="px-5 py-4 font-bold">控制台访问</td><td class="px-5 py-4">确认本地控制台可以打开和响应</td><td class="px-5 py-4">发送 Lark 告警</td><td class="px-5 py-4"><span class="rounded-full status-success px-2 py-1 text-xs font-black">正常</span></td></tr>
+              <tr class="border-t border-ops-line"><td class="px-5 py-4 font-bold">新闻投放</td><td class="px-5 py-4">确认新闻源抓取和测试发送可用</td><td class="px-5 py-4">提示检查新闻配置</td><td class="px-5 py-4"><span class="rounded-full status-success px-2 py-1 text-xs font-black">正常</span></td></tr>
+              <tr class="border-t border-ops-line"><td class="px-5 py-4 font-bold">信号投放</td><td class="px-5 py-4">确认信号卡片生成和测试发送可用</td><td class="px-5 py-4">提示检查信号配置</td><td class="px-5 py-4"><span class="rounded-full status-success px-2 py-1 text-xs font-black">正常</span></td></tr>
+              <tr class="border-t border-ops-line"><td class="px-5 py-4 font-bold">群初始化</td><td class="px-5 py-4">确认目标群权限和 Topic 能力</td><td class="px-5 py-4">提示补齐机器人权限</td><td class="px-5 py-4"><span class="rounded-full status-success px-2 py-1 text-xs font-black">正常</span></td></tr>
+              <tr class="border-t border-ops-line"><td class="px-5 py-4 font-bold">Lark 告警</td><td class="px-5 py-4">确认告警消息能送达指定群</td><td class="px-5 py-4">保留页面提示</td><td class="px-5 py-4"><span class="rounded-full status-warn px-2 py-1 text-xs font-black">待配置</span></td></tr>
             </tbody>
           </table>
         </div>
       </section>
 
-      <section class="mt-5 rounded-lg bg-[#101815] p-5 text-sm text-[#d8f9e7] shadow-ops">
-        <div class="font-black">执行脚本</div>
-        <pre id="monitorOutput" class="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words">npm run monitor:health</pre>
+      <section class="mt-5 result-panel shadow-ops">
+        <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div class="font-black">监控测试结果</div>
+            <div id="monitorOutput" class="mt-2 text-sm text-ops-muted">还没有发送测试。保存 Webhook 后可以先测试一次。</div>
+          </div>
+          <span id="monitorResultPill" class="w-fit rounded-full status-neutral px-2 py-1 text-xs font-black">待测试</span>
+        </div>
       </section>
     </main>
   </div>
   <script>
     document.getElementById("testMonitorBtn").addEventListener("click", async () => {
       const output = document.getElementById("monitorOutput");
-      output.textContent = "正在检查程序并发送 Lark 测试监控...";
+      const pill = document.getElementById("monitorResultPill");
+      output.textContent = "正在检查并发送测试消息...";
+      pill.className = "w-fit rounded-full status-neutral px-2 py-1 text-xs font-black";
+      pill.textContent = "检查中";
       const response = await fetch("/api/scripts", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -85,8 +94,19 @@
         })
       });
       const data = await response.json();
-      output.textContent = [data.stdout, data.stderr, data.error].filter(Boolean).join("\\n\\n") || JSON.stringify(data, null, 2);
+      const ok = data.ok;
+      pill.className = "w-fit rounded-full px-2 py-1 text-xs font-black " + (ok ? "status-success" : "status-warn");
+      pill.textContent = ok ? "已发送" : "需处理";
+      output.textContent = ok ? "测试监控已发送到 Lark。后续会按当前频率检查。" : cleanError(data.error || data.stderr || "测试发送失败，请检查 Webhook。");
     });
+    function cleanError(value) {
+      return String(value || "")
+        .replace(/file:\\/\\/\\S+/g, "")
+        .replace(/\\bat\\s+\\S+\\s*\\([^)]*\\)/g, "")
+        .replace(/Node\\.js v[\\d.]+/g, "")
+        .replace(/\\n{2,}/g, "\\n")
+        .trim();
+    }
   </script>
 </body>
 </html>

@@ -6,6 +6,7 @@
   <title>信号配置</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>tailwind.config={theme:{extend:{colors:{ops:{line:"#dbe4df",soft:"#edf4f0",accent:"#15956b",muted:"#63716b",ink:"#101815"}},boxShadow:{ops:"0 16px 40px rgba(28,49,40,.07)"}}}}</script>
+<link rel="stylesheet" href="admin-polish.css"/>
 </head>
 <body class="bg-[#fbfcfb] text-ops-ink">
   <div class="min-h-screen lg:grid lg:grid-cols-[258px_minmax(0,1fr)]">
@@ -25,7 +26,7 @@
     </aside>
     <main class="p-8">
       <h1 class="text-3xl font-black">信号配置</h1>
-      <p class="mt-3 text-ops-muted">维护信号策略池，测试每个策略的数据源、计算结果和输出格式；群和 Topic 的投放绑定在群配置里设置。</p>
+      <p class="mt-3 page-kicker text-ops-muted">维护信号策略池，检查每个策略是否能正常生成卡片；群和 Topic 的投放绑定在群配置里设置。</p>
 
       <section class="mt-6 grid gap-0 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops md:grid-cols-3">
         <div class="border-b border-ops-line p-5 md:border-b-0 md:border-r"><div class="text-sm font-bold text-ops-muted">信号策略池</div><div class="mt-1 text-2xl font-black">2</div><div class="mt-1 text-xs text-ops-muted">Futures / TradFi</div></div>
@@ -74,14 +75,14 @@
             name: 'Futures SMA',
             scriptId: 'futuresCard',
             source: 'Binance Futures',
-            format: 'symbol / timeframe / SMA20 / SMA50 / direction / card text',
+            format: '合约走势、方向判断、关键均线、风险提示',
             status: '已启用'
           },
           {
             name: 'TradFi SMA',
             scriptId: 'tradfiCard',
             source: 'TradFi market data',
-            format: 'asset / market / trend / macro note / card text',
+            format: '传统市场走势、宏观摘要、趋势判断、风险提示',
             status: '已启用'
           }
         ];
@@ -97,9 +98,9 @@
           rows.innerHTML = strategies.map((item) =>
             '<tr class="border-t border-ops-line align-top">' +
               '<td class="px-5 py-4"><input data-toggle="' + escapeHtml(item.name) + '" type="checkbox" class="h-4 w-4" ' + (selected.has(item.name) ? 'checked' : '') + '/></td>' +
-              '<td class="px-5 py-4"><strong>' + escapeHtml(item.name) + '</strong><div class="mt-1 text-xs text-ops-muted">' + escapeHtml(item.scriptId) + '</div></td>' +
+              '<td class="px-5 py-4"><strong>' + escapeHtml(item.name) + '</strong><div class="mt-1 text-xs text-ops-muted">测试卡片会发送到 demo 群</div></td>' +
               '<td class="px-5 py-4">' + escapeHtml(item.source) + '</td>' +
-              '<td class="px-5 py-4 font-mono text-xs text-ops-muted">' + escapeHtml(item.format) + '</td>' +
+              '<td class="px-5 py-4 text-xs leading-5 text-ops-muted">' + escapeHtml(item.format) + '</td>' +
               '<td class="px-5 py-4"><span class="rounded-full bg-[#e6f7ef] px-2 py-1 text-xs font-black text-ops-accent">' + escapeHtml(item.status) + '</span></td>' +
               '<td class="px-5 py-4"><button data-test="' + escapeHtml(item.scriptId) + '" class="rounded-lg border border-ops-accent px-3 py-2 text-xs font-black text-ops-accent">测试</button></td>' +
             '</tr>'
@@ -135,9 +136,18 @@
           sub.textContent = strategy.name + ' · ' + new Date().toLocaleString();
           body.className = 'mt-4 grid gap-3';
           body.innerHTML =
-            '<div class="rounded-lg border border-ops-line bg-[#edf7f2] p-4 text-sm text-ops-accent"><strong>测试目标</strong><div class="mt-2 text-xs text-ops-muted">Demo 群 -1003710405969 · test Topic #' + escapeHtml(data.testThreadId || '') + '</div></div>' +
-            '<div class="rounded-lg border border-ops-line bg-[#fbfcfb] p-4 text-sm"><strong>返回格式</strong><div class="mt-2 font-mono text-xs text-ops-muted">' + escapeHtml(strategy.format) + '</div></div>' +
-            '<pre class="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-[#101815] p-4 text-xs leading-5 text-[#d8f9e7]">' + escapeHtml([ok ? '信号测试已发送。' : '执行失败。', data.stdout, data.stderr, data.error].filter(Boolean).join('\\n\\n')) + '</pre>';
+            '<div class="result-panel"><strong>测试目标</strong><div class="mt-2 text-sm text-ops-muted">Demo 群 · test Topic</div></div>' +
+            '<div class="result-panel"><strong>策略摘要</strong><div class="mt-2 text-sm text-ops-muted">' + escapeHtml(strategy.format) + '</div></div>' +
+            '<div class="rounded-lg p-4 text-sm ' + (ok ? 'status-success' : 'status-warn') + '"><strong>' + (ok ? '测试已发送' : '测试未完成') + '</strong><div class="mt-2">' + escapeHtml(ok ? '可以到 Telegram demo 群查看卡片效果。正式投放请到群配置绑定目标 Topic。' : cleanError(data.error || data.stderr || '请检查数据源、机器人权限或网络连接。')) + '</div></div>';
+        }
+
+        function cleanError(value) {
+          return String(value || '')
+            .replace(/file:\\/\\/\\S+/g, '')
+            .replace(/\\bat\\s+\\S+\\s*\\([^)]*\\)/g, '')
+            .replace(/Node\\.js v[\\d.]+/g, '')
+            .replace(/\\n{2,}/g, '\\n')
+            .trim();
         }
 
         document.addEventListener('change', (event) => {

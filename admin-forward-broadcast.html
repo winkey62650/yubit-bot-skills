@@ -6,6 +6,7 @@
   <title>广播转发</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>tailwind.config={theme:{extend:{colors:{ops:{line:"#dbe4df",soft:"#edf4f0",accent:"#15956b",muted:"#63716b",ink:"#101815"}},boxShadow:{ops:"0 16px 40px rgba(28,49,40,.07)"}}}}</script>
+<link rel="stylesheet" href="admin-polish.css"/>
 </head>
 <body class="bg-[#fbfcfb] text-ops-ink">
   <div class="min-h-screen lg:grid lg:grid-cols-[258px_minmax(0,1fr)]">
@@ -113,8 +114,8 @@
       document.getElementById("broadcastRuleRows").innerHTML = rules.map((rule) => `
         <tr class="border-t border-ops-line">
           <td class="px-5 py-4 font-bold">${escapeHtml(rule.name)}</td>
-          <td class="px-5 py-4">${escapeHtml(rule.group || "Demo 群")}<div class="mt-1 font-mono text-xs text-ops-muted">${escapeHtml(rule.chatId || demoChatId)}</div></td>
-          <td class="px-5 py-4">${escapeHtml(rule.topic || "未选择")}${rule.topicId ? `<div class="mt-1 font-mono text-xs text-ops-muted">thread ${escapeHtml(rule.topicId)}</div>` : ""}</td>
+          <td class="px-5 py-4">${escapeHtml(rule.group || "Demo 群")}<div class="mt-1"><span class="internal-id">来源群</span></div></td>
+          <td class="px-5 py-4">${escapeHtml(rule.topic || "未选择")}${rule.topicId ? `<div class="mt-1"><span class="internal-id">Topic ${escapeHtml(rule.topicId)}</span></div>` : ""}</td>
           <td class="px-5 py-4">${escapeHtml(rule.bot || "YUBITadmin")}<div class="mt-1 text-xs text-ops-muted">${escapeHtml(rule.listen || "全部消息")}</div></td>
           <td class="px-5 py-4"><span class="rounded-full bg-[#e6f7ef] px-2 py-1 text-xs font-black text-ops-accent">${escapeHtml(rule.status || "已启用")}</span></td>
         </tr>

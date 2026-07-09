@@ -15,6 +15,7 @@
       }
     };
   </script>
+<link rel="stylesheet" href="admin-polish.css"/>
 </head>
 <body class="bg-[#fbfcfb] text-ops-ink">
   <div class="min-h-screen lg:grid lg:grid-cols-[258px_minmax(0,1fr)]">
@@ -60,11 +61,15 @@
       </section>
 
       <section class="mt-6 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops">
-        <div class="grid grid-cols-[1.4fr_1fr_.8fr_.9fr_.9fr_.8fr] gap-4 bg-[#f9fbfa] px-5 py-3 text-xs font-black uppercase text-ops-muted">
-          <span>群组</span><span>群 ID</span><span>用户人数</span><span>历史消息</span><span>7 天活跃</span><span>状态</span>
-        </div>
-        <div id="groupRows" class="text-sm">
-          <div class="border-t border-ops-line px-5 py-8 font-bold text-ops-muted">正在读取 Telegram 群数据...</div>
+        <div class="overflow-x-auto">
+          <div class="min-w-[920px]">
+            <div class="grid grid-cols-[1.4fr_1fr_.8fr_.9fr_.9fr_.8fr] gap-4 bg-[#f9fbfa] px-5 py-3 text-xs font-black uppercase text-ops-muted">
+              <span>群组</span><span>群标识</span><span>用户人数</span><span>历史消息</span><span>7 天活跃</span><span>状态</span>
+            </div>
+            <div id="groupRows" class="text-sm">
+              <div class="border-t border-ops-line px-5 py-8 font-bold text-ops-muted">正在读取 Telegram 群数据...</div>
+            </div>
+          </div>
         </div>
       </section>
       <p id="sourceNote" class="mt-3 text-xs font-bold text-ops-muted"></p>
@@ -101,7 +106,7 @@
         rows.innerHTML = data.groups.map((group) => `
           <div class="grid grid-cols-[1.4fr_1fr_.8fr_.9fr_.9fr_.8fr] gap-4 border-t border-ops-line px-5 py-4">
             <b>${escapeHtml(group.title)}</b>
-            <span>${group.id}</span>
+            <span class="internal-id">${group.id}</span>
             <span>${format(group.memberCount)}</span>
             <span>${format(group.visibleMessageCount)}</span>
             <span>${format(group.sevenDayActiveUsers)}</span>

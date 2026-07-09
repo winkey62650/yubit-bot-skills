@@ -6,6 +6,7 @@
   <title>机器人配置</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>tailwind.config={theme:{extend:{colors:{ops:{line:"#dbe4df",soft:"#edf4f0",accent:"#15956b",muted:"#63716b",ink:"#101815"}},boxShadow:{ops:"0 16px 40px rgba(28,49,40,.07)"}}}}</script>
+<link rel="stylesheet" href="admin-polish.css"/>
 </head>
 <body class="bg-[#fbfcfb] text-ops-ink">
   <div class="min-h-screen lg:grid lg:grid-cols-[258px_minmax(0,1fr)]">
@@ -34,8 +35,8 @@
 
       <section class="mb-5 grid gap-0 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops md:grid-cols-4">
         <div class="border-b border-ops-line p-5 md:border-b-0 md:border-r"><div class="text-sm font-bold text-ops-muted">机器人</div><div id="botCount" class="mt-1 text-2xl font-black">5</div><div class="mt-1 text-xs text-ops-muted">已配置角色</div></div>
-        <div class="border-b border-ops-line p-5 md:border-b-0 md:border-r"><div class="text-sm font-bold text-ops-muted">在线</div><div id="onlineBotCount" class="mt-1 text-2xl font-black">-</div><div class="mt-1 text-xs text-ops-muted">Bot API 可连通</div></div>
-        <div class="border-b border-ops-line p-5 md:border-b-0 md:border-r"><div class="text-sm font-bold text-ops-muted">覆盖群</div><div id="coveredGroupCount" class="mt-1 text-2xl font-black">-</div><div class="mt-1 text-xs text-ops-muted">按 getUpdates 可见</div></div>
+        <div class="border-b border-ops-line p-5 md:border-b-0 md:border-r"><div class="text-sm font-bold text-ops-muted">在线</div><div id="onlineBotCount" class="mt-1 text-2xl font-black">-</div><div class="mt-1 text-xs text-ops-muted">机器人连接正常</div></div>
+        <div class="border-b border-ops-line p-5 md:border-b-0 md:border-r"><div class="text-sm font-bold text-ops-muted">覆盖群</div><div id="coveredGroupCount" class="mt-1 text-2xl font-black">-</div><div class="mt-1 text-xs text-ops-muted">最近可见的群</div></div>
         <div class="p-5"><div class="text-sm font-bold text-ops-muted">状态</div><div id="botRefreshStatus" class="mt-1 text-2xl font-black">待刷新</div><div class="mt-1 text-xs text-ops-muted">不显示 Token</div></div>
       </section>
 
