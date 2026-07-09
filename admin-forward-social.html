@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>代理社媒转发</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config={theme:{extend:{colors:{ops:{line:"#dbe4df",soft:"#edf4f0",accent:"#15956b",muted:"#63716b",ink:"#101815"}},boxShadow:{ops:"0 16px 40px rgba(28,49,40,.07)"}}}}</script>
+</head>
+<body class="bg-[#fbfcfb] text-ops-ink">
+  <div class="min-h-screen lg:grid lg:grid-cols-[258px_minmax(0,1fr)]">
+    <aside class="border-r border-ops-line bg-white p-6 lg:sticky lg:top-0 lg:h-screen lg:overflow-y-auto">
+      <a class="mb-10 flex items-center gap-3" href="admin-group-config.html"><span class="grid h-9 w-9 place-items-center rounded-lg bg-ops-accent text-lg font-black text-white">Y</span><strong class="text-2xl">YUBIT</strong></a>
+      <nav class="grid gap-2">
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-group-config.html">群配置</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-new-group.html">新群初始化</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-news.html">新闻配置</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-signals.html">信号配置</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-forward-broadcast.html">广播转发</a>
+        <a class="rounded-lg bg-[#edf7f2] text-ops-accent px-3 py-3 text-sm font-bold" href="admin-forward-social.html">代理社媒转发</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-bots.html">机器人配置</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-groups.html">群数据</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-settings.html">系统设置</a>
+      </nav>
+    </aside>
+    <main class="p-8">
+      <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div>
+          <h1 class="text-3xl font-black">代理社媒转发</h1>
+          <p class="mt-3 max-w-3xl text-ops-muted">输入代理 Twitter / YouTube 链接，组合成代理社媒转发包；发到哪个群和 Topic 在「群配置」里绑定，绑定类型选择「代理社媒」。</p>
+        </div>
+        <div class="flex rounded-lg border border-ops-line bg-white p-1 shadow-ops">
+          <a class="rounded-md px-4 py-2 text-sm font-black text-ops-muted hover:bg-ops-soft" href="admin-forward-broadcast.html">广播</a>
+          <a class="rounded-md bg-ops-accent px-4 py-2 text-sm font-black text-white" href="admin-forward-social.html">代理社媒</a>
+        </div>
+      </div>
+
+      <section class="mt-6 grid gap-0 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops md:grid-cols-3">
+        <div class="border-b border-ops-line p-5 md:border-b-0 md:border-r"><div class="text-sm font-bold text-ops-muted">监控账号</div><div class="mt-1 text-2xl font-black">4</div><div class="mt-1 text-xs text-ops-muted">Twitter / YouTube</div></div>
+        <div class="border-b border-ops-line p-5 md:border-b-0 md:border-r"><div class="text-sm font-bold text-ops-muted">转发包</div><div class="mt-1 text-2xl font-black">代理维度</div><div class="mt-1 text-xs text-ops-muted">群配置里绑定 Topic</div></div>
+        <div class="p-5"><div class="text-sm font-bold text-ops-muted">检查频率</div><div class="mt-1 text-2xl font-black">5 分钟</div><div class="mt-1 text-xs text-ops-muted">可接后端任务</div></div>
+      </section>
+
+      <section class="mt-6 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops">
+        <div class="border-b border-ops-line px-6 py-5"><h2 class="text-xl font-black">新增代理社媒包</h2><p class="mt-1 text-sm text-ops-muted">这里只定义代理社媒来源和监控规则；目标群和 Topic 统一到群配置里绑定。</p></div>
+        <div class="grid gap-0 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div class="border-b border-ops-line p-6 xl:border-b-0 xl:border-r">
+            <h3 class="mb-4 text-sm font-black">社媒包</h3>
+            <div class="grid gap-4">
+              <label class="grid gap-2 text-sm font-bold text-ops-muted">包名称<input id="packageNameInput" class="min-h-11 rounded-lg border border-ops-line px-3" placeholder="Ricky 社媒转发包"/></label>
+              <label class="grid gap-2 text-sm font-bold text-ops-muted">代理名称<input id="agentNameInput" class="min-h-11 rounded-lg border border-ops-line px-3" placeholder="Ricky / Jack / Tony"/></label>
+              <label class="grid gap-2 text-sm font-bold text-ops-muted">平台<select id="platformSelect" class="min-h-11 rounded-lg border border-ops-line px-3"><option>Twitter / X</option><option>YouTube</option><option>Twitter / X + YouTube</option></select></label>
+              <label class="grid gap-2 text-sm font-bold text-ops-muted">账号链接<input id="accountUrlInput" class="min-h-11 rounded-lg border border-ops-line px-3" placeholder="https://x.com/handle 或 YouTube Channel URL"/></label>
+              <label class="grid gap-2 text-sm font-bold text-ops-muted">内容类型<select id="contentTypeSelect" class="min-h-11 rounded-lg border border-ops-line px-3"><option>全部新内容</option><option>仅含关键词</option><option>排除转发 / Repost</option></select></label>
+            </div>
+          </div>
+          <div class="p-6">
+            <h3 class="mb-4 text-sm font-black">监控</h3>
+            <div class="grid gap-4">
+              <label class="grid gap-2 text-sm font-bold text-ops-muted">检查频率<select id="frequencySelect" class="min-h-11 rounded-lg border border-ops-line px-3"><option>每 5 分钟</option><option>每 15 分钟</option><option>每 30 分钟</option></select></label>
+              <label class="grid gap-2 text-sm font-bold text-ops-muted">转发机器人<input id="botInput" class="min-h-11 rounded-lg border border-ops-line bg-[#f9fbfa] px-3" value="YUBITadmin" readonly/></label>
+              <label class="grid gap-2 text-sm font-bold text-ops-muted">状态<select id="statusSelect" class="min-h-11 rounded-lg border border-ops-line px-3"><option>启用</option><option>暂停</option></select></label>
+            </div>
+            <button id="saveSocialPackageBtn" class="mt-5 min-h-11 w-full rounded-lg bg-ops-accent px-5 text-sm font-black text-white">保存社媒包</button>
+            <div id="saveStatus" class="mt-3 hidden rounded-lg bg-[#edf7f2] px-3 py-2 text-sm font-bold text-ops-accent"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="mt-5 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops">
+        <div class="border-b border-ops-line p-5"><h2 class="text-xl font-black">当前代理社媒包</h2><p class="mt-1 text-sm text-ops-muted">这些包会作为「代理社媒」配置出现在群配置绑定里。</p></div>
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[940px] text-sm">
+            <thead class="bg-[#f9fbfa] text-left text-xs uppercase text-ops-muted"><tr><th class="px-5 py-3">包名称</th><th class="px-5 py-3">代理</th><th class="px-5 py-3">平台</th><th class="px-5 py-3">账号链接</th><th class="px-5 py-3">状态</th></tr></thead>
+            <tbody id="socialPackagesRows">
+              <tr class="border-t border-ops-line"><td class="px-5 py-4 font-bold" colspan="5">正在读取社媒包...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script>
+    let socialPackages = [];
+
+    async function loadSocialPackages() {
+      const response = await fetch("/api/social-packages");
+      const data = await response.json();
+      socialPackages = data.packages || [];
+      renderSocialPackages();
+    }
+
+    async function saveSocialPackage() {
+      const status = document.getElementById("saveStatus");
+      const button = document.getElementById("saveSocialPackageBtn");
+      const item = {
+        name: document.getElementById("packageNameInput").value.trim(),
+        agent: document.getElementById("agentNameInput").value.trim(),
+        platform: document.getElementById("platformSelect").value,
+        accountUrl: document.getElementById("accountUrlInput").value.trim(),
+        contentType: document.getElementById("contentTypeSelect").value,
+        frequency: document.getElementById("frequencySelect").value,
+        bot: document.getElementById("botInput").value.trim() || "YUBITadmin",
+        status: document.getElementById("statusSelect").value === "启用" ? "已启用" : "暂停"
+      };
+
+      status.classList.remove("hidden");
+      if (!item.name || !item.agent || !item.accountUrl) {
+        status.textContent = "请填写包名称、代理名称和账号链接。";
+        status.className = "mt-3 rounded-lg bg-[#fff4df] px-3 py-2 text-sm font-bold text-[#c98118]";
+        return;
+      }
+
+      button.disabled = true;
+      button.classList.add("opacity-60", "cursor-not-allowed");
+      status.textContent = "正在保存社媒包...";
+      status.className = "mt-3 rounded-lg bg-[#edf7f2] px-3 py-2 text-sm font-bold text-ops-accent";
+
+      try {
+        const nextPackages = [item, ...socialPackages.filter((pkg) => pkg.name !== item.name)];
+        const response = await fetch("/api/social-packages", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ packages: nextPackages })
+        });
+        const data = await response.json();
+        if (!data.ok) throw new Error(data.error || "保存失败");
+        socialPackages = data.packages || nextPackages;
+        renderSocialPackages();
+        status.textContent = "已保存社媒包。";
+        clearForm();
+      } catch (error) {
+        status.textContent = `保存失败：${error.message}`;
+        status.className = "mt-3 rounded-lg bg-[#fff4df] px-3 py-2 text-sm font-bold text-[#c98118]";
+      } finally {
+        button.disabled = false;
+        button.classList.remove("opacity-60", "cursor-not-allowed");
+      }
+    }
+
+    function renderSocialPackages() {
+      const rows = document.getElementById("socialPackagesRows");
+      rows.innerHTML = socialPackages.map((pkg) => {
+        const enabled = pkg.status === "已启用";
+        return `<tr class="border-t border-ops-line">
+          <td class="px-5 py-4 font-bold">${escapeHtml(pkg.name)}</td>
+          <td class="px-5 py-4">${escapeHtml(pkg.agent)}</td>
+          <td class="px-5 py-4">${escapeHtml(pkg.platform)}</td>
+          <td class="px-5 py-4">${escapeHtml(pkg.accountUrl || "待录入")}</td>
+          <td class="px-5 py-4"><span class="rounded-full ${enabled ? "bg-[#e6f7ef] text-ops-accent" : "bg-[#fff4df] text-[#c98118]"} px-2 py-1 text-xs font-black">${escapeHtml(pkg.status)}</span></td>
+        </tr>`;
+      }).join("") || '<tr class="border-t border-ops-line"><td class="px-5 py-4 font-bold" colspan="5">暂无社媒包</td></tr>';
+    }
+
+    function clearForm() {
+      document.getElementById("packageNameInput").value = "";
+      document.getElementById("agentNameInput").value = "";
+      document.getElementById("accountUrlInput").value = "";
+      document.getElementById("platformSelect").value = "Twitter / X";
+      document.getElementById("contentTypeSelect").value = "全部新内容";
+      document.getElementById("frequencySelect").value = "每 5 分钟";
+      document.getElementById("statusSelect").value = "启用";
+    }
+
+    function escapeHtml(value) {
+      return String(value || "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+    }
+
+    document.getElementById("saveSocialPackageBtn").addEventListener("click", saveSocialPackage);
+    loadSocialPackages().catch((error) => {
+      document.getElementById("socialPackagesRows").innerHTML = `<tr class="border-t border-ops-line"><td class="px-5 py-4 font-bold text-[#c98118]" colspan="5">读取失败：${escapeHtml(error.message)}</td></tr>`;
+    });
+  </script>
+</body>
+</html>

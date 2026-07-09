@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>群数据</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: { ops: { line: "#dbe4df", soft: "#edf4f0", accent: "#15956b", muted: "#63716b", ink: "#101815" } },
+          boxShadow: { ops: "0 16px 40px rgba(28,49,40,.07)" }
+        }
+      }
+    };
+  </script>
+</head>
+<body class="bg-[#fbfcfb] text-ops-ink">
+  <div class="min-h-screen lg:grid lg:grid-cols-[258px_minmax(0,1fr)]">
+    <aside class="border-r border-ops-line bg-white p-6 lg:sticky lg:top-0 lg:h-screen lg:overflow-y-auto">
+      <a class="mb-10 flex items-center gap-3" href="admin-group-config.html">
+        <span class="grid h-9 w-9 place-items-center rounded-lg bg-ops-accent text-lg font-black text-white">Y</span>
+        <strong class="text-2xl">YUBIT</strong>
+      </a>
+      <nav class="grid gap-2">
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-group-config.html">群配置</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-new-group.html">新群初始化</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-news.html">新闻配置</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-signals.html">信号配置</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-forward-broadcast.html">广播转发</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-forward-social.html">代理社媒转发</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-bots.html">机器人配置</a>
+        <a class="rounded-lg bg-[#edf7f2] text-ops-accent px-3 py-3 text-sm font-bold" href="admin-groups.html">群数据</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-settings.html">系统设置</a>
+      </nav>
+    </aside>
+    <main class="p-8">
+      <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div>
+          <h1 class="text-3xl font-black">群数据</h1>
+          <p class="mt-3 text-ops-muted">查看已接入群组、用户人数、历史消息可见量和近 7 天活跃用户。</p>
+        </div>
+        <button id="refreshBtn" class="rounded-lg border border-ops-accent px-5 py-3 text-sm font-black text-ops-accent">刷新数据</button>
+      </div>
+
+      <section class="mt-6 grid gap-4 md:grid-cols-3">
+        <div class="rounded-lg border border-ops-line bg-white p-5 shadow-ops">
+          <div class="text-sm font-bold text-ops-muted">群用户人数</div>
+          <div id="totalMembers" class="mt-2 text-3xl font-black">-</div>
+        </div>
+        <div class="rounded-lg border border-ops-line bg-white p-5 shadow-ops">
+          <div class="text-sm font-bold text-ops-muted">历史信息发表数量</div>
+          <div id="totalMessages" class="mt-2 text-3xl font-black">-</div>
+        </div>
+        <div class="rounded-lg border border-ops-line bg-white p-5 shadow-ops">
+          <div class="text-sm font-bold text-ops-muted">过去 7 天活跃用户</div>
+          <div id="totalActiveUsers" class="mt-2 text-3xl font-black">-</div>
+        </div>
+      </section>
+
+      <section class="mt-6 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops">
+        <div class="grid grid-cols-[1.4fr_1fr_.8fr_.9fr_.9fr_.8fr] gap-4 bg-[#f9fbfa] px-5 py-3 text-xs font-black uppercase text-ops-muted">
+          <span>群组</span><span>群 ID</span><span>用户人数</span><span>历史消息</span><span>7 天活跃</span><span>状态</span>
+        </div>
+        <div id="groupRows" class="text-sm">
+          <div class="border-t border-ops-line px-5 py-8 font-bold text-ops-muted">正在读取 Telegram 群数据...</div>
+        </div>
+      </section>
+      <p id="sourceNote" class="mt-3 text-xs font-bold text-ops-muted"></p>
+    </main>
+  </div>
+
+  <script>
+    const nf = new Intl.NumberFormat("zh-CN");
+    const format = (value) => value === null || value === undefined ? "-" : nf.format(value);
+
+    async function loadGroupMetrics() {
+      const btn = document.getElementById("refreshBtn");
+      const rows = document.getElementById("groupRows");
+      btn.disabled = true;
+      btn.classList.add("opacity-60", "cursor-not-allowed");
+      rows.innerHTML = '<div class="border-t border-ops-line px-5 py-8 font-bold text-ops-muted">正在读取 Telegram 群数据...</div>';
+
+      try {
+        const response = await fetch("/api/group-metrics");
+        const data = await response.json();
+        if (!data.ok) throw new Error(data.error || "读取失败");
+
+        const totals = data.groups.reduce((sum, group) => ({
+          members: sum.members + Number(group.memberCount || 0),
+          messages: sum.messages + Number(group.visibleMessageCount || 0),
+          activeUsers: sum.activeUsers + Number(group.sevenDayActiveUsers || 0)
+        }), { members: 0, messages: 0, activeUsers: 0 });
+
+        document.getElementById("totalMembers").textContent = format(totals.members);
+        document.getElementById("totalMessages").textContent = format(totals.messages);
+        document.getElementById("totalActiveUsers").textContent = format(totals.activeUsers);
+        document.getElementById("sourceNote").textContent = data.sourceNote || "";
+
+        rows.innerHTML = data.groups.map((group) => `
+          <div class="grid grid-cols-[1.4fr_1fr_.8fr_.9fr_.9fr_.8fr] gap-4 border-t border-ops-line px-5 py-4">
+            <b>${escapeHtml(group.title)}</b>
+            <span>${group.id}</span>
+            <span>${format(group.memberCount)}</span>
+            <span>${format(group.visibleMessageCount)}</span>
+            <span>${format(group.sevenDayActiveUsers)}</span>
+            <span class="font-black ${group.status === "需检查" ? "text-[#c98118]" : "text-ops-accent"}">${group.status}</span>
+          </div>
+        `).join("") || '<div class="border-t border-ops-line px-5 py-8 font-bold text-ops-muted">暂无可读取群数据</div>';
+      } catch (error) {
+        rows.innerHTML = `<div class="border-t border-ops-line px-5 py-8 font-bold text-[#c98118]">读取失败：${escapeHtml(error.message)}</div>`;
+      } finally {
+        btn.disabled = false;
+        btn.classList.remove("opacity-60", "cursor-not-allowed");
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+    }
+
+    document.getElementById("refreshBtn").addEventListener("click", loadGroupMetrics);
+    loadGroupMetrics();
+  </script>
+</body>
+</html>

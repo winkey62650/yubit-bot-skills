@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>群配置</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config={theme:{extend:{colors:{ops:{line:"#dbe4df",soft:"#edf4f0",accent:"#15956b",muted:"#63716b",ink:"#101815"}},boxShadow:{ops:"0 16px 40px rgba(28,49,40,.07)"}}}}</script>
+</head>
+<body class="bg-[#fbfcfb] text-ops-ink">
+  <div class="min-h-screen lg:grid lg:grid-cols-[258px_minmax(0,1fr)]">
+    <aside class="border-r border-ops-line bg-white p-6 lg:sticky lg:top-0 lg:h-screen lg:overflow-y-auto">
+      <a class="mb-10 flex items-center gap-3" href="admin-group-config.html"><span class="grid h-9 w-9 place-items-center rounded-lg bg-ops-accent text-lg font-black text-white">Y</span><strong class="text-2xl">YUBIT</strong></a>
+      <nav class="grid gap-2">
+        <a class="rounded-lg bg-[#edf7f2] text-ops-accent px-3 py-3 text-sm font-bold" href="admin-group-config.html">群配置</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-new-group.html">新群初始化</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-news.html">新闻配置</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-signals.html">信号配置</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-forward-broadcast.html">广播转发</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-forward-social.html">代理社媒转发</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-bots.html">机器人配置</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-groups.html">群数据</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-settings.html">系统设置</a>
+      </nav>
+    </aside>
+    <main class="p-8">
+      <h1 class="text-3xl font-black">群配置</h1>
+      <p class="mt-3 text-ops-muted">配置当前群、Topic 绑定、代理 Topic 和内容分发规则。</p>
+
+      <section class="mt-6 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops">
+        <div class="flex flex-col gap-4 border-b border-ops-line p-5 xl:flex-row xl:items-center xl:justify-between">
+          <div><h2 class="text-xl font-black">已配置群</h2></div>
+          <button id="configDiscoverChatsBtn" type="button" class="min-h-10 rounded-lg border border-ops-accent px-5 text-sm font-black text-ops-accent">配置群刷新</button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[760px] text-sm">
+            <thead class="bg-[#f9fbfa] text-left text-xs uppercase text-ops-muted">
+              <tr><th class="px-5 py-3">群名称</th><th class="px-5 py-3">群 ID</th><th class="px-5 py-3">类型</th><th class="px-5 py-3">Topic</th></tr>
+            </thead>
+            <tbody id="knownGroupRows"><tr><td colspan="4" class="px-5 py-6 font-bold text-ops-muted">暂无已配置群。</td></tr></tbody>
+          </table>
+        </div>
+        <div id="configDiscoverStatus" class="border-t border-ops-line px-5 py-3 text-sm font-bold text-ops-muted">等待刷新</div>
+      </section>
+
+      <section class="mt-6 grid gap-0 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops md:grid-cols-4">
+        <div class="border-b border-ops-line p-5 last:border-b-0 md:border-b-0 md:border-r"><div class="text-sm font-bold text-ops-muted">已配置群</div><div id="knownGroupCount" class="mt-1 text-2xl font-black">0</div><div class="mt-1 text-xs text-ops-muted">本地配置</div></div>
+        <div class="border-b border-ops-line p-5 last:border-b-0 md:border-b-0 md:border-r"><div class="text-sm font-bold text-ops-muted">群类型</div><div class="mt-1 text-2xl font-black">Forum</div><div class="mt-1 text-xs text-ops-muted">支持 Topic 分区</div></div>
+        <div class="border-b border-ops-line p-5 last:border-b-0 md:border-b-0 md:border-r"><div class="text-sm font-bold text-ops-muted">Topic 数量</div><div class="mt-1 text-2xl font-black">7</div><div class="mt-1 text-xs text-ops-muted">含代理专属 Topic</div></div>
+        <div class="p-5"><div class="text-sm font-bold text-ops-muted">配置状态</div><div class="mt-1 text-2xl font-black">已启用</div><div class="mt-1 text-xs text-ops-muted">新闻 / 信号 / 转发可绑定</div></div>
+      </section>
+
+      <section class="mt-6 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops">
+        <div class="flex flex-col gap-3 border-b border-ops-line px-6 py-5 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <h2 class="text-xl font-black">新增绑定规则</h2>
+            <p class="mt-1 text-sm text-ops-muted">先选择投放位置，再选择配置包；机器人和频率会按配置自动带出。</p>
+          </div>
+          <button id="saveBindingBtn" class="min-h-10 rounded-lg bg-ops-accent px-5 text-sm font-black text-white">保存绑定规则</button>
+        </div>
+        <div class="grid gap-0 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_320px]">
+          <div class="border-b border-ops-line p-6 xl:border-b-0 xl:border-r">
+            <div class="mb-4 flex items-center justify-between gap-3">
+              <h3 class="text-sm font-black text-ops-ink">目标位置</h3>
+              <span id="bindingTopicCountPill" class="rounded-full bg-[#edf7f2] px-2 py-1 text-xs font-black text-ops-accent">Topic</span>
+            </div>
+            <div class="grid gap-4">
+              <label class="grid gap-2 text-sm font-bold text-ops-muted">群<select id="bindingGroupSelect" class="min-h-11 rounded-lg border border-ops-line bg-white px-3 text-ops-ink outline-none focus:border-ops-accent focus:ring-4 focus:ring-ops-accent/10"></select></label>
+              <label class="grid gap-2 text-sm font-bold text-ops-muted">Topic<select id="bindingTopicSelect" class="min-h-11 rounded-lg border border-ops-line bg-white px-3 text-ops-ink outline-none focus:border-ops-accent focus:ring-4 focus:ring-ops-accent/10"></select></label>
+            </div>
+            <div id="bindingTopicHint" class="mt-4 rounded-lg bg-[#fbfcfb] px-4 py-3 text-sm font-bold text-ops-muted"></div>
+          </div>
+          <div class="border-b border-ops-line p-6 xl:border-b-0 xl:border-r">
+            <div class="mb-4 flex items-center justify-between gap-3">
+              <h3 class="text-sm font-black text-ops-ink">绑定配置</h3>
+              <span id="bindingConfigCountPill" class="rounded-full bg-[#f5f7f6] px-2 py-1 text-xs font-black text-ops-muted">配置池</span>
+            </div>
+            <div class="grid gap-4">
+              <label class="grid gap-2 text-sm font-bold text-ops-muted">类型<select id="bindingTypeSelect" class="min-h-11 rounded-lg border border-ops-line bg-white px-3 text-ops-ink outline-none focus:border-ops-accent focus:ring-4 focus:ring-ops-accent/10"></select></label>
+              <label class="grid gap-2 text-sm font-bold text-ops-muted">配置名称<select id="bindingConfigSelect" class="min-h-11 rounded-lg border border-ops-line bg-white px-3 text-ops-ink outline-none focus:border-ops-accent focus:ring-4 focus:ring-ops-accent/10"></select></label>
+            </div>
+          </div>
+          <div class="p-6">
+            <div class="mb-4 flex items-center justify-between gap-3">
+              <h3 class="text-sm font-black text-ops-ink">执行信息</h3>
+              <span class="rounded-full bg-[#e6f7ef] px-2 py-1 text-xs font-black text-ops-accent">自动</span>
+            </div>
+            <div class="grid gap-3">
+              <label class="grid gap-2 text-sm font-bold text-ops-muted">机器人<select id="bindingBotSelect" class="min-h-11 rounded-lg border border-ops-line bg-white px-3 text-ops-ink outline-none focus:border-ops-accent focus:ring-4 focus:ring-ops-accent/10"></select></label>
+              <label class="grid gap-2 text-sm font-bold text-ops-muted">频率<input id="bindingFrequencyInput" class="min-h-11 rounded-lg border border-ops-line bg-[#f9fbfa] px-3 text-ops-ink" readonly/></label>
+            </div>
+            <div id="bindingBotHint" class="mt-3 rounded-lg bg-[#fbfcfb] px-4 py-3 text-xs font-bold text-ops-muted"></div>
+            <div id="bindingSummary" class="mt-4 rounded-lg border border-ops-line bg-white px-4 py-3 text-sm leading-6 text-ops-muted"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="mt-5 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops">
+        <div class="border-b border-ops-line p-5">
+          <div class="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div><h2 class="text-xl font-black">群绑定</h2></div>
+            <select id="groupBindingFilter" class="min-h-10 max-w-xs rounded-lg border border-ops-line px-3"><option>全部群</option></select>
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[980px] text-sm">
+            <thead class="bg-[#f9fbfa] text-left text-xs uppercase text-ops-muted">
+              <tr><th class="px-5 py-3">群</th><th class="px-5 py-3">TOPIC</th><th class="px-5 py-3">绑定配置</th><th class="px-5 py-3">机器人</th><th class="px-5 py-3">操作</th></tr>
+            </thead>
+            <tbody id="bindingRows">
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script>
+    const defaultGroups = [
+      { title: "YUBIT test", chatId: "", canUseTopics: true, topics: [{ name: "Market Events" }, { name: "Market Analysis - Crypto/Stocks/TradFi" }, { name: "YUBIT Updates" }, { name: "Ricky's Trading Zone" }] },
+      { title: "YUBIT Winkey Main", chatId: "", canUseTopics: true, topics: [{ name: "YUBIT Updates" }] }
+    ];
+    const configPools = {
+      "新闻配置": [
+        { name: "Crypto News Default", bot: "Trader1", frequency: "每 15 分钟" },
+        { name: "Cointelegraph News", bot: "Trader1", frequency: "实时" },
+        { name: "CoinDesk News", bot: "Trader1", frequency: "每 30 分钟" },
+        { name: "Official Updates", bot: "YUBITadmin", frequency: "实时" }
+      ],
+      "信号配置": [
+        { name: "Futures SMA", bot: "Trader1", frequency: "每 15 分钟" },
+        { name: "TradFi SMA", bot: "Trader1", frequency: "每 30 分钟" }
+      ],
+      "广播": [
+        { name: "Demo Topic 全部消息广播", bot: "YUBITadmin", frequency: "实时" }
+      ],
+      "代理社媒": [
+        { name: "Ricky 社媒转发包", bot: "YUBITadmin", frequency: "每 5 分钟" },
+        { name: "Jack 社媒转发包", bot: "Jack", frequency: "每 5 分钟" },
+        { name: "Tony 社媒转发包", bot: "Tony", frequency: "每 5 分钟" }
+      ]
+    };
+    let knownGroups = [];
+    let dynamicNewsConfigs = null;
+    let dynamicSocialPackages = null;
+    let botGroups = [];
+    let botMembershipLoaded = false;
+    let bindingRows = [
+      { id: "news-market-events", group: "YUBIT test", topic: "Market Events", type: "新闻配置", config: "Crypto News Default", bot: "Trader1", status: "已启用" },
+      { id: "signal-market-analysis", group: "YUBIT test", topic: "Market Analysis - Crypto/Stocks/TradFi", type: "信号配置", config: "Futures SMA", bot: "Trader1", status: "已启用" },
+      { id: "broadcast-market-events", group: "YUBIT test", topic: "Market Events", type: "广播", config: "Demo 群全部消息广播", bot: "YUBITadmin", frequency: "实时", status: "已启用" },
+      { id: "ricky-social", group: "YUBIT test", topic: "Ricky's Trading Zone", type: "代理社媒", config: "Ricky 社媒转发包", bot: "YUBITadmin", frequency: "每 5 分钟", status: "已启用" },
+      { id: "official-updates", group: "YUBIT Winkey Main", topic: "YUBIT Updates", type: "新闻配置", config: "Official Updates", bot: "YUBITadmin", status: "待检查" }
+    ];
+
+    function renderBindings() {
+      const rows = document.getElementById("bindingRows");
+      const groupFilter = document.getElementById("groupBindingFilter").value;
+      const knownGroupNames = new Set(currentGroups().map((group) => group.title));
+      const activeRows = bindingRows.filter((row) => knownGroupNames.has(row.group));
+      const visibleRows = groupFilter === "全部群" ? activeRows : activeRows.filter((row) => row.group === groupFilter);
+      rows.innerHTML = visibleRows.map((row) => `
+        <tr class="border-t border-ops-line align-top" data-id="${row.id}">
+          <td class="px-5 py-4 font-bold">${row.group}</td>
+          <td class="px-5 py-4">${escapeHtml(row.topic)}${row.topicId ? `<div class="mt-1 font-mono text-xs text-ops-muted">thread ${row.topicId}</div>` : ""}</td>
+          <td class="px-5 py-4"><strong>${escapeHtml(row.config)}</strong><div class="mt-1 text-xs text-ops-muted">${escapeHtml(row.type || "")}${row.frequency ? ` · ${escapeHtml(row.frequency)}` : ""}</div></td>
+          <td class="px-5 py-4">${escapeHtml(row.bot)}</td>
+          <td class="px-5 py-4"><button data-action="unlink" class="rounded-lg border border-[#d85f5f] px-3 py-2 text-xs font-black text-[#b94141]">解绑</button></td>
+        </tr>
+      `).join("");
+      rows.querySelectorAll("[data-action='unlink']").forEach((button) => {
+        button.addEventListener("click", (event) => {
+          const tr = event.target.closest("tr");
+          bindingRows = bindingRows.filter((row) => row.id !== tr.dataset.id);
+          renderAllBindingViews();
+          saveBindings();
+        });
+      });
+    }
+
+    function renderAllBindingViews() {
+      renderBindings();
+      renderBindingFormOptions();
+      renderGroupFilter();
+    }
+
+    async function saveBindings() {
+      const status = document.getElementById("configDiscoverStatus");
+      try {
+        const response = await fetch("/api/group-config", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ bindings: bindingRows })
+        });
+        const data = await response.json();
+        status.textContent = data.ok ? "绑定规则已更新" : data.error || "绑定规则保存失败";
+      } catch (error) {
+        status.textContent = `绑定规则保存失败：${error.message}`;
+      }
+    }
+
+    function renderKnownGroups(groups) {
+      knownGroups = groups.length ? groups : defaultGroups;
+      const rows = document.getElementById("knownGroupRows");
+      document.getElementById("knownGroupCount").textContent = String(groups.length);
+      const topicCount = knownGroups.reduce((sum, group) => sum + (group.topics || []).length, 0);
+      document.querySelector("#knownGroupCount").closest("section").querySelectorAll(".text-2xl")[2].textContent = String(topicCount);
+      rows.innerHTML = groups.length ? groups.map((group) => `
+        <tr class="border-t border-ops-line">
+          <td class="px-5 py-4 font-bold">${escapeHtml(group.title)}</td>
+          <td class="px-5 py-4 font-mono text-xs">${escapeHtml(group.chatId)}</td>
+          <td class="px-5 py-4">${escapeHtml(group.type)}</td>
+          <td class="px-5 py-4">${group.canUseTopics ? `${(group.topics || []).length || 0} 个 Topic` : "不支持 Topic"}</td>
+        </tr>
+      `).join("") : '<tr><td colspan="4" class="px-5 py-6 font-bold text-ops-muted">暂无已配置群。</td></tr>';
+      renderBindingFormOptions();
+      renderGroupFilter();
+    }
+
+    function escapeHtml(value) {
+      return String(value || "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
+    }
+
+    function currentGroups() {
+      return knownGroups.length ? knownGroups : defaultGroups;
+    }
+
+    function renderBindingFormOptions() {
+      const groupSelect = document.getElementById("bindingGroupSelect");
+      const groups = currentGroups();
+      const previousGroup = groupSelect.value;
+      groupSelect.innerHTML = groups.map((group) => `<option value="${escapeHtml(group.title)}">${escapeHtml(group.title)}</option>`).join("");
+      if (groups.some((group) => group.title === previousGroup)) groupSelect.value = previousGroup;
+      renderConfigTypes();
+      renderTopicOptions();
+    }
+
+    function renderConfigTypes() {
+      const typeSelect = document.getElementById("bindingTypeSelect");
+      const previousType = typeSelect.value;
+      const types = Object.keys(configPools);
+      typeSelect.innerHTML = types.map((type) => `<option>${escapeHtml(type)}</option>`).join("");
+      if (types.includes(previousType)) typeSelect.value = previousType;
+      renderConfigNames();
+    }
+
+    function renderConfigNames() {
+      const type = document.getElementById("bindingTypeSelect").value || Object.keys(configPools)[0];
+      const configSelect = document.getElementById("bindingConfigSelect");
+      const previousConfig = configSelect.value;
+      const configs = configsForType(type);
+      configSelect.innerHTML = configs.map((config) => `<option>${escapeHtml(config.name)}</option>`).join("");
+      if (configs.some((config) => config.name === previousConfig)) configSelect.value = previousConfig;
+      document.getElementById("bindingConfigCountPill").textContent = `${configs.length} 个配置`;
+      renderConfigMeta();
+    }
+
+    function selectedConfigMeta() {
+      const type = document.getElementById("bindingTypeSelect").value;
+      const name = document.getElementById("bindingConfigSelect").value;
+      const configs = configsForType(type);
+      return configs[0] && configs.find((config) => config.name === name) || configs[0] || { bot: "", frequency: "" };
+    }
+
+    function configsForType(type) {
+      if (type === "新闻配置") return readNewsConfigPool();
+      if (type === "广播") return readBroadcastRuleConfigs();
+      if (type === "代理社媒") return readSocialPackageConfigs();
+      return configPools[type] || [];
+    }
+
+    function readNewsConfigPool() {
+      return dynamicNewsConfigs?.length ? dynamicNewsConfigs : configPools["新闻配置"];
+    }
+
+    async function loadNewsConfigPool() {
+      try {
+        const response = await fetch("/api/news-configs");
+        const data = await response.json();
+        dynamicNewsConfigs = (data.configs || []).map((config) => ({
+          name: config.name,
+          bot: config.bot || "Trader1",
+          frequency: config.frequency || "每 15 分钟"
+        })).filter((config) => config.name);
+        renderConfigNames();
+      } catch {}
+    }
+
+    function readSocialPackageConfigs() {
+      return dynamicSocialPackages?.length ? dynamicSocialPackages : configPools["代理社媒"];
+    }
+
+    async function loadSocialPackagePool() {
+      try {
+        const response = await fetch("/api/social-packages");
+        const data = await response.json();
+        dynamicSocialPackages = (data.packages || []).map((pkg) => ({
+          name: pkg.name,
+          bot: pkg.bot || "YUBITadmin",
+          frequency: pkg.frequency || "每 5 分钟"
+        })).filter((pkg) => pkg.name);
+        renderConfigNames();
+      } catch {}
+    }
+
+    function readBroadcastRuleConfigs() {
+      try {
+        const rules = JSON.parse(localStorage.getItem("yubitBroadcastRules") || "[]");
+        const configs = (Array.isArray(rules) ? rules : []).map((rule) => ({ name: rule.name, bot: rule.bot || "YUBITadmin", frequency: rule.frequency || "实时" })).filter((rule) => rule.name);
+        return configs.length ? configs : configPools["广播"];
+      } catch {
+        return configPools["广播"];
+      }
+    }
+
+    function renderConfigMeta() {
+      const meta = selectedConfigMeta();
+      const botSelect = document.getElementById("bindingBotSelect");
+      const hint = document.getElementById("bindingBotHint");
+      const availableBots = botsForSelectedGroup();
+      const preferredBot = availableBots.includes(meta.bot) ? meta.bot : availableBots[0] || "";
+      botSelect.innerHTML = availableBots.length
+        ? availableBots.map((bot) => `<option>${escapeHtml(bot)}</option>`).join("")
+        : '<option value="">当前群未检测到机器人</option>';
+      botSelect.value = preferredBot;
+      botSelect.disabled = !availableBots.length;
+      if (!botMembershipLoaded) {
+        hint.textContent = "正在检查当前群里的机器人...";
+      } else if (!availableBots.length) {
+        hint.textContent = "当前群没有检测到可用机器人，请先把发送机器人加入这个群。";
+      } else if (meta.bot && meta.bot !== preferredBot) {
+        hint.textContent = `${meta.bot} 不在当前群，已自动改用 ${preferredBot}。`;
+      } else {
+        hint.textContent = `${preferredBot || "机器人"} 已确认在当前群。`;
+      }
+      document.getElementById("bindingFrequencyInput").value = meta.frequency || "";
+      renderBindingSummary();
+    }
+
+    function botsForSelectedGroup() {
+      const groupTitle = document.getElementById("bindingGroupSelect")?.value;
+      const group = currentGroups().find((item) => item.title === groupTitle);
+      const chatId = String(group?.chatId || "");
+      return botGroups
+        .filter((bot) => (bot.groups || []).some((memberGroup) => (
+          String(memberGroup.chatId || memberGroup.id || "") === chatId ||
+          memberGroup.title === groupTitle
+        )))
+        .map((bot) => bot.name);
+    }
+
+    function renderTopicOptions() {
+      const groupSelect = document.getElementById("bindingGroupSelect");
+      const topicSelect = document.getElementById("bindingTopicSelect");
+      const hint = document.getElementById("bindingTopicHint");
+      const group = currentGroups().find((item) => item.title === groupSelect.value) || currentGroups()[0];
+      const topics = group?.canUseTopics === false ? [] : (group?.topics || []);
+      topicSelect.innerHTML = topics.length
+        ? topics.map((topic) => `<option value="${escapeHtml(topic.name)}" data-thread-id="${escapeHtml(topic.threadId || "")}">${escapeHtml(topic.name)}</option>`).join("")
+        : '<option value="">这个群还没有发现 Topic</option>';
+      topicSelect.disabled = !topics.length;
+      document.getElementById("bindingTopicCountPill").textContent = topics.length ? `${topics.length} 个 Topic` : "无 Topic";
+      hint.textContent = topics.length
+        ? `当前群已加载 ${topics.length} 个 Topic`
+        : "当前群还没有 Topic 数据。先点“配置群刷新”，或者让机器人在对应 Topic 里收到一条消息后再刷新。";
+      renderBindingSummary();
+    }
+
+    function renderBindingSummary() {
+      const summary = document.getElementById("bindingSummary");
+      if (!summary) return;
+      const group = document.getElementById("bindingGroupSelect")?.value || "-";
+      const topic = document.getElementById("bindingTopicSelect")?.value || "-";
+      const type = document.getElementById("bindingTypeSelect")?.value || "-";
+      const config = document.getElementById("bindingConfigSelect")?.value || "-";
+      const meta = selectedConfigMeta();
+      const bot = document.getElementById("bindingBotSelect")?.value || "-";
+      summary.innerHTML = `
+        <div class="font-black text-ops-ink">${escapeHtml(config)}</div>
+        <div class="mt-1">${escapeHtml(type)} · ${escapeHtml(bot)} · ${escapeHtml(meta.frequency || "-")}</div>
+        <div class="mt-2 break-words">${escapeHtml(group)} / ${escapeHtml(topic)}</div>
+      `;
+    }
+
+    function renderGroupFilter() {
+      const filter = document.getElementById("groupBindingFilter");
+      const previous = filter.value;
+      const names = [...new Set(["全部群", ...currentGroups().map((group) => group.title)])];
+      filter.innerHTML = names.map((name) => `<option>${escapeHtml(name)}</option>`).join("");
+      if (names.includes(previous)) filter.value = previous;
+    }
+
+    async function addBinding() {
+      const groupSelect = document.getElementById("bindingGroupSelect");
+      const topicSelect = document.getElementById("bindingTopicSelect");
+      const status = document.getElementById("configDiscoverStatus");
+      if (!groupSelect.value || !topicSelect.value) {
+        status.textContent = "请先选择群和 Topic";
+        return;
+      }
+      const bot = document.getElementById("bindingBotSelect").value;
+      if (!bot) {
+        status.textContent = "当前群没有可用机器人，请先把发送机器人加入群后再绑定";
+        return;
+      }
+      const selectedTopic = topicSelect.selectedOptions[0];
+      const meta = selectedConfigMeta();
+      const next = {
+        id: `binding-${Date.now()}`,
+        group: groupSelect.value,
+        topic: topicSelect.value,
+        topicId: selectedTopic?.dataset?.threadId ? Number(selectedTopic.dataset.threadId) : null,
+        type: document.getElementById("bindingTypeSelect").value,
+        config: document.getElementById("bindingConfigSelect").value,
+        bot,
+        frequency: meta.frequency,
+        status: "已启用"
+      };
+      bindingRows = [next, ...bindingRows.filter((row) => !(row.group === next.group && row.topic === next.topic && row.config === next.config))];
+      renderAllBindingViews();
+      await saveBindings();
+    }
+
+    async function loadLocalGroups() {
+      const status = document.getElementById("configDiscoverStatus");
+      try {
+        const response = await fetch("/api/group-config");
+        const data = await response.json();
+        renderKnownGroups(data.groups || []);
+        if (Array.isArray(data.bindings)) {
+          bindingRows = data.bindings;
+          renderAllBindingViews();
+        }
+        if ((data.groups || []).length) status.textContent = `已读取本地群：${data.groups.length} 个`;
+      } catch (error) {
+        status.textContent = `读取本地群失败：${error.message}`;
+      }
+    }
+
+    async function loadBotGroups() {
+      try {
+        const response = await fetch("/api/bot-groups");
+        const data = await response.json();
+        botGroups = Array.isArray(data.bots) ? data.bots : [];
+        botMembershipLoaded = true;
+        renderConfigMeta();
+      } catch {
+        botGroups = [];
+        botMembershipLoaded = true;
+        renderConfigMeta();
+      }
+    }
+
+    document.getElementById("configDiscoverChatsBtn")?.addEventListener("click", async () => {
+      const button = document.getElementById("configDiscoverChatsBtn");
+      const status = document.getElementById("configDiscoverStatus");
+      button.textContent = "刷新中...";
+      status.textContent = "正在读取机器人最近加入或收到消息的群...";
+      try {
+        const response = await fetch("/api/chats");
+        const data = await response.json();
+        const chats = (data.chats || []).filter((chat) => chat.canUseTopics);
+        const saveResponse = await fetch("/api/group-config", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ groups: chats })
+        });
+        const saved = await saveResponse.json();
+        renderKnownGroups(saved.groups || []);
+        status.textContent = chats.length ? `已刷新 ${chats.length} 个可配置群` : "未发现可配置群";
+        button.textContent = "配置群刷新";
+      } catch (error) {
+        status.textContent = `刷新失败：${error.message}`;
+        button.textContent = "配置群刷新";
+      }
+    });
+    document.getElementById("bindingGroupSelect").addEventListener("change", () => {
+      renderTopicOptions();
+      renderConfigMeta();
+    });
+    document.getElementById("bindingTypeSelect").addEventListener("change", renderConfigNames);
+    document.getElementById("bindingConfigSelect").addEventListener("change", renderConfigMeta);
+    document.getElementById("bindingBotSelect").addEventListener("change", renderBindingSummary);
+    document.getElementById("saveBindingBtn").addEventListener("click", addBinding);
+    document.getElementById("groupBindingFilter").addEventListener("change", renderBindings);
+    loadLocalGroups();
+    loadNewsConfigPool();
+    loadSocialPackagePool();
+    loadBotGroups();
+    renderAllBindingViews();
+  </script>
+</body>
+</html>

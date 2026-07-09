@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>系统设置</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config={theme:{extend:{colors:{ops:{line:"#dbe4df",soft:"#edf4f0",accent:"#15956b",muted:"#63716b",ink:"#101815"}},boxShadow:{ops:"0 16px 40px rgba(28,49,40,.07)"}}}}</script>
+</head>
+<body class="bg-[#fbfcfb] text-ops-ink">
+  <div class="min-h-screen lg:grid lg:grid-cols-[258px_minmax(0,1fr)]">
+    <aside class="border-r border-ops-line bg-white p-6 lg:sticky lg:top-0 lg:h-screen lg:overflow-y-auto">
+      <a class="mb-10 flex items-center gap-3" href="admin-group-config.html"><span class="grid h-9 w-9 place-items-center rounded-lg bg-ops-accent text-lg font-black text-white">Y</span><strong class="text-2xl">YUBIT</strong></a>
+      <nav class="grid gap-2">
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-group-config.html">群配置</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-new-group.html">新群初始化</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-news.html">新闻配置</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-signals.html">信号配置</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-forward-broadcast.html">广播转发</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-forward-social.html">代理社媒转发</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-bots.html">机器人配置</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-groups.html">群数据</a>
+        <a class="rounded-lg bg-[#edf7f2] text-ops-accent px-3 py-3 text-sm font-bold" href="admin-settings.html">系统设置</a>
+      </nav>
+    </aside>
+    <main class="p-8">
+      <h1 class="text-3xl font-black">系统设置</h1>
+      <p class="mt-3 text-ops-muted">配置程序健康检查、定时监控和 Lark 告警推送。</p>
+
+      <section class="mt-6 grid gap-0 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops md:grid-cols-4">
+        <div class="border-b border-ops-line p-5 last:border-b-0 md:border-b-0 md:border-r"><div class="text-sm font-bold text-ops-muted">检查频率</div><div class="mt-1 text-2xl font-black">每 5 分钟</div><div class="mt-1 text-xs text-ops-muted">可按业务低频调整</div></div>
+        <div class="border-b border-ops-line p-5 last:border-b-0 md:border-b-0 md:border-r"><div class="text-sm font-bold text-ops-muted">监控程序</div><div class="mt-1 text-2xl font-black">5</div><div class="mt-1 text-xs text-ops-muted">控制台 / 新闻 / 信号 / 建群 / Lark</div></div>
+        <div class="border-b border-ops-line p-5 last:border-b-0 md:border-b-0 md:border-r"><div class="text-sm font-bold text-ops-muted">告警渠道</div><div class="mt-1 text-2xl font-black">Lark</div><div class="mt-1 text-xs text-ops-muted">Webhook 推送</div></div>
+        <div class="p-5"><div class="text-sm font-bold text-ops-muted">当前状态</div><div class="mt-1 text-2xl font-black">待配置</div><div class="mt-1 text-xs text-ops-muted">填入 Webhook 后启用</div></div>
+      </section>
+
+      <section class="mt-6 rounded-lg border border-ops-line bg-white p-6 shadow-ops">
+        <h2 class="text-xl font-black">Lark 监控配置</h2>
+        <div class="mt-5 grid gap-4 md:grid-cols-3">
+          <label class="grid gap-2 text-sm font-bold text-ops-muted">Lark Webhook<input id="larkWebhook" class="min-h-10 rounded-lg border border-ops-line px-3" placeholder="https://open.larksuite.com/open-apis/bot/v2/hook/..."/></label>
+          <label class="grid gap-2 text-sm font-bold text-ops-muted">检查频率<select class="min-h-10 rounded-lg border border-ops-line px-3"><option>每 5 分钟</option><option>每 15 分钟</option><option>每 30 分钟</option><option>每 1 小时</option></select></label>
+          <label class="grid gap-2 text-sm font-bold text-ops-muted">告警模式<select class="min-h-10 rounded-lg border border-ops-line px-3"><option>异常才推送</option><option>每次检查都推送</option><option>每日汇总</option></select></label>
+          <label class="grid gap-2 text-sm font-bold text-ops-muted">连续失败阈值<select class="min-h-10 rounded-lg border border-ops-line px-3"><option>1 次失败立即告警</option><option>2 次连续失败告警</option><option>3 次连续失败告警</option></select></label>
+          <label class="grid gap-2 text-sm font-bold text-ops-muted">监控环境<select class="min-h-10 rounded-lg border border-ops-line px-3"><option>本地控制台</option><option>生产环境</option><option>全部环境</option></select></label>
+          <label class="grid gap-2 text-sm font-bold text-ops-muted">状态<select class="min-h-10 rounded-lg border border-ops-line px-3"><option>启用</option><option>暂停</option></select></label>
+        </div>
+        <div class="mt-5 flex flex-wrap gap-3">
+          <button class="rounded-lg bg-ops-accent px-5 py-3 text-sm font-black text-white">保存设置</button>
+          <button id="testMonitorBtn" class="rounded-lg border border-ops-accent px-5 py-3 text-sm font-black text-ops-accent">测试发送监控</button>
+        </div>
+      </section>
+
+      <section class="mt-5 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops">
+        <div class="border-b border-ops-line p-5"><h2 class="text-xl font-black">程序健康检查</h2><p class="mt-1 text-sm text-ops-muted">定时检查脚本是否可运行、控制台是否可访问，并把结果发到 Lark。</p></div>
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[900px] text-sm">
+            <thead class="bg-[#f9fbfa] text-left text-xs uppercase text-ops-muted"><tr><th class="px-5 py-3">项目</th><th class="px-5 py-3">检查对象</th><th class="px-5 py-3">检查方式</th><th class="px-5 py-3">状态</th></tr></thead>
+            <tbody>
+              <tr class="border-t border-ops-line"><td class="px-5 py-4">本地控制台</td><td class="px-5 py-4">server.mjs</td><td class="px-5 py-4">http://localhost:4173/admin-preview.html</td><td class="px-5 py-4"><span class="rounded-full bg-[#e6f7ef] px-2 py-1 text-xs font-black text-ops-accent">正常</span></td></tr>
+              <tr class="border-t border-ops-line"><td class="px-5 py-4">新闻脚本</td><td class="px-5 py-4">news-poster.mjs</td><td class="px-5 py-4">npm run news</td><td class="px-5 py-4"><span class="rounded-full bg-[#e6f7ef] px-2 py-1 text-xs font-black text-ops-accent">正常</span></td></tr>
+              <tr class="border-t border-ops-line"><td class="px-5 py-4">信号脚本</td><td class="px-5 py-4">run-15m-cycle.mjs</td><td class="px-5 py-4">npm run cycle:15m</td><td class="px-5 py-4"><span class="rounded-full bg-[#e6f7ef] px-2 py-1 text-xs font-black text-ops-accent">正常</span></td></tr>
+              <tr class="border-t border-ops-line"><td class="px-5 py-4">新群初始化</td><td class="px-5 py-4">scripts/new-group-setup.mjs</td><td class="px-5 py-4">npm run manage:new-group</td><td class="px-5 py-4"><span class="rounded-full bg-[#e6f7ef] px-2 py-1 text-xs font-black text-ops-accent">正常</span></td></tr>
+              <tr class="border-t border-ops-line"><td class="px-5 py-4">Lark 推送</td><td class="px-5 py-4">monitor-health-to-lark.mjs</td><td class="px-5 py-4">npm run monitor:health</td><td class="px-5 py-4"><span class="rounded-full bg-[#fff4df] px-2 py-1 text-xs font-black text-[#c98118]">待配置</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="mt-5 rounded-lg bg-[#101815] p-5 text-sm text-[#d8f9e7] shadow-ops">
+        <div class="font-black">执行脚本</div>
+        <pre id="monitorOutput" class="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words">npm run monitor:health</pre>
+      </section>
+    </main>
+  </div>
+  <script>
+    document.getElementById("testMonitorBtn").addEventListener("click", async () => {
+      const output = document.getElementById("monitorOutput");
+      output.textContent = "正在检查程序并发送 Lark 测试监控...";
+      const response = await fetch("/api/scripts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          scriptId: "monitorHealth",
+          payload: { larkWebhook: document.getElementById("larkWebhook").value, sendLark: true }
+        })
+      });
+      const data = await response.json();
+      output.textContent = [data.stdout, data.stderr, data.error].filter(Boolean).join("\\n\\n") || JSON.stringify(data, null, 2);
+    });
+  </script>
+</body>
+</html>

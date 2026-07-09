@@ -4,6 +4,7 @@ import { readFile, writeFile, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { cryptoNewsSources } from "./crypto-news-sources.mjs";
 
 const telegramBase = "https://api.telegram.org/bot";
 const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -48,8 +49,16 @@ async function fetchNews(preset, limit) {
   try {
     return await fetchGdelt(preset.query, limit);
   } catch (error) {
-    return fetchGoogleNews(preset, limit);
+    console.error(`GDELT skipped: ${error.message}`);
   }
+
+  try {
+    return await fetchGoogleNews(preset, limit);
+  } catch (error) {
+    console.error(`Google News RSS skipped: ${error.message}`);
+  }
+
+  return fetchFallbackRss(limit);
 }
 
 async function fetchGdelt(query, limit) {
@@ -102,19 +111,67 @@ async function fetchGoogleNews(preset, limit) {
     ceid: "US:en"
   });
   const url = `https://news.google.com/rss/search?${params}`;
-  const response = await fetch(url, { headers: { "user-agent": "YUBITCommunityBot/1.0" } });
+  const response = await fetchWithRetry(url);
   if (!response.ok) throw new Error(`Google News RSS failed: ${response.status}`);
   const xml = await response.text();
+  return parseRssItems(xml, limit, "Google News");
+}
+
+async function fetchFallbackRss(limit) {
+  const rssSources = cryptoNewsSources.filter((source) => source.kind === "RSS" && source.name !== "Google News RSS");
+  const articles = [];
+  const seenUrls = new Set();
+
+  for (const source of rssSources) {
+    try {
+      const response = await fetchWithRetry(source.endpoint, 2);
+      if (!response.ok) throw new Error(`${source.name} failed: ${response.status}`);
+      const items = parseRssItems(await response.text(), limit, source.name);
+      for (const item of items) {
+        if (seenUrls.has(item.url)) continue;
+        seenUrls.add(item.url);
+        articles.push(item);
+        if (articles.length >= limit) return articles;
+      }
+    } catch (error) {
+      console.error(`${source.name} skipped: ${error.message}`);
+    }
+  }
+
+  return articles;
+}
+
+function parseRssItems(xml, limit, fallbackSource) {
   const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].slice(0, limit);
   return items.map((item) => {
     const raw = item[1];
     return {
       title: decodeXml(matchTag(raw, "title")),
-      source: decodeXml(matchTag(raw, "source")) || "Google News",
-      url: decodeXml(matchTag(raw, "link")),
-      seenDate: decodeXml(matchTag(raw, "pubDate"))
+      source: decodeXml(matchTag(raw, "source")) || fallbackSource,
+      url: decodeXml(matchTag(raw, "link") || matchTag(raw, "guid")),
+      seenDate: decodeXml(matchTag(raw, "pubDate") || matchTag(raw, "dc:date"))
     };
-  });
+  }).filter((article) => article.title && article.url);
+}
+
+async function fetchWithRetry(url, attempts = 3) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 25000);
+      const response = await fetch(url, {
+        headers: { "user-agent": "YUBITCommunityBot/1.0" },
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+      return response;
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) await sleep(3000 * attempt);
+    }
+  }
+  throw lastError;
 }
 
 function sleep(ms) {

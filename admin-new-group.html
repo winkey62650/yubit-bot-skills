@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>新群初始化</title>
+<script src="https://cdn.tailwindcss.com">
+</script>
+<script>tailwind.config={theme:{extend:{colors:{ops:{line:"#dbe4df",soft:"#edf4f0",accent:"#15956b",muted:"#63716b",ink:"#101815"}},boxShadow:{ops:"0 16px 40px rgba(28,49,40,.07)"}}}}</script>
+</head>
+<body class="bg-[#fbfcfb] text-ops-ink">
+<div class="min-h-screen lg:grid lg:grid-cols-[258px_minmax(0,1fr)]">
+<aside class="border-r border-ops-line bg-white p-6 lg:sticky lg:top-0 lg:h-screen lg:overflow-y-auto">
+<a class="mb-10 flex items-center gap-3" href="admin-group-config.html">
+<span class="grid h-9 w-9 place-items-center rounded-lg bg-ops-accent text-lg font-black text-white">Y</span>
+<strong class="text-2xl">YUBIT</strong>
+</a>
+<nav class="grid gap-2">
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-group-config.html">群配置</a>
+        <a class="rounded-lg bg-[#edf7f2] text-ops-accent px-3 py-3 text-sm font-bold" href="admin-new-group.html">新群初始化</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-news.html">新闻配置</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-signals.html">信号配置</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-forward-broadcast.html">广播转发</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-forward-social.html">代理社媒转发</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-bots.html">机器人配置</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-groups.html">群数据</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-settings.html">系统设置</a>
+      </nav>
+</aside>
+<main class="p-8">
+<h1 class="text-3xl font-black">新群初始化</h1>
+<p class="mt-3 text-ops-muted">输入群名称，确认管理机器人已加入目标群后，一键完成群资料、分区、公告和置顶配置。</p>
+<section class="mt-6 grid gap-5 xl:grid-cols-[1fr_360px]">
+<div class="rounded-lg border border-ops-line bg-white p-6 shadow-ops">
+<div class="grid gap-4 md:grid-cols-2">
+<label class="grid gap-2 text-sm font-bold text-ops-muted">群名称<input id="groupNameInput" class="min-h-10 rounded-lg border border-ops-line px-3" placeholder="输入群名称，可留空不修改"/>
+</label>
+<label class="grid gap-2 text-sm font-bold text-ops-muted">管理机器人<select class="min-h-10 rounded-lg border border-ops-line px-3">
+<option>YUBITadmin</option>
+</select>
+</label>
+<label class="grid gap-2 text-sm font-bold text-ops-muted">群 ID<input id="chatIdInput" class="min-h-10 rounded-lg border border-ops-line px-3" placeholder="-100..."/>
+</label>
+<label class="grid gap-2 text-sm font-bold text-ops-muted">分区模板<select class="min-h-10 rounded-lg border border-ops-line px-3">
+<option>模版</option>
+</select>
+</label>
+</div>
+<div class="mt-5 flex flex-wrap gap-3">
+<button id="setupBtn" class="rounded-lg bg-ops-accent px-5 py-3 text-sm font-black text-white">批量设置新群</button>
+<button id="cleanupTopicsBtn" class="rounded-lg border border-ops-line bg-white px-5 py-3 text-sm font-black text-ops-ink">清理重复 Topic</button>
+</div>
+<div id="setupStatus" class="mt-3 rounded-lg bg-[#edf7f2] px-3 py-2 text-sm font-bold text-ops-accent hidden">已生成初始化任务。当前是静态预览模式，正式 Next 页面会调用后端脚本。</div>
+<div id="setupProgress" class="mt-3 hidden rounded-lg border border-ops-line bg-white p-3">
+<div class="flex items-center justify-between text-xs font-black text-ops-muted">
+<span id="progressLabel">等待执行</span>
+<span id="progressPct">0%</span>
+</div>
+<div class="mt-2 h-2 overflow-hidden rounded-full bg-[#e7eee9]">
+<div id="progressBar" class="h-full w-0 rounded-full bg-ops-accent transition-all duration-700"></div>
+</div>
+</div>
+</div>
+<div class="rounded-lg border border-ops-line bg-white p-6 shadow-ops">
+<h2 class="text-xl font-black">初始化清单</h2>
+<div class="mt-4 grid gap-3 text-sm">
+<div class="flex justify-between">
+<span>设置群资料</span>
+<b class="text-ops-accent">已就绪</b>
+</div>
+<div class="flex justify-between">
+<span>创建分区</span>
+<b class="text-ops-accent">已就绪</b>
+</div>
+<div class="flex justify-between">
+<span>设置公告</span>
+<b class="text-ops-accent">已就绪</b>
+</div>
+<div class="flex justify-between">
+<span>置顶消息</span>
+<b class="text-ops-accent">已就绪</b>
+</div>
+</div>
+</div>
+</section>
+<section class="mt-5 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops">
+<div class="border-b border-ops-line p-5">
+<h2 class="text-xl font-black">分区模板预览</h2>
+<p class="mt-1 text-sm text-ops-muted">建群前可以直接修改 Topic 名称和属性；关闭话题表示创建后默认关闭该 Topic。</p>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full min-w-[820px] text-sm">
+<thead class="bg-[#f9fbfa] text-left text-xs uppercase text-ops-muted">
+<tr>
+<th class="px-5 py-3">序号</th>
+<th class="px-5 py-3">Emoji</th>
+<th class="px-5 py-3">Topic 名称</th>
+<th class="px-5 py-3">属性</th>
+</tr>
+</thead>
+<tbody id="topicRows">
+</tbody>
+</table>
+</div>
+</section>
+</main>
+</div>
+<script>const topics=[[1,'⚠️','READ FIRST - DISCLAIMER','关闭话题'],[2,'📅','Market Events','关闭话题'],[3,'📊','Market Analysis - Crypto/Stocks/TradFi','关闭话题'],[4,'📢','YUBIT Updates','频道禁言'],[5,'🏆','7-Day PNL Challenge','交流频道'],[6,'🐳','Smart Money Tracker','关闭话题'],[7,'🎯',"xxx's Trading Zone",'交流频道']];document.getElementById('topicRows').innerHTML=topics.map(t=>`<tr class="border-t border-ops-line">
+<td class="px-5 py-3 font-bold">${t[0]}</td>
+<td class="px-5 py-3">
+<input class="min-h-10 w-20 rounded-lg border border-ops-line px-3" value="${t[1]}"/>
+</td>
+<td class="px-5 py-3">
+<input class="min-h-10 w-full rounded-lg border border-ops-line px-3" value="${t[2]}"/>
+</td>
+<td class="px-5 py-3">
+<select class="min-h-10 w-full rounded-lg border border-ops-line px-3">
+<option selected>${t[3]}</option>
+<option>关闭话题</option>
+<option>频道禁言</option>
+<option>交流频道</option>
+</select>
+</td>
+</tr>`).join('');
+
+function collectTopics(){const rows=[...document.querySelectorAll('#topicRows tr')];return rows.map((row,index)=>{const inputs=row.querySelectorAll('input');return {id:String(index+1),emoji:inputs[0]?.value||'',name:inputs[1]?.value||'',attribute:row.querySelector('select')?.value||'交流频道'};});}
+function startProgress(label){const box=document.getElementById('setupProgress');const bar=document.getElementById('progressBar');const pct=document.getElementById('progressPct');const text=document.getElementById('progressLabel');const buttons=[document.getElementById('setupBtn'),document.getElementById('cleanupTopicsBtn')].filter(Boolean);let value=8;box.classList.remove('hidden');text.textContent=label;bar.style.width=`${value}%`;pct.textContent=`${value}%`;buttons.forEach((button)=>button.disabled=true);buttons.forEach((button)=>button.classList.add('opacity-60','cursor-not-allowed'));const timer=setInterval(()=>{value=Math.min(92,value+Math.max(1,Math.round((92-value)/8)));bar.style.width=`${value}%`;pct.textContent=`${value}%`;},3000);return (ok)=>{clearInterval(timer);value=ok?100:96;bar.style.width=`${value}%`;pct.textContent=`${value}%`;text.textContent=ok?'执行完成':'执行结束，请查看结果';buttons.forEach((button)=>button.disabled=false);buttons.forEach((button)=>button.classList.remove('opacity-60','cursor-not-allowed'));};}
+
+document.getElementById('cleanupTopicsBtn')?.addEventListener('click',async()=>{const el=document.getElementById('setupStatus');el.classList.remove('hidden');el.textContent='正在清理重复 Topic，请不要重复点击...';const stopProgress=startProgress('清理重复 Topic');const topics=collectTopics();const chatId=document.getElementById('chatIdInput')?.value||'';try{const res=await fetch('/api/scripts',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({scriptId:'cleanupTopics',payload:{mode:'production',chatId,topics,deleteTopics:true}})});const data=await res.json();stopProgress(data.ok);el.textContent=data.ok?`清理完成：${data.stdout||data.label}`:`清理失败：${data.error||data.stderr||'unknown error'}`;}catch(error){stopProgress(false);el.textContent=`请求失败：${error.message}`;}});
+document.getElementById('setupBtn')?.addEventListener('click',async()=>{const el=document.getElementById('setupStatus');el.classList.remove('hidden');el.textContent='正在真实执行初始化任务，请不要重复点击...';const stopProgress=startProgress('初始化群与 Topic');const topics=collectTopics();const groupName=document.getElementById('groupNameInput')?.value?.trim()||'';const chatId=document.getElementById('chatIdInput')?.value||'';try{const res=await fetch('/api/scripts',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({scriptId:'newGroup',payload:{mode:'production',groupName,chatId,topics}})});const data=await res.json();stopProgress(data.ok);el.textContent=data.ok?`后端已执行：${data.label}`:`执行失败：${data.error||data.stderr||'unknown error'}`;}catch(error){stopProgress(false);el.textContent=`请求失败：${error.message}`;}});
+</script>
+</body>
+</html>

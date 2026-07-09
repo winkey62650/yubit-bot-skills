@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>信号配置</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config={theme:{extend:{colors:{ops:{line:"#dbe4df",soft:"#edf4f0",accent:"#15956b",muted:"#63716b",ink:"#101815"}},boxShadow:{ops:"0 16px 40px rgba(28,49,40,.07)"}}}}</script>
+</head>
+<body class="bg-[#fbfcfb] text-ops-ink">
+  <div class="min-h-screen lg:grid lg:grid-cols-[258px_minmax(0,1fr)]">
+    <aside class="border-r border-ops-line bg-white p-6 lg:sticky lg:top-0 lg:h-screen lg:overflow-y-auto">
+      <a class="mb-10 flex items-center gap-3" href="admin-group-config.html"><span class="grid h-9 w-9 place-items-center rounded-lg bg-ops-accent text-lg font-black text-white">Y</span><strong class="text-2xl">YUBIT</strong></a>
+      <nav class="grid gap-2">
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-group-config.html">群配置</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-new-group.html">新群初始化</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-news.html">新闻配置</a>
+        <a class="rounded-lg bg-[#edf7f2] text-ops-accent px-3 py-3 text-sm font-bold" href="admin-signals.html">信号配置</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-forward-broadcast.html">广播转发</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-forward-social.html">代理社媒转发</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-bots.html">机器人配置</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-groups.html">群数据</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-settings.html">系统设置</a>
+      </nav>
+    </aside>
+    <main class="p-8">
+      <h1 class="text-3xl font-black">信号配置</h1>
+      <p class="mt-3 text-ops-muted">维护信号策略池，测试每个策略的数据源、计算结果和输出格式；群和 Topic 的投放绑定在群配置里设置。</p>
+
+      <section class="mt-6 grid gap-0 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops md:grid-cols-3">
+        <div class="border-b border-ops-line p-5 md:border-b-0 md:border-r"><div class="text-sm font-bold text-ops-muted">信号策略池</div><div class="mt-1 text-2xl font-black">2</div><div class="mt-1 text-xs text-ops-muted">Futures / TradFi</div></div>
+        <div class="border-b border-ops-line p-5 md:border-b-0 md:border-r"><div class="text-sm font-bold text-ops-muted">可直接测试</div><div class="mt-1 text-2xl font-black">2</div><div class="mt-1 text-xs text-ops-muted">发送到 demo 群 test Topic</div></div>
+        <div class="p-5"><div class="text-sm font-bold text-ops-muted">群绑定位置</div><div class="mt-1 text-2xl font-black">群配置</div><div class="mt-1 text-xs text-ops-muted">勾选策略后，在群配置绑定到 Topic</div></div>
+      </section>
+
+      <section class="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <div class="overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops">
+          <div class="border-b border-ops-line p-5">
+            <h2 class="text-xl font-black">信号策略池</h2>
+            <p class="mt-1 text-sm text-ops-muted">这里看策略包是否正常、输出什么结构；不会在这里配置发送目标。</p>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full min-w-[920px] text-sm">
+              <thead class="bg-[#f9fbfa] text-left text-xs uppercase text-ops-muted">
+                <tr><th class="px-5 py-3">启用</th><th class="px-5 py-3">信号策略</th><th class="px-5 py-3">数据源</th><th class="px-5 py-3">输出格式</th><th class="px-5 py-3">状态</th><th class="px-5 py-3">操作</th></tr>
+              </thead>
+              <tbody id="strategyRows"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="rounded-lg border border-ops-line bg-white p-5 shadow-ops">
+          <h2 class="text-lg font-black">已启用信号包</h2>
+          <p class="mt-1 text-sm text-ops-muted">这些名称会在群配置页面作为“信号配置”使用。</p>
+          <div id="enabledStrategies" class="mt-4 grid gap-3 text-sm"></div>
+          <div class="mt-5 rounded-lg bg-[#fbfcfb] p-4 text-xs leading-5 text-ops-muted">下一步：到「群配置」里选择群和 Topic，再绑定这里勾选好的信号包。</div>
+        </div>
+      </section>
+
+      <section class="mt-5 rounded-lg border border-ops-line bg-white p-5 shadow-ops">
+        <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 class="text-xl font-black">策略检查结果</h2>
+            <p id="signalSub" class="mt-1 text-sm text-ops-muted">点击一个策略的“测试”，会发送测试卡片到 demo 群 test Topic。</p>
+          </div>
+          <span id="signalStatus" class="w-fit rounded-full bg-[#f5f7f6] px-2 py-1 text-xs font-black text-ops-muted">待测试</span>
+        </div>
+        <div id="signalPreview" class="mt-4 rounded-lg bg-[#fbfcfb] p-4 text-sm leading-6 text-ops-muted">信号测试会发送到 demo 群 test Topic，不会发到正式群。</div>
+      </section>
+
+      <script>
+        const strategies = [
+          {
+            name: 'Futures SMA',
+            scriptId: 'futuresCard',
+            source: 'Binance Futures',
+            format: 'symbol / timeframe / SMA20 / SMA50 / direction / card text',
+            status: '已启用'
+          },
+          {
+            name: 'TradFi SMA',
+            scriptId: 'tradfiCard',
+            source: 'TradFi market data',
+            format: 'asset / market / trend / macro note / card text',
+            status: '已启用'
+          }
+        ];
+        const selected = new Set(strategies.map((item) => item.name));
+        const rows = document.getElementById('strategyRows');
+        const enabled = document.getElementById('enabledStrategies');
+
+        function escapeHtml(value) {
+          return String(value || '').replace(/[&<>"']/g, (char) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
+        }
+
+        function renderRows() {
+          rows.innerHTML = strategies.map((item) =>
+            '<tr class="border-t border-ops-line align-top">' +
+              '<td class="px-5 py-4"><input data-toggle="' + escapeHtml(item.name) + '" type="checkbox" class="h-4 w-4" ' + (selected.has(item.name) ? 'checked' : '') + '/></td>' +
+              '<td class="px-5 py-4"><strong>' + escapeHtml(item.name) + '</strong><div class="mt-1 text-xs text-ops-muted">' + escapeHtml(item.scriptId) + '</div></td>' +
+              '<td class="px-5 py-4">' + escapeHtml(item.source) + '</td>' +
+              '<td class="px-5 py-4 font-mono text-xs text-ops-muted">' + escapeHtml(item.format) + '</td>' +
+              '<td class="px-5 py-4"><span class="rounded-full bg-[#e6f7ef] px-2 py-1 text-xs font-black text-ops-accent">' + escapeHtml(item.status) + '</span></td>' +
+              '<td class="px-5 py-4"><button data-test="' + escapeHtml(item.scriptId) + '" class="rounded-lg border border-ops-accent px-3 py-2 text-xs font-black text-ops-accent">测试</button></td>' +
+            '</tr>'
+          ).join('');
+        }
+
+        function renderEnabled() {
+          const items = strategies.filter((item) => selected.has(item.name));
+          enabled.innerHTML = items.length ? items.map((item) =>
+            '<div class="rounded-lg bg-[#fbfcfb] px-3 py-3"><strong>' + escapeHtml(item.name) + '</strong><span class="mt-1 block text-xs text-ops-muted">' + escapeHtml(item.source) + '</span></div>'
+          ).join('') : '<div class="rounded-lg bg-[#fbfcfb] px-3 py-3 text-ops-muted">还没有启用信号策略。</div>';
+        }
+
+        async function testSignal(scriptId) {
+          const strategy = strategies.find((item) => item.scriptId === scriptId);
+          const status = document.getElementById('signalStatus');
+          const sub = document.getElementById('signalSub');
+          const body = document.getElementById('signalPreview');
+          status.className = 'w-fit rounded-full bg-[#edf7f2] px-2 py-1 text-xs font-black text-ops-accent';
+          status.textContent = '测试中';
+          sub.textContent = strategy.name + ' · 正在发送到 demo 群 test Topic';
+          body.className = 'mt-4 rounded-lg bg-[#fbfcfb] p-4 text-sm leading-6 text-ops-muted';
+          body.textContent = '正在读取数据源、生成卡片并准备测试 Topic。';
+          const response = await fetch('/api/signal-test', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ scriptId })
+          });
+          const data = await response.json();
+          const ok = data.ok;
+          status.className = 'w-fit rounded-full px-2 py-1 text-xs font-black ' + (ok ? 'bg-[#e6f7ef] text-ops-accent' : 'bg-[#fff4df] text-[#c98118]');
+          status.textContent = ok ? '已发送' : '需处理';
+          sub.textContent = strategy.name + ' · ' + new Date().toLocaleString();
+          body.className = 'mt-4 grid gap-3';
+          body.innerHTML =
+            '<div class="rounded-lg border border-ops-line bg-[#edf7f2] p-4 text-sm text-ops-accent"><strong>测试目标</strong><div class="mt-2 text-xs text-ops-muted">Demo 群 -1003710405969 · test Topic #' + escapeHtml(data.testThreadId || '') + '</div></div>' +
+            '<div class="rounded-lg border border-ops-line bg-[#fbfcfb] p-4 text-sm"><strong>返回格式</strong><div class="mt-2 font-mono text-xs text-ops-muted">' + escapeHtml(strategy.format) + '</div></div>' +
+            '<pre class="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-[#101815] p-4 text-xs leading-5 text-[#d8f9e7]">' + escapeHtml([ok ? '信号测试已发送。' : '执行失败。', data.stdout, data.stderr, data.error].filter(Boolean).join('\\n\\n')) + '</pre>';
+        }
+
+        document.addEventListener('change', (event) => {
+          const name = event.target?.dataset?.toggle;
+          if (!name) return;
+          if (event.target.checked) selected.add(name);
+          else selected.delete(name);
+          renderEnabled();
+        });
+
+        document.addEventListener('click', (event) => {
+          const scriptId = event.target?.dataset?.test;
+          if (!scriptId) return;
+          testSignal(scriptId);
+        });
+
+        renderRows();
+        renderEnabled();
+      </script>
+    </main>
+  </div>
+</body>
+</html>

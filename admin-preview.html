@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>YUBIT 社群自动化控制台</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              ops: { line: "#dbe4df", soft: "#edf4f0", accent: "#15956b", muted: "#63716b", ink: "#101815" }
+            },
+            boxShadow: { ops: "0 16px 40px rgba(28, 49, 40, 0.07)" }
+          }
+        }
+      };
+    </script>
+  </head>
+  <body class="bg-[#fbfcfb] text-ops-ink">
+    <div class="min-h-screen lg:grid lg:grid-cols-[258px_minmax(0,1fr)]">
+      <aside class="border-b border-ops-line bg-white p-6 lg:sticky lg:top-0 lg:h-screen lg:overflow-y-auto lg:border-b-0 lg:border-r">
+        <div class="mb-10 flex items-center gap-3">
+          <span class="grid h-9 w-9 place-items-center rounded-lg bg-ops-accent text-lg font-black text-white">Y</span>
+          <strong class="text-2xl tracking-tight">YUBIT</strong>
+        </div>
+        <nav class="grid gap-2">
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-group-config.html">群配置</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-new-group.html">新群初始化</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-news.html">新闻配置</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-signals.html">信号配置</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-forward-broadcast.html">广播转发</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-forward-social.html">代理社媒转发</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-bots.html">机器人配置</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-groups.html">群数据</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-settings.html">系统设置</a>
+      </nav>
+        <div class="mt-12 rounded-lg border border-ops-line bg-white p-4 shadow-sm">
+          <div class="text-sm font-black">帮助与支持</div>
+          <p class="mt-1 text-xs leading-5 text-ops-muted">使用文档 / 常见问题</p>
+        </div>
+      </aside>
+
+      <main class="p-5 md:p-8">
+        <header class="mb-7 flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <h1 class="text-3xl font-black tracking-tight">YUBIT 社群自动化控制台</h1>
+            <p class="mt-3 max-w-3xl text-base leading-7 text-ops-muted">批量管理 Telegram 群组与频道，自动化分发新闻与信号，提升社群运营效率。</p>
+          </div>
+          <div class="rounded-lg border border-ops-line bg-white px-4 py-3 text-sm shadow-sm"><div class="font-black">YUBIT Ops</div><div class="mt-1 text-xs text-ops-muted">商业版控制台</div></div>
+        </header>
+
+        <section class="mb-5 grid gap-0 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops md:grid-cols-2 xl:grid-cols-4">
+          <div class="flex items-center gap-4 border-b border-ops-line p-5 md:border-b-0 md:border-r"><span class="grid h-14 w-14 place-items-center rounded-full bg-[#edf7f2] text-sm font-black text-ops-accent">群</span><div><div class="text-sm font-bold text-ops-muted">已接入群组</div><div class="mt-1 text-2xl font-black">24</div><div class="mt-1 text-xs text-ops-muted">较昨日 +2</div></div></div>
+          <div class="flex items-center gap-4 border-b border-ops-line p-5 md:border-b-0 md:border-r"><span class="grid h-14 w-14 place-items-center rounded-full bg-[#edf7f2] text-sm font-black text-ops-accent">发</span><div><div class="text-sm font-bold text-ops-muted">今日分发</div><div class="mt-1 text-2xl font-black">156</div><div class="mt-1 text-xs text-ops-muted">较昨日 +28</div></div></div>
+          <div class="flex items-center gap-4 border-b border-ops-line p-5 md:border-b-0 md:border-r"><span class="grid h-14 w-14 place-items-center rounded-full bg-[#edf7f2] text-sm font-black text-ops-accent">机</span><div><div class="text-sm font-bold text-ops-muted">在线机器人</div><div class="mt-1 text-2xl font-black">5</div><div class="mt-1 text-xs text-ops-muted">全部在线</div></div></div>
+          <div class="flex items-center gap-4 p-5"><span class="grid h-14 w-14 place-items-center rounded-full bg-[#edf7f2] text-sm font-black text-ops-accent">盾</span><div><div class="text-sm font-bold text-ops-muted">系统健康度</div><div class="mt-1 text-2xl font-black">98%</div><div class="mt-1 text-xs text-ops-muted">良好</div></div></div>
+        </section>
+
+        <section class="grid gap-4 xl:grid-cols-2">
+
+          <a href="admin-group-config.html" class="block rounded-lg border border-ops-line bg-white p-6 shadow-ops transition hover:-translate-y-0.5 hover:shadow-lg">
+            <div class="flex gap-5"><span class="grid h-20 w-20 shrink-0 place-items-center rounded-lg bg-[#f0eafe] text-xl font-black text-[#8b5bd8]">配</span><div><h2 class="text-2xl font-black tracking-tight">群配置</h2><p class="mt-2 text-sm leading-6 text-ops-muted">把群和 Topic 绑定到指定的新闻配置或信号配置。</p></div></div>
+            <div class="mt-5 grid gap-3 border-t border-ops-line pt-4 md:grid-cols-3"><div><div class="text-xs font-bold text-ops-muted">绑定群</div><div class="mt-1 text-sm font-bold">YUBIT test</div></div><div><div class="text-xs font-bold text-ops-muted">新闻 Topic</div><div class="mt-1 text-sm font-bold">Market Events</div></div><div><div class="text-xs font-bold text-ops-muted">信号 Topic</div><div class="mt-1 text-sm font-bold">Market Analysis</div></div></div>
+            <button class="mt-5 w-full rounded-lg bg-ops-accent px-4 py-3 text-sm font-black text-white">进入群配置</button>
+          </a>
+
+          <a href="admin-new-group.html" class="block rounded-lg border border-ops-line bg-white p-6 shadow-ops transition hover:-translate-y-0.5 hover:shadow-lg">
+            <div class="flex gap-5"><span class="grid h-20 w-20 shrink-0 place-items-center rounded-lg bg-[#edf7e8] text-xl font-black text-[#4b9b39]">群</span><div><h2 class="text-2xl font-black tracking-tight">新群初始化</h2><p class="mt-2 text-sm leading-6 text-ops-muted">一键完成群资料、分区、公告和置顶等初始化配置，快速标准化新建社群。</p></div></div>
+            <div class="mt-5 grid gap-3 border-t border-ops-line pt-4 md:grid-cols-3"><div><div class="text-xs font-bold text-ops-muted">管理机器人</div><div class="mt-1 text-sm font-bold">YUBITadmin</div></div><div><div class="text-xs font-bold text-ops-muted">分区模板</div><div class="mt-1 text-sm font-bold">Winkey 8 Topics</div></div><div><div class="text-xs font-bold text-ops-muted">权限状态</div><div class="mt-1 text-sm font-bold">已就绪</div></div></div>
+            <div class="mt-4 grid gap-3 border-t border-ops-line pt-4 md:grid-cols-2"><input class="min-h-10 rounded-lg border border-ops-line bg-white px-3 text-sm" placeholder="输入群名称" /><input class="min-h-10 rounded-lg border border-ops-line bg-white px-3 text-sm" placeholder="群 ID / 邀请链接" /></div>
+            <button class="mt-5 w-full rounded-lg bg-ops-accent px-4 py-3 text-sm font-black text-white">批量设置新群</button>
+          </a>
+
+
+          <a href="admin-news.html" class="block rounded-lg border border-ops-line bg-white p-6 shadow-ops transition hover:-translate-y-0.5 hover:shadow-lg">
+            <div class="flex gap-5"><span class="grid h-20 w-20 shrink-0 place-items-center rounded-lg bg-[#eaf2ff] text-xl font-black text-[#527edb]">新</span><div><h2 class="text-2xl font-black tracking-tight">新闻配置</h2><p class="mt-2 text-sm leading-6 text-ops-muted">管理新闻源池、新闻卡片、目标 Topic 和新闻发送频率。</p></div></div>
+            <div class="mt-5 grid gap-3 border-t border-ops-line pt-4 md:grid-cols-3"><div><div class="text-xs font-bold text-ops-muted">默认 Topic</div><div class="mt-1 text-sm font-bold">Market Events</div></div><div><div class="text-xs font-bold text-ops-muted">新闻来源</div><div class="mt-1 text-sm font-bold">RSS / API 源池</div></div><div><div class="text-xs font-bold text-ops-muted">发送机器人</div><div class="mt-1 text-sm font-bold">Trader1</div></div></div>
+            <div class="mt-5 flex gap-3"><button class="flex-1 rounded-lg bg-ops-accent px-4 py-3 text-sm font-black text-white">进入新闻配置</button><button class="flex-1 rounded-lg border border-ops-accent px-4 py-3 text-sm font-black text-ops-accent">预览新闻</button></div>
+          </a>
+
+
+          <a href="admin-signals.html" class="block rounded-lg border border-ops-line bg-white p-6 shadow-ops transition hover:-translate-y-0.5 hover:shadow-lg">
+            <div class="flex gap-5"><span class="grid h-20 w-20 shrink-0 place-items-center rounded-lg bg-[#edf7f2] text-xl font-black text-ops-accent">信</span><div><h2 class="text-2xl font-black tracking-tight">信号配置</h2><p class="mt-2 text-sm leading-6 text-ops-muted">管理行情信号策略、信号卡片、目标 Topic 和发送机器人。</p></div></div>
+            <div class="mt-5 grid gap-3 border-t border-ops-line pt-4 md:grid-cols-3"><div><div class="text-xs font-bold text-ops-muted">默认 Topic</div><div class="mt-1 text-sm font-bold">Market Analysis</div></div><div><div class="text-xs font-bold text-ops-muted">信号策略</div><div class="mt-1 text-sm font-bold">Futures SMA</div></div><div><div class="text-xs font-bold text-ops-muted">发送机器人</div><div class="mt-1 text-sm font-bold">Trader1</div></div></div>
+            <div class="mt-5 flex gap-3"><button class="flex-1 rounded-lg bg-ops-accent px-4 py-3 text-sm font-black text-white">进入信号配置</button><button class="flex-1 rounded-lg border border-ops-accent px-4 py-3 text-sm font-black text-ops-accent">预览信号</button></div>
+          </a>
+
+
+          <a href="admin-forward-broadcast.html" class="block rounded-lg border border-ops-line bg-white p-6 shadow-ops transition hover:-translate-y-0.5 hover:shadow-lg">
+            <div class="flex gap-5"><span class="grid h-20 w-20 shrink-0 place-items-center rounded-lg bg-[#eaf7f4] text-xl font-black text-[#15956b]">转</span><div><h2 class="text-2xl font-black tracking-tight">广播转发</h2><p class="mt-2 text-sm leading-6 text-ops-muted">把 Demo 群消息按规则转发到其他群和指定 Topic。</p></div></div>
+            <div class="mt-5 grid gap-3 border-t border-ops-line pt-4 md:grid-cols-3"><div><div class="text-xs font-bold text-ops-muted">来源群</div><div class="mt-1 text-sm font-bold">Demo 群</div></div><div><div class="text-xs font-bold text-ops-muted">规则数量</div><div class="mt-1 text-sm font-bold">3 条</div></div><div><div class="text-xs font-bold text-ops-muted">转发模式</div><div class="mt-1 text-sm font-bold">复制 / 保留来源</div></div></div>
+            <button class="mt-5 w-full rounded-lg bg-ops-accent px-4 py-3 text-sm font-black text-white">进入广播转发</button>
+          </a>
+
+
+          <a href="admin-bots.html" class="block rounded-lg border border-ops-line bg-white p-6 shadow-ops transition hover:-translate-y-0.5 hover:shadow-lg">
+            <div class="flex gap-5"><span class="grid h-20 w-20 shrink-0 place-items-center rounded-lg bg-[#fff0e5] text-xl font-black text-[#e68a2e]">机</span><div><h2 class="text-2xl font-black tracking-tight">机器人配置</h2><p class="mt-2 text-sm leading-6 text-ops-muted">配置机器人角色、群管理权限、默认禁言策略和自动化动作。</p></div></div>
+            <div class="mt-5 grid gap-3 border-t border-ops-line pt-4 md:grid-cols-3"><div><div class="text-xs font-bold text-ops-muted">机器人总数</div><div class="mt-1 text-sm font-bold">5</div></div><div><div class="text-xs font-bold text-ops-muted">接入群组</div><div class="mt-1 text-sm font-bold">24</div></div><div><div class="text-xs font-bold text-ops-muted">健康状态</div><div class="mt-1 text-sm font-bold">良好</div></div></div>
+            <div class="mt-4 grid gap-2 border-t border-ops-line pt-4"><div class="flex items-center justify-between rounded-lg bg-[#fbfcfb] px-3 py-2 text-sm"><div><strong>YUBITadmin</strong><span class="ml-2 text-ops-muted">管理 / 建群</span></div><span class="rounded-full bg-[#e6f7ef] px-2 py-1 text-xs font-black text-ops-accent">在线</span></div><div class="flex items-center justify-between rounded-lg bg-[#fbfcfb] px-3 py-2 text-sm"><div><strong>Trader1</strong><span class="ml-2 text-ops-muted">新闻 / 信号</span></div><span class="rounded-full bg-[#e6f7ef] px-2 py-1 text-xs font-black text-ops-accent">在线</span></div></div>
+            <button class="mt-5 w-full rounded-lg bg-ops-accent px-4 py-3 text-sm font-black text-white">查看详情</button>
+          </a>
+
+          <a href="admin-groups.html" class="block rounded-lg border border-ops-line bg-white p-6 shadow-ops transition hover:-translate-y-0.5 hover:shadow-lg">
+            <div class="flex gap-5"><span class="grid h-20 w-20 shrink-0 place-items-center rounded-lg bg-[#eef2ff] text-xl font-black text-[#4f66c8]">数</span><div><h2 class="text-2xl font-black tracking-tight">群数据</h2><p class="mt-2 text-sm leading-6 text-ops-muted">查看已接入群组、Topic 状态、禁言策略和权限健康度。</p></div></div>
+            <div class="mt-5 grid gap-3 border-t border-ops-line pt-4 md:grid-cols-3"><div><div class="text-xs font-bold text-ops-muted">群组总数</div><div class="mt-1 text-sm font-bold">24</div></div><div><div class="text-xs font-bold text-ops-muted">禁言 Topic</div><div class="mt-1 text-sm font-bold">42</div></div><div><div class="text-xs font-bold text-ops-muted">健康状态</div><div class="mt-1 text-sm font-bold">良好</div></div></div>
+            <button class="mt-5 w-full rounded-lg bg-ops-accent px-4 py-3 text-sm font-black text-white">查看群数据</button>
+          </a>
+
+          <a href="admin-settings.html" class="block rounded-lg border border-ops-line bg-white p-6 shadow-ops transition hover:-translate-y-0.5 hover:shadow-lg">
+            <div class="flex gap-5"><span class="grid h-20 w-20 shrink-0 place-items-center rounded-lg bg-[#f5f7f6] text-xl font-black text-[#33423b]">设</span><div><h2 class="text-2xl font-black tracking-tight">系统设置</h2><p class="mt-2 text-sm leading-6 text-ops-muted">配置程序健康检查、定时监控和 Lark 告警推送。</p></div></div>
+            <div class="mt-5 grid gap-3 border-t border-ops-line pt-4 md:grid-cols-3"><div><div class="text-xs font-bold text-ops-muted">检查频率</div><div class="mt-1 text-sm font-bold">每 5 分钟</div></div><div><div class="text-xs font-bold text-ops-muted">告警渠道</div><div class="mt-1 text-sm font-bold">Lark</div></div><div><div class="text-xs font-bold text-ops-muted">状态</div><div class="mt-1 text-sm font-bold">待配置</div></div></div>
+            <button class="mt-5 w-full rounded-lg bg-ops-accent px-4 py-3 text-sm font-black text-white">进入系统设置</button>
+          </a></section>
+      </main>
+    </div>
+  </body>
+</html>

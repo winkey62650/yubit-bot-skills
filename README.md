@@ -1,15 +1,20 @@
 # YUBIT Bot Skills
 
-Telegram automation scripts for the YUBIT x Winkey community.
+Telegram community automation and local ops console for the YUBIT x Winkey agent community.
 
-This project contains:
+This project started as a set of Telegram bot scripts and is now a productized local control system for managing Telegram forum communities, bot roles, content pipelines, and forwarding rules.
 
-- Telegram forum topic setup and repair scripts.
-- Futures and TradFi signal posters with mobile card rendering.
-- Crypto and TradFi news posters.
-- A 15-minute posting cycle wrapper.
-- Moderator helper messages and market discussion agent scripts.
-- A local HTML console for planning the community setup.
+## What This System Does
+
+- Manages Telegram supergroups and forum topics from a local control console.
+- Initializes new groups with a reusable YUBIT topic template, announcements, disclaimers, and topic permissions.
+- Tracks which bots are actually inside each group before allowing them to be used for sending.
+- Maintains news source pools and signal source pools as reusable packages.
+- Binds a group topic to a news, signal, broadcast, or social forwarding package.
+- Sends crypto news as one Telegram message per article, with image, title, AI-style brief, source, and disclaimer.
+- Supports demo-topic testing for news and signal packages before binding them to production groups.
+- Broadcasts messages from a demo/source topic to bound target groups and topics.
+- Provides pages for bot configuration, group data, forwarding config, and health/Lark monitoring.
 
 ## Safety
 
@@ -35,6 +40,85 @@ Check JavaScript syntax:
 ```bash
 npm run check
 ```
+
+## Local Ops Console
+
+Run the local static console:
+
+```bash
+npm run serve:local
+```
+
+Then open:
+
+```text
+http://localhost:4173/admin-group-config.html
+```
+
+Main console pages:
+
+- `群配置`: the primary binding layer. Select a group, select a topic, then bind a package. The sender bot is filtered to bots that are actually in the selected group.
+- `新群初始化`: creates or repairs the YUBIT topic template for a Telegram supergroup.
+- `新闻配置`: manages crypto news source packages and tests one article into the demo `test` topic.
+- `信号配置`: manages trading signal packages and tests signal delivery.
+- `广播转发`: defines source demo topic broadcast rules.
+- `代理社媒转发`: defines packages for agent Twitter/X or YouTube forwarding.
+- `机器人配置`: shows bot roles and the groups each bot can access.
+- `群数据`: shows discovered group and topic data.
+- `系统设置`: stores health check and Lark monitoring settings.
+
+Runtime state is stored under `.runtime/` and is intentionally ignored by git.
+
+## Current Product Model
+
+The console separates configuration into packages and bindings:
+
+- News configuration packages define which RSS/API sources are healthy and how news should be formatted.
+- Signal configuration packages define which market signal scripts are healthy and how often they should run.
+- Broadcast packages define which demo group topic should be listened to.
+- Social forwarding packages define which agent social links should be monitored.
+- Group bindings decide which group topic receives which package.
+
+This keeps the workflow clean: first build/test packages, then bind packages to production group topics.
+
+## Telegram Topic Template
+
+The current YUBIT template uses these topic lanes:
+
+- `READ FIRST - DISCLAIMER`
+- `Market Events`
+- `Market Analysis - Crypto/Stocks/TradFi`
+- `YUBIT Updates`
+- `7-Day PNL Challenge`
+- `Smart Money Tracker`
+- `xxx's Trading Zone`
+
+Read-only topics are treated as closed topics during setup. Discussion topics remain open.
+
+## News Delivery Logic
+
+News is driven by enabled `新闻配置` bindings in the group configuration.
+
+The local server starts a news dispatcher when `npm run serve:local` is running:
+
+- checks bindings every minute by default
+- sends only one article per binding per run
+- stores sent article IDs in `.runtime/news-status.json`
+- avoids repeating already sent titles
+- uses the bot selected in the group binding
+- requires that bot to be present in the target group
+
+The local server must stay running for automatic news dispatch to continue.
+
+## Broadcast Logic
+
+Broadcast rules define a source group and source topic. The broadcast poller listens for new source messages and forwards them to target group-topic bindings whose type is `广播`.
+
+The source topic receives status replies:
+
+- `收到` when the bot sees the source message
+- `已转发：N 个目标` when forwarding succeeds
+- `转发失败：...` when forwarding fails
 
 ## Environment
 

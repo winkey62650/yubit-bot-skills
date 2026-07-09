@@ -16,7 +16,6 @@ const interval = process.env.BINANCE_INTERVAL || "1h";
 const fastPeriod = Number(process.env.FAST_SMA || 20);
 const slowPeriod = Number(process.env.SLOW_SMA || 50);
 const symbolLimit = Number(process.env.SYMBOL_LIMIT || 20);
-const yubitFuturesBaseUrl = process.env.YUBIT_FUTURES_BASE_URL || "https://www.yubit.com/trade/usdt";
 
 const exchangeInfo = await getJson(`${binanceBase}/fapi/v1/exchangeInfo`);
 const tradableUsdtPerps = new Set(
@@ -65,10 +64,9 @@ if (shouldSend) {
     throw new Error("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are required when SEND_TELEGRAM=true");
   }
 
-  const topSymbol = rows[0]?.symbol || "BTCUSDT";
   const photoPath = await renderSignalCard(rows);
   const caption = formatSignalCaption(rows);
-  await postTelegramPhoto(caption, photoPath, `${yubitFuturesBaseUrl}/${topSymbol}`);
+  await postTelegramPhoto(caption, photoPath);
 }
 
 function sma(values, period) {
@@ -119,16 +117,12 @@ function formatSignalCaption(rows) {
   const crosses = rows.filter((row) => row.signal.includes("cross"));
   const top = rows[0];
   return [
-    "📈 <b>YUBIT Futures Signal</b>",
+    `🇺🇸 🟢 <b>[${top?.symbol || "USDT"}]</b> Futures SMA signal`,
+    `<b>Timeframe</b>: 1H · <b>Strategy</b>: SMA${fastPeriod}/${slowPeriod}`,
     "",
-    `<b>Timeframe</b>: 1H`,
-    `<b>Strategy</b>: Dual SMA ${fastPeriod}/${slowPeriod}`,
-    `<b>Universe</b>: YUBIT USDT Futures Watchlist · Top ${rows.length}`,
+    `🟢 Bullish: <b>${bullish.length}</b> · 🔴 Bearish: <b>${bearish.length}</b> · ⚡ Crosses: <b>${crosses.length}</b>`,
+    top ? `${top.signal} · Last: <b>${formatNumber(top.last)}</b> · 1H: <b>${top.changePct}%</b>` : "",
     "",
-    `🟢 Bullish: <b>${bullish.length}</b>   🔴 Bearish: <b>${bearish.length}</b>   ⚡ Fresh crosses: <b>${crosses.length}</b>`,
-    top ? `🔥 Lead pair: <b>${top.symbol}</b> · ${top.signal} · 1H ${top.changePct}%` : "",
-    "",
-    "Tap the button below to open YUBIT Futures.",
     "<i>Informational only. Not investment advice.</i>"
   ]
     .filter(Boolean)
@@ -158,19 +152,13 @@ async function postTelegram(text) {
   if (!body.ok) throw new Error(body.description || "Telegram sendMessage failed");
 }
 
-async function postTelegramPhoto(caption, photoPath, buttonUrl) {
+async function postTelegramPhoto(caption, photoPath) {
   const form = new FormData();
   form.set("chat_id", chatId);
   form.set("message_thread_id", String(threadId));
   form.set("caption", trimCaption(caption));
   form.set("parse_mode", "HTML");
   form.set("photo", new Blob([await readFile(photoPath)], { type: "image/png" }), "futures-signal.png");
-  form.set(
-    "reply_markup",
-    JSON.stringify({
-      inline_keyboard: [[{ text: "Open YUBIT Futures", url: buttonUrl }]]
-    })
-  );
 
   const response = await fetch(`${telegramBase}${token}/sendPhoto`, {
     method: "POST",

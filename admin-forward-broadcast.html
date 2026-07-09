@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>广播转发</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config={theme:{extend:{colors:{ops:{line:"#dbe4df",soft:"#edf4f0",accent:"#15956b",muted:"#63716b",ink:"#101815"}},boxShadow:{ops:"0 16px 40px rgba(28,49,40,.07)"}}}}</script>
+</head>
+<body class="bg-[#fbfcfb] text-ops-ink">
+  <div class="min-h-screen lg:grid lg:grid-cols-[258px_minmax(0,1fr)]">
+    <aside class="border-r border-ops-line bg-white p-6 lg:sticky lg:top-0 lg:h-screen lg:overflow-y-auto">
+      <a class="mb-10 flex items-center gap-3" href="admin-group-config.html"><span class="grid h-9 w-9 place-items-center rounded-lg bg-ops-accent text-lg font-black text-white">Y</span><strong class="text-2xl">YUBIT</strong></a>
+      <nav class="grid gap-2">
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-group-config.html">群配置</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-new-group.html">新群初始化</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-news.html">新闻配置</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-signals.html">信号配置</a>
+        <a class="rounded-lg bg-[#edf7f2] text-ops-accent px-3 py-3 text-sm font-bold" href="admin-forward-broadcast.html">广播转发</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-forward-social.html">代理社媒转发</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-bots.html">机器人配置</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-groups.html">群数据</a>
+        <a class="rounded-lg hover:bg-ops-soft px-3 py-3 text-sm font-bold" href="admin-settings.html">系统设置</a>
+      </nav>
+    </aside>
+    <main class="p-8">
+      <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div>
+          <h1 class="text-3xl font-black">广播转发</h1>
+          <p class="mt-3 max-w-3xl text-ops-muted">Trader 在 demo 群里发消息，系统按规则生成广播配置；发到哪个群和 Topic 在「群配置」里绑定，绑定类型选择「广播」。</p>
+        </div>
+        <div class="flex rounded-lg border border-ops-line bg-white p-1 shadow-ops">
+          <a class="rounded-md bg-ops-accent px-4 py-2 text-sm font-black text-white" href="admin-forward-broadcast.html">广播</a>
+          <a class="rounded-md px-4 py-2 text-sm font-black text-ops-muted hover:bg-ops-soft" href="admin-forward-social.html">代理社媒</a>
+        </div>
+      </div>
+
+      <section class="mt-6 grid gap-0 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops md:grid-cols-3">
+        <div class="border-b border-ops-line p-5 md:border-b-0 md:border-r"><div class="text-sm font-bold text-ops-muted">来源群</div><div class="mt-1 text-2xl font-black">Demo 群</div><div class="mt-1 text-xs text-ops-muted">Trader 发消息的测试群</div></div>
+        <div class="border-b border-ops-line p-5 md:border-b-0 md:border-r"><div class="text-sm font-bold text-ops-muted">广播规则</div><div id="broadcastRuleCount" class="mt-1 text-2xl font-black">-</div><div class="mt-1 text-xs text-ops-muted">保存后去群配置绑定目标</div></div>
+        <div class="p-5"><div class="text-sm font-bold text-ops-muted">转发机器人</div><div id="broadcastBotMetric" class="mt-1 text-2xl font-black">可配置</div><div class="mt-1 text-xs text-ops-muted">每条规则单独选择</div></div>
+      </section>
+
+      <section class="mt-6 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops">
+        <div class="border-b border-ops-line px-6 py-5"><h2 class="text-xl font-black">新增广播规则</h2><p class="mt-1 text-sm text-ops-muted">这里只定义广播规则本身；目标群和 Topic 统一到群配置里绑定。</p></div>
+        <div class="grid gap-0 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div class="border-b border-ops-line p-6 xl:border-b-0 xl:border-r">
+            <h3 class="mb-4 text-sm font-black">来源</h3>
+            <div class="grid gap-4">
+              <label class="grid gap-2 text-sm font-bold text-ops-muted">规则名称<input id="ruleNameInput" class="min-h-11 rounded-lg border border-ops-line px-3" value="Demo Topic 全部消息广播"/></label>
+              <label class="grid gap-2 text-sm font-bold text-ops-muted">Demo 群<input id="demoGroupInput" class="min-h-11 rounded-lg border border-ops-line bg-[#f9fbfa] px-3" value="YUBIT × Winkey Agent Community" readonly/></label>
+              <label class="grid gap-2 text-sm font-bold text-ops-muted">监听 Topic<select id="sourceTopicSelect" class="min-h-11 rounded-lg border border-ops-line px-3"><option>正在读取 Topic...</option></select></label>
+              <div class="rounded-lg bg-[#fbfcfb] px-4 py-3 text-sm font-bold text-ops-muted">监听内容：全部消息。目标群和目标 Topic 请到「群配置」里绑定。</div>
+            </div>
+          </div>
+          <div class="p-6">
+            <h3 class="mb-4 text-sm font-black">执行</h3>
+            <div class="grid gap-4">
+              <label class="grid gap-2 text-sm font-bold text-ops-muted">转发模式<input class="min-h-11 rounded-lg border border-ops-line bg-[#f9fbfa] px-3" value="复制发送" readonly/></label>
+              <label class="grid gap-2 text-sm font-bold text-ops-muted">转发机器人<select id="broadcastBotSelect" class="min-h-11 rounded-lg border border-ops-line px-3"><option>YUBITadmin</option><option>Trader1</option><option>MOD1</option><option>Jack</option><option>Tony</option></select></label>
+              <label class="grid gap-2 text-sm font-bold text-ops-muted">状态<select class="min-h-11 rounded-lg border border-ops-line px-3"><option>启用</option><option>暂停</option></select></label>
+            </div>
+            <button id="saveBroadcastRuleBtn" class="mt-5 min-h-11 w-full rounded-lg bg-ops-accent px-5 text-sm font-black text-white">保存广播规则</button>
+            <div id="saveRuleStatus" class="mt-3 text-sm font-bold text-ops-muted">等待保存</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="mt-5 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops">
+        <div class="border-b border-ops-line p-5"><h2 class="text-xl font-black">当前广播规则</h2><p class="mt-1 text-sm text-ops-muted">这些规则会作为「广播」配置出现在群配置绑定里。</p></div>
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[980px] text-sm">
+            <thead class="bg-[#f9fbfa] text-left text-xs uppercase text-ops-muted"><tr><th class="px-5 py-3">配置名称</th><th class="px-5 py-3">来源群</th><th class="px-5 py-3">监听 Topic</th><th class="px-5 py-3">转发机器人</th><th class="px-5 py-3">状态</th></tr></thead>
+            <tbody id="broadcastRuleRows"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script>
+    const demoChatId = "-1003710405969";
+    const storageKey = "yubitBroadcastRules";
+    const defaultRules = [
+      { name: "Demo Topic 全部消息广播", group: "YUBIT × Winkey Agent Community", chatId: demoChatId, topic: "test", topicId: null, listen: "全部消息", bot: "YUBITadmin", frequency: "实时", status: "已启用" }
+    ];
+
+    function escapeHtml(value) {
+      return String(value || "").replace(/[&<>"']/g, (char) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[char]));
+    }
+
+    function readRules() {
+      try {
+        const rules = JSON.parse(localStorage.getItem(storageKey) || "[]");
+        return Array.isArray(rules) && rules.length ? rules : defaultRules;
+      } catch {
+        return defaultRules;
+      }
+    }
+
+    async function writeRules(rules) {
+      localStorage.setItem(storageKey, JSON.stringify(rules));
+      await fetch("/api/broadcast-rules", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ rules })
+      });
+    }
+
+    function renderRules() {
+      const rules = readRules();
+      document.getElementById("broadcastRuleCount").textContent = String(rules.length);
+      document.getElementById("broadcastBotMetric").textContent = rules[0]?.bot || "可配置";
+      document.getElementById("broadcastRuleRows").innerHTML = rules.map((rule) => `
+        <tr class="border-t border-ops-line">
+          <td class="px-5 py-4 font-bold">${escapeHtml(rule.name)}</td>
+          <td class="px-5 py-4">${escapeHtml(rule.group || "Demo 群")}<div class="mt-1 font-mono text-xs text-ops-muted">${escapeHtml(rule.chatId || demoChatId)}</div></td>
+          <td class="px-5 py-4">${escapeHtml(rule.topic || "未选择")}${rule.topicId ? `<div class="mt-1 font-mono text-xs text-ops-muted">thread ${escapeHtml(rule.topicId)}</div>` : ""}</td>
+          <td class="px-5 py-4">${escapeHtml(rule.bot || "YUBITadmin")}<div class="mt-1 text-xs text-ops-muted">${escapeHtml(rule.listen || "全部消息")}</div></td>
+          <td class="px-5 py-4"><span class="rounded-full bg-[#e6f7ef] px-2 py-1 text-xs font-black text-ops-accent">${escapeHtml(rule.status || "已启用")}</span></td>
+        </tr>
+      `).join("");
+    }
+
+    async function loadDemoTopics() {
+      const select = document.getElementById("sourceTopicSelect");
+      try {
+        const rulesResponse = await fetch("/api/broadcast-rules");
+        const rulesData = await rulesResponse.json();
+        if (rulesData.rules?.length) {
+          localStorage.setItem(storageKey, JSON.stringify(rulesData.rules));
+          renderRules();
+        } else {
+          await writeRules(readRules());
+        }
+        const response = await fetch("/api/group-config");
+        const data = await response.json();
+        const group = (data.groups || []).find((item) => String(item.chatId) === demoChatId) || (data.groups || []).find((item) => (item.title || "").includes("Winkey"));
+        const topics = group?.topics?.length ? group.topics : [{ name: "test", threadId: null }];
+        document.getElementById("demoGroupInput").value = group?.title || "YUBIT × Winkey Agent Community";
+        select.innerHTML = topics.map((topic) => `<option value="${escapeHtml(topic.name)}" data-thread-id="${escapeHtml(topic.threadId || "")}">${escapeHtml(topic.name)}</option>`).join("");
+      } catch {
+        select.innerHTML = '<option value="test">test</option>';
+      }
+    }
+
+    document.getElementById("saveBroadcastRuleBtn").addEventListener("click", async () => {
+      const select = document.getElementById("sourceTopicSelect");
+      const topicName = select.value;
+      const topicId = select.selectedOptions[0]?.dataset?.threadId || null;
+      const ruleName = document.getElementById("ruleNameInput").value.trim() || `Demo ${topicName} 全部消息广播`;
+      const group = document.getElementById("demoGroupInput").value.trim();
+      const bot = document.getElementById("broadcastBotSelect").value;
+      const rules = readRules().filter((rule) => rule.name !== ruleName);
+      rules.unshift({ name: ruleName, group, chatId: demoChatId, topic: topicName, topicId, listen: "全部消息", bot, frequency: "实时", status: "已启用" });
+      document.getElementById("saveRuleStatus").textContent = "正在保存广播规则...";
+      await writeRules(rules);
+      renderRules();
+      document.getElementById("saveRuleStatus").textContent = "广播规则已保存，可到群配置里选择绑定。";
+    });
+
+    loadDemoTopics();
+    renderRules();
+  </script>
+</body>
+</html>

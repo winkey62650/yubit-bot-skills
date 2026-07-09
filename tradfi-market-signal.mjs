@@ -12,7 +12,6 @@ const threadId = Number(process.env.TELEGRAM_THREAD_ID || 12);
 const shouldSend = process.env.SEND_TELEGRAM === "true";
 const fastPeriod = Number(process.env.FAST_SMA || 20);
 const slowPeriod = Number(process.env.SLOW_SMA || 50);
-const yubitTradfiBaseUrl = process.env.YUBIT_TRADFI_BASE_URL || "https://www.yubit.com/tradfi";
 
 const instruments = [
   ["SPY", "S&P 500 ETF", "SPX500.s"],
@@ -59,10 +58,9 @@ if (shouldSend) {
   if (!token || !chatId) {
     throw new Error("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are required when SEND_TELEGRAM=true");
   }
-  const topSymbol = rows[0]?.yubitSymbol || "XAUUSD.s";
   const photoPath = await renderSignalCard(rows);
   const caption = formatSignalCaption(rows);
-  await postTelegramPhoto(caption, photoPath, `${yubitTradfiBaseUrl}/${topSymbol}`);
+  await postTelegramPhoto(caption, photoPath);
 }
 
 async function fetchYahooCloses(symbol) {
@@ -138,11 +136,13 @@ function formatSignalCaption(rows) {
   const crosses = rows.filter((row) => row.signal.includes("cross"));
   const top = rows[0];
   return [
-    "<b>YUBIT TradFi Signal · 1H Dual SMA</b>",
-    `SPY QQQ DIA IWM TLT GLD USO UUP · SMA${fastPeriod}/SMA${slowPeriod}`,
-    `Bullish ${bullish.length} · Bearish ${bearish.length} · Fresh crosses ${crosses.length}`,
-    top ? `Lead instrument: <b>${top.symbol}</b> ${top.signal} · 1h ${top.changePct}%` : "",
-    "Full table shown in image. Not investment advice."
+    `🇺🇸 🟢 <b>[${top?.symbol || "TRADFI"}]</b> TradFi SMA signal`,
+    `<b>Timeframe</b>: 1H · <b>Strategy</b>: SMA${fastPeriod}/${slowPeriod}`,
+    "",
+    `🟢 Bullish: <b>${bullish.length}</b> · 🔴 Bearish: <b>${bearish.length}</b> · ⚡ Crosses: <b>${crosses.length}</b>`,
+    top ? `${top.signal} · Last: <b>${formatNumber(top.last)}</b> · 1H: <b>${top.changePct}%</b>` : "",
+    "",
+    "<i>Informational only. Not investment advice.</i>"
   ]
     .filter(Boolean)
     .join("\n");
@@ -171,19 +171,13 @@ async function postTelegram(text) {
   if (!body.ok) throw new Error(body.description || "Telegram sendMessage failed");
 }
 
-async function postTelegramPhoto(caption, photoPath, buttonUrl) {
+async function postTelegramPhoto(caption, photoPath) {
   const form = new FormData();
   form.set("chat_id", chatId);
   form.set("message_thread_id", String(threadId));
   form.set("caption", trimCaption(caption));
   form.set("parse_mode", "HTML");
   form.set("photo", new Blob([await readFile(photoPath)], { type: "image/png" }), "tradfi-signal.png");
-  form.set(
-    "reply_markup",
-    JSON.stringify({
-      inline_keyboard: [[{ text: "Open YUBIT TradFi", url: buttonUrl }]]
-    })
-  );
 
   const response = await fetch(`${telegramBase}${token}/sendPhoto`, {
     method: "POST",

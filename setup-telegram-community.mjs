@@ -16,35 +16,52 @@ if (!chatId) {
 
 const config = JSON.parse(await fs.readFile(configPath, "utf8"));
 const dryRun = String(process.env.DRY_RUN ?? config.dryRun ?? "true") !== "false";
+const telegramDelayMs = Number(process.env.TELEGRAM_DELAY_MS || 5000);
+const topicDelayMs = Number(process.env.TELEGRAM_TOPIC_DELAY_MS || 8000);
+const statePath = process.env.YUBIT_SETUP_STATE || ".runtime/setup-state.json";
 
 const createdTopics = [];
+const warnings = [];
+const state = await readState();
 
 await call("getMe", {});
 await call("getChat", { chat_id: chatId });
 
 if (config.chatTitle) {
-  await call("setChatTitle", { chat_id: chatId, title: config.chatTitle });
+  await optionalCall("setChatTitle", { chat_id: chatId, title: config.chatTitle });
 }
 
 if (config.chatDescription) {
-  await call("setChatDescription", { chat_id: chatId, description: config.chatDescription });
+  await optionalCall("setChatDescription", { chat_id: chatId, description: config.chatDescription });
 }
 
 if (config.generalTopicName) {
-  await call("editGeneralForumTopic", { chat_id: chatId, name: config.generalTopicName });
+  await optionalCall("editGeneralForumTopic", { chat_id: chatId, name: config.generalTopicName });
 }
 
 for (const topic of config.topics ?? []) {
-  const forumTopic = await call("createForumTopic", {
-    chat_id: chatId,
-    name: topic.name
-  });
+  const topicKey = topic.key || slug(topic.name);
+  let forumTopic = state.topics?.[topicKey];
+
+  if (!forumTopic) {
+    forumTopic = await call("createForumTopic", {
+      chat_id: chatId,
+      name: topic.name
+    });
+    state.topics = { ...(state.topics || {}), [topicKey]: forumTopic };
+    await writeState(state);
+  } else {
+    warnings.push(`topic reused from state: ${topic.name}`);
+    console.error(`topic reused from state: ${topic.name}`);
+  }
 
   createdTopics.push({
     key: topic.key,
     name: topic.name,
     message_thread_id: forumTopic?.message_thread_id ?? null
   });
+
+  await sleep(topicDelayMs);
 
   if (!topic.announcement) continue;
 
@@ -57,15 +74,24 @@ for (const topic of config.topics ?? []) {
   });
 
   if (topic.pin && message?.message_id) {
-    await call("pinChatMessage", {
+    await optionalCall("pinChatMessage", {
       chat_id: chatId,
       message_id: message.message_id,
       disable_notification: true
     });
   }
+
+  if (topic.close) {
+    await call("closeForumTopic", {
+      chat_id: chatId,
+      message_thread_id: forumTopic?.message_thread_id
+    });
+  }
+
+  await sleep(topicDelayMs);
 }
 
-console.log(JSON.stringify({ ok: true, dryRun, createdTopics }, null, 2));
+console.log(JSON.stringify({ ok: true, dryRun, createdTopics, warnings }, null, 2));
 
 async function call(method, payload) {
   if (dryRun) {
@@ -79,26 +105,78 @@ async function call(method, payload) {
     return {};
   }
 
-  const response = await fetch(`${apiBase}${token}/${method}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload)
-  });
+  while (true) {
+    let body;
+    try {
+      const response = await fetch(`${apiBase}${token}/${method}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      body = await response.json();
+    } catch (error) {
+      console.error(`${method} network error: ${error.message}. Retrying after 10s.`);
+      await sleep(10000);
+      continue;
+    }
 
-  const body = await response.json();
+    if (body.ok) {
+      await sleep(telegramDelayMs);
+      return body.result;
+    }
 
-  if (!body.ok) {
+    const descriptionLower = String(body.description || "").toLowerCase();
+    if (descriptionLower.includes("not modified") || descriptionLower.includes("topic_not_modified")) {
+      console.error(`${method} skipped: ${body.description}`);
+      return {};
+    }
+
+    const retryAfter = body.parameters?.retry_after;
+    if (retryAfter) {
+      const waitMs = (Number(retryAfter) + 2) * 1000;
+      console.error(`${method} rate limited. Retrying after ${retryAfter}s.`);
+      await sleep(waitMs);
+      continue;
+    }
+
     const description = body.description || "Unknown Telegram API error";
     throw new Error(`${method} failed: ${description}`);
   }
+}
 
-  return body.result;
+async function optionalCall(method, payload) {
+  try {
+    return await call(method, payload);
+  } catch (error) {
+    const warning = `${method} skipped: ${error.message}`;
+    warnings.push(warning);
+    console.error(warning);
+    return null;
+  }
 }
 
 function redact(payload) {
   return Object.fromEntries(
     Object.entries(payload).map(([key, value]) => [key, key.toLowerCase().includes("token") ? "[redacted]" : value])
   );
+}
+
+async function readState() {
+  try {
+    const parsed = JSON.parse(await fs.readFile(statePath, "utf8"));
+    if (parsed.chatId === chatId) return parsed;
+  } catch {}
+  return { chatId, topics: {} };
+}
+
+async function writeState(nextState) {
+  const dir = statePath.split("/").slice(0, -1).join("/");
+  if (dir) await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(statePath, JSON.stringify(nextState, null, 2));
+}
+
+function slug(value) {
+  return String(value).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "topic";
 }
 
 function exitWithHelp(message) {
@@ -117,4 +195,8 @@ Required Telegram setup:
   4. Give it Manage Topics, Pin Messages, Change Group Info, and Send Messages permissions.
 `);
   process.exit(1);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
