@@ -8,6 +8,7 @@ import { smartMoneySources } from "../../smart-money-sources.mjs";
 
 export default function NewsPage() {
   const [sourceFilter, setSourceFilter] = useState("全部");
+  const [sourcePage, setSourcePage] = useState(1);
   const [selected, setSelected] = useState(() => new Set(recommendedCryptoNewsSources.filter(canPreview).map((source) => source.name)));
   const [preview, setPreview] = useState({ state: "idle", message: "选择一个新闻源后，会发送测试消息到 demo 群 test Topic。", source: null, items: [] });
   const [dailyReport, setDailyReport] = useState({ reportTime: "08:30", timezone: "Asia/Shanghai", bot: "Trader1", body: "" });
@@ -24,6 +25,11 @@ export default function NewsPage() {
   const [chartStatus, setChartStatus] = useState("看图分析配置待加载。");
   const visibleSources = cryptoNewsSources.filter((source) => sourceFilter === "全部" || source.kind.includes(sourceFilter));
   const enabledSources = cryptoNewsSources.filter((source) => selected.has(source.name));
+  const sourcePageSize = 6;
+  const totalSourcePages = Math.max(1, Math.ceil(visibleSources.length / sourcePageSize));
+  const safeSourcePage = Math.min(sourcePage, totalSourcePages);
+  const sourceStart = (safeSourcePage - 1) * sourcePageSize;
+  const pagedSources = visibleSources.slice(sourceStart, sourceStart + sourcePageSize);
 
   useEffect(() => {
     loadDailyReport();
@@ -210,7 +216,7 @@ export default function NewsPage() {
               <h2 className="text-xl font-black">加密新闻源池</h2>
               <p className="mt-1 text-sm text-ops-muted">勾选代表纳入新闻包；点击测试会抓取样本并发送到 demo 群 test Topic。</p>
             </div>
-            <select className={`${inputClass} w-full md:w-40`} value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}>
+            <select className={`${inputClass} w-full md:w-40`} value={sourceFilter} onChange={(event) => { setSourceFilter(event.target.value); setSourcePage(1); }}>
               <option>全部</option>
               <option>RSS</option>
               <option>API</option>
@@ -222,7 +228,7 @@ export default function NewsPage() {
                 <tr><th className="px-5 py-3">启用</th><th className="px-5 py-3">新闻源</th><th className="px-5 py-3">类型</th><th className="px-5 py-3">权限</th><th className="px-5 py-3">覆盖范围</th><th className="px-5 py-3">状态</th><th className="px-5 py-3">操作</th></tr>
               </thead>
               <tbody>
-                {visibleSources.map((source) => (
+                {pagedSources.map((source) => (
                   <tr className="border-t border-ops-line align-top" key={source.name}>
                     <td className="px-5 py-4"><input className="h-4 w-4" type="checkbox" checked={selected.has(source.name)} onChange={(event) => toggleSource(source.name, event.target.checked)} /></td>
                     <td className="px-5 py-4"><strong>{source.name}</strong><div className="mt-1 max-w-sm break-all font-mono text-xs text-ops-muted">{source.endpoint}</div></td>
@@ -243,6 +249,18 @@ export default function NewsPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+          <div className="flex flex-col gap-3 border-t border-ops-line px-5 py-4 text-sm text-ops-muted md:flex-row md:items-center md:justify-between">
+            <div>{visibleSources.length ? `显示 ${sourceStart + 1}-${sourceStart + pagedSources.length} / ${visibleSources.length} 个新闻源` : "没有匹配的新闻源"}</div>
+            <div className="flex items-center gap-2">
+              <button className="rounded-lg border border-ops-line px-3 py-2 text-xs font-black text-ops-muted disabled:cursor-not-allowed disabled:opacity-40" disabled={safeSourcePage <= 1} onClick={() => setSourcePage((page) => Math.max(1, page - 1))}>上一页</button>
+              <div className="flex items-center gap-1">
+                {Array.from({ length: totalSourcePages }, (_, index) => index + 1).map((page) => (
+                  <button className={`h-8 min-w-8 rounded-lg px-2 text-xs font-black ${page === safeSourcePage ? "bg-ops-accent text-white" : "border border-ops-line text-ops-muted"}`} key={page} onClick={() => setSourcePage(page)}>{page}</button>
+                ))}
+              </div>
+              <button className="rounded-lg border border-ops-line px-3 py-2 text-xs font-black text-ops-muted disabled:cursor-not-allowed disabled:opacity-40" disabled={safeSourcePage >= totalSourcePages} onClick={() => setSourcePage((page) => Math.min(totalSourcePages, page + 1))}>下一页</button>
+            </div>
           </div>
         </Card>
 

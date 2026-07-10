@@ -55,6 +55,14 @@
               <tbody id="sourceRows"></tbody>
             </table>
           </div>
+          <div class="flex flex-col gap-3 border-t border-ops-line px-5 py-4 text-sm text-ops-muted md:flex-row md:items-center md:justify-between">
+            <div id="sourcePageInfo">-</div>
+            <div class="flex items-center gap-2">
+              <button id="sourcePrevPage" class="rounded-lg border border-ops-line px-3 py-2 text-xs font-black text-ops-muted disabled:cursor-not-allowed disabled:opacity-40">上一页</button>
+              <div id="sourcePageButtons" class="flex items-center gap-1"></div>
+              <button id="sourceNextPage" class="rounded-lg border border-ops-line px-3 py-2 text-xs font-black text-ops-muted disabled:cursor-not-allowed disabled:opacity-40">下一页</button>
+            </div>
+          </div>
         </div>
 
         <div class="rounded-lg border border-ops-line bg-white p-5 shadow-ops">
@@ -210,6 +218,8 @@
         let newsConfigs = [];
         let dailyReportConfig = null;
         let chartAnalysisConfig = null;
+        const sourcePageSize = 6;
+        let sourcePage = 1;
 
         document.getElementById('metricTotal').textContent = String(cryptoNewsSources.length);
         document.getElementById('metricReady').textContent = String(cryptoNewsSources.filter(canPreview).length);
@@ -384,7 +394,11 @@
         function renderSources() {
           const value = filter.value;
           const visible = cryptoNewsSources.filter((source) => value === '全部' || source.kind.includes(value));
-          rows.innerHTML = visible.map((source) => {
+          const totalPages = Math.max(1, Math.ceil(visible.length / sourcePageSize));
+          sourcePage = Math.min(Math.max(1, sourcePage), totalPages);
+          const start = (sourcePage - 1) * sourcePageSize;
+          const pageItems = visible.slice(start, start + sourcePageSize);
+          rows.innerHTML = pageItems.map((source) => {
             const checked = selected.has(source.name) ? 'checked' : '';
             const disabled = canPreview(source) ? '' : 'cursor-not-allowed opacity-50';
             const disabledAttr = canPreview(source) ? '' : 'disabled';
@@ -397,6 +411,21 @@
               '<td class="px-5 py-4">' + pill(source) + '</td>' +
               '<td class="px-5 py-4"><button data-test="' + escapeHtml(source.name) + '" ' + disabledAttr + ' class="rounded-lg border border-ops-accent px-3 py-2 text-xs font-black text-ops-accent ' + disabled + '">测试</button></td>' +
             '</tr>';
+          }).join('');
+          renderSourcePagination(visible.length, totalPages, start, pageItems.length);
+        }
+
+        function renderSourcePagination(total, totalPages, start, count) {
+          document.getElementById('sourcePageInfo').textContent = total
+            ? '显示 ' + (start + 1) + '-' + (start + count) + ' / ' + total + ' 个新闻源'
+            : '没有匹配的新闻源';
+          document.getElementById('sourcePrevPage').disabled = sourcePage <= 1;
+          document.getElementById('sourceNextPage').disabled = sourcePage >= totalPages;
+          const buttons = document.getElementById('sourcePageButtons');
+          buttons.innerHTML = Array.from({ length: totalPages }, (_, index) => {
+            const page = index + 1;
+            const active = page === sourcePage;
+            return '<button data-source-page="' + page + '" class="h-8 min-w-8 rounded-lg px-2 text-xs font-black ' + (active ? 'bg-ops-accent text-white' : 'border border-ops-line text-ops-muted') + '">' + page + '</button>';
           }).join('');
         }
 
@@ -532,7 +561,24 @@
           testSource(name);
         });
 
-        filter.addEventListener('change', renderSources);
+        filter.addEventListener('change', () => {
+          sourcePage = 1;
+          renderSources();
+        });
+        document.getElementById('sourcePrevPage').addEventListener('click', () => {
+          sourcePage -= 1;
+          renderSources();
+        });
+        document.getElementById('sourceNextPage').addEventListener('click', () => {
+          sourcePage += 1;
+          renderSources();
+        });
+        document.getElementById('sourcePageButtons').addEventListener('click', (event) => {
+          const page = Number(event.target?.dataset?.sourcePage || 0);
+          if (!page) return;
+          sourcePage = page;
+          renderSources();
+        });
         document.getElementById('smartMoneyTest').addEventListener('click', testSmartMoney);
         document.getElementById('saveDailyReport').addEventListener('click', saveDailyReportConfig);
         document.getElementById('testDailyReport').addEventListener('click', testDailyReportConfig);
