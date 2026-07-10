@@ -124,18 +124,18 @@ export default function GroupConfigPage() {
   }
 
   async function unlinkRoute(id) {
-    const nextRoutes = routes.filter((route) => route.id !== id);
-    setRoutes(nextRoutes);
     try {
-      const response = await fetch("/api/group-config", {
+      const response = await fetch("/api/group-binding-delete", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ bindings: nextRoutes })
+        body: JSON.stringify({ id })
       });
       const data = await response.json();
-      setDiscoverStatus(data.ok ? "绑定规则已更新" : data.error || "绑定规则保存失败");
+      if (!data.ok) throw new Error(data.error || "解绑失败");
+      setRoutes(data.bindings || routes.filter((route) => route.id !== id));
+      setDiscoverStatus(`已解绑 ${data.deleted || 1} 条规则，自动发送将在下一轮检查停止。`);
     } catch (error) {
-      setDiscoverStatus(`绑定规则保存失败：${error.message}`);
+      setDiscoverStatus(`解绑失败：${error.message}`);
     }
   }
 

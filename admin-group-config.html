@@ -172,13 +172,38 @@
         </tr>
       `).join("");
       rows.querySelectorAll("[data-action='unlink']").forEach((button) => {
-        button.addEventListener("click", (event) => {
+        button.addEventListener("click", async (event) => {
           const tr = event.target.closest("tr");
-          bindingRows = bindingRows.filter((row) => row.id !== tr.dataset.id);
-          renderAllBindingViews();
-          saveBindings();
+          await unlinkBinding(tr.dataset.id, event.target);
         });
       });
+    }
+
+    async function unlinkBinding(id, button) {
+      const status = document.getElementById("configDiscoverStatus");
+      const originalText = button?.textContent || "解绑";
+      if (button) {
+        button.disabled = true;
+        button.textContent = "解绑中...";
+      }
+      try {
+        const response = await fetch("/api/group-binding-delete", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id })
+        });
+        const data = await response.json();
+        if (!data.ok) throw new Error(data.error || "解绑失败");
+        bindingRows = data.bindings || bindingRows.filter((row) => row.id !== id);
+        renderAllBindingViews();
+        status.textContent = `已解绑 ${data.deleted || 1} 条规则，自动发送将在下一轮检查停止。`;
+      } catch (error) {
+        status.textContent = `解绑失败：${error.message}`;
+        if (button) {
+          button.disabled = false;
+          button.textContent = originalText;
+        }
+      }
     }
 
     function renderAllBindingViews() {

@@ -156,6 +156,12 @@ const server = createServer(async (request, response) => {
       sendJson(response, result.ok ? 200 : 400, result);
       return;
     }
+    if (request.method === "POST" && url.pathname === "/api/group-binding-delete") {
+      const body = await readJson(request);
+      const result = await deleteGroupBinding(body);
+      sendJson(response, result.ok ? 200 : 400, result);
+      return;
+    }
     if (request.method === "GET" && url.pathname === "/api/broadcast-rules") {
       const result = await readBroadcastRules();
       sendJson(response, 200, result);
@@ -1897,6 +1903,24 @@ async function saveLocalGroupConfig(body) {
   await mkdir(join(root, ".runtime"), { recursive: true });
   await writeFile(groupConfigPath, JSON.stringify(config, null, 2));
   return { ok: true, ...normalizeGroupConfig(config) };
+}
+
+async function deleteGroupBinding(body) {
+  const existingConfig = existsSync(groupConfigPath) ? normalizeGroupConfig(JSON.parse(await readFile(groupConfigPath, "utf8"))) : normalizeGroupConfig({});
+  const id = String(body?.id || "").trim();
+  const before = existingConfig.bindings.length;
+  const bindings = normalizeBindings(existingConfig.bindings).filter((binding) => {
+    if (id && binding.id === id) return false;
+    if (!id && body?.group && body?.topic && body?.config) {
+      return !(binding.group === body.group && binding.topic === body.topic && binding.config === body.config);
+    }
+    return true;
+  });
+  if (bindings.length === before) return { ok: false, error: "Binding not found", bindings: existingConfig.bindings };
+  const config = { groups: existingConfig.groups, bindings, updatedAt: new Date().toISOString() };
+  await mkdir(join(root, ".runtime"), { recursive: true });
+  await writeFile(groupConfigPath, JSON.stringify(config, null, 2));
+  return { ok: true, ...normalizeGroupConfig(config), deleted: before - bindings.length };
 }
 
 function migrateBindingGroupNames(bindings, renamedGroups) {
