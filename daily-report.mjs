@@ -37,8 +37,57 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 
 export function formatDailyReport(title, body) {
   const text = String(body || defaultDailyReport).trim();
-  if (!title) return trimTelegram(escapeHtml(text));
-  return trimTelegram(`<b>${escapeHtml(title)}</b>\n\n${escapeHtml(text)}`);
+  const { heading, items } = parseDailyReport(text);
+  const finalTitle = title || heading || "Morning Market Highlights";
+  const lines = [
+    `<b>${escapeHtml(finalTitle)}</b>`,
+    "<i>Key overnight moves across crypto, equities and macro.</i>",
+    ""
+  ];
+
+  if (!items.length) {
+    lines.push(escapeHtml(text));
+    return trimTelegram(lines.join("\n"));
+  }
+
+  items.forEach((item, index) => {
+    lines.push(`<b>${index + 1}. ${escapeHtml(classifyDailyItem(item))}</b>`);
+    lines.push(escapeHtml(item));
+    if (index !== items.length - 1) lines.push("");
+  });
+
+  lines.push("", "<i>Market update only. Not investment advice.</i>");
+  return trimTelegram(lines.join("\n"));
+}
+
+function parseDailyReport(text) {
+  const lines = String(text || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const heading = lines[0] && !/^\d+\./.test(lines[0]) ? lines[0] : "";
+  const body = heading ? lines.slice(1).join("\n") : lines.join("\n");
+  const matches = [...body.matchAll(/(?:^|\n)(\d+)\.\s+([\s\S]*?)(?=\n\d+\.\s+|$)/g)];
+  return {
+    heading,
+    items: matches.map((match) => match[2].replace(/\s+/g, " ").trim()).filter(Boolean)
+  };
+}
+
+function classifyDailyItem(item) {
+  const text = String(item || "").toLowerCase();
+  const rules = [
+    [/nasdaq.*crude|dow.*crude|wti/, "Market Wrap"],
+    [/spacex|nasdaq 100|index funds|401\(k\)|ira/, "Passive Flows"],
+    [/strategy|bitcoin treasury|btc|balance sheet/, "Bitcoin Treasuries"],
+    [/\bcz\b|meme coin/, "BNB Chain"],
+    [/solana|active addresses|bnb chain|trading volume/, "On-chain Activity"],
+    [/bonk|bonkdao|stolen|attack|malicious/, "Security & Governance"],
+    [/samsung|semiconductor|earnings|operating profit/, "Semiconductors"],
+    [/ansem|airdrop|market cap/, "Token Momentum"],
+    [/trump|dell|micron|bitcoin/, "US Politics & Stocks"],
+    [/sivers|lumentum|photonics/, "Equity Watch"],
+    [/lighter|robinhood|vitalik|rewards pool/, "Ethereum Ecosystem"],
+    [/nasdaq|dow|amd|bitcoin|crude|wti|oil/, "Market Wrap"]
+  ];
+  return rules.find(([pattern]) => pattern.test(text))?.[1] || "Market Highlight";
 }
 
 async function postTelegram(text) {

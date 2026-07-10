@@ -157,28 +157,31 @@ function buildSourceStatus() {
 function formatSnapshot(snapshot) {
   const time = snapshot.generatedAt.replace("T", " ").slice(0, 16) + " UTC";
   const lines = [
-    "<b>YUBIT Smart Money Tracker</b>",
+    "<b>YUBIT Smart Money Monitor</b>",
+    "<i>Whale flows · order-book walls · liquidation risk</i>",
     "",
+    `<b>Snapshot</b>`,
     `Time: ${time}`,
-    `Watchlist: ${snapshot.symbols.join(", ")}`,
+    `Assets: ${snapshot.symbols.join(" · ")}`,
     "",
-    "<b>Large Order-Book Walls</b>"
+    "<b>1. Order-Book Walls</b>"
   ];
 
   const walls = snapshot.orderBooks.flatMap((item) => item.walls || []);
   if (!walls.length) {
-    lines.push(`No Binance futures wall above ${formatUsd(wallThresholdUsd)} in current depth snapshot.`);
+    lines.push(`No Binance Futures wall above ${formatUsd(wallThresholdUsd)} in the current depth snapshot.`);
   } else {
     walls.slice(0, 12).forEach((wall, index) => {
-      const side = wall.side === "bid" ? "BID support" : "ASK resistance";
-      lines.push(`${index + 1}. <b>${wall.symbol}</b> ${side} @ ${formatPrice(wall.price)} | ${formatUsd(wall.notionalUsd)}`);
+      const side = wall.side === "bid" ? "Bid support" : "Ask resistance";
+      lines.push(`${index + 1}. <b>${wall.symbol}</b> · ${side}`);
+      lines.push(`   Price: ${formatPrice(wall.price)} · Size: ${formatUsd(wall.notionalUsd)}`);
     });
   }
 
-  lines.push("", "<b>Large Liquidations</b>");
+  lines.push("", "<b>2. Liquidation Risk</b>");
   const liqs = snapshot.liquidations.rows || [];
   if (!liqs.length) {
-    lines.push(escapeHtml(snapshot.liquidations.reason || "No liquidation data available."));
+    lines.push(formatUnavailable(snapshot.liquidations.reason || "No liquidation data available."));
   } else {
     liqs.slice(0, 10).forEach((row, index) => {
       if (!row.ok) {
@@ -193,7 +196,7 @@ function formatSnapshot(snapshot) {
     });
   }
 
-  lines.push("", "<b>ETF & Institution Flows</b>");
+  lines.push("", "<b>3. ETF & Institution Flows</b>");
   if (snapshot.etfFlows.rows?.length) {
     snapshot.etfFlows.rows.forEach((row) => {
       if (!row.ok) {
@@ -203,18 +206,24 @@ function formatSnapshot(snapshot) {
       lines.push(`${row.asset} spot ETF net flow: <b>${formatUsd(row.netFlowUsd)}</b> · ${row.timestamp.slice(0, 10)}`);
     });
   } else {
-    lines.push("Glassnode ETF flow adapter is ready, but GLASSNODE_API_KEY is not configured.");
+    lines.push(formatUnavailable("Glassnode ETF flow adapter is ready; GLASSNODE_API_KEY is not configured."));
   }
 
-  lines.push("", "<b>Professional Sources Needed</b>");
+  lines.push("", "<b>4. Data Coverage</b>");
   const missing = snapshot.sourceStatus
     .filter((source) => source.status === "missing key")
     .slice(0, 6)
-    .map((source) => `${source.name}${source.env ? ` (${source.env})` : ""}`);
-  lines.push(missing.length ? escapeHtml(missing.join(" · ")) : "All configured source keys are present.");
-  lines.push("", "<i>Informational only. Not investment advice. Exchange-only data may miss OTC, cross-chain, and internal transfers.</i>");
+    .map((source) => source.name.replace(/\s+(API|Alerts API|Institutions API)$/i, ""));
+  lines.push(missing.length
+    ? `Pending keys: ${escapeHtml(missing.join(" · "))}`
+    : "All configured professional sources are active.");
+  lines.push("", "<i>For market monitoring only. Not investment advice. Exchange data may miss OTC, cross-chain and internal transfers.</i>");
 
   return trimTelegram(lines.join("\n"));
+}
+
+function formatUnavailable(message) {
+  return `Status: pending data source\nNote: ${escapeHtml(message)}`;
 }
 
 async function postTelegram(text) {
