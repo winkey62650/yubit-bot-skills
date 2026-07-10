@@ -249,7 +249,7 @@ async function discoverChats() {
     return { ok: true, chats: local.groups || [], source: "local-fallback" };
   }
   const local = await readLocalGroupConfig();
-  const merged = normalizeGroups([...discovered, ...(local.groups || [])]);
+  const merged = normalizeGroups([...(local.groups || []), ...discovered]);
   return { ok: true, chats: merged, source: "telegram-updates" };
 }
 
@@ -1842,15 +1842,21 @@ async function saveLocalGroupConfig(body) {
     if (!body.groups.length && existingConfig.groups.length) {
       return { ok: true, ...existingConfig, warning: "Empty discovery result ignored; kept existing groups." };
     }
+    const renamedGroups = new Map();
     const groups = normalizeGroups(body.groups.map((group) => {
       const existing = existingConfig.groups.find((item) => item.chatId === String(group?.chatId || group?.id || "").trim());
+      const nextTitle = String(group?.title || group?.chatTitle || existing?.title || "").trim();
+      if (existing?.title && nextTitle && existing.title !== nextTitle) {
+        renamedGroups.set(existing.title, nextTitle);
+      }
       return {
         ...existing,
         ...group,
         topics: Array.isArray(group?.topics) && group.topics.length ? group.topics : existing?.topics
       };
     }));
-    const config = { groups, bindings: existingConfig.bindings, updatedAt: new Date().toISOString() };
+    const bindings = migrateBindingGroupNames(existingConfig.bindings, renamedGroups);
+    const config = { groups, bindings, updatedAt: new Date().toISOString() };
     await mkdir(join(root, ".runtime"), { recursive: true });
     await writeFile(groupConfigPath, JSON.stringify(config, null, 2));
     return { ok: true, ...normalizeGroupConfig(config) };
@@ -1872,11 +1878,23 @@ async function saveLocalGroupConfig(body) {
     canUseTopics: body?.canUseTopics !== false,
     topics: body?.topics
   });
+  const existing = existingConfig.groups.find((item) => item.chatId === group.chatId);
+  const renamedGroups = new Map();
+  if (existing?.title && existing.title !== group.title) renamedGroups.set(existing.title, group.title);
   const groups = [group, ...existingConfig.groups.filter((item) => item.chatId !== group.chatId)];
-  const config = { groups, bindings: existingConfig.bindings, updatedAt: new Date().toISOString() };
+  const bindings = migrateBindingGroupNames(existingConfig.bindings, renamedGroups);
+  const config = { groups, bindings, updatedAt: new Date().toISOString() };
   await mkdir(join(root, ".runtime"), { recursive: true });
   await writeFile(groupConfigPath, JSON.stringify(config, null, 2));
   return { ok: true, ...normalizeGroupConfig(config) };
+}
+
+function migrateBindingGroupNames(bindings, renamedGroups) {
+  if (!renamedGroups?.size) return bindings;
+  return normalizeBindings(bindings).map((binding) => ({
+    ...binding,
+    group: renamedGroups.get(binding.group) || binding.group
+  }));
 }
 
 function normalizeGroupConfig(config) {
