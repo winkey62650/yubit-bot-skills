@@ -278,11 +278,13 @@ async function enrichLocalGroups(token, groups) {
 async function enrichDiscoveredChat(token, chat) {
   try {
     const result = await telegram(token, "getChat", { chat_id: chat.chatId || chat.id });
+    const hasKnownTopics = Array.isArray(chat.topics) && chat.topics.length > 0;
+    const isForum = result.type === "supergroup" && (result.is_forum === true || hasKnownTopics);
     return {
       ...chat,
       type: result.type || chat.type,
       title: result.title || chat.title,
-      canUseTopics: result.type === "supergroup" && result.is_forum === true
+      canUseTopics: isForum
     };
   } catch {
     return chat;
@@ -1986,11 +1988,12 @@ function normalizeGroups(groups) {
 function normalizeGroup(group) {
   const chatId = String(group?.chatId || group?.id || "").trim();
   const topics = normalizeTopics(group?.topics?.length ? group.topics : getLocalTopicHints(chatId));
+  const canUseTopics = group?.canUseTopics !== false || topics.length > 0;
   return {
     chatId,
     title: String(group?.title || chatId).trim(),
     type: String(group?.type || "supergroup"),
-    canUseTopics: group?.canUseTopics !== false,
+    canUseTopics,
     topics,
     savedAt: group?.savedAt || new Date().toISOString()
   };

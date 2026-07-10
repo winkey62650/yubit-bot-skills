@@ -274,12 +274,23 @@
         <tr class="border-t border-ops-line">
           <td class="px-5 py-4 font-bold">${escapeHtml(group.title)}</td>
           <td class="px-5 py-4"><span class="internal-id">${escapeHtml(group.chatId)}</span></td>
-          <td class="px-5 py-4">${escapeHtml(group.canUseTopics ? "Forum 群" : "普通群")}</td>
-          <td class="px-5 py-4">${group.canUseTopics ? `${(group.topics || []).length || 0} 个 Topic` : "不支持 Topic"}</td>
+          <td class="px-5 py-4">${escapeHtml(groupTypeLabel(group))}</td>
+          <td class="px-5 py-4">${groupCanUseTopics(group) ? `${(group.topics || []).length || 0} 个 Topic` : "不支持 Topic"}</td>
         </tr>
       `).join("") : '<tr><td colspan="4" class="px-5 py-6 font-bold text-ops-muted">暂无已配置群。</td></tr>';
       renderBindingFormOptions();
       renderGroupFilter();
+    }
+
+    function groupCanUseTopics(group) {
+      return group?.canUseTopics !== false || (group?.topics || []).length > 0;
+    }
+
+    function groupTypeLabel(group) {
+      if (groupCanUseTopics(group)) return "Forum 群";
+      if (group?.type === "supergroup") return "超级群";
+      if (group?.type === "group") return "普通群";
+      return group?.type || "未知";
     }
 
     function escapeHtml(value) {
@@ -419,7 +430,7 @@
       const topicSelect = document.getElementById("bindingTopicSelect");
       const hint = document.getElementById("bindingTopicHint");
       const group = currentGroups().find((item) => item.title === groupSelect.value) || currentGroups()[0];
-      const topics = group?.canUseTopics === false ? [] : (group?.topics || []);
+      const topics = groupCanUseTopics(group) ? (group?.topics || []) : [];
       topicSelect.innerHTML = topics.length
         ? topics.map((topic) => `<option value="${escapeHtml(topic.name)}" data-thread-id="${escapeHtml(topic.threadId || "")}">${escapeHtml(topic.name)}</option>`).join("")
         : '<option value="">这个群还没有发现 Topic</option>';
@@ -543,7 +554,7 @@
         });
         const saved = await saveResponse.json();
         renderKnownGroups(saved.groups || []);
-        const disabledCount = chats.filter((chat) => !chat.canUseTopics).length;
+        const disabledCount = (saved.groups || chats).filter((chat) => !groupCanUseTopics(chat)).length;
         status.textContent = chats.length
           ? `已刷新 ${chats.length} 个群${disabledCount ? `，其中 ${disabledCount} 个还没有开启 Topic` : ""}`
           : "未发现群。请确认管理机器人已加入新群，并在群里发一条消息后再刷新。";
