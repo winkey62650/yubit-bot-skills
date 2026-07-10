@@ -21,6 +21,8 @@
     "manage:repair-topic-names": "node scripts/repair-topic-names.mjs",
     "manage:tokens": "node scripts/token-settings.mjs",
     "manage:card": "node scripts/card-sender.mjs",
+    "service:sync": "zsh scripts/sync-launchd-service.zsh",
+    "service:status": "launchctl print gui/$(id -u)/com.yubit.bot-skills",
     "monitor:health": "node monitor-health-to-lark.mjs"
   },
   "engines": {

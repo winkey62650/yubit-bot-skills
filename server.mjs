@@ -9,7 +9,7 @@ import { getTelegramGroupMetrics } from "./lib/telegram-metrics.mjs";
 import { cryptoNewsSources } from "./crypto-news-sources.mjs";
 
 const port = Number(process.env.PORT || 4173);
-const root = process.cwd();
+const root = process.env.YUBIT_ROOT || process.cwd();
 const groupConfigPath = join(root, ".runtime", "group-config.json");
 const newsConfigsPath = join(root, ".runtime", "news-configs.json");
 const newsStatusPath = join(root, ".runtime", "news-status.json");
@@ -17,6 +17,7 @@ const broadcastRulesPath = join(root, ".runtime", "broadcast-rules.json");
 const broadcastOffsetPath = join(root, ".runtime", "broadcast-offset.json");
 const broadcastStatusPath = join(root, ".runtime", "broadcast-status.json");
 const socialPackagesPath = join(root, ".runtime", "social-packages.json");
+const socialStatusPath = join(root, ".runtime", "social-status.json");
 const demoChatId = process.env.DEMO_TELEGRAM_CHAT_ID || "-1003710405969";
 const demoTestTopicPath = join(root, ".runtime", "demo-test-topic.json");
 const fallbackNewsImageUrl = "https://images.unsplash.com/photo-1640340434855-6084b1f4901c?auto=format&fit=crop&w=1200&q=80";
@@ -132,6 +133,11 @@ const server = createServer(async (request, response) => {
       sendJson(response, 200, result);
       return;
     }
+    if (request.method === "GET" && url.pathname === "/api/social-status") {
+      const result = readSocialStatus();
+      sendJson(response, result.ok ? 200 : 500, result);
+      return;
+    }
     if (request.method === "POST" && url.pathname === "/api/social-packages") {
       const body = await readJson(request);
       const result = await saveSocialPackages(body);
@@ -147,6 +153,7 @@ const server = createServer(async (request, response) => {
 server.listen(port, () => {
   console.log(`YUBIT local admin server running at http://localhost:${port}/admin-group-config.html`);
   startNewsDispatcher();
+  startSocialDispatcher();
   startBroadcastPoller();
 });
 
@@ -758,6 +765,238 @@ function normalizeSocialPackages(packages) {
     .filter((item) => item.name && item.agent);
 }
 
+let socialDispatcherStarted = false;
+let socialDispatcherBusy = false;
+
+function startSocialDispatcher() {
+  if (socialDispatcherStarted || process.env.DISABLE_SOCIAL_DISPATCHER === "true") return;
+  socialDispatcherStarted = true;
+  dispatchSocialBindings({ initialize: true }).catch((error) => {
+    writeSocialStatus({ ok: false, error: error.message, stage: "initialize" }).catch(() => {});
+  });
+  setInterval(() => {
+    if (socialDispatcherBusy) return;
+    socialDispatcherBusy = true;
+    dispatchSocialBindings().finally(() => {
+      socialDispatcherBusy = false;
+    });
+  }, Number(process.env.SOCIAL_DISPATCH_INTERVAL_MS || 60000));
+}
+
+async function dispatchSocialBindings(options = {}) {
+  const tokens = readTokenEnv(".env.telegram-tokens.local");
+  const twitterApiKey = tokens.TWITTERAPI_IO_KEY || process.env.TWITTERAPI_IO_KEY;
+  const groupConfig = await readLocalGroupConfig();
+  const socialPackages = await readSocialPackages();
+  const state = readSocialDispatchState();
+  const now = Date.now();
+  const sent = [];
+  const skipped = [];
+  const errors = [];
+  const bindings = (groupConfig.bindings || []).filter((binding) => binding.type === "代理社媒" && binding.status !== "暂停");
+
+  for (const binding of bindings) {
+    const pkg = (socialPackages.packages || []).find((item) => item.name === binding.config);
+    if (!pkg || pkg.status === "暂停" || pkg.status === "待接入") {
+      skipped.push({ binding: binding.config, reason: "社媒包未启用或不存在" });
+      continue;
+    }
+    if (!pkg.platform.toLowerCase().includes("twitter") && !pkg.platform.includes("X")) {
+      skipped.push({ binding: binding.config, reason: "当前只支持 Twitter / X 自动转发" });
+      continue;
+    }
+    if (!twitterApiKey) {
+      errors.push({ binding: binding.config, error: "缺少 TWITTERAPI_IO_KEY" });
+      continue;
+    }
+
+    const intervalMs = frequencyToMs(binding.frequency || pkg.frequency);
+    const bindingKey = socialBindingKey(binding);
+    const bindingState = state.dispatchState[bindingKey] || {};
+    if (!options.initialize && bindingState.lastAttemptAt && now - Number(bindingState.lastAttemptAt) < intervalMs) {
+      skipped.push({ binding: binding.config, reason: "未到发送频率" });
+      continue;
+    }
+    bindingState.lastAttemptAt = now;
+    state.dispatchState[bindingKey] = bindingState;
+
+    const group = findGroupByTitle(groupConfig.groups || [], binding.group);
+    if (!group?.chatId) {
+      errors.push({ binding: binding.config, error: "找不到目标群" });
+      continue;
+    }
+    const threadId = binding.topicId || findTopicId(group, binding.topic);
+    if (!threadId) {
+      errors.push({ binding: binding.config, group: binding.group, topic: binding.topic, error: "找不到目标 Topic" });
+      continue;
+    }
+    const token = tokenForBotRole(tokens, binding.bot || pkg.bot);
+    if (!token) {
+      errors.push({ binding: binding.config, error: `缺少 ${binding.bot || pkg.bot} token` });
+      continue;
+    }
+
+    try {
+      const tweets = await fetchTwitterLatestTweets(twitterApiKey, pkg);
+      const candidates = filterSocialTweets(tweets, pkg);
+      if (options.initialize && !bindingState.sentIds?.length) {
+        bindingState.sentIds = candidates.map((tweet) => socialTweetId(tweet)).filter(Boolean).slice(0, 50);
+        bindingState.lastCheckedAt = now;
+        bindingState.lastTitle = candidates[0]?.text?.slice(0, 120) || "";
+        skipped.push({ binding: binding.config, reason: `初始化记录 ${bindingState.sentIds.length} 条历史推文` });
+        continue;
+      }
+
+      const sentIds = new Set(bindingState.sentIds || []);
+      const newTweets = candidates.filter((tweet) => !sentIds.has(socialTweetId(tweet))).slice(0, Number(process.env.SOCIAL_MAX_SEND_PER_BINDING || 3)).reverse();
+      if (!newTweets.length) {
+        skipped.push({ binding: binding.config, reason: "没有新的可转发推文" });
+        continue;
+      }
+      for (const tweet of newTweets) {
+        await sendTweetToTelegram(token, group.chatId, threadId, pkg, tweet);
+        const id = socialTweetId(tweet);
+        if (id) sentIds.add(id);
+        sent.push({ binding: binding.config, group: binding.group, topic: binding.topic, bot: binding.bot || pkg.bot, tweetId: id, url: tweet.url });
+        bindingState.lastSentAt = now;
+        bindingState.lastTitle = String(tweet.text || "").slice(0, 120);
+      }
+      bindingState.sentIds = [...sentIds].slice(-50).reverse();
+      bindingState.lastCheckedAt = now;
+    } catch (error) {
+      errors.push({ binding: binding.config, error: error.message });
+    }
+  }
+
+  await writeSocialDispatchState(state);
+  await writeSocialStatus({
+    ok: errors.length === 0,
+    checkedAt: new Date().toISOString(),
+    bindingCount: bindings.length,
+    sent: sent.length,
+    sentItems: sent.slice(-10),
+    skipped: skipped.slice(-10),
+    errors: errors.slice(-10)
+  });
+}
+
+async function fetchTwitterLatestTweets(apiKey, pkg) {
+  const identity = resolveTwitterIdentity(pkg);
+  if (!identity.userName && !identity.userId) throw new Error("缺少 Twitter userName 或 userId");
+  const attempts = [];
+  if (identity.userName) attempts.push({ userName: identity.userName });
+  if (identity.userId) attempts.push({ userId: identity.userId });
+
+  let lastMessage = "";
+  for (const params of attempts) {
+    const url = new URL("https://api.twitterapi.io/twitter/user/last_tweets");
+    for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+    url.searchParams.set("includeReplies", "false");
+    const response = await fetch(url, {
+      headers: { "X-API-Key": apiKey },
+      signal: AbortSignal.timeout(Number(process.env.TWITTERAPI_TIMEOUT_MS || 12000))
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.message || body.msg || `TwitterAPI.io ${response.status}`);
+    const tweets = normalizeTwitterApiTweets(body);
+    if (tweets.length) return tweets;
+    lastMessage = body.msg || body.message || "没有返回 tweets";
+  }
+  throw new Error(lastMessage || "TwitterAPI.io 没有返回 tweets");
+}
+
+function resolveTwitterIdentity(pkg) {
+  const urlName = extractTwitterUserName(pkg.accountUrl);
+  return {
+    userName: urlName,
+    userId: String(pkg.userId || "").trim()
+  };
+}
+
+function extractTwitterUserName(value) {
+  const text = String(value || "");
+  const urlMatch = text.match(/(?:https?:\/\/)?(?:www\.)?(?:x|twitter)\.com\/([A-Za-z0-9_]{1,15})/i);
+  if (urlMatch) return urlMatch[1];
+  const atMatch = text.match(/@([A-Za-z0-9_]{1,15})/);
+  return atMatch?.[1] || "";
+}
+
+function normalizeTwitterApiTweets(body) {
+  const tweets = body?.tweets || body?.data?.tweets || body?.data?.data || [];
+  return (Array.isArray(tweets) ? tweets : []).filter((tweet) => tweet?.id || tweet?.url);
+}
+
+function filterSocialTweets(tweets, pkg) {
+  const contentType = String(pkg.contentType || "");
+  return tweets.filter((tweet) => {
+    if (contentType.includes("排除") && (tweet.retweeted_tweet || tweet.retweetedTweet || tweet.type === "retweet")) return false;
+    return true;
+  });
+}
+
+function socialBindingKey(binding) {
+  return [binding.group, binding.topic, binding.config].map((item) => normalizeName(item)).join(":");
+}
+
+function socialTweetId(tweet) {
+  return String(tweet?.id || tweet?.url || "").trim();
+}
+
+async function sendTweetToTelegram(token, chatId, threadId, pkg, tweet) {
+  await telegram(token, "sendMessage", {
+    chat_id: chatId,
+    ...(threadId ? { message_thread_id: Number(threadId) } : {}),
+    text: formatTweetMessage(pkg, tweet),
+    parse_mode: "HTML",
+    disable_web_page_preview: false
+  });
+}
+
+function formatTweetMessage(pkg, tweet) {
+  const author = tweet.author?.userName || extractTwitterUserName(tweet.url) || pkg.agent || "Twitter / X";
+  const text = compactText(String(tweet.text || "").replace(/\s+/g, " "), 3000);
+  const time = tweet.createdAt ? `\n<i>${escapeTelegramHtml(formatNewsDate(tweet.createdAt))}</i>` : "";
+  const link = tweet.url && /^https?:\/\//i.test(tweet.url) ? `\n<a href="${escapeTelegramAttr(tweet.url)}">View on X</a>` : "";
+  return [
+    `𝕏 <b>${escapeTelegramHtml(pkg.agent || author)}</b> <i>@${escapeTelegramHtml(author)}</i>`,
+    "",
+    escapeTelegramHtml(text || "(no text)"),
+    time,
+    link
+  ].join("\n").slice(0, 4000);
+}
+
+function readSocialDispatchState() {
+  if (!existsSync(socialStatusPath)) return { dispatchState: {} };
+  try {
+    const state = JSON.parse(readFileSync(socialStatusPath, "utf8"));
+    return { dispatchState: state.dispatchState || {} };
+  } catch {
+    return { dispatchState: {} };
+  }
+}
+
+async function writeSocialDispatchState(state) {
+  await mkdir(join(root, ".runtime"), { recursive: true });
+  const previous = readSocialStatus().status || {};
+  await writeFile(socialStatusPath, JSON.stringify({ ...previous, dispatchState: state.dispatchState || {} }, null, 2));
+}
+
+async function writeSocialStatus(status) {
+  await mkdir(join(root, ".runtime"), { recursive: true });
+  const previous = readSocialStatus().status || {};
+  await writeFile(socialStatusPath, JSON.stringify({ ...previous, ...status }, null, 2));
+}
+
+function readSocialStatus() {
+  if (!existsSync(socialStatusPath)) return { ok: true, status: null };
+  try {
+    return { ok: true, status: JSON.parse(readFileSync(socialStatusPath, "utf8")) };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+}
+
 async function readNewsConfigs() {
   if (!existsSync(newsConfigsPath)) {
     return { ok: true, configs: defaultNewsConfigs(), updatedAt: null };
@@ -1333,8 +1572,9 @@ function buildEnv(payload) {
 }
 
 function readTokenEnv(path) {
-  if (!existsSync(path)) return {};
-  const text = readFileSync(path, "utf8");
+  const targetPath = path.startsWith("/") ? path : join(root, path);
+  if (!existsSync(targetPath)) return {};
+  const text = readFileSync(targetPath, "utf8");
   return Object.fromEntries(
     text
       .split(/\r?\n/)
