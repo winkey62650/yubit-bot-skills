@@ -16,6 +16,10 @@ const interval = process.env.BINANCE_INTERVAL || "1h";
 const fastPeriod = Number(process.env.FAST_SMA || 20);
 const slowPeriod = Number(process.env.SLOW_SMA || 50);
 const symbolLimit = Number(process.env.SYMBOL_LIMIT || 20);
+const configuredSymbols = String(process.env.SYMBOLS || "")
+  .split(",")
+  .map((symbol) => symbol.trim().toUpperCase())
+  .filter(Boolean);
 
 const exchangeInfo = await getJson(`${binanceBase}/fapi/v1/exchangeInfo`);
 const tradableUsdtPerps = new Set(
@@ -24,12 +28,15 @@ const tradableUsdtPerps = new Set(
     .map((item) => item.symbol)
 );
 
-const tickers = await getJson(`${binanceBase}/fapi/v1/ticker/24hr`);
-const topSymbols = tickers
-  .filter((item) => tradableUsdtPerps.has(item.symbol))
-  .sort((a, b) => Number(b.quoteVolume) - Number(a.quoteVolume))
-  .slice(0, symbolLimit)
-  .map((item) => item.symbol);
+let topSymbols = configuredSymbols.filter((symbol) => tradableUsdtPerps.has(symbol));
+if (!topSymbols.length) {
+  const tickers = await getJson(`${binanceBase}/fapi/v1/ticker/24hr`);
+  topSymbols = tickers
+    .filter((item) => tradableUsdtPerps.has(item.symbol))
+    .sort((a, b) => Number(b.quoteVolume) - Number(a.quoteVolume))
+    .slice(0, symbolLimit)
+    .map((item) => item.symbol);
+}
 
 const rows = [];
 
@@ -90,7 +97,7 @@ function formatSignal(rows) {
   const lines = [
     "<b>YUBIT Futures Signal · 1H Dual SMA</b>",
     "",
-    `Universe: YUBIT USDT Futures Watchlist · Top ${rows.length} by reference liquidity`,
+    `Universe: ${configuredSymbols.length ? rows.map((row) => row.symbol).join(", ") : `YUBIT USDT Futures Watchlist · Top ${rows.length} by reference liquidity`}`,
     `Rule: SMA${fastPeriod} vs SMA${slowPeriod} on ${interval} candles`,
     `Time: ${now}`,
     "",
@@ -182,7 +189,7 @@ async function renderSignalCard(rows) {
     heroChip: "Futures Signal Ready",
     section: "One market setup",
     actionText: "Review the 1H SMA signal, then tap the blue button below to open YUBIT Futures.",
-    subtitle: `YUBIT USDT Futures Watchlist Top ${rows.length} · SMA${fastPeriod}/SMA${slowPeriod} · ${interval}`,
+    subtitle: `${configuredSymbols.length ? rows.map((row) => row.symbol).join(" ") : `YUBIT USDT Futures Watchlist Top ${rows.length}`} · SMA${fastPeriod}/SMA${slowPeriod} · ${interval}`,
     time: new Date().toISOString().replace("T", " ").slice(0, 16) + " UTC",
     summary: { bullish: bullish.length, bearish: bearish.length, crosses: crosses.length },
     rows: rows.map((row) => ({

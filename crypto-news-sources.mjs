@@ -173,11 +173,11 @@ export const cryptoNewsSources = [
   {
     name: "cryptocurrency.cv",
     kind: "API/RSS",
-    access: "无需密钥",
-    status: "Ready",
+    access: "需要付费或密钥",
+    status: "Payment required",
     endpoint: "https://cryptocurrency.cv/api/news",
     coverage: "Open-source real-time crypto news aggregator",
-    note: "No-key JSON/RSS option; verify uptime before production"
+    note: "当前接口返回 402 Payment Required，不纳入默认可用源"
   }
 ];
 

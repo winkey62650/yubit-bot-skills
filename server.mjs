@@ -7,6 +7,7 @@ import { spawn } from "node:child_process";
 import process from "node:process";
 import { getTelegramGroupMetrics } from "./lib/telegram-metrics.mjs";
 import { cryptoNewsSources } from "./crypto-news-sources.mjs";
+import { defaultDailyReport, formatDailyReport } from "./daily-report.mjs";
 
 const port = Number(process.env.PORT || 4173);
 const root = process.env.YUBIT_ROOT || process.cwd();
@@ -38,6 +39,9 @@ const scriptMap = {
   futuresCard: { label: "Futures Card", command: ["binance-futures-sma-signal.mjs"] },
   tradfiCard: { label: "TradFi Card", command: ["tradfi-market-signal.mjs"] },
   newsCard: { label: "News Card", command: ["news-poster.mjs"] },
+  dailyReport: { label: "Daily Morning Brief", command: ["daily-report.mjs"] },
+  dailyChartAnalysis: { label: "Daily Chart Analysis", command: ["daily-chart-analysis.mjs"] },
+  smartMoneyMonitor: { label: "Smart Money Monitor", command: ["smart-money-monitor.mjs"] },
   cycle15m: { label: "15m Cycle", command: ["run-15m-cycle.mjs"] },
   bulkSend: { label: "Bulk Send", command: ["scripts/bulk-send.mjs"] },
   monitorHealth: { label: "Health Monitor", command: ["monitor-health-to-lark.mjs"] }
@@ -89,6 +93,28 @@ const server = createServer(async (request, response) => {
       sendJson(response, result.ok ? 200 : 500, result);
       return;
     }
+    if (request.method === "GET" && url.pathname === "/api/daily-report-config") {
+      const result = await readDailyReportConfig();
+      sendJson(response, 200, result);
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/daily-report-config") {
+      const body = await readJson(request);
+      const result = await saveDailyReportConfig(body);
+      sendJson(response, result.ok ? 200 : 400, result);
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/daily-chart-analysis-config") {
+      const result = await readDailyChartAnalysisConfig();
+      sendJson(response, 200, result);
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/daily-chart-analysis-config") {
+      const body = await readJson(request);
+      const result = await saveDailyChartAnalysisConfig(body);
+      sendJson(response, result.ok ? 200 : 400, result);
+      return;
+    }
     if (request.method === "POST" && url.pathname === "/api/news-configs") {
       const body = await readJson(request);
       const result = await saveNewsConfigs(body);
@@ -98,6 +124,24 @@ const server = createServer(async (request, response) => {
     if (request.method === "POST" && url.pathname === "/api/signal-test") {
       const body = await readJson(request);
       const result = await testSignal(body);
+      sendJson(response, result.ok ? 200 : 400, result);
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/smart-money-test") {
+      const body = await readJson(request);
+      const result = await testSmartMoneyMonitor(body);
+      sendJson(response, result.ok ? 200 : 400, result);
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/daily-report-test") {
+      const body = await readJson(request);
+      const result = await testDailyReport(body);
+      sendJson(response, result.ok ? 200 : 400, result);
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/daily-chart-analysis-test") {
+      const body = await readJson(request);
+      const result = await testDailyChartAnalysis(body);
       sendJson(response, result.ok ? 200 : 400, result);
       return;
     }
@@ -342,6 +386,75 @@ async function testSignal(body) {
       threadId: topic.threadId,
       botRole: "trader1",
       sendTelegram: true
+    }
+  });
+  return {
+    ...result,
+    sent: result.ok,
+    testChatId: demoChatId,
+    testThreadId: topic.threadId,
+    testTopicName: topic.name
+  };
+}
+
+async function testSmartMoneyMonitor(body) {
+  const topic = await ensureDemoTestTopic();
+  const result = await runScript({
+    scriptId: "smartMoneyMonitor",
+    payload: {
+      mode: "production",
+      chatId: demoChatId,
+      threadId: topic.threadId,
+      botRole: "trader1",
+      sendTelegram: body?.sendTelegram !== false
+    }
+  });
+  return {
+    ...result,
+    sent: result.ok,
+    testChatId: demoChatId,
+    testThreadId: topic.threadId,
+    testTopicName: topic.name
+  };
+}
+
+async function testDailyReport(body) {
+  const topic = await ensureDemoTestTopic();
+  const config = body?.config || (await readDailyReportConfig()).config;
+  const result = await runScript({
+    scriptId: "dailyReport",
+    payload: {
+      mode: "production",
+      chatId: demoChatId,
+      threadId: topic.threadId,
+      botRole: config.bot === "YUBITadmin" ? "admin" : "trader1",
+      sendTelegram: body?.sendTelegram !== false,
+      dailyReportTitle: config.title,
+      dailyReportBody: config.body
+    }
+  });
+  return {
+    ...result,
+    sent: result.ok,
+    testChatId: demoChatId,
+    testThreadId: topic.threadId,
+    testTopicName: topic.name
+  };
+}
+
+async function testDailyChartAnalysis(body) {
+  const topic = await ensureDemoTestTopic();
+  const config = body?.config || (await readDailyChartAnalysisConfig()).config;
+  const result = await runScript({
+    scriptId: "dailyChartAnalysis",
+    payload: {
+      mode: "production",
+      chatId: demoChatId,
+      threadId: topic.threadId,
+      botRole: config.bot === "YUBITadmin" ? "admin" : "trader1",
+      sendTelegram: body?.sendTelegram !== false,
+      chartSymbols: config.symbols,
+      chartInterval: config.chartInterval
     }
   });
   return {
@@ -1004,18 +1117,68 @@ async function readNewsConfigs() {
   const config = JSON.parse(await readFile(newsConfigsPath, "utf8"));
   return {
     ok: true,
-    configs: normalizeNewsConfigs(config.configs || config),
+    configs: ensureBuiltinNewsConfigs(normalizeNewsConfigs(config.configs || config)),
     updatedAt: config.updatedAt || null
   };
 }
 
 async function saveNewsConfigs(body) {
-  const configs = normalizeNewsConfigs(body?.configs || body);
+  const configs = ensureBuiltinNewsConfigs(normalizeNewsConfigs(body?.configs || body));
   if (!configs.length) return { ok: false, error: "Missing news configs" };
   const config = { configs, updatedAt: new Date().toISOString() };
   await mkdir(join(root, ".runtime"), { recursive: true });
   await writeFile(newsConfigsPath, JSON.stringify(config, null, 2));
   return { ok: true, ...config };
+}
+
+async function readDailyReportConfig() {
+  const newsConfigs = await readNewsConfigs();
+  return {
+    ok: true,
+    config: findDailyReportConfig(newsConfigs.configs),
+    updatedAt: newsConfigs.updatedAt || null
+  };
+}
+
+async function saveDailyReportConfig(body) {
+  const current = await readNewsConfigs();
+  const nextDaily = normalizeDailyReportConfig({
+    ...findDailyReportConfig(current.configs),
+    ...body,
+    kind: "daily-report",
+    name: "Daily Morning Brief"
+  });
+  const configs = ensureBuiltinNewsConfigs([
+    nextDaily,
+    ...current.configs.filter((config) => config.name !== "Daily Morning Brief")
+  ]);
+  const saved = await saveNewsConfigs({ configs });
+  return { ok: saved.ok, config: findDailyReportConfig(saved.configs), configs: saved.configs, updatedAt: saved.updatedAt };
+}
+
+async function readDailyChartAnalysisConfig() {
+  const newsConfigs = await readNewsConfigs();
+  return {
+    ok: true,
+    config: findDailyChartAnalysisConfig(newsConfigs.configs),
+    updatedAt: newsConfigs.updatedAt || null
+  };
+}
+
+async function saveDailyChartAnalysisConfig(body) {
+  const current = await readNewsConfigs();
+  const nextConfig = normalizeDailyChartAnalysisConfig({
+    ...findDailyChartAnalysisConfig(current.configs),
+    ...body,
+    kind: "daily-chart-analysis",
+    name: "Daily Chart Analysis"
+  });
+  const configs = ensureBuiltinNewsConfigs([
+    nextConfig,
+    ...current.configs.filter((config) => config.name !== "Daily Chart Analysis")
+  ]);
+  const saved = await saveNewsConfigs({ configs });
+  return { ok: saved.ok, config: findDailyChartAnalysisConfig(saved.configs), configs: saved.configs, updatedAt: saved.updatedAt };
 }
 
 function defaultNewsConfigs() {
@@ -1028,6 +1191,8 @@ function buildNewsConfigSet(sourceNames) {
   return [
     { name: "Crypto News Default", sources, bot: "Trader1", frequency: "每 15 分钟", status: "已启用" },
     ...sources.map((source) => ({ name: source, sources: [source], bot: "Trader1", frequency: "实时", status: "已启用" })),
+    defaultDailyReportConfig(),
+    defaultDailyChartAnalysisConfig(),
     { name: "Official Updates", sources: [], bot: "YUBITadmin", frequency: "实时", status: "已启用" }
   ];
 }
@@ -1036,12 +1201,119 @@ function normalizeNewsConfigs(configs) {
   return (Array.isArray(configs) ? configs : [])
     .map((config, index) => ({
       name: String(config?.name || `新闻配置 ${index + 1}`).trim(),
+      kind: String(config?.kind || "news").trim(),
       sources: Array.isArray(config?.sources) ? config.sources.map((source) => String(source).trim()).filter(Boolean) : [],
       bot: String(config?.bot || "Trader1").trim(),
       frequency: String(config?.frequency || "每 15 分钟").trim(),
-      status: String(config?.status || "已启用").trim()
+      status: String(config?.status || "已启用").trim(),
+      reportTime: String(config?.reportTime || "08:30").trim(),
+      timezone: String(config?.timezone || "Asia/Shanghai").trim(),
+      title: String(config?.title || "").trim(),
+      body: String(config?.body || "").trim(),
+      symbols: Array.isArray(config?.symbols) ? config.symbols.map((symbol) => String(symbol).trim().toUpperCase()).filter(Boolean) : [],
+      chartInterval: String(config?.chartInterval || "1h").trim(),
+      stockUniverse: String(config?.stockUniverse || "").trim()
     }))
     .filter((config) => config.name);
+}
+
+function ensureBuiltinNewsConfigs(configs) {
+  const normalized = normalizeNewsConfigs(configs);
+  if (!normalized.some((config) => config.name === "Daily Morning Brief")) {
+    normalized.push(defaultDailyReportConfig());
+  }
+  if (!normalized.some((config) => config.name === "Daily Chart Analysis")) {
+    normalized.push(defaultDailyChartAnalysisConfig());
+  }
+  return normalized;
+}
+
+function defaultDailyReportConfig() {
+  return normalizeDailyReportConfig({
+    name: "Daily Morning Brief",
+    kind: "daily-report",
+    sources: [],
+    bot: "Trader1",
+    frequency: "每日 08:30",
+    reportTime: "08:30",
+    timezone: "Asia/Shanghai",
+    title: "",
+    body: defaultDailyReport,
+    status: "已启用"
+  });
+}
+
+function normalizeDailyReportConfig(config) {
+  return {
+    name: "Daily Morning Brief",
+    kind: "daily-report",
+    sources: [],
+    bot: String(config?.bot || "Trader1").trim(),
+    frequency: String(config?.frequency || `每日 ${config?.reportTime || "08:30"}`).trim(),
+    status: String(config?.status || "已启用").trim(),
+    reportTime: normalizeReportTime(config?.reportTime || "08:30"),
+    timezone: String(config?.timezone || "Asia/Shanghai").trim(),
+    title: String(config?.title || "").trim(),
+    body: String(config?.body || defaultDailyReport).trim()
+  };
+}
+
+function findDailyReportConfig(configs) {
+  const found = (configs || []).find((config) => config.name === "Daily Morning Brief" || config.kind === "daily-report");
+  return normalizeDailyReportConfig(found || defaultDailyReportConfig());
+}
+
+function defaultDailyChartAnalysisConfig() {
+  return normalizeDailyChartAnalysisConfig({
+    name: "Daily Chart Analysis",
+    kind: "daily-chart-analysis",
+    sources: [],
+    bot: "Trader1",
+    frequency: "每日 09:00",
+    reportTime: "09:00",
+    timezone: "Asia/Shanghai",
+    title: "Daily BTC/ETH & US Stocks Chart Analysis",
+    body: "Send chart cards for BTCUSDT, ETHUSDT and US stock market ETFs. Review trend, SMA20/SMA50 structure, fresh crosses and risk note.",
+    symbols: ["BTCUSDT", "ETHUSDT"],
+    chartInterval: "1h",
+    stockUniverse: "SPY, QQQ, DIA, IWM, TLT, GLD, USO, UUP",
+    status: "已启用"
+  });
+}
+
+function normalizeDailyChartAnalysisConfig(config) {
+  const symbols = Array.isArray(config?.symbols)
+    ? config.symbols
+    : String(config?.symbols || "BTCUSDT,ETHUSDT").split(",");
+  const reportTime = normalizeReportTime(config?.reportTime || "09:00");
+  return {
+    name: "Daily Chart Analysis",
+    kind: "daily-chart-analysis",
+    sources: [],
+    bot: String(config?.bot || "Trader1").trim(),
+    frequency: String(config?.frequency || `每日 ${reportTime}`).trim(),
+    status: String(config?.status || "已启用").trim(),
+    reportTime,
+    timezone: String(config?.timezone || "Asia/Shanghai").trim(),
+    title: String(config?.title || "Daily BTC/ETH & US Stocks Chart Analysis").trim(),
+    body: String(config?.body || "Send chart cards for BTCUSDT, ETHUSDT and US stock market ETFs.").trim(),
+    symbols: symbols.map((symbol) => String(symbol).trim().toUpperCase()).filter(Boolean),
+    chartInterval: String(config?.chartInterval || "1h").trim(),
+    stockUniverse: String(config?.stockUniverse || "SPY, QQQ, DIA, IWM, TLT, GLD, USO, UUP").trim()
+  };
+}
+
+function findDailyChartAnalysisConfig(configs) {
+  const found = (configs || []).find((config) => config.name === "Daily Chart Analysis" || config.kind === "daily-chart-analysis");
+  return normalizeDailyChartAnalysisConfig(found || defaultDailyChartAnalysisConfig());
+}
+
+function normalizeReportTime(value) {
+  const match = String(value || "").match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return "08:30";
+  const hour = Math.min(23, Math.max(0, Number(match[1])));
+  const minute = Math.min(59, Math.max(0, Number(match[2])));
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
 let newsDispatcherStarted = false;
@@ -1105,6 +1377,56 @@ async function dispatchNewsBindings(options = {}) {
       continue;
     }
 
+    if (config.kind === "daily-report") {
+      const due = isDailyReportDue(config, bindingState, now);
+      if (!due.ok) {
+        skipped.push({ binding: binding.config, reason: due.reason });
+        continue;
+      }
+      try {
+        await sendTelegramText(token, group.chatId, threadId, formatDailyReport(config.title, config.body));
+        bindingState.lastSentAt = now;
+        bindingState.lastDailyDate = due.dateKey;
+        bindingState.lastTitle = config.name;
+        sent.push({ binding: binding.config, group: binding.group, topic: binding.topic, bot: binding.bot || config.bot, source: "daily-report", title: config.name });
+        continue;
+      } catch (error) {
+        errors.push({ binding: binding.config, source: "daily-report", error: error.message });
+        continue;
+      }
+    }
+
+    if (config.kind === "daily-chart-analysis") {
+      const due = isDailyReportDue(config, bindingState, now);
+      if (!due.ok) {
+        skipped.push({ binding: binding.config, reason: due.reason });
+        continue;
+      }
+      try {
+        const result = await runScript({
+          scriptId: "dailyChartAnalysis",
+          payload: {
+            mode: "production",
+            chatId: group.chatId,
+            threadId,
+            botRole: (binding.bot || config.bot) === "YUBITadmin" ? "admin" : "trader1",
+            sendTelegram: true,
+            chartSymbols: config.symbols,
+            chartInterval: config.chartInterval
+          }
+        });
+        if (!result.ok) throw new Error(result.stderr || result.error || "Daily chart analysis failed");
+        bindingState.lastSentAt = now;
+        bindingState.lastDailyDate = due.dateKey;
+        bindingState.lastTitle = config.name;
+        sent.push({ binding: binding.config, group: binding.group, topic: binding.topic, bot: binding.bot || config.bot, source: "daily-chart-analysis", title: config.name });
+        continue;
+      } catch (error) {
+        errors.push({ binding: binding.config, source: "daily-chart-analysis", error: error.message });
+        continue;
+      }
+    }
+
     const sourceNames = config.sources?.length ? config.sources : [config.name];
     let sentOne = false;
     for (const sourceName of sourceNames) {
@@ -1144,9 +1466,51 @@ async function dispatchNewsBindings(options = {}) {
   });
 }
 
+async function sendTelegramText(token, chatId, threadId, text) {
+  await telegram(token, "sendMessage", {
+    chat_id: chatId,
+    ...(threadId ? { message_thread_id: Number(threadId) } : {}),
+    text,
+    parse_mode: "HTML",
+    disable_web_page_preview: true
+  });
+}
+
+function isDailyReportDue(config, bindingState, now) {
+  const parts = getZonedDateParts(now, config.timezone || "Asia/Shanghai");
+  const dateKey = `${parts.year}-${parts.month}-${parts.day}`;
+  if (bindingState.lastDailyDate === dateKey) return { ok: false, reason: "今日日报已发送", dateKey };
+  const [targetHour, targetMinute] = normalizeReportTime(config.reportTime).split(":").map(Number);
+  const currentMinutes = Number(parts.hour) * 60 + Number(parts.minute);
+  const targetMinutes = targetHour * 60 + targetMinute;
+  if (currentMinutes < targetMinutes) return { ok: false, reason: `未到日报发送时间 ${normalizeReportTime(config.reportTime)}`, dateKey };
+  return { ok: true, dateKey };
+}
+
+function getZonedDateParts(timestamp, timezone) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone || "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  });
+  const parts = Object.fromEntries(formatter.formatToParts(new Date(timestamp)).map((part) => [part.type, part.value]));
+  return {
+    year: parts.year,
+    month: parts.month,
+    day: parts.day,
+    hour: parts.hour,
+    minute: parts.minute
+  };
+}
+
 function frequencyToMs(value) {
   const text = String(value || "");
   if (text.includes("实时")) return Number(process.env.NEWS_REALTIME_INTERVAL_MS || 60000);
+  if (text.includes("每日")) return 60 * 1000;
   const match = text.match(/(\d+)\s*分钟/);
   if (match) return Number(match[1]) * 60 * 1000;
   return 15 * 60 * 1000;
@@ -1561,6 +1925,10 @@ function buildEnv(payload) {
     CARD_KIND: payload.cardKind || "news",
     NEWS_MODE: payload.newsMode || "crypto",
     NEWS_LIMIT: String(payload.newsLimit || process.env.NEWS_LIMIT || 4),
+    CHART_SYMBOLS: Array.isArray(payload.chartSymbols) ? payload.chartSymbols.join(",") : payload.chartSymbols || process.env.CHART_SYMBOLS || "",
+    CHART_INTERVAL: payload.chartInterval || process.env.CHART_INTERVAL || "",
+    DAILY_REPORT_TITLE: payload.dailyReportTitle || process.env.DAILY_REPORT_TITLE || "",
+    DAILY_REPORT_BODY: payload.dailyReportBody || process.env.DAILY_REPORT_BODY || "",
     SEND_LARK: payload.sendLark === true ? "true" : "false",
     LARK_WEBHOOK_URL: payload.larkWebhook || process.env.LARK_WEBHOOK_URL || "",
     ADMIN_HEALTH_URL: payload.adminHealthUrl || process.env.ADMIN_HEALTH_URL || "http://localhost:4173/admin-group-config.html",
