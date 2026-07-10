@@ -1907,6 +1907,10 @@ function migrateBindingGroupNames(bindings, renamedGroups) {
   }));
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function normalizeGroupConfig(config) {
   const groups = normalizeGroups(Array.isArray(config?.groups) ? config.groups : config?.chatId ? [config] : []);
   return {
