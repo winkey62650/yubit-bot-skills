@@ -216,6 +216,7 @@ async function discoverChats() {
   const tokens = readTokenEnv(".env.telegram-tokens.local");
   const token = tokens.YUBITADMIN_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN;
   if (!token) return { ok: false, error: "Missing YUBITADMIN_BOT_TOKEN" };
+  const local = await readLocalGroupConfig();
   const response = await fetch(`https://api.telegram.org/bot${token}/getUpdates`);
   const body = await response.json();
   if (!body.ok) return { ok: false, error: body.description || "getUpdates failed" };
@@ -244,13 +245,22 @@ async function discoverChats() {
   for (const chat of chats.values()) {
     discovered.push(normalizeGroup(await enrichDiscoveredChat(token, chat)));
   }
+  const enrichedLocal = await enrichLocalGroups(token, local.groups || []);
   if (!discovered.length) {
-    const local = await readLocalGroupConfig();
-    return { ok: true, chats: local.groups || [], source: "local-fallback" };
+    return { ok: true, chats: enrichedLocal, source: "local-getChat" };
   }
-  const local = await readLocalGroupConfig();
-  const merged = normalizeGroups([...(local.groups || []), ...discovered]);
+  const merged = normalizeGroups([...enrichedLocal, ...discovered]);
   return { ok: true, chats: merged, source: "telegram-updates" };
+}
+
+async function enrichLocalGroups(token, groups) {
+  const enriched = [];
+  for (const group of groups || []) {
+    if (!group?.chatId) continue;
+    enriched.push(normalizeGroup(await enrichDiscoveredChat(token, group)));
+    await sleep(120);
+  }
+  return enriched;
 }
 
 async function enrichDiscoveredChat(token, chat) {
