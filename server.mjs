@@ -162,6 +162,12 @@ const server = createServer(async (request, response) => {
       sendJson(response, result.ok ? 200 : 400, result);
       return;
     }
+    if (request.method === "POST" && url.pathname === "/api/group-binding-test") {
+      const body = await readJson(request);
+      const result = await testGroupBinding(body);
+      sendJson(response, result.ok ? 200 : 400, result);
+      return;
+    }
     if (request.method === "GET" && url.pathname === "/api/broadcast-rules") {
       const result = await readBroadcastRules();
       sendJson(response, 200, result);
@@ -1415,104 +1421,18 @@ async function dispatchNewsBindings(options = {}) {
       continue;
     }
 
-    if (config.kind === "daily-report") {
-      const due = isDailyReportDue(config, bindingState, now);
-      if (!due.ok) {
-        skipped.push({ binding: binding.config, reason: due.reason });
-        continue;
+    try {
+      const result = await sendNewsBindingNow({ binding, config, group, threadId, token, bindingState, now });
+      if (result.skipped) {
+        skipped.push({ binding: binding.config, reason: result.reason });
+      } else {
+        sent.push({ binding: binding.config, group: binding.group, topic: binding.topic, bot: binding.bot || config.bot, source: result.source, title: result.title });
       }
-      try {
-        await sendTelegramText(token, group.chatId, threadId, formatDailyReport(config.title, config.body));
-        bindingState.lastSentAt = now;
-        bindingState.lastDailyDate = due.dateKey;
-        bindingState.lastTitle = config.name;
-        sent.push({ binding: binding.config, group: binding.group, topic: binding.topic, bot: binding.bot || config.bot, source: "daily-report", title: config.name });
-        continue;
-      } catch (error) {
-        errors.push({ binding: binding.config, source: "daily-report", error: error.message });
-        continue;
-      }
+      continue;
+    } catch (error) {
+      errors.push({ binding: binding.config, source: config.kind || "news", error: error.message });
+      continue;
     }
-
-    if (config.kind === "daily-chart-analysis") {
-      const due = isDailyReportDue(config, bindingState, now);
-      if (!due.ok) {
-        skipped.push({ binding: binding.config, reason: due.reason });
-        continue;
-      }
-      try {
-        const result = await runScript({
-          scriptId: "dailyChartAnalysis",
-          payload: {
-            mode: "production",
-            chatId: group.chatId,
-            threadId,
-            botRole: (binding.bot || config.bot) === "YUBITadmin" ? "admin" : "trader1",
-            sendTelegram: true,
-            chartSymbols: config.symbols,
-            chartInterval: config.chartInterval
-          }
-        });
-        if (!result.ok) throw new Error(result.stderr || result.error || "Daily chart analysis failed");
-        bindingState.lastSentAt = now;
-        bindingState.lastDailyDate = due.dateKey;
-        bindingState.lastTitle = config.name;
-        sent.push({ binding: binding.config, group: binding.group, topic: binding.topic, bot: binding.bot || config.bot, source: "daily-chart-analysis", title: config.name });
-        continue;
-      } catch (error) {
-        errors.push({ binding: binding.config, source: "daily-chart-analysis", error: error.message });
-        continue;
-      }
-    }
-
-    if (config.kind === "smart-money") {
-      try {
-        const result = await runScript({
-          scriptId: "smartMoneyMonitor",
-          payload: {
-            mode: "production",
-            chatId: group.chatId,
-            threadId,
-            botRole: (binding.bot || config.bot) === "YUBITadmin" ? "admin" : "trader1",
-            sendTelegram: true
-          }
-        });
-        if (!result.ok) throw new Error(result.stderr || result.error || "Smart money monitor failed");
-        bindingState.lastSentAt = now;
-        bindingState.lastTitle = config.name;
-        sent.push({ binding: binding.config, group: binding.group, topic: binding.topic, bot: binding.bot || config.bot, source: "smart-money", title: config.name });
-        continue;
-      } catch (error) {
-        errors.push({ binding: binding.config, source: "smart-money", error: error.message });
-        continue;
-      }
-    }
-
-    const sourceNames = config.sources?.length ? config.sources : [config.name];
-    let sentOne = false;
-    for (const sourceName of sourceNames) {
-      const source = cryptoNewsSources.find((item) => item.name === sourceName);
-      if (!source || !source.kind.includes("RSS") || source.endpoint.includes("$")) continue;
-      try {
-        const preview = await previewNewsSource({ sourceName, limit: 5 });
-        const items = preview.items || [];
-        const sentIds = new Set(bindingState.sentIds || []);
-        const item = items.find((candidate) => !sentIds.has(newsItemId(sourceName, candidate)));
-        if (!item) continue;
-        await sendSingleNewsToTelegram(token, group.chatId, threadId, preview.source, item);
-        const id = newsItemId(sourceName, item);
-        bindingState.sentIds = [id, ...(bindingState.sentIds || []).filter((value) => value !== id)].slice(0, 50);
-        bindingState.lastSentAt = now;
-        bindingState.lastSource = sourceName;
-        bindingState.lastTitle = item.title;
-        sent.push({ binding: binding.config, group: binding.group, topic: binding.topic, bot: binding.bot || config.bot, source: sourceName, title: item.title });
-        sentOne = true;
-        break;
-      } catch (error) {
-        errors.push({ binding: binding.config, source: sourceName, error: error.message });
-      }
-    }
-    if (!sentOne) skipped.push({ binding: binding.config, reason: "没有新的可发送新闻" });
   }
 
   await writeNewsDispatchState(state);
@@ -1527,6 +1447,80 @@ async function dispatchNewsBindings(options = {}) {
   });
 }
 
+async function sendNewsBindingNow({ binding, config, group, threadId, token, bindingState = {}, now = Date.now(), ignoreSchedule = false }) {
+    if (config.kind === "daily-report") {
+      const due = ignoreSchedule ? { ok: true, dateKey: getDailyDateKey(now, config.timezone) } : isDailyReportDue(config, bindingState, now);
+      if (!due.ok) {
+        return { skipped: true, reason: due.reason };
+      }
+      await sendTelegramText(token, group.chatId, threadId, formatDailyReport(config.title, config.body));
+      bindingState.lastSentAt = now;
+      bindingState.lastDailyDate = due.dateKey;
+      bindingState.lastTitle = config.name;
+      return { source: "daily-report", title: config.name };
+    }
+
+    if (config.kind === "daily-chart-analysis") {
+      const due = ignoreSchedule ? { ok: true, dateKey: getDailyDateKey(now, config.timezone) } : isDailyReportDue(config, bindingState, now);
+      if (!due.ok) {
+        return { skipped: true, reason: due.reason };
+      }
+      const result = await runScript({
+        scriptId: "dailyChartAnalysis",
+        payload: {
+          mode: "production",
+          chatId: group.chatId,
+          threadId,
+          botRole: (binding.bot || config.bot) === "YUBITadmin" ? "admin" : "trader1",
+          sendTelegram: true,
+          chartSymbols: config.symbols,
+          chartInterval: config.chartInterval
+        }
+      });
+      if (!result.ok) throw new Error(result.stderr || result.error || "Daily chart analysis failed");
+      bindingState.lastSentAt = now;
+      bindingState.lastDailyDate = due.dateKey;
+      bindingState.lastTitle = config.name;
+      return { source: "daily-chart-analysis", title: config.name, stdout: result.stdout };
+    }
+
+    if (config.kind === "smart-money") {
+      const result = await runScript({
+        scriptId: "smartMoneyMonitor",
+        payload: {
+          mode: "production",
+          chatId: group.chatId,
+          threadId,
+          botRole: (binding.bot || config.bot) === "YUBITadmin" ? "admin" : "trader1",
+          sendTelegram: true
+        }
+      });
+      if (!result.ok) throw new Error(result.stderr || result.error || "Smart money monitor failed");
+      bindingState.lastSentAt = now;
+      bindingState.lastTitle = config.name;
+      return { source: "smart-money", title: config.name, stdout: result.stdout };
+    }
+
+    const sourceNames = config.sources?.length ? config.sources : [config.name];
+    for (const sourceName of sourceNames) {
+      const source = cryptoNewsSources.find((item) => item.name === sourceName);
+      if (!source || !source.kind.includes("RSS") || source.endpoint.includes("$")) continue;
+      const preview = await previewNewsSource({ sourceName, limit: 5 });
+      const items = preview.items || [];
+      const sentIds = new Set(bindingState.sentIds || []);
+      const item = ignoreSchedule ? items[0] : items.find((candidate) => !sentIds.has(newsItemId(sourceName, candidate)));
+      if (!item) continue;
+      await sendSingleNewsToTelegram(token, group.chatId, threadId, preview.source, item);
+      const id = newsItemId(sourceName, item);
+      bindingState.sentIds = [id, ...(bindingState.sentIds || []).filter((value) => value !== id)].slice(0, 50);
+      bindingState.lastSentAt = now;
+      bindingState.lastSource = sourceName;
+      bindingState.lastTitle = item.title;
+      return { source: sourceName, title: item.title };
+    }
+  return { skipped: true, reason: "没有新的可发送新闻" };
+}
+
 async function sendTelegramText(token, chatId, threadId, text) {
   await telegram(token, "sendMessage", {
     chat_id: chatId,
@@ -1538,14 +1532,19 @@ async function sendTelegramText(token, chatId, threadId, text) {
 }
 
 function isDailyReportDue(config, bindingState, now) {
+  const dateKey = getDailyDateKey(now, config.timezone);
   const parts = getZonedDateParts(now, config.timezone || "Asia/Shanghai");
-  const dateKey = `${parts.year}-${parts.month}-${parts.day}`;
   if (bindingState.lastDailyDate === dateKey) return { ok: false, reason: "今日日报已发送", dateKey };
   const [targetHour, targetMinute] = normalizeReportTime(config.reportTime).split(":").map(Number);
   const currentMinutes = Number(parts.hour) * 60 + Number(parts.minute);
   const targetMinutes = targetHour * 60 + targetMinute;
   if (currentMinutes < targetMinutes) return { ok: false, reason: `未到日报发送时间 ${normalizeReportTime(config.reportTime)}`, dateKey };
   return { ok: true, dateKey };
+}
+
+function getDailyDateKey(timestamp, timezone) {
+  const parts = getZonedDateParts(timestamp, timezone || "Asia/Shanghai");
+  return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
 function getZonedDateParts(timestamp, timezone) {
@@ -1921,6 +1920,36 @@ async function deleteGroupBinding(body) {
   await mkdir(join(root, ".runtime"), { recursive: true });
   await writeFile(groupConfigPath, JSON.stringify(config, null, 2));
   return { ok: true, ...normalizeGroupConfig(config), deleted: before - bindings.length };
+}
+
+async function testGroupBinding(body) {
+  const id = String(body?.id || "").trim();
+  const groupConfig = await readLocalGroupConfig();
+  const binding = (groupConfig.bindings || []).find((item) => item.id === id);
+  if (!binding) return { ok: false, error: "Binding not found" };
+  if (binding.type !== "新闻配置") return { ok: false, error: "Only 新闻配置 bindings support direct test for now." };
+
+  const tokens = readTokenEnv(".env.telegram-tokens.local");
+  const newsConfigs = await readNewsConfigs();
+  const config = (newsConfigs.configs || []).find((item) => item.name === binding.config);
+  if (!config || config.status === "暂停") return { ok: false, error: "新闻配置未启用或不存在" };
+  const group = findGroupByTitle(groupConfig.groups || [], binding.group);
+  if (!group?.chatId) return { ok: false, error: "找不到目标群" };
+  const threadId = binding.topicId || findTopicId(group, binding.topic);
+  if (!threadId) return { ok: false, error: "找不到目标 Topic" };
+  const token = tokenForBotRole(tokens, binding.bot || config.bot);
+  if (!token) return { ok: false, error: `缺少 ${binding.bot || config.bot} token` };
+
+  const result = await sendNewsBindingNow({ binding, config, group, threadId, token, ignoreSchedule: true });
+  return {
+    ok: true,
+    ...result,
+    group: binding.group,
+    topic: binding.topic,
+    threadId,
+    config: binding.config,
+    bot: binding.bot || config.bot
+  };
 }
 
 function migrateBindingGroupNames(bindings, renamedGroups) {

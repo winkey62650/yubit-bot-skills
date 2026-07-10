@@ -168,15 +168,52 @@
           <td class="px-5 py-4">${escapeHtml(row.topic)}${row.topicId ? `<div class="mt-1"><span class="internal-id">Topic ${row.topicId}</span></div>` : ""}</td>
           <td class="px-5 py-4"><strong>${escapeHtml(row.config)}</strong><div class="mt-1 text-xs text-ops-muted">${escapeHtml(row.type || "")}${row.frequency ? ` · ${escapeHtml(row.frequency)}` : ""}</div></td>
           <td class="px-5 py-4">${escapeHtml(row.bot)}</td>
-          <td class="px-5 py-4"><button data-action="unlink" class="rounded-lg border border-[#d85f5f] px-3 py-2 text-xs font-black text-[#b94141]">解绑</button></td>
+          <td class="px-5 py-4">
+            <div class="flex flex-wrap gap-2">
+              <button data-action="test" class="rounded-lg border border-ops-accent px-3 py-2 text-xs font-black text-ops-accent">测试</button>
+              <button data-action="unlink" class="rounded-lg border border-[#d85f5f] px-3 py-2 text-xs font-black text-[#b94141]">解绑</button>
+            </div>
+          </td>
         </tr>
       `).join("");
+      rows.querySelectorAll("[data-action='test']").forEach((button) => {
+        button.addEventListener("click", async (event) => {
+          const tr = event.target.closest("tr");
+          await testBinding(tr.dataset.id, event.target);
+        });
+      });
       rows.querySelectorAll("[data-action='unlink']").forEach((button) => {
         button.addEventListener("click", async (event) => {
           const tr = event.target.closest("tr");
           await unlinkBinding(tr.dataset.id, event.target);
         });
       });
+    }
+
+    async function testBinding(id, button) {
+      const status = document.getElementById("configDiscoverStatus");
+      const originalText = button?.textContent || "测试";
+      if (button) {
+        button.disabled = true;
+        button.textContent = "发送中...";
+      }
+      try {
+        const response = await fetch("/api/group-binding-test", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id })
+        });
+        const data = await response.json();
+        if (!data.ok) throw new Error(data.error || "测试失败");
+        status.textContent = `测试已发送：${data.config} → ${data.group} / ${data.topic}`;
+      } catch (error) {
+        status.textContent = `测试失败：${error.message}`;
+      } finally {
+        if (button) {
+          button.disabled = false;
+          button.textContent = originalText;
+        }
+      }
     }
 
     async function unlinkBinding(id, button) {

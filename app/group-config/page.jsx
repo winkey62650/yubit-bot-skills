@@ -139,6 +139,22 @@ export default function GroupConfigPage() {
     }
   }
 
+  async function testRoute(id) {
+    try {
+      setDiscoverStatus("正在发送绑定测试...");
+      const response = await fetch("/api/group-binding-test", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id })
+      });
+      const data = await response.json();
+      if (!data.ok) throw new Error(data.error || "测试失败");
+      setDiscoverStatus(`测试已发送：${data.config} → ${data.group} / ${data.topic}`);
+    } catch (error) {
+      setDiscoverStatus(`测试失败：${error.message}`);
+    }
+  }
+
   async function saveBindingRule() {
     if (!bindingForm.group || !bindingForm.topic || !selectedConfig.name) {
       setDiscoverStatus("请先选择群、Topic 和配置");
@@ -275,7 +291,12 @@ export default function GroupConfigPage() {
                   <td className="px-5 py-4">{route.topic}</td>
                   <td className="px-5 py-4"><strong>{route.config}</strong><div className="mt-1 text-xs text-ops-muted">{route.type}{route.frequency ? ` · ${route.frequency}` : ""}</div></td>
                   <td className="px-5 py-4">{route.bot}</td>
-                  <td className="px-5 py-4"><button className="rounded-lg border border-[#d85f5f] px-3 py-2 text-xs font-black text-[#b94141]" onClick={() => unlinkRoute(route.id)} type="button">解绑</button></td>
+                  <td className="px-5 py-4">
+                    <div className="flex flex-wrap gap-2">
+                      <button className="rounded-lg border border-ops-accent px-3 py-2 text-xs font-black text-ops-accent" onClick={() => testRoute(route.id)} type="button">测试</button>
+                      <button className="rounded-lg border border-[#d85f5f] px-3 py-2 text-xs font-black text-[#b94141]" onClick={() => unlinkRoute(route.id)} type="button">解绑</button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
