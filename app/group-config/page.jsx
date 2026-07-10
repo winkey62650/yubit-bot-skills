@@ -20,6 +20,7 @@ const fallbackGroups = [
 const configPools = {
   "新闻配置": [
     { name: "Crypto News Default", bot: "Trader1", frequency: "每 15 分钟" },
+    { name: "Smart Money Tracker", bot: "Trader1", frequency: "每 15 分钟" },
     { name: "Daily Morning Brief", bot: "Trader1", frequency: "每日 08:30" },
     { name: "Daily Chart Analysis", bot: "Trader1", frequency: "每日 09:00" },
     { name: "Cointelegraph News", bot: "Trader1", frequency: "实时" },

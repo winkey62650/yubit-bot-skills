@@ -1191,6 +1191,7 @@ function buildNewsConfigSet(sourceNames) {
   return [
     { name: "Crypto News Default", sources, bot: "Trader1", frequency: "每 15 分钟", status: "已启用" },
     ...sources.map((source) => ({ name: source, sources: [source], bot: "Trader1", frequency: "实时", status: "已启用" })),
+    defaultSmartMoneyConfig(),
     defaultDailyReportConfig(),
     defaultDailyChartAnalysisConfig(),
     { name: "Official Updates", sources: [], bot: "YUBITadmin", frequency: "实时", status: "已启用" }
@@ -1225,7 +1226,28 @@ function ensureBuiltinNewsConfigs(configs) {
   if (!normalized.some((config) => config.name === "Daily Chart Analysis")) {
     normalized.push(defaultDailyChartAnalysisConfig());
   }
+  if (!normalized.some((config) => config.name === "Smart Money Tracker")) {
+    normalized.push(defaultSmartMoneyConfig());
+  }
   return normalized;
+}
+
+function defaultSmartMoneyConfig() {
+  return {
+    name: "Smart Money Tracker",
+    kind: "smart-money",
+    sources: [],
+    bot: "Trader1",
+    frequency: "每 15 分钟",
+    status: "已启用",
+    reportTime: "08:30",
+    timezone: "Asia/Shanghai",
+    title: "",
+    body: "",
+    symbols: [],
+    chartInterval: "1h",
+    stockUniverse: ""
+  };
 }
 
 function defaultDailyReportConfig() {
@@ -1423,6 +1445,29 @@ async function dispatchNewsBindings(options = {}) {
         continue;
       } catch (error) {
         errors.push({ binding: binding.config, source: "daily-chart-analysis", error: error.message });
+        continue;
+      }
+    }
+
+    if (config.kind === "smart-money") {
+      try {
+        const result = await runScript({
+          scriptId: "smartMoneyMonitor",
+          payload: {
+            mode: "production",
+            chatId: group.chatId,
+            threadId,
+            botRole: (binding.bot || config.bot) === "YUBITadmin" ? "admin" : "trader1",
+            sendTelegram: true
+          }
+        });
+        if (!result.ok) throw new Error(result.stderr || result.error || "Smart money monitor failed");
+        bindingState.lastSentAt = now;
+        bindingState.lastTitle = config.name;
+        sent.push({ binding: binding.config, group: binding.group, topic: binding.topic, bot: binding.bot || config.bot, source: "smart-money", title: config.name });
+        continue;
+      } catch (error) {
+        errors.push({ binding: binding.config, source: "smart-money", error: error.message });
         continue;
       }
     }
