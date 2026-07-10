@@ -10,6 +10,7 @@ rsync -a --delete \
   --exclude 'node_modules' \
   --exclude '.git' \
   --exclude '.next' \
+  --exclude '.runtime' \
   --exclude 'generated' \
   --exclude 'tmp' \
   "$SOURCE_DIR/" "$SERVICE_DIR/"
