@@ -1928,8 +1928,8 @@ async function testGroupBinding(body) {
   const id = String(body?.id || "").trim();
   const groupConfig = await readLocalGroupConfig();
   const binding = (groupConfig.bindings || []).find((item) => item.id === id);
-  if (!binding) return { ok: false, error: "Binding not found" };
-  if (binding.type !== "新闻配置") return { ok: false, error: "Only 新闻配置 bindings support direct test for now." };
+  if (!binding) return { ok: false, error: "这条绑定已经不存在，请刷新页面后重新绑定。" };
+  if (binding.type !== "新闻配置") return { ok: false, error: "目前只有新闻配置支持直接测试发送。" };
 
   const tokens = readTokenEnv(".env.telegram-tokens.local");
   const newsConfigs = await readNewsConfigs();
