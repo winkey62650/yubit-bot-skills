@@ -16,8 +16,8 @@ if (!chatId) {
 
 const config = JSON.parse(await fs.readFile(configPath, "utf8"));
 const dryRun = String(process.env.DRY_RUN ?? config.dryRun ?? "true") !== "false";
-const telegramDelayMs = Number(process.env.TELEGRAM_DELAY_MS || 5000);
-const topicDelayMs = Number(process.env.TELEGRAM_TOPIC_DELAY_MS || 8000);
+const telegramDelayMs = Number(process.env.TELEGRAM_DELAY_MS || 8000);
+const topicDelayMs = Number(process.env.TELEGRAM_TOPIC_DELAY_MS || 12000);
 const statePath = process.env.YUBIT_SETUP_STATE || ".runtime/setup-state.json";
 
 const createdTopics = [];

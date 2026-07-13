@@ -8,6 +8,7 @@ const dryRun = process.env.DRY_RUN !== "false";
 const templatePath = process.env.TOPIC_TEMPLATE_PATH || ".runtime/latest-topic-template.json";
 const cleanupStatePath = process.env.YUBIT_TOPIC_CLEANUP_STATE || ".runtime/deleted-duplicate-topics.json";
 const deleteTopics = process.env.DELETE_DUPLICATE_TOPICS !== "false";
+const telegramDelayMs = Number(process.env.TELEGRAM_DELAY_MS || 8000);
 
 if (!token || !chatId) {
   throw new Error("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are required");
@@ -54,7 +55,7 @@ for (const duplicate of duplicates) {
     });
   });
   await markDeleted(duplicate.threadId);
-  await sleep(5000);
+  await sleep(telegramDelayMs);
 }
 
 if (skippedDeleted > 0) {
@@ -90,14 +91,26 @@ async function markDeleted(threadId) {
 }
 
 async function telegram(method, payload) {
-  const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-  const body = await response.json();
-  if (!body.ok) throw new Error(`${method} failed: ${body.description || "Unknown error"}`);
-  return body.result;
+  while (true) {
+    const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const body = await response.json();
+    if (body.ok) {
+      await sleep(telegramDelayMs);
+      return body.result;
+    }
+    const retryAfter = body.parameters?.retry_after;
+    if (retryAfter) {
+      const waitMs = (Number(retryAfter) + 2) * 1000;
+      console.error(`${method} rate limited. Retrying after ${retryAfter}s.`);
+      await sleep(waitMs);
+      continue;
+    }
+    throw new Error(`${method} failed: ${body.description || "Unknown error"}`);
+  }
 }
 
 function sleep(ms) {
