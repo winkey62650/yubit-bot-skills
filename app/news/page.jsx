@@ -7,6 +7,7 @@ import { cryptoNewsSources, recommendedCryptoNewsSources } from "../../crypto-ne
 import { smartMoneySources } from "../../smart-money-sources.mjs";
 
 export default function NewsPage() {
+  const [activeNewsTab, setActiveNewsTab] = useState("sources");
   const [sourceFilter, setSourceFilter] = useState("全部");
   const [sourcePage, setSourcePage] = useState(1);
   const [selected, setSelected] = useState(() => new Set(recommendedCryptoNewsSources.filter(canPreview).map((source) => source.name)));
@@ -23,6 +24,9 @@ export default function NewsPage() {
     body: ""
   });
   const [chartStatus, setChartStatus] = useState("看图分析配置待加载。");
+  const [marketEvent, setMarketEvent] = useState({ chatId: "-1004331355892", threadId: "169", imagePath: "assets/market-events/market-event-cover.jpg", prompt: defaultMarketEventPrompt });
+  const [marketEventOutput, setMarketEventOutput] = useState("");
+  const [marketEventStatus, setMarketEventStatus] = useState("Market Events AI 配置待加载。");
   const visibleSources = cryptoNewsSources.filter((source) => sourceFilter === "全部" || source.kind.includes(sourceFilter));
   const enabledSources = cryptoNewsSources.filter((source) => selected.has(source.name));
   const sourcePageSize = 6;
@@ -34,6 +38,7 @@ export default function NewsPage() {
   useEffect(() => {
     loadDailyReport();
     loadChartAnalysis();
+    loadMarketEvent();
   }, []);
 
   async function testSource(sourceName) {
@@ -93,6 +98,62 @@ export default function NewsPage() {
       setChartStatus("看图分析配置已加载。");
     } catch (error) {
       setChartStatus(`看图分析配置读取失败：${error.message}`);
+    }
+  }
+
+  async function loadMarketEvent() {
+    try {
+      const response = await fetch("/api/market-event-config");
+      const data = await response.json();
+      if (data.config) setMarketEvent((current) => ({ ...current, ...data.config }));
+      setMarketEventStatus("Market Events AI 配置已加载。");
+    } catch (error) {
+      setMarketEventStatus(`Market Events AI 配置读取失败：${error.message}`);
+    }
+  }
+
+  async function saveMarketEvent() {
+    setMarketEventStatus("正在保存 Market Events AI 配置...");
+    const response = await fetch("/api/market-event-config", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ config: marketEvent })
+    });
+    const data = await response.json();
+    if (data.config) setMarketEvent((current) => ({ ...current, ...data.config }));
+    setMarketEventStatus(data.ok ? "Market Events AI 提示词已保存。" : data.error || "Market Events AI 保存失败。");
+    return data;
+  }
+
+  async function publishMarketEvent() {
+    let draft;
+    try {
+      draft = JSON.parse(marketEventOutput);
+    } catch (error) {
+      setMarketEventStatus(`AI 输出不是有效 JSON：${error.message}`);
+      return;
+    }
+    if (!draft.title || !Array.isArray(draft.highlights) || draft.highlights.length !== 3) {
+      setMarketEventStatus("AI 输出必须包含 title 和恰好 3 条 highlights。");
+      return;
+    }
+    if (!window.confirm(`确认发布到 Market Events Topic（#${marketEvent.threadId}）吗？`)) return;
+    setMarketEventStatus("正在发布到 Market Events...");
+    const response = await fetch("/api/scripts", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ scriptId: "marketEvent", payload: { mode: "production", chatId: marketEvent.chatId, threadId: marketEvent.threadId, marketEventTitle: draft.title, marketEventItems: draft.highlights, marketEventImage: marketEvent.imagePath } })
+    });
+    const data = await response.json();
+    if (!data.ok) {
+      setMarketEventStatus(data.error || data.stderr || "Market Events 发布失败。");
+      return;
+    }
+    try {
+      const output = JSON.parse(data.stdout || "{}");
+      setMarketEventStatus(`已发布到 Telegram，消息编号 ${output.messageId || "已返回"}。`);
+    } catch {
+      setMarketEventStatus("Market Events 已发布。");
     }
   }
 
@@ -203,6 +264,11 @@ export default function NewsPage() {
   return (
     <ConsoleShell>
       <PageHeader title="新闻配置" desc="维护新闻源池，测试每个来源是否正常、返回什么格式；群和 Topic 的投放绑定在群配置里设置。" />
+      <div className="mb-5 flex gap-2 border-b border-ops-line">
+        <button className={`border-b-2 px-4 py-3 text-sm font-black ${activeNewsTab === "sources" ? "border-ops-accent text-ops-accent" : "border-transparent text-ops-muted"}`} onClick={() => setActiveNewsTab("sources")}>新闻源</button>
+        <button className={`border-b-2 px-4 py-3 text-sm font-black ${activeNewsTab === "daily" ? "border-ops-accent text-ops-accent" : "border-transparent text-ops-muted"}`} onClick={() => setActiveNewsTab("daily")}>日报</button>
+      </div>
+      {activeNewsTab === "sources" && <>
       <section className="mb-5 grid gap-0 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops md:grid-cols-3">
         <MetricBox label="新闻源池" value={cryptoNewsSources.length} sub="RSS / API / 聚合源" />
         <MetricBox label="可直接测试" value={cryptoNewsSources.filter(canPreview).length} sub="公开 RSS 或无 key 源" />
@@ -302,6 +368,9 @@ export default function NewsPage() {
         </div>
       </Card>
 
+      </>}
+
+      {activeNewsTab === "daily" && <>
       <Card className="mt-5 overflow-hidden">
         <div className="flex flex-col gap-4 border-b border-ops-line p-5 md:flex-row md:items-center md:justify-between">
           <div>
@@ -343,6 +412,38 @@ export default function NewsPage() {
         </div>
       </Card>
 
+      <Card className="mt-5 overflow-hidden">
+        <div className="flex flex-col gap-4 border-b border-ops-line p-5 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-xl font-black">Market Events AI</h2>
+            <p className="mt-1 text-sm text-ops-muted">AI 生成英文 Market Highlights JSON 后，可使用固定封面和三条卡片式重点直接发布到 Market Events Topic。</p>
+          </div>
+          <button className="rounded-lg border border-ops-accent px-4 py-2 text-sm font-black text-ops-accent" onClick={saveMarketEvent}>保存提示词</button>
+        </div>
+        <div className="grid gap-0 border-b border-ops-line lg:grid-cols-2">
+          <label className="grid gap-2 border-b border-ops-line p-5 text-sm font-bold text-ops-muted lg:border-b-0 lg:border-r">目标群 Chat ID
+            <input className={inputClass} value={marketEvent.chatId || ""} onChange={(event) => setMarketEvent((current) => ({ ...current, chatId: event.target.value }))} />
+          </label>
+          <label className="grid gap-2 p-5 text-sm font-bold text-ops-muted">Market Events Thread ID
+            <input className={inputClass} value={marketEvent.threadId || ""} onChange={(event) => setMarketEvent((current) => ({ ...current, threadId: event.target.value }))} />
+          </label>
+        </div>
+        <div className="grid gap-0 lg:grid-cols-2">
+          <label className="grid gap-2 border-b border-ops-line p-5 text-sm font-bold text-ops-muted lg:border-b-0 lg:border-r">AI 提示词
+            <textarea className="min-h-[360px] w-full rounded-lg border border-ops-line p-4 font-mono text-sm leading-6 text-ops-ink outline-none focus:border-ops-accent focus:ring-4 focus:ring-ops-accent/10" value={marketEvent.prompt || ""} onChange={(event) => setMarketEvent((current) => ({ ...current, prompt: event.target.value }))} />
+          </label>
+          <div className="grid gap-3 p-5">
+            <label className="grid gap-2 text-sm font-bold text-ops-muted">AI 输出 JSON
+              <textarea className="min-h-[290px] w-full rounded-lg border border-ops-line p-4 font-mono text-sm leading-6 text-ops-ink outline-none focus:border-ops-accent focus:ring-4 focus:ring-ops-accent/10" value={marketEventOutput} onChange={(event) => setMarketEventOutput(event.target.value)} placeholder={'{"title":"Market Highlights (Jul 13)","highlights":[{"heading":"...","detail":"..."},{"heading":"...","detail":"..."},{"heading":"...","detail":"..."}]}'} />
+            </label>
+            <button className="rounded-lg bg-ops-accent px-4 py-3 text-sm font-black text-white" onClick={publishMarketEvent}>发布到 Market Events</button>
+            <div className="rounded-lg bg-[#fbfcfb] px-4 py-3 text-sm font-bold text-ops-muted">{marketEventStatus}</div>
+          </div>
+        </div>
+      </Card>
+      </>}
+
+      {activeNewsTab === "sources" && <>
       <Card className="mt-5 overflow-hidden">
         <div className="flex flex-col gap-4 border-b border-ops-line p-5 md:flex-row md:items-center md:justify-between">
           <div>
@@ -399,6 +500,7 @@ export default function NewsPage() {
           <div className="mt-3 rounded-lg bg-[#fbfcfb] px-4 py-3 text-sm font-bold text-ops-muted">{chartStatus}</div>
         </div>
       </Card>
+      </>}
 
       <Card className="mt-5 overflow-hidden">
         <div className="flex flex-col gap-4 border-b border-ops-line p-5 md:flex-row md:items-center md:justify-between">
@@ -436,6 +538,25 @@ export default function NewsPage() {
     </ConsoleShell>
   );
 }
+
+const defaultMarketEventPrompt = `You are the YUBIT Market Events editor. Convert supplied market news into a concise, factual Telegram post.
+
+Return valid JSON only:
+{
+  "title": "Market Highlights (Mon D)",
+  "highlights": [
+    { "heading": "Short headline", "detail": "One concise sentence with only material facts and figures." }
+  ]
+}
+
+Rules:
+- Write in clear English.
+- Select exactly 3 most material highlights.
+- Keep each heading to 4–9 words and each detail to 1–2 short sentences.
+- Preserve supplied dates, tickers, percentages, and dollar amounts exactly.
+- Do not add facts, forecasts, trade calls, hype, or investment advice.
+- Keep the complete Telegram caption below 900 characters.
+- Do not add Markdown, explanations, or any text outside the JSON.`;
 
 function canPreview(source) {
   return source.kind.includes("RSS") && !source.endpoint.includes("$") && /^https?:\/\//.test(source.endpoint) && !/key|required|payment|付费|密钥/i.test(`${source.status} ${source.access}`);

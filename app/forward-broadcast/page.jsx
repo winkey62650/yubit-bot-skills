@@ -6,13 +6,13 @@ import ConsoleShell from "../components/ConsoleShell";
 import { Card, Field, PageHeader, StatusPill, inputClass } from "../components/ui";
 
 const demoChatId = "-1003710405969";
-const defaultRule = { name: "Demo Topic 全部消息广播", group: "YUBIT × Winkey Agent Community", chatId: demoChatId, topic: "test", topicId: null, listen: "全部消息", bot: "YUBITadmin", frequency: "实时", status: "已启用" };
+const defaultRule = { name: "Demo Topic 全部消息广播", group: "YUBIT × Winkey Agent Community", chatId: demoChatId, topic: "test", topicId: null, listen: "全部消息", bot: "ForwardBot", frequency: "实时", status: "已启用" };
 
 export default function ForwardBroadcastPage() {
   const [topics, setTopics] = useState([{ name: "test", threadId: null }]);
   const [groupName, setGroupName] = useState("YUBIT × Winkey Agent Community");
   const [rules, setRules] = useState([defaultRule]);
-  const [form, setForm] = useState({ name: "Demo Topic 全部消息广播", topic: "test", bot: "YUBITadmin" });
+  const [form, setForm] = useState({ name: "Demo Topic 全部消息广播", topic: "test", bot: "ForwardBot" });
   const [status, setStatus] = useState("等待保存");
 
   useEffect(() => {
@@ -57,7 +57,7 @@ export default function ForwardBroadcastPage() {
             <Field label="监听 Topic"><select className={inputClass} value={form.topic} onChange={(event) => setForm({ ...form, topic: event.target.value })}>{topics.map((topic) => <option key={topic.name}>{topic.name}</option>)}</select></Field>
             <div className="rounded-lg bg-[#fbfcfb] px-4 py-3 text-sm font-bold text-ops-muted">监听内容：全部消息。目标群和目标 Topic 请到「群配置」里绑定。</div>
           </Panel>
-          <div className="p-6"><h3 className="mb-4 text-sm font-black">执行</h3><div className="grid gap-4"><Field label="转发模式"><input className={`${inputClass} bg-[#f9fbfa]`} value="复制发送" readOnly /></Field><Field label="转发机器人"><select className={inputClass} value={form.bot} onChange={(event) => setForm({ ...form, bot: event.target.value })}><option>YUBITadmin</option><option>Trader1</option><option>MOD1</option><option>Jack</option><option>Tony</option></select></Field><Field label="状态"><select className={inputClass}><option>启用</option><option>暂停</option></select></Field></div><button className="mt-5 min-h-11 w-full rounded-lg bg-ops-accent px-5 text-sm font-black text-white" onClick={saveRule}>保存广播规则</button><div className="mt-3 text-sm font-bold text-ops-muted">{status}</div></div>
+          <div className="p-6"><h3 className="mb-4 text-sm font-black">执行</h3><div className="grid gap-4"><Field label="转发模式"><input className={`${inputClass} bg-[#f9fbfa]`} value="复制发送" readOnly /></Field><Field label="转发机器人"><select className={inputClass} value={form.bot} onChange={(event) => setForm({ ...form, bot: event.target.value })}><option>ForwardBot</option><option>YUBITadmin</option><option>Trader1</option><option>MOD1</option><option>Jack</option><option>Tony</option></select></Field><Field label="状态"><select className={inputClass}><option>启用</option><option>暂停</option></select></Field></div><button className="mt-5 min-h-11 w-full rounded-lg bg-ops-accent px-5 text-sm font-black text-white" onClick={saveRule}>保存广播规则</button><div className="mt-3 text-sm font-bold text-ops-muted">{status}</div></div>
         </div>
       </Card>
       <RulesTable rules={rules} />

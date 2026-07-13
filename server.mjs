@@ -19,6 +19,7 @@ const broadcastOffsetPath = join(root, ".runtime", "broadcast-offset.json");
 const broadcastStatusPath = join(root, ".runtime", "broadcast-status.json");
 const socialPackagesPath = join(root, ".runtime", "social-packages.json");
 const socialStatusPath = join(root, ".runtime", "social-status.json");
+const marketEventConfigPath = join(root, ".runtime", "market-event-ai.json");
 const demoChatId = process.env.DEMO_TELEGRAM_CHAT_ID || "-1003710405969";
 const demoTestTopicPath = join(root, ".runtime", "demo-test-topic.json");
 const fallbackNewsImageUrl = "https://images.unsplash.com/photo-1640340434855-6084b1f4901c?auto=format&fit=crop&w=1200&q=80";
@@ -32,6 +33,8 @@ const defaultBindings = [
 
 const scriptMap = {
   newGroup: { label: "New Group Setup", command: ["scripts/new-group-setup.mjs"] },
+  reapplyReadFirst: { label: "Reapply Read First", command: ["scripts/reapply-read-first.mjs"] },
+  resetGroupInitialization: { label: "Reset Group Initialization", command: ["scripts/reset-group-initialization.mjs"] },
   cleanupTopics: { label: "Cleanup Duplicate Topics", command: ["scripts/close-duplicate-topics.mjs"] },
   repairTopicNames: { label: "Repair Topic Names", command: ["scripts/repair-topic-names.mjs"] },
   tokens: { label: "Token Settings", command: ["scripts/token-settings.mjs"] },
@@ -42,6 +45,7 @@ const scriptMap = {
   dailyReport: { label: "Daily Morning Brief", command: ["daily-report.mjs"] },
   dailyChartAnalysis: { label: "Daily Chart Analysis", command: ["daily-chart-analysis.mjs"] },
   smartMoneyMonitor: { label: "Smart Money Monitor", command: ["smart-money-monitor.mjs"] },
+  marketEvent: { label: "Market Event Publisher", command: ["scripts/send-market-event.mjs"] },
   cycle15m: { label: "15m Cycle", command: ["run-15m-cycle.mjs"] },
   bulkSend: { label: "Bulk Send", command: ["scripts/bulk-send.mjs"] },
   monitorHealth: { label: "Health Monitor", command: ["monitor-health-to-lark.mjs"] }
@@ -91,6 +95,16 @@ const server = createServer(async (request, response) => {
     if (request.method === "GET" && url.pathname === "/api/news-status") {
       const result = readNewsStatus();
       sendJson(response, result.ok ? 200 : 500, result);
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/market-event-config") {
+      sendJson(response, 200, await readMarketEventConfig());
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/market-event-config") {
+      const body = await readJson(request);
+      const result = await saveMarketEventConfig(body);
+      sendJson(response, result.ok ? 200 : 400, result);
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/daily-report-config") {
@@ -320,6 +334,7 @@ async function readBotGroups() {
   const botRoles = [
     { name: "YUBITadmin", role: "群管理 / 建群 / 公告", token: tokens.YUBITADMIN_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN },
     { name: "Trader1", role: "新闻 / 信号推送", token: tokens.TRADER1_BOT_TOKEN || process.env.TRADER1_BOT_TOKEN },
+    { name: "ForwardBot", role: "广播 / 消息转发", token: tokens.FORWARD_BOT_TOKEN || process.env.FORWARD_BOT_TOKEN },
     { name: "MOD1", role: "人工管理辅助", token: tokens.MOD1_BOT_TOKEN || process.env.MOD1_BOT_TOKEN },
     { name: "Jack", role: "市场讨论", token: tokens.JACK_BOT_TOKEN || process.env.JACK_BOT_TOKEN },
     { name: "Tony", role: "风险讨论", token: tokens.TONY_BOT_TOKEN || process.env.TONY_BOT_TOKEN }
@@ -866,6 +881,32 @@ async function readSocialPackages() {
     ok: true,
     packages: normalizeSocialPackages(config.packages || config),
     updatedAt: config.updatedAt || null
+  };
+}
+
+async function readMarketEventConfig() {
+  if (!existsSync(marketEventConfigPath)) return { ok: true, config: defaultMarketEventConfig(), updatedAt: null };
+  const saved = JSON.parse(await readFile(marketEventConfigPath, "utf8"));
+  return { ok: true, config: { ...defaultMarketEventConfig(), ...saved.config }, updatedAt: saved.updatedAt || null };
+}
+
+async function saveMarketEventConfig(body) {
+  const current = await readMarketEventConfig();
+  const config = { ...current.config, ...(body?.config || body) };
+  if (!String(config.prompt || "").trim()) return { ok: false, error: "AI prompt cannot be empty" };
+  const saved = { config, updatedAt: new Date().toISOString() };
+  await mkdir(join(root, ".runtime"), { recursive: true });
+  await writeFile(marketEventConfigPath, JSON.stringify(saved, null, 2));
+  return { ok: true, ...saved };
+}
+
+function defaultMarketEventConfig() {
+  return {
+    chatId: "-1004331355892",
+    threadId: "169",
+    imagePath: "assets/market-events/market-event-cover.jpg",
+    prompt: `You are the YUBIT Market Events editor. Convert the supplied market news into a concise, factual Telegram post.\n\nReturn valid JSON only:\n{\n  "title": "Market Highlights (Mon D)",\n  "highlights": [\n    { "heading": "Short headline", "detail": "One concise sentence with only material facts and figures." }\n  ]\n}\n\nRules:\n- Write in clear English.\n- Select exactly 3 most material highlights.\n- Each heading is 4–9 words; each detail is 1–2 short sentences.\n- Preserve dates, tickers, percentages, and dollar amounts exactly when provided.\n- Do not add facts, forecasts, trading calls, hype, or investment advice.\n- Keep the complete Telegram caption below 900 characters.\n- Do not add Markdown, explanations, or any text outside the JSON.`,
+    format: "Image cover + bold title + three concise numbered highlights"
   };
 }
 
@@ -1862,6 +1903,7 @@ async function copyBroadcastMessage(token, options) {
 function tokenForBotRole(tokens, role) {
   const normalized = String(role || "YUBITadmin").toLowerCase();
   if (normalized === "trader1") return tokens.TRADER1_BOT_TOKEN || process.env.TRADER1_BOT_TOKEN;
+  if (normalized === "forwardbot" || normalized === "forward") return tokens.FORWARD_BOT_TOKEN || process.env.FORWARD_BOT_TOKEN;
   if (normalized === "mod1") return tokens.MOD1_BOT_TOKEN || process.env.MOD1_BOT_TOKEN;
   if (normalized === "jack") return tokens.JACK_BOT_TOKEN || process.env.JACK_BOT_TOKEN;
   if (normalized === "tony") return tokens.TONY_BOT_TOKEN || process.env.TONY_BOT_TOKEN;
@@ -2124,6 +2166,10 @@ function buildEnv(payload) {
     CHART_INTERVAL: payload.chartInterval || process.env.CHART_INTERVAL || "",
     DAILY_REPORT_TITLE: payload.dailyReportTitle || process.env.DAILY_REPORT_TITLE || "",
     DAILY_REPORT_BODY: payload.dailyReportBody || process.env.DAILY_REPORT_BODY || "",
+    MARKET_EVENT_TITLE: payload.marketEventTitle || process.env.MARKET_EVENT_TITLE || "",
+    MARKET_EVENT_ITEMS_JSON: payload.marketEventItems ? JSON.stringify(payload.marketEventItems) : process.env.MARKET_EVENT_ITEMS_JSON || "",
+    MARKET_EVENT_IMAGE: payload.marketEventImage || process.env.MARKET_EVENT_IMAGE || "",
+    TELEGRAM_MESSAGE_ID: payload.messageId || "",
     SEND_LARK: payload.sendLark === true ? "true" : "false",
     LARK_WEBHOOK_URL: payload.larkWebhook || process.env.LARK_WEBHOOK_URL || "",
     ADMIN_HEALTH_URL: payload.adminHealthUrl || process.env.ADMIN_HEALTH_URL || "http://localhost:4173/admin-group-config.html",
@@ -2175,7 +2221,10 @@ async function serveStatic(pathname, response) {
     return;
   }
   const content = await readFile(filePath);
-  response.writeHead(200, { "content-type": contentType(filePath) });
+  response.writeHead(200, {
+    "content-type": contentType(filePath),
+    ...(extname(filePath) === ".html" ? { "cache-control": "no-store, max-age=0" } : {})
+  });
   response.end(content);
 }
 
