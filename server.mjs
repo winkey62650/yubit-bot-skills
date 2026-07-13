@@ -277,7 +277,8 @@ async function enrichLocalGroups(token, groups) {
 
 async function enrichDiscoveredChat(token, chat) {
   try {
-    const result = await telegram(token, "getChat", { chat_id: chat.chatId || chat.id });
+    const body = await telegram(token, "getChat", { chat_id: chat.chatId || chat.id });
+    const result = body.result || {};
     const hasKnownTopics = Array.isArray(chat.topics) && chat.topics.length > 0;
     const isForum = result.type === "supergroup" && (result.is_forum === true || hasKnownTopics);
     return {
@@ -295,7 +296,8 @@ async function rememberChatById(chatId) {
   const tokens = readTokenEnv(".env.telegram-tokens.local");
   const token = tokens.YUBITADMIN_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN;
   if (!token || !chatId) return null;
-  const chat = await telegram(token, "getChat", { chat_id: chatId });
+  const body = await telegram(token, "getChat", { chat_id: chatId });
+  const chat = body.result || {};
   return saveLocalGroupConfig({
     chatId: String(chat.id || chatId),
     title: chat.title || String(chatId),
