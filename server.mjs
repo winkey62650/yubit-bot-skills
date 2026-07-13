@@ -983,17 +983,36 @@ async function dispatchSocialBindings(options = {}) {
     try {
       const tweets = await fetchTwitterLatestTweets(twitterApiKey, pkg);
       const candidates = filterSocialTweets(tweets, pkg);
+      const observedAt = now;
       if (!bindingState.sentIds?.length) {
         bindingState.sentIds = candidates.map((tweet) => socialTweetId(tweet)).filter(Boolean).slice(0, 50);
-        bindingState.lastCheckedAt = now;
+        bindingState.initializedAt = bindingState.initializedAt || observedAt;
+        bindingState.lastCheckedAt = observedAt;
+        bindingState.lastSeenTweetAt = latestSocialTweetTimestamp(candidates) || bindingState.lastSeenTweetAt || null;
         bindingState.lastTitle = candidates[0]?.text?.slice(0, 120) || "";
         skipped.push({ binding: binding.config, reason: `初始化记录 ${bindingState.sentIds.length} 条历史推文` });
         continue;
       }
 
       const sentIds = new Set(bindingState.sentIds || []);
-      const newTweets = candidates.filter((tweet) => !sentIds.has(socialTweetId(tweet))).slice(0, Number(process.env.SOCIAL_MAX_SEND_PER_BINDING || 3)).reverse();
+      const cutoff = socialDispatchCutoff(bindingState);
+      for (const tweet of candidates) {
+        const id = socialTweetId(tweet);
+        const timestamp = socialTweetTimestamp(tweet);
+        if (id && timestamp && cutoff && timestamp <= cutoff) sentIds.add(id);
+      }
+      const newTweets = candidates
+        .filter((tweet) => {
+          const id = socialTweetId(tweet);
+          const timestamp = socialTweetTimestamp(tweet);
+          return id && timestamp && timestamp > cutoff && !sentIds.has(id);
+        })
+        .slice(0, Number(process.env.SOCIAL_MAX_SEND_PER_BINDING || 3))
+        .reverse();
       if (!newTweets.length) {
+        bindingState.sentIds = [...sentIds].slice(-50).reverse();
+        bindingState.lastCheckedAt = observedAt;
+        bindingState.lastSeenTweetAt = Math.max(Number(bindingState.lastSeenTweetAt || 0), latestSocialTweetTimestamp(candidates) || 0) || null;
         skipped.push({ binding: binding.config, reason: "没有新的可转发推文" });
         continue;
       }
@@ -1006,7 +1025,8 @@ async function dispatchSocialBindings(options = {}) {
         bindingState.lastTitle = String(tweet.text || "").slice(0, 120);
       }
       bindingState.sentIds = [...sentIds].slice(-50).reverse();
-      bindingState.lastCheckedAt = now;
+      bindingState.lastCheckedAt = observedAt;
+      bindingState.lastSeenTweetAt = Math.max(Number(bindingState.lastSeenTweetAt || 0), latestSocialTweetTimestamp(candidates) || 0) || null;
     } catch (error) {
       errors.push({ binding: binding.config, error: error.message });
     }
@@ -1088,6 +1108,27 @@ function legacySocialBindingKey(binding) {
 
 function socialTweetId(tweet) {
   return String(tweet?.id || tweet?.url || "").trim();
+}
+
+function socialTweetTimestamp(tweet) {
+  const raw = tweet?.createdAt || tweet?.created_at || tweet?.created_at_ms || tweet?.timestamp || tweet?.time || tweet?.date || "";
+  if (!raw) return null;
+  if (typeof raw === "number") return raw < 10_000_000_000 ? raw * 1000 : raw;
+  const text = String(raw).trim();
+  if (/^\d+$/.test(text)) {
+    const value = Number(text);
+    return value < 10_000_000_000 ? value * 1000 : value;
+  }
+  const parsed = Date.parse(text);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function latestSocialTweetTimestamp(tweets) {
+  return Math.max(0, ...(tweets || []).map((tweet) => Number(socialTweetTimestamp(tweet) || 0)));
+}
+
+function socialDispatchCutoff(bindingState) {
+  return Number(bindingState.lastCheckedAt || bindingState.initializedAt || bindingState.lastSeenTweetAt || Date.now());
 }
 
 async function sendTweetToTelegram(token, chatId, threadId, pkg, tweet) {
