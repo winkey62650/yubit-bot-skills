@@ -949,16 +949,6 @@ async function dispatchSocialBindings(options = {}) {
       continue;
     }
 
-    const intervalMs = frequencyToMs(binding.frequency || pkg.frequency);
-    const bindingKey = socialBindingKey(binding);
-    const bindingState = state.dispatchState[bindingKey] || {};
-    if (!options.initialize && bindingState.lastAttemptAt && now - Number(bindingState.lastAttemptAt) < intervalMs) {
-      skipped.push({ binding: binding.config, reason: "未到发送频率" });
-      continue;
-    }
-    bindingState.lastAttemptAt = now;
-    state.dispatchState[bindingKey] = bindingState;
-
     const group = findGroupByTitle(groupConfig.groups || [], binding.group);
     if (!group?.chatId) {
       errors.push({ binding: binding.config, error: "找不到目标群" });
@@ -975,10 +965,25 @@ async function dispatchSocialBindings(options = {}) {
       continue;
     }
 
+    const intervalMs = frequencyToMs(binding.frequency || pkg.frequency);
+    const bindingKey = socialBindingKey(binding, group, threadId);
+    const legacyKey = legacySocialBindingKey(binding);
+    const bindingState = state.dispatchState[bindingKey] || state.dispatchState[legacyKey] || {};
+    if (legacyKey !== bindingKey && state.dispatchState[legacyKey] && !state.dispatchState[bindingKey]) {
+      state.dispatchState[bindingKey] = state.dispatchState[legacyKey];
+      delete state.dispatchState[legacyKey];
+    }
+    if (!options.initialize && bindingState.lastAttemptAt && now - Number(bindingState.lastAttemptAt) < intervalMs) {
+      skipped.push({ binding: binding.config, reason: "未到发送频率" });
+      continue;
+    }
+    bindingState.lastAttemptAt = now;
+    state.dispatchState[bindingKey] = bindingState;
+
     try {
       const tweets = await fetchTwitterLatestTweets(twitterApiKey, pkg);
       const candidates = filterSocialTweets(tweets, pkg);
-      if (options.initialize && !bindingState.sentIds?.length) {
+      if (!bindingState.sentIds?.length) {
         bindingState.sentIds = candidates.map((tweet) => socialTweetId(tweet)).filter(Boolean).slice(0, 50);
         bindingState.lastCheckedAt = now;
         bindingState.lastTitle = candidates[0]?.text?.slice(0, 120) || "";
@@ -1073,7 +1078,11 @@ function filterSocialTweets(tweets, pkg) {
   });
 }
 
-function socialBindingKey(binding) {
+function socialBindingKey(binding, group, threadId) {
+  return [group?.chatId || binding.group, threadId || binding.topicId || binding.topic, binding.config].map((item) => normalizeName(item)).join(":");
+}
+
+function legacySocialBindingKey(binding) {
   return [binding.group, binding.topic, binding.config].map((item) => normalizeName(item)).join(":");
 }
 
