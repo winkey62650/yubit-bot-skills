@@ -1713,9 +1713,13 @@ function startBroadcastPoller() {
   setInterval(() => {
     if (broadcastPollerBusy) return;
     broadcastPollerBusy = true;
-    pollBroadcastUpdates().finally(() => {
-      broadcastPollerBusy = false;
-    });
+    pollBroadcastUpdates()
+      .catch((error) => {
+        writeBroadcastStatus({ ok: false, error: error.message, stage: "poll", checkedAt: new Date().toISOString() }).catch(() => {});
+      })
+      .finally(() => {
+        broadcastPollerBusy = false;
+      });
   }, Number(process.env.BROADCAST_POLL_INTERVAL_MS || 4000));
 }
 
@@ -1728,14 +1732,20 @@ async function pollBroadcastUpdates(options = {}) {
   }
 
   const offsetState = readBroadcastOffset();
-  const updates = await telegram(pollToken, "getUpdates", {
-    ...(offsetState.offset ? { offset: offsetState.offset } : {}),
-    allowed_updates: ["message", "channel_post", "edited_message", "edited_channel_post"]
-  });
+  let updates;
+  try {
+    updates = await telegram(pollToken, "getUpdates", {
+      ...(offsetState.offset ? { offset: offsetState.offset } : {}),
+      allowed_updates: ["message", "channel_post", "edited_message", "edited_channel_post"]
+    });
+  } catch (error) {
+    await writeBroadcastStatus({ ok: false, error: error.message, stage: "getUpdates", checkedAt: new Date().toISOString() });
+    return;
+  }
   const result = updates.result || [];
   if (!result.length) {
     const previous = readBroadcastStatus().status || {};
-    await writeBroadcastStatus({ ...previous, ok: true, checkedAt: new Date().toISOString(), processed: 0, copied: 0 });
+    await writeBroadcastStatus({ ...previous, ok: true, error: "", stage: "", checkedAt: new Date().toISOString(), processed: 0, copied: 0 });
     return;
   }
 
