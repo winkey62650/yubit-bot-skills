@@ -1,0 +1,76 @@
+name: Telegram automations
+
+on:
+  schedule:
+    # Vercel Hobby only supports daily Cron Jobs. The shared distribution
+    # scheduler runs here every five minutes and remains protected by the
+    # same server-side CRON_SECRET used by the API route.
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      job:
+        description: Automation to run
+        required: true
+        type: choice
+        options:
+          - daily
+          - whale
+          - agents
+          - distribution
+
+concurrency:
+  group: telegram-automation-${{ github.event.schedule || inputs.job }}
+  cancel-in-progress: false
+
+jobs:
+  distribution:
+    if: github.event.schedule == '*/5 * * * *' || inputs.job == 'distribution'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run content distribution scheduler
+        run: >-
+          curl --fail-with-body --retry 2 --retry-all-errors --max-time 90
+          -H "Authorization: Bearer $YUBIT_CRON_SECRET"
+          "$APP_BASE_URL/api/cron/distribution"
+        env:
+          APP_BASE_URL: https://yubit-bot-skills-academy.vercel.app
+          YUBIT_CRON_SECRET: ${{ secrets.YUBIT_CRON_SECRET }}
+
+  daily:
+    if: inputs.job == 'daily'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Daily Events and Daily Analysis
+        run: >-
+          curl --fail-with-body --retry 2 --max-time 90
+          -H "Authorization: Bearer $YUBIT_CRON_SECRET"
+          "$APP_BASE_URL/api/cron/daily"
+        env:
+          APP_BASE_URL: https://yubit-bot-skills-academy.vercel.app
+          YUBIT_CRON_SECRET: ${{ secrets.YUBIT_CRON_SECRET }}
+
+  whale:
+    if: inputs.job == 'whale'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run hourly whale and orderbook report
+        run: >-
+          curl --fail-with-body --retry 2 --max-time 60
+          -H "Authorization: Bearer $YUBIT_CRON_SECRET"
+          "$APP_BASE_URL/api/cron/whale"
+        env:
+          APP_BASE_URL: https://yubit-bot-skills-academy.vercel.app
+          YUBIT_CRON_SECRET: ${{ secrets.YUBIT_CRON_SECRET }}
+
+  agents:
+    if: inputs.job == 'agents'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run agent information crawl
+        run: >-
+          curl --fail-with-body --retry 2 --max-time 90
+          -H "Authorization: Bearer $YUBIT_CRON_SECRET"
+          "$APP_BASE_URL/api/cron/agents"
+        env:
+          APP_BASE_URL: https://yubit-bot-skills-academy.vercel.app
+          YUBIT_CRON_SECRET: ${{ secrets.YUBIT_CRON_SECRET }}
