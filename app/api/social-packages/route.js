@@ -1,15 +1,13 @@
-import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { NextResponse } from "next/server";
+import { readJson, writeJson } from "../../../lib/json-store";
+import { previewSocialSource } from "../../../lib/automation-jobs.mjs";
+import { normalizeSocialPackages } from "../../../lib/social-sources.mjs";
 
-const socialPackagesPath = join(process.cwd(), ".runtime", "social-packages.json");
+const socialPackagesPath = "social-packages.json";
+export const dynamic = "force-dynamic";
 
 export async function GET() {
-  if (!existsSync(socialPackagesPath)) {
-    return NextResponse.json({ ok: true, packages: defaultSocialPackages(), updatedAt: null });
-  }
-  const config = JSON.parse(await readFile(socialPackagesPath, "utf8"));
+  const config = await readJson(socialPackagesPath, { packages: [], updatedAt: null });
   return NextResponse.json({
     ok: true,
     packages: normalizeSocialPackages(config.packages || config),
@@ -19,42 +17,15 @@ export async function GET() {
 
 export async function POST(request) {
   const body = await request.json().catch(() => ({}));
-  const packages = normalizeSocialPackages(body.packages || body);
-  if (!packages.length) {
-    return NextResponse.json({ ok: false, error: "Missing social packages" }, { status: 400 });
+  if (body.action === "test") {
+    try {
+      return NextResponse.json({ ok: true, preview: await previewSocialSource(body.source || {}) });
+    } catch (error) {
+      return NextResponse.json({ ok: false, error: error.message }, { status: 422 });
+    }
   }
+  const packages = normalizeSocialPackages(body.packages || body);
   const config = { packages, updatedAt: new Date().toISOString() };
-  await mkdir(join(process.cwd(), ".runtime"), { recursive: true });
-  await writeFile(socialPackagesPath, JSON.stringify(config, null, 2));
+  await writeJson(socialPackagesPath, config);
   return NextResponse.json({ ok: true, ...config });
-}
-
-function defaultSocialPackages() {
-  return [
-    { name: "Ricky 社媒转发包", agent: "Ricky", platform: "Twitter / X + YouTube", accountUrl: "https://x.com/Ricky / Ricky Channel", contentType: "全部新内容", frequency: "每 5 分钟", bot: "YUBITadmin", status: "已启用" },
-    { name: "Jack 社媒转发包", agent: "Jack", platform: "Twitter / X", accountUrl: "待录入", contentType: "全部新内容", frequency: "每 5 分钟", bot: "YUBITadmin", status: "待接入" },
-    { name: "Tony 社媒转发包", agent: "Tony", platform: "YouTube", accountUrl: "待录入", contentType: "全部新内容", frequency: "每 5 分钟", bot: "YUBITadmin", status: "待接入" }
-  ];
-}
-
-function normalizeSocialPackages(packages) {
-  return (Array.isArray(packages) ? packages : [])
-    .map((item, index) => ({
-      id: String(item?.id || `social-${normalizeName(item?.agent || item?.name || index + 1)}`),
-      name: String(item?.name || `社媒转发包 ${index + 1}`).trim(),
-      agent: String(item?.agent || "").trim(),
-      platform: String(item?.platform || "Twitter / X").trim(),
-      provider: String(item?.provider || "").trim(),
-      userId: String(item?.userId || item?.twitterUserId || "").trim(),
-      accountUrl: String(item?.accountUrl || item?.url || "").trim(),
-      contentType: String(item?.contentType || "全部新内容").trim(),
-      frequency: String(item?.frequency || "每 5 分钟").trim(),
-      bot: String(item?.bot || "YUBITadmin").trim(),
-      status: String(item?.status || "已启用").trim()
-    }))
-    .filter((item) => item.name && item.agent);
-}
-
-function normalizeName(value) {
-  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "item";
 }

@@ -1,32 +1,36 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import ConsoleShell from "../components/ConsoleShell";
 import { Card, PageHeader, StatusPill } from "../components/ui";
 
 const fallbackBots = [
-  { name: "YUBITadmin", role: "群管理 / 建群 / 公告", status: "待刷新", groups: [] },
-  { name: "Trader1", role: "新闻 / 信号推送", status: "待刷新", groups: [] },
-  { name: "MOD1", role: "人工管理辅助", status: "待刷新", groups: [] },
-  { name: "Jack", role: "市场讨论", status: "待刷新", groups: [] },
-  { name: "Tony", role: "风险讨论", status: "待刷新", groups: [] }
+  { name: "AdminBot", role: "群管理 / 建群 / 公告", username: "Bonnie_geniustrader_bot", status: "读取中", groups: [] },
+  { name: "SpeakerBot", role: "新闻 / 分析 / 信号发布", username: "Satoshi_geniustrader_bot", status: "读取中", groups: [] },
+  { name: "ForwardBot", role: "广播 / 代理社媒转发", username: "Biupa_geniustrader_bot", status: "读取中", groups: [] }
 ];
 
 export default function BotsPage() {
   const [bots, setBots] = useState(fallbackBots);
-  const [status, setStatus] = useState("待刷新");
-  const [running, setRunning] = useState(false);
+  const [status, setStatus] = useState("正在读取 Telegram 实时状态");
+  const [running, setRunning] = useState(true);
+  const [generatedAt, setGeneratedAt] = useState("");
   const coveredGroupCount = useMemo(() => new Set(bots.flatMap((bot) => (bot.groups || []).map((group) => String(group.id)))).size, [bots]);
   const onlineCount = bots.filter((bot) => bot.status === "在线").length;
+
+  useEffect(() => { refresh(); }, []);
 
   async function refresh() {
     setRunning(true);
     setStatus("读取中");
     try {
-      const response = await fetch("/api/bot-groups");
+      const response = await fetch(`/api/bot-groups?t=${Date.now()}`, { cache: "no-store" });
       const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.error || "读取失败");
       setBots(data.bots || fallbackBots);
-      setStatus("已刷新");
+      setGeneratedAt(data.generatedAt || "");
+      const hidden = Math.max(...(data.bots || []).map((bot) => Number(bot.migratedGroupsHidden || 0)), 0);
+      setStatus(hidden ? `已刷新 · 已隐藏 ${hidden} 条迁移历史` : "已刷新");
     } catch (error) {
       setStatus(`失败：${error.message}`);
     } finally {
@@ -38,14 +42,14 @@ export default function BotsPage() {
     <ConsoleShell>
       <PageHeader
         title="机器人配置"
-        desc="查看每个机器人接入了哪些群，以及它在运营系统里的职责。"
+        desc="按 Telegram 当前成员身份核验三个 Bot 所在群；已退出群和升级前的旧群会自动隐藏。"
         action={<button className="min-h-10 rounded-lg border border-ops-accent px-5 text-sm font-black text-ops-accent" disabled={running} onClick={refresh}>{running ? "刷新中..." : "刷新机器人群"}</button>}
       />
       <section className="mb-5 grid gap-0 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops md:grid-cols-4">
         <MetricBox label="机器人" value={String(bots.length)} sub="已配置角色" />
         <MetricBox label="在线" value={String(onlineCount)} sub="Bot API 可连通" />
-        <MetricBox label="覆盖群" value={String(coveredGroupCount)} sub="按 getUpdates 可见" />
-        <MetricBox label="状态" value={status} sub="不显示 Token" />
+        <MetricBox label="有效群" value={String(coveredGroupCount)} sub="已去重并核验成员身份" />
+        <MetricBox label="状态" value={status} sub={generatedAt ? new Date(generatedAt).toLocaleString("zh-CN") : "不显示 Token"} />
       </section>
       <Card className="overflow-hidden">
         <div className="border-b border-ops-line p-5">
@@ -54,7 +58,7 @@ export default function BotsPage() {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[980px] text-sm">
             <thead className="bg-[#f9fbfa] text-left text-xs uppercase text-ops-muted">
-              <tr><th className="px-5 py-3">机器人</th><th className="px-5 py-3">职责</th><th className="px-5 py-3">所在群</th><th className="px-5 py-3">状态</th></tr>
+              <tr><th className="px-5 py-3">机器人</th><th className="px-5 py-3">职责</th><th className="px-5 py-3">当前有效群</th><th className="px-5 py-3">状态</th></tr>
             </thead>
             <tbody>
               {bots.map((bot) => (
@@ -62,7 +66,12 @@ export default function BotsPage() {
                   <td className="px-5 py-4"><b>{bot.name}</b>{bot.username ? <div className="mt-1 text-xs text-ops-muted">@{bot.username}</div> : null}</td>
                   <td className="px-5 py-4">{bot.role}</td>
                   <td className="px-5 py-4">
-                    {(bot.groups || []).length ? bot.groups.map((group) => <span className="mb-2 mr-2 inline-block rounded-lg bg-[#edf7f2] px-2 py-1 text-xs font-black text-ops-accent" key={group.id}>{group.title}</span>) : <span className="text-ops-muted">暂无可见群</span>}
+                    {(bot.groups || []).length ? <div className="grid gap-2">{bot.groups.map((group) => (
+                      <div className="rounded-lg border border-ops-line bg-[#fbfcfb] px-3 py-2" key={group.chatId || group.id}>
+                        <div className="flex flex-wrap items-center gap-2"><b>{group.title}</b><span className={`rounded-full px-2 py-0.5 text-[11px] font-black ${group.isForum ? "bg-[#e6f7ef] text-ops-accent" : "bg-[#fff5dd] text-[#91620d]"}`}>{group.isForum ? "Forum / Topic 可用" : "未开启 Topics"}</span>{group.bound ? <span className="rounded-full bg-[#edf2ff] px-2 py-0.5 text-[11px] font-black text-[#536aa1]">已保存</span> : null}</div>
+                        <div className="mt-1 font-mono text-[11px] text-ops-muted">{group.chatId || group.id} · {memberLabel(group.membership)}{group.isForum ? ` · ${group.canManageTopics ? "可管理 Topic" : "无 Topic 管理权限"}` : ""}</div>
+                      </div>
+                    ))}</div> : <span className="text-ops-muted">暂无有效群，请确认机器人已入群并产生过更新</span>}
                   </td>
                   <td className="px-5 py-4"><StatusPill tone={bot.status === "在线" ? "green" : "amber"}>{bot.status}</StatusPill></td>
                 </tr>
@@ -71,8 +80,17 @@ export default function BotsPage() {
           </table>
         </div>
       </Card>
+      <div className="mt-4 rounded-lg border border-ops-line bg-white px-5 py-4 text-sm leading-6 text-ops-muted">说明：Telegram Bot API 不提供“列出全部群”的接口。这里基于机器人收到的群更新、已保存群配置，再用实时成员身份逐一复核；群迁移旧 ID、已退出和被移除的群不会计入有效群。</div>
     </ConsoleShell>
   );
+}
+
+function memberLabel(status) {
+  if (status === "administrator") return "管理员";
+  if (status === "creator") return "群主";
+  if (status === "member") return "成员";
+  if (status === "restricted") return "受限成员";
+  return "待确认";
 }
 
 function MetricBox({ label, value, sub }) {

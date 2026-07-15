@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import process from "node:process";
-import { defaultTopicTemplate } from "../templates.mjs";
+import { defaultTopicTemplate, topicDisplayName } from "../templates.mjs";
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const chatId = process.env.TELEGRAM_CHAT_ID;
@@ -16,7 +16,13 @@ const deletedThreadIds = await readDeletedThreadIds();
 const repairState = await readRepairState();
 const repairedThreadIds = new Set(repairState.repairedThreadIdsByChat?.[chatId] || []);
 const expectedByOldName = new Map(
-  defaultTopicTemplate.map((topic) => [`${topic.emoji ? `${topic.emoji} ` : ""}${topic.name}`, topic.name])
+  defaultTopicTemplate.flatMap((topic) => {
+    const expectedName = topicDisplayName(topic);
+    return [
+      [topic.name, expectedName],
+      [`${topic.emoji ? `${topic.emoji} ` : ""}${topic.name}`, expectedName]
+    ];
+  })
 );
 const updates = await telegram("getUpdates", {});
 const edits = [];

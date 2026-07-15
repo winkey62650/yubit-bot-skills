@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
-export default function ForwardConfigRedirect() {
-  redirect("/forward-broadcast");
+export default function Page() {
+  redirect("/distribution?view=broadcast");
 }

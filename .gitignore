@@ -5,8 +5,15 @@ __pycache__/
 .env.*
 !.env.example
 node_modules/
+.next/
+.venv/
 .market-discussion-state.json
 .runtime/
 tmp/
 dist/
 coverage/
+artifacts/
+.agents/
+skills-lock.json
+.vercel
+.env*

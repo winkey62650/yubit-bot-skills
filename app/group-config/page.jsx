@@ -1,294 +1,147 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 import ConsoleShell from "../components/ConsoleShell";
-import { Card, Field, PageHeader, inputClass } from "../components/ui";
-
-const initialRoutes = [
-  { id: "news-market-events", group: "YUBIT test", topic: "Market Events", type: "新闻配置", config: "Crypto News Default", bot: "Trader1", status: "已启用" },
-  { id: "signal-market-analysis", group: "YUBIT test", topic: "Market Analysis - Crypto/Stocks/TradFi", type: "信号配置", config: "Futures SMA", bot: "Trader1", status: "已启用" },
-  { id: "broadcast-market-events", group: "YUBIT test", topic: "Market Events", type: "广播", config: "Demo 群全部消息广播", bot: "YUBITadmin", frequency: "实时", status: "已启用" },
-  { id: "ricky-social", group: "YUBIT test", topic: "Ricky's Trading Zone", type: "代理社媒", config: "Ricky 社媒转发包", bot: "YUBITadmin", frequency: "每 5 分钟", status: "已启用" },
-  { id: "official-updates", group: "YUBIT Winkey Main", topic: "YUBIT Updates", type: "新闻配置", config: "Official Updates", bot: "YUBITadmin", status: "待检查" }
-];
-
-const groupOptions = ["YUBIT test", "YUBIT Winkey Main"];
-const fallbackGroups = [
-  { title: "YUBIT test", topics: [{ name: "Market Events" }, { name: "Market Analysis - Crypto/Stocks/TradFi" }, { name: "YUBIT Updates" }, { name: "Ricky's Trading Zone" }] },
-  { title: "YUBIT Winkey Main", topics: [{ name: "YUBIT Updates" }] }
-];
-const configPools = {
-  "新闻配置": [
-    { name: "Crypto News Default", bot: "Trader1", frequency: "每 15 分钟" },
-    { name: "Cointelegraph News", bot: "Trader1", frequency: "实时" },
-    { name: "CoinDesk News", bot: "Trader1", frequency: "每 30 分钟" },
-    { name: "Official Updates", bot: "YUBITadmin", frequency: "实时" }
-  ],
-  "信号配置": [
-    { name: "Futures SMA", bot: "Trader1", frequency: "每 15 分钟" },
-    { name: "TradFi SMA", bot: "Trader1", frequency: "每 30 分钟" }
-  ],
-  "广播": [
-    { name: "Demo 群全部消息广播", bot: "YUBITadmin", frequency: "实时" },
-    { name: "Demo 群 Signal 标签广播", bot: "YUBITadmin", frequency: "实时" },
-    { name: "Demo 群公告广播", bot: "YUBITadmin", frequency: "实时" }
-  ],
-  "代理社媒": [
-    { name: "Ricky 社媒转发包", bot: "YUBITadmin", frequency: "每 5 分钟" },
-    { name: "Jack 社媒转发包", bot: "Jack", frequency: "每 5 分钟" },
-    { name: "Tony 社媒转发包", bot: "Tony", frequency: "每 5 分钟" }
-  ]
-};
+import { Card, Field, PageHeader, StatusPill, inputClass } from "../components/ui";
 
 export default function GroupConfigPage() {
-  const [savedGroups, setSavedGroups] = useState([]);
-  const [discoverStatus, setDiscoverStatus] = useState("等待刷新");
-  const [routes, setRoutes] = useState(initialRoutes);
-  const [groupFilter, setGroupFilter] = useState("全部群");
-  const [bindingForm, setBindingForm] = useState({ group: "YUBIT test", topic: "Market Events", type: "新闻配置", config: "Crypto News Default" });
-  const [socialPackages, setSocialPackages] = useState([]);
+  const [groups, setGroups] = useState([]);
+  const [status, setStatus] = useState("正在读取已保存群配置…");
+  const [busy, setBusy] = useState(false);
+  const [manualChatId, setManualChatId] = useState("");
 
-  const dynamicGroupOptions = useMemo(() => {
-    const savedNames = savedGroups.map((group) => group.title).filter(Boolean);
-    return savedNames.length ? savedNames : groupOptions;
-  }, [savedGroups]);
-  const currentGroups = useMemo(() => savedGroups.length ? savedGroups : fallbackGroups, [savedGroups]);
-  const dynamicConfigPools = useMemo(() => ({
-    ...configPools,
-    "代理社媒": socialPackages.length
-      ? socialPackages.map((pkg) => ({ name: pkg.name, bot: pkg.bot || "YUBITadmin", frequency: pkg.frequency || "每 5 分钟" }))
-      : configPools["代理社媒"]
-  }), [socialPackages]);
-  const selectedGroup = useMemo(() => currentGroups.find((group) => group.title === (bindingForm.group || currentGroups[0]?.title)) || currentGroups[0], [bindingForm.group, currentGroups]);
-  const topicOptions = selectedGroup?.topics?.length ? selectedGroup.topics : [];
-  const configOptions = dynamicConfigPools[bindingForm.type] || [];
-  const selectedConfig = configOptions.find((config) => config.name === bindingForm.config) || configOptions[0] || { bot: "", frequency: "" };
-  const visibleGroupRoutes = useMemo(() => {
-    const knownNames = new Set(currentGroups.map((group) => group.title));
-    const activeRoutes = routes.filter((route) => knownNames.has(route.group));
-    if (groupFilter === "全部群") return activeRoutes;
-    return activeRoutes.filter((route) => route.group === groupFilter);
-  }, [currentGroups, groupFilter, routes]);
+  useEffect(() => { loadSavedGroups(); }, []);
 
-  useEffect(() => {
-    loadSavedGroup();
-    loadSocialPackages();
-  }, []);
-
-  async function loadSocialPackages() {
+  async function loadSavedGroups() {
     try {
-      const response = await fetch("/api/social-packages");
+      const response = await fetch("/api/group-config", { cache: "no-store" });
       const data = await response.json();
-      setSocialPackages(data.packages || []);
-    } catch {}
-  }
-
-  async function loadSavedGroup() {
-    try {
-      const response = await fetch("/api/group-config");
-      const data = await response.json();
-      if (data.groups?.length) {
-        setSavedGroups(data.groups);
-        setBindingForm((current) => ({ ...current, group: current.group || data.groups[0].title, topic: current.topic || data.groups[0].topics?.[0]?.name || "" }));
-        setDiscoverStatus(`已读取本地配置群：${data.groups.length} 个`);
-      }
-      if (Array.isArray(data.bindings)) {
-        setRoutes(data.bindings);
-      }
+      if (!response.ok || !data.ok) throw new Error(data.error || "群配置读取失败");
+      setGroups(data.groups || []);
+      setStatus(data.groups?.length ? `已读取 ${data.groups.length} 个群；规则绑定请在内容分发中心管理。` : "暂无已保存群，请刷新 Telegram 群列表。");
     } catch (error) {
-      setDiscoverStatus(`读取本地群失败：${error.message}`);
+      setStatus(error.message);
     }
   }
 
   async function discoverChats() {
-    setDiscoverStatus("刷新中...");
+    setBusy(true);
+    setStatus("正在通过 Telegram 事件和权限接口复核…");
     try {
-      const response = await fetch("/api/chats");
+      const response = await fetch("/api/chats", { cache: "no-store" });
       const data = await response.json();
-      const forumChats = (data.chats || []).filter((chat) => chat.canUseTopics);
+      if (!response.ok || !data.ok) throw new Error(data.error || "Telegram 群发现失败");
       const saveResponse = await fetch("/api/group-config", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ groups: forumChats })
+        body: JSON.stringify({ groups: data.chats || [], mode: "telegram-refresh" })
       });
       const saved = await saveResponse.json();
-      setSavedGroups(saved.groups || []);
-      setBindingForm((current) => ({ ...current, group: saved.groups?.[0]?.title || current.group, topic: saved.groups?.[0]?.topics?.[0]?.name || current.topic }));
-      setDiscoverStatus(forumChats.length ? `已刷新 ${forumChats.length} 个可配置群` : "未发现可配置群");
+      if (!saveResponse.ok || !saved.ok) throw new Error(saved.error || "群配置保存失败");
+      setGroups(saved.groups || []);
+      const forumCount = saved.groups?.filter((group) => group.canUseTopics).length || 0;
+      setStatus(saved.preservedExisting
+        ? saved.warning
+        : `已刷新 ${saved.groups?.length || 0} 个群，其中 ${forumCount} 个已开启 Topics。`);
     } catch (error) {
-      setDiscoverStatus(`发现失败：${error.message}`);
+      setStatus(`刷新失败：${error.message}`);
+    } finally {
+      setBusy(false);
     }
   }
 
-  async function unlinkRoute(id) {
-    const nextRoutes = routes.filter((route) => route.id !== id);
-    setRoutes(nextRoutes);
-    try {
-      const response = await fetch("/api/group-config", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ bindings: nextRoutes })
-      });
-      const data = await response.json();
-      setDiscoverStatus(data.ok ? "绑定规则已更新" : data.error || "绑定规则保存失败");
-    } catch (error) {
-      setDiscoverStatus(`绑定规则保存失败：${error.message}`);
-    }
-  }
-
-  async function saveBindingRule() {
-    if (!bindingForm.group || !bindingForm.topic || !selectedConfig.name) {
-      setDiscoverStatus("请先选择群、Topic 和配置");
+  async function probeAndSaveChat() {
+    if (busy) return;
+    const normalizedChatId = manualChatId.trim();
+    if (!/^-100\d+$/.test(normalizedChatId)) {
+      setStatus("请输入以 -100 开头的 Telegram 超级群 ID。");
       return;
     }
-    const selectedTopic = topicOptions.find((topic) => topic.name === bindingForm.topic);
-    const nextRoute = {
-      id: `binding-${Date.now()}`,
-      group: bindingForm.group,
-      topic: bindingForm.topic,
-      topicId: selectedTopic?.threadId || null,
-      type: bindingForm.type,
-      config: selectedConfig.name,
-      bot: selectedConfig.bot,
-      frequency: selectedConfig.frequency,
-      status: "已启用"
-    };
-    const nextRoutes = [nextRoute, ...routes.filter((route) => !(route.group === nextRoute.group && route.topic === nextRoute.topic && route.config === nextRoute.config))];
-    setRoutes(nextRoutes);
+    setBusy(true);
+    setStatus("正在由服务器上的三个 Bot 直接检查群与管理员权限…");
     try {
-      const response = await fetch("/api/group-config", {
+      const response = await fetch("/api/chats", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ bindings: nextRoutes })
+        body: JSON.stringify({ chatId: normalizedChatId })
       });
       const data = await response.json();
-      setDiscoverStatus(data.ok ? "绑定规则已更新" : data.error || "绑定规则保存失败");
+      if (!response.ok || !data.ok || !data.group) throw new Error(data.error || "群检测失败");
+      const mergedGroups = [data.group, ...groups.filter((group) => String(group.chatId) !== normalizedChatId)];
+      const saveResponse = await fetch("/api/group-config", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ groups: mergedGroups })
+      });
+      const saved = await saveResponse.json();
+      if (!saveResponse.ok || !saved.ok) throw new Error(saved.error || "群配置保存失败");
+      setGroups(saved.groups || mergedGroups);
+      setManualChatId("");
+      setStatus(`${data.group.title} 已检测并保存：三个 Bot 管理员 ${data.group.adminBotCount}/3，${data.group.canUseTopics ? "Topics 已开启" : "Topics 未开启"}。`);
     } catch (error) {
-      setDiscoverStatus(`绑定规则保存失败：${error.message}`);
+      setStatus(`检测失败：${error.message}`);
+    } finally {
+      setBusy(false);
     }
   }
 
-  function updateBindingForm(patch) {
-    setBindingForm((current) => {
-      const next = { ...current, ...patch };
-      if (patch.group) {
-        const group = currentGroups.find((item) => item.title === patch.group);
-        next.topic = group?.topics?.[0]?.name || "";
-      }
-      if (patch.type) next.config = dynamicConfigPools[patch.type]?.[0]?.name || "";
-      return next;
-    });
-  }
+  const topicCount = groups.reduce((total, group) => total + (group.topics?.length || 0), 0);
+  const confirmedTopics = groups.reduce((total, group) => total + (group.topics?.filter((topic) => topic.threadId).length || 0), 0);
 
   return (
     <ConsoleShell>
-      <PageHeader title="群配置" desc="配置当前群、Topic 绑定、代理 Topic 和内容分发规则。" />
-      <Card className="mb-5 overflow-hidden">
-        <div className="flex flex-col gap-4 border-b border-ops-line p-5 xl:flex-row xl:items-center xl:justify-between">
-          <div>
-            <h2 className="text-xl font-black">已配置群</h2>
-          </div>
-          <button className="min-h-10 rounded-lg border border-ops-accent px-5 text-sm font-black text-ops-accent" onClick={discoverChats} type="button">配置群刷新</button>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-sm">
-            <thead className="bg-[#f9fbfa] text-left text-xs uppercase text-ops-muted">
-              <tr><th className="px-5 py-3">群名称</th><th className="px-5 py-3">群 ID</th><th className="px-5 py-3">类型</th><th className="px-5 py-3">Topic</th></tr>
-            </thead>
-            <tbody>
-              {savedGroups.length ? savedGroups.map((group) => (
-                <tr className="border-t border-ops-line" key={group.chatId}>
-                  <td className="px-5 py-4 font-bold">{group.title}</td>
-                  <td className="px-5 py-4 font-mono text-xs">{group.chatId}</td>
-                  <td className="px-5 py-4">{group.type}</td>
-                  <td className="px-5 py-4">{group.canUseTopics ? `${group.topics?.length || 0} 个 Topic` : "不支持 Topic"}</td>
-                </tr>
-              )) : <tr><td className="px-5 py-6 font-bold text-ops-muted" colSpan={4}>暂无已配置群。</td></tr>}
-            </tbody>
-          </table>
-        </div>
-        <div className="border-t border-ops-line px-5 py-3 text-sm font-bold text-ops-muted">{discoverStatus}</div>
-      </Card>
-      <section className="mb-5 grid gap-0 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops md:grid-cols-4">
-        <MetricBox label="已配置群" value={String(savedGroups.length)} sub="本地配置" />
-        <MetricBox label="群类型" value="Forum" sub="支持 Topic 分区" />
-        <MetricBox label="Topic 数量" value="7" sub="含代理专属 Topic" />
-        <MetricBox label="配置状态" value="已启用" sub="新闻 / 信号 / 转发可绑定" />
+      <PageHeader
+        title="群与 Topic 配置"
+        desc="这里只维护群、Topic、三个 Bot 权限和健康状态；内容来源与目标绑定已统一迁移到内容分发中心。"
+        action={<Link className="grid min-h-11 place-items-center rounded-lg bg-ops-accent px-5 text-sm font-black text-white" href="/distribution">进入内容分发中心</Link>}
+      />
+
+      <section className="mb-5 grid overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops sm:grid-cols-2 xl:grid-cols-4">
+        <Metric label="已配置群" value={groups.length} detail="跨设备持久保存" />
+        <Metric label="Forum 群" value={groups.filter((group) => group.canUseTopics).length} detail="已核验 Topics 开关" />
+        <Metric label="Topic 总数" value={topicCount} detail={`${confirmedTopics} 个已确认 Thread ID`} />
+        <Metric label="三 Bot 就绪" value={groups.filter((group) => group.allBotsAdmin).length} detail={`共 ${groups.length} 个群`} />
       </section>
+
       <Card className="overflow-hidden">
-        <div className="flex flex-col gap-3 border-b border-ops-line px-6 py-5 xl:flex-row xl:items-center xl:justify-between">
-          <div>
-            <h2 className="text-xl font-black">新增绑定规则</h2>
-            <p className="mt-1 text-sm text-ops-muted">先选择投放位置，再选择配置包；机器人和频率会按配置自动带出。</p>
+        <div className="border-b border-ops-line bg-[#f7faf8] p-5">
+          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+            <Field label="新群 ID">
+              <input className={`${inputClass} w-full`} value={manualChatId} onChange={(event) => setManualChatId(event.target.value)} placeholder="-100xxxxxxxxxx" />
+            </Field>
+            <button className="min-h-11 rounded-lg bg-ops-accent px-5 text-sm font-black text-white disabled:opacity-50" disabled={busy} onClick={probeAndSaveChat} type="button">{busy ? "正在检测…" : "按群 ID 检测并保存"}</button>
           </div>
-          <button className="min-h-10 rounded-lg bg-ops-accent px-5 text-sm font-black text-white" onClick={saveBindingRule}>保存绑定规则</button>
+          <p className="mt-2 text-xs font-bold text-ops-muted">无需在这台 Mac 登录三个 Bot。后台会使用服务器端 Bot API，直接检查群、Topics 和管理员权限；新群首次登记请填写群 ID。</p>
         </div>
-        <div className="grid gap-0 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_320px]">
-          <div className="border-b border-ops-line p-6 xl:border-b-0 xl:border-r">
-            <div className="mb-4 flex items-center justify-between gap-3"><h3 className="text-sm font-black text-ops-ink">目标位置</h3><span className="rounded-full bg-[#edf7f2] px-2 py-1 text-xs font-black text-ops-accent">{topicOptions.length || 0} 个 Topic</span></div>
-            <div className="grid gap-4">
-              <Field label="群"><select className={inputClass} value={bindingForm.group || dynamicGroupOptions[0] || ""} onChange={(event) => updateBindingForm({ group: event.target.value })}>{dynamicGroupOptions.map((group) => <option key={group}>{group}</option>)}</select></Field>
-              <Field label="Topic"><select className={inputClass} disabled={!topicOptions.length} value={bindingForm.topic || topicOptions[0]?.name || ""} onChange={(event) => updateBindingForm({ topic: event.target.value })}>{topicOptions.length ? topicOptions.map((topic) => <option key={topic.name}>{topic.name}</option>) : <option>这个群还没有发现 Topic</option>}</select></Field>
-            </div>
-            <div className="mt-4 rounded-lg bg-[#fbfcfb] px-4 py-3 text-sm font-bold text-ops-muted">{topicOptions.length ? `当前群已加载 ${topicOptions.length} 个 Topic` : "当前群还没有 Topic 数据。"}</div>
-          </div>
-          <div className="border-b border-ops-line p-6 xl:border-b-0 xl:border-r">
-            <div className="mb-4 flex items-center justify-between gap-3"><h3 className="text-sm font-black text-ops-ink">绑定配置</h3><span className="rounded-full bg-[#f5f7f6] px-2 py-1 text-xs font-black text-ops-muted">{configOptions.length} 个配置</span></div>
-            <div className="grid gap-4">
-              <Field label="类型"><select className={inputClass} value={bindingForm.type} onChange={(event) => updateBindingForm({ type: event.target.value })}>{Object.keys(configPools).map((type) => <option key={type}>{type}</option>)}</select></Field>
-              <Field label="配置名称"><select className={inputClass} value={selectedConfig.name || ""} onChange={(event) => updateBindingForm({ config: event.target.value })}>{configOptions.map((config) => <option key={config.name}>{config.name}</option>)}</select></Field>
-            </div>
-          </div>
-          <div className="p-6">
-            <div className="mb-4 flex items-center justify-between gap-3"><h3 className="text-sm font-black text-ops-ink">执行信息</h3><span className="rounded-full bg-[#e6f7ef] px-2 py-1 text-xs font-black text-ops-accent">自动</span></div>
-            <div className="grid gap-3">
-              <Field label="机器人"><input className={`${inputClass} bg-[#f9fbfa] text-ops-ink`} readOnly value={selectedConfig.bot || ""} /></Field>
-              <Field label="频率"><input className={`${inputClass} bg-[#f9fbfa] text-ops-ink`} readOnly value={selectedConfig.frequency || ""} /></Field>
-            </div>
-            <div className="mt-4 rounded-lg border border-ops-line bg-white px-4 py-3 text-sm leading-6 text-ops-muted"><strong className="text-ops-ink">{selectedConfig.name}</strong><div>{bindingForm.type} · {selectedConfig.bot} · {selectedConfig.frequency}</div><div className="break-words">{bindingForm.group} / {bindingForm.topic}</div></div>
-          </div>
+        <div className="flex flex-col gap-4 border-b border-ops-line p-5 md:flex-row md:items-center md:justify-between">
+          <div><h2 className="text-xl font-black">Telegram 群健康状态</h2><p className="mt-1 text-sm text-ops-muted">刷新用于复核已登记群；ForwardBot 启用 Webhook 后不再与 getUpdates 并行轮询。</p></div>
+          <button className="min-h-11 rounded-lg border border-ops-accent px-5 text-sm font-black text-ops-accent disabled:opacity-50" disabled={busy} onClick={discoverChats} type="button">{busy ? "正在刷新…" : "刷新群与权限"}</button>
         </div>
-      </Card>
-      <Card className="mt-5 overflow-hidden">
-        <div className="border-b border-ops-line p-5">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div>
-              <h2 className="text-xl font-black">群绑定</h2>
-            </div>
-            <select className={`${inputClass} max-w-xs`} value={groupFilter} onChange={(event) => setGroupFilter(event.target.value)}>
-              {["全部群", ...dynamicGroupOptions].map((group) => <option key={group}>{group}</option>)}
-            </select>
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px] text-sm">
-            <thead className="bg-[#f9fbfa] text-left text-xs uppercase text-ops-muted">
-              <tr><th className="px-5 py-3">群</th><th className="px-5 py-3">TOPIC</th><th className="px-5 py-3">绑定配置</th><th className="px-5 py-3">机器人</th><th className="px-5 py-3">操作</th></tr>
-            </thead>
-            <tbody>
-              {visibleGroupRoutes.map((route) => (
-                <tr className="border-t border-ops-line align-top" key={route.id}>
-                  <td className="px-5 py-4 font-bold">{route.group}</td>
-                  <td className="px-5 py-4">{route.topic}</td>
-                  <td className="px-5 py-4"><strong>{route.config}</strong><div className="mt-1 text-xs text-ops-muted">{route.type}{route.frequency ? ` · ${route.frequency}` : ""}</div></td>
-                  <td className="px-5 py-4">{route.bot}</td>
-                  <td className="px-5 py-4"><button className="rounded-lg border border-[#d85f5f] px-3 py-2 text-xs font-black text-[#b94141]" onClick={() => unlinkRoute(route.id)} type="button">解绑</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div aria-live="polite" className="border-b border-ops-line bg-[#fbfcfb] px-5 py-3 text-sm font-bold text-ops-muted">{status}</div>
+        <div className="divide-y divide-ops-line">
+          {groups.length ? groups.map((group) => <GroupCard group={group} key={group.chatId} />) : <div className="p-8 text-center font-bold text-ops-muted">尚未发现群。请确认三个 Bot 已入群并成为管理员。</div>}
         </div>
       </Card>
     </ConsoleShell>
   );
 }
 
-function MetricBox({ label, value, sub }) {
-  return (
-    <div className="border-b border-ops-line p-5 last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0">
-      <div className="text-sm font-bold text-ops-muted">{label}</div>
-      <div className="mt-1 text-2xl font-black">{value}</div>
-      <div className="mt-1 text-xs text-ops-muted">{sub}</div>
+function GroupCard({ group }) {
+  const bots = group.bots || [];
+  const knownCount = group.topicCoverage?.knownCount ?? group.topics?.length ?? 0;
+  const resolvedCount = group.topicCoverage?.resolvedCount ?? group.topics?.filter((topic) => topic.threadId).length ?? 0;
+  return <article className="p-5">
+    <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+      <div><div className="flex flex-wrap items-center gap-2"><h3 className="text-lg font-black">{group.title}</h3><StatusPill tone={group.allBotsAdmin && group.canUseTopics ? "green" : "amber"}>{group.allBotsAdmin && group.canUseTopics ? "可运营" : "需处理"}</StatusPill></div><p className="mt-1 font-mono text-xs text-ops-muted">{group.chatId} · {group.type}</p></div>
+      <div className="grid gap-2 text-sm sm:grid-cols-2 xl:min-w-[520px] xl:grid-cols-3">
+        {(bots.length ? bots : [{ name: "AdminBot" }, { name: "SpeakerBot" }, { name: "ForwardBot" }]).map((bot) => <div className="rounded-lg border border-ops-line p-3" key={bot.name}><div className="font-black">{bot.name}</div><div className={`mt-1 text-xs font-bold ${bot.isAdmin ? "text-ops-accent" : "text-[#a04a3d]"}`}>{bot.isAdmin ? `管理员${bot.canManageTopics ? " · 可管理 Topic" : ""}` : bot.membership === "member" ? "已入群，非管理员" : "未确认权限"}</div></div>)}
+      </div>
     </div>
-  );
+    <div className="mt-4 rounded-lg bg-[#f7f9f8] p-4"><div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm">Topics：{knownCount} 个已知 / {resolvedCount} 个已确认</strong><span className="text-xs text-ops-muted">{group.canUseTopics ? "Topics 已开启" : "Topics 未开启"}</span></div><div className="mt-3 flex flex-wrap gap-2">{(group.topics || []).map((topic) => <span className={`rounded-full px-3 py-1 text-xs font-bold ${topic.threadId ? "bg-[#e6f7ef] text-ops-accent" : "bg-[#fff1df] text-[#8a5d1a]"}`} key={`${topic.name}-${topic.threadId || "template"}`}>{topic.name}{topic.threadId ? ` · ${topic.threadId}` : " · 待识别"}</span>)}</div></div>
+  </article>;
+}
+
+function Metric({ label, value, detail }) {
+  return <div className="border-b border-ops-line p-5 last:border-0 sm:border-r xl:border-b-0"><div className="text-sm font-bold text-ops-muted">{label}</div><div className="mt-1 text-2xl font-black">{value}</div><div className="mt-1 text-xs text-ops-muted">{detail}</div></div>;
 }

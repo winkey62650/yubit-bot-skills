@@ -9,6 +9,7 @@ import { getTelegramGroupMetrics } from "./lib/telegram-metrics.mjs";
 import { cryptoNewsSources } from "./crypto-news-sources.mjs";
 
 const port = Number(process.env.PORT || 4173);
+const host = process.env.HOST || "127.0.0.1";
 const root = process.cwd();
 const groupConfigPath = join(root, ".runtime", "group-config.json");
 const newsConfigsPath = join(root, ".runtime", "news-configs.json");
@@ -144,8 +145,8 @@ const server = createServer(async (request, response) => {
   }
 });
 
-server.listen(port, () => {
-  console.log(`YUBIT local admin server running at http://localhost:${port}/admin-group-config.html`);
+server.listen(port, host, () => {
+  console.log(`YUBIT local admin server running at http://${host}:${port}/admin-group-config.html`);
   startNewsDispatcher();
   startBroadcastPoller();
 });
@@ -988,7 +989,7 @@ let broadcastPollerStarted = false;
 let broadcastPollerBusy = false;
 
 function startBroadcastPoller() {
-  if (broadcastPollerStarted || process.env.DISABLE_BROADCAST_POLLER === "true") return;
+  if (broadcastPollerStarted || process.env.DISABLE_BROADCAST_POLLER === "true" || process.env.TELEGRAM_WEBHOOK_SECRET) return;
   broadcastPollerStarted = true;
   pollBroadcastUpdates({ initialize: true }).catch((error) => {
     writeBroadcastStatus({ ok: false, error: error.message, stage: "initialize" }).catch(() => {});

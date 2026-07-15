@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import process from "node:process";
-import { defaultTopicTemplate } from "../templates.mjs";
+import { defaultTopicTemplate, topicDisplayName } from "../templates.mjs";
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const chatId = process.env.TELEGRAM_CHAT_ID;
@@ -67,7 +67,7 @@ async function readTemplate() {
   } catch {
     return defaultTopicTemplate.map((topic) => ({
       ...topic,
-      name: `${topic.emoji ? `${topic.emoji} ` : ""}${topic.name}`
+      name: topicDisplayName(topic)
     }));
   }
 }

@@ -1,0 +1,6 @@
+.agents/
+.github/
+artifacts/
+tests/
+coverage/
+*.log

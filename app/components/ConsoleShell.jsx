@@ -1,15 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useState } from "react";
 
 const navItems = [
   { href: "/group-config", label: "群配置" },
   { href: "/new-group", label: "新群初始化" },
-  { href: "/news", label: "新闻配置" },
-  { href: "/signals", label: "信号配置" },
-  { href: "/forward-broadcast", label: "广播转发" },
-  { href: "/forward-social", label: "代理社媒转发" },
+  { href: "/distribution", label: "内容分发中心" },
   { href: "/bots", label: "机器人配置" },
   { href: "/groups", label: "群数据" },
   { href: "/settings", label: "系统设置" }
@@ -17,19 +15,41 @@ const navItems = [
 
 export default function ConsoleShell({ children }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  async function logout() {
+    setLoggingOut(true);
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } finally {
+      router.replace("/login");
+      router.refresh();
+    }
+  }
   return (
-    <div className="min-h-screen bg-[#fbfcfb] text-ops-ink lg:grid lg:grid-cols-[258px_minmax(0,1fr)]">
-      <aside className="border-b border-ops-line bg-white p-6 lg:sticky lg:top-0 lg:h-screen lg:overflow-y-auto lg:border-b-0 lg:border-r">
-        <Link className="mb-10 flex items-center gap-3" href="/">
+    <div className="min-h-screen bg-[#fbfcfb] text-ops-ink lg:grid lg:grid-cols-[238px_minmax(0,1fr)] xl:grid-cols-[258px_minmax(0,1fr)]">
+      <aside className="border-b border-ops-line bg-white px-4 py-3 lg:sticky lg:top-0 lg:h-screen lg:overflow-y-auto lg:border-b-0 lg:border-r lg:p-6">
+        <div className="flex items-center justify-between gap-3 lg:block">
+        <Link className="flex items-center gap-3 lg:mb-10" href="/">
           <span className="grid h-9 w-9 place-items-center rounded-lg bg-ops-accent text-lg font-black text-white">Y</span>
-          <strong className="text-2xl tracking-tight">YUBIT</strong>
+          <strong className="text-xl tracking-tight lg:text-2xl">YUBIT</strong>
         </Link>
-        <nav className="grid gap-2">
+        <button
+          className="min-h-10 rounded-lg border border-ops-line bg-white px-3 text-xs font-bold text-[#33423b] lg:hidden"
+          disabled={loggingOut}
+          onClick={logout}
+          type="button"
+        >
+          {loggingOut ? "退出中…" : "退出"}
+        </button>
+        </div>
+        <nav className="mt-3 flex gap-2 overflow-x-auto pb-1 lg:mt-0 lg:grid lg:overflow-visible lg:pb-0">
           {navItems.map((item) => {
-            const active = pathname === item.href;
+            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
               <Link
-                className={`flex min-h-12 items-center rounded-lg px-3 text-left text-sm font-bold transition ${active ? "bg-[#edf7f2] text-ops-accent shadow-sm" : "text-[#33423b] hover:bg-ops-soft"}`}
+                className={`flex min-h-10 shrink-0 items-center whitespace-nowrap rounded-lg px-3 text-left text-sm font-bold transition lg:min-h-12 ${active ? "bg-[#edf7f2] text-ops-accent shadow-sm" : "text-[#33423b] hover:bg-ops-soft"}`}
                 href={item.href}
                 key={item.href}
               >
@@ -38,12 +58,20 @@ export default function ConsoleShell({ children }) {
             );
           })}
         </nav>
-        <div className="mt-12 rounded-lg border border-ops-line bg-white p-4 shadow-sm">
+        <div className="mt-12 hidden rounded-lg border border-ops-line bg-white p-4 shadow-sm lg:block">
           <div className="text-sm font-black">帮助与支持</div>
           <p className="mt-1 text-xs leading-5 text-ops-muted">使用文档 / 常见问题</p>
         </div>
+        <button
+          className="mt-4 hidden min-h-11 w-full rounded-lg border border-ops-line bg-white px-4 text-sm font-bold text-[#33423b] transition hover:bg-ops-soft disabled:cursor-wait disabled:opacity-60 lg:block"
+          disabled={loggingOut}
+          onClick={logout}
+          type="button"
+        >
+          {loggingOut ? "正在退出…" : "退出登录"}
+        </button>
       </aside>
-      <main className="p-5 md:p-8">{children}</main>
+      <main className="min-w-0 p-4 sm:p-5 md:p-7 xl:p-8">{children}</main>
     </div>
   );
 }

@@ -1,0 +1,115 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  buildBroadcastRouteSummary,
+  buildSocialSourceReadiness,
+  getContentTemplate,
+  recommendedScheduleFor
+} from "../lib/distribution-ui.mjs";
+
+test("social source readiness distinguishes stable sources from limited X fallback", () => {
+  assert.deepEqual(buildSocialSourceReadiness([]), {
+    total: 0,
+    enabled: 0,
+    stable: 0,
+    limited: 0,
+    ready: false
+  });
+  assert.deepEqual(buildSocialSourceReadiness([
+    { platform: "YouTube", accountUrl: "https://youtube.com/@demo", status: "已启用" },
+    { platform: "X", accountUrl: "https://x.com/demo", status: "已启用" },
+    { platform: "X", accountUrl: "https://x.com/paused", feedUrl: "https://example.com/x.xml", status: "已暂停" }
+  ]), {
+    total: 3,
+    enabled: 2,
+    stable: 1,
+    limited: 1,
+    ready: true
+  });
+});
+
+test("each automatic content template recommends the production schedule and real job", () => {
+  assert.equal(recommendedScheduleFor("daily-events"), "daily-0800-utc");
+  assert.equal(recommendedScheduleFor("whale-signals"), "daily-0800-utc");
+  assert.equal(recommendedScheduleFor("agent-sync"), "every-4-hours");
+  assert.equal(getContentTemplate("daily-analysis").jobId, "daily-analysis");
+  assert.match(getContentTemplate("news").runtimeNote, /执行时/);
+});
+
+test("unknown content types return a safe incomplete template", () => {
+  const template = getContentTemplate("missing-template");
+  assert.equal(template.jobId, "");
+  assert.equal(template.format, "待配置");
+});
+
+test("broadcast route is ready only after source and at least one target are set", () => {
+  const incomplete = buildBroadcastRouteSummary({ source: {}, mode: "automatic", targets: [] });
+  assert.equal(incomplete.ready, false);
+  assert.deepEqual(incomplete.missing, ["来源", "至少一个目标"]);
+
+  const ready = buildBroadcastRouteSummary({
+    source: { chatId: "-1001", groupName: "Demo", topicName: "News" },
+    mode: "review",
+    targets: [{ chatId: "-1002", threadId: 8 }]
+  });
+  assert.equal(ready.ready, true);
+  assert.equal(ready.targetCount, 1);
+  assert.equal(ready.sourceLabel, "Demo / News");
+  assert.match(ready.processingLabel, /待审核/);
+});
+
+test("market events sample preserves the supplied July 7 briefing without imposing a fixed daily count", () => {
+  const template = getContentTemplate("daily-events");
+  const preview = template.preview;
+  assert.equal(preview.language, "English");
+  assert.ok(preview.items.length > 0);
+  assert.match(template.itemCountPolicy, /动态/);
+  assert.doesNotMatch(preview.caption, /full 11-story/i);
+  assert.match(preview.headline, /MORNING MARKET BRIEF/i);
+  assert.match(preview.items.join(" "), /Nasdaq/i);
+  assert.match(preview.items.join(" "), /BONKDAO/i);
+  assert.match(preview.items.join(" "), /Samsung Electronics/i);
+  assert.match(preview.items.join(" "), /ANSEM/i);
+  assert.match(preview.items.join(" "), /SpaceX/i);
+  assert.match(preview.items.join(" "), /Strategy/i);
+  assert.match(preview.disclaimer, /verify/i);
+});
+
+test("events, analysis and whale templates are previewable before live data is requested", () => {
+  for (const contentType of ["daily-events", "daily-analysis", "whale-signals"]) {
+    const preview = getContentTemplate(contentType).preview;
+    assert.equal(preview.branding, "neutral");
+    assert.match(preview.imageUrl, /^\/(api\/media\/card\?kind=|templates\/)/);
+    assert.ok(preview.caption.length > 80);
+    assert.ok(preview.sections.length >= 3);
+    assert.doesNotMatch(JSON.stringify(preview), /yubit/i);
+  }
+});
+
+test("all three editorial samples use generated poster assets", () => {
+  assert.match(getContentTemplate("daily-events").preview.imageUrl, /^\/api\/media\/card\?kind=events/);
+  assert.match(getContentTemplate("daily-analysis").preview.imageUrl, /^\/api\/media\/card\?kind=analysis/);
+  assert.match(getContentTemplate("whale-signals").preview.imageUrl, /^\/api\/media\/card\?kind=whale/);
+});
+
+test("whale preview exposes the approved poster and operating copy before publishing", () => {
+  const template = getContentTemplate("whale-signals");
+  const preview = template.preview;
+  assert.match(preview.headline, /巨鲸动了，市场正在重新定价/);
+  assert.match(preview.caption, /异动规模/);
+  assert.match(preview.caption, /关键动作/);
+  assert.match(preview.caption, /关键位置/);
+  assert.match(preview.caption, /当前状态/);
+  assert.match(preview.caption, /下一步重点观察/);
+  assert.match(preview.caption, /数据来源/);
+  assert.match(preview.disclaimer, /挂单也可能随时撤销/);
+  assert.doesNotMatch(`${preview.headline}\n${preview.caption}`, /每小时|hourly|固定\s*\d+\s*条/i);
+});
+
+test("public editorial previews omit quotas, clock times and publishing frequency", () => {
+  for (const contentType of ["daily-events", "daily-analysis", "whale-signals"]) {
+    const preview = getContentTemplate(contentType).preview;
+    const publicCopy = `${preview.headline}\n${preview.caption}`;
+    assert.doesNotMatch(publicCopy, /\b11\s+(?:stories|items|events)\b|\{\{TIME_UTC\}\}|\d{1,2}:\d{2}\s*UTC|updates hourly|\bhourly\b/i);
+  }
+});

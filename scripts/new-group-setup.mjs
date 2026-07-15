@@ -1,9 +1,15 @@
 import { spawn } from "node:child_process";
-import { writeFile, mkdtemp, mkdir } from "node:fs/promises";
+import { writeFile, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
-import { communityDisclaimer, defaultTopicTemplate } from "../templates.mjs";
+import {
+  communityDisclaimer,
+  defaultTopicTemplate,
+  readFirstContentVersion,
+  readFirstPinnedMessages,
+  topicDisplayName
+} from "../templates.mjs";
 
 const dryRun = process.env.DRY_RUN !== "false";
 const chatId = process.env.TELEGRAM_CHAT_ID;
@@ -59,7 +65,7 @@ function run(args, env) {
 }
 
 async function resolveConfigPath() {
-  if (!process.env.TOPIC_TEMPLATE_JSON && !process.env.GROUP_NAME) {
+  if (!process.env.TOPIC_TEMPLATE_JSON && !process.env.GROUP_NAME && !process.env.GROUP_DESCRIPTION) {
     return process.env.YUBIT_TG_CONFIG || "telegram-community.config.json";
   }
 
@@ -67,33 +73,49 @@ async function resolveConfigPath() {
   const config = {
     chatTitle: process.env.GROUP_NAME || "",
     chatDescription:
+      process.env.GROUP_DESCRIPTION ||
       "YUBIT official community. Beware of impersonators. Admins will never DM first. Trading content is for information only and is not investment advice.",
     generalTopicName: "General Chat",
     defaultParseMode: "HTML",
     dryRun: true,
-    topics: topics.map((topic) => ({
-      key: slug(topic.name),
-      name: cleanTopicName(topic.name),
+    topics: topics.map((topic, index) => {
+      const identity = slug(topic.id || index + 1);
+      const isDefaultReadFirst = String(topic.name || "").includes("READ FIRST")
+        && (!topic.announcement || topic.announcement === communityDisclaimer);
+      const messages = Array.isArray(topic.messages) && topic.messages.length
+        ? topic.messages
+        : isDefaultReadFirst ? readFirstPinnedMessages : [];
+      return {
+      key: `topic_${identity}`,
+      legacyKeys: [slug(topic.name), slug(topicDisplayName(topic))],
+      legacyKeyPrefix: `${identity}_`,
+      name: topicDisplayName(topic),
       emoji: topic.emoji || "",
       announcement: topic.announcement || (topic.name.includes("READ FIRST") ? communityDisclaimer : `<b>${escapeHtml(topic.name)}</b>`),
+      imageUrl: topic.imageUrl || (topic.name.includes("READ FIRST") ? defaultDisclaimerImageUrl() : ""),
+      ...(messages.length ? {
+        contentVersion: topic.contentVersion || (isDefaultReadFirst ? readFirstContentVersion : ""),
+        messages
+      } : {}),
+      iconCustomEmojiId: topic.iconCustomEmojiId || "",
       pin: true,
       close: topic.attribute === "关闭话题" || topic.attribute === "频道禁言"
-    }))
+    };
+    })
   };
-  await mkdir(".runtime", { recursive: true });
-  await writeFile(".runtime/latest-topic-template.json", JSON.stringify(config.topics, null, 2));
   const dir = await mkdtemp(join(tmpdir(), "yubit-group-config-"));
   const path = join(dir, "telegram-community.config.json");
   await writeFile(path, JSON.stringify(config, null, 2));
   return path;
 }
 
-function slug(value) {
-  return String(value).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "topic";
+function defaultDisclaimerImageUrl() {
+  const base = (process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || "https://yubit-bot-skills-academy.vercel.app").replace(/\/$/, "");
+  return process.env.DISCLAIMER_IMAGE_URL || `${base}/api/media/card?kind=disclaimer`;
 }
 
-function cleanTopicName(value) {
-  return String(value).replace(/^[^\p{Letter}\p{Number}]+/u, "").trim();
+function slug(value) {
+  return String(value).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "topic";
 }
 
 function escapeHtml(value) {

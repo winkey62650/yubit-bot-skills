@@ -2,6 +2,8 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { NextResponse } from "next/server";
 
+export const maxDuration = 300;
+
 const scriptMap = {
   batchManage: {
     label: "Batch Manage",
@@ -86,13 +88,21 @@ export async function POST(request) {
 function buildEnv(payload) {
   const dryRun = payload.mode !== "production";
   const tokens = readTokenEnv(payload.tokenFile || ".env.telegram-tokens.local");
-  const roleToken = payload.botRole === "trader1" ? tokens.TRADER1_BOT_TOKEN : "";
+  const normalizedRole = String(payload.botRole || "admin").toLowerCase();
+  const roleToken = normalizedRole === "speaker" || normalizedRole === "speakerbot" || normalizedRole === "trader1"
+    ? tokens.SPEAKER_BOT_TOKEN || tokens.TRADER1_BOT_TOKEN || process.env.SPEAKER_BOT_TOKEN || process.env.TRADER1_BOT_TOKEN
+    : normalizedRole === "forward" || normalizedRole === "forwardbot"
+      ? tokens.FORWARD_BOT_TOKEN || process.env.FORWARD_BOT_TOKEN
+      : tokens.YUBITADMIN_BOT_TOKEN || process.env.YUBITADMIN_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN;
   return {
     ...process.env,
     ...tokens,
     TELEGRAM_CHAT_ID: payload.chatId || process.env.TELEGRAM_CHAT_ID || "",
     TELEGRAM_BOT_TOKEN: payload.botToken || roleToken || process.env.TELEGRAM_BOT_TOKEN || tokens.YUBITADMIN_BOT_TOKEN || "",
-    TRADER1_BOT_TOKEN: process.env.TRADER1_BOT_TOKEN || tokens.TRADER1_BOT_TOKEN || "",
+    YUBITADMIN_BOT_TOKEN: process.env.YUBITADMIN_BOT_TOKEN || tokens.YUBITADMIN_BOT_TOKEN || "",
+    SPEAKER_BOT_TOKEN: process.env.SPEAKER_BOT_TOKEN || tokens.SPEAKER_BOT_TOKEN || tokens.TRADER1_BOT_TOKEN || "",
+    TRADER1_BOT_TOKEN: process.env.TRADER1_BOT_TOKEN || tokens.TRADER1_BOT_TOKEN || tokens.SPEAKER_BOT_TOKEN || "",
+    FORWARD_BOT_TOKEN: process.env.FORWARD_BOT_TOKEN || tokens.FORWARD_BOT_TOKEN || "",
     JACK_BOT_TOKEN: process.env.JACK_BOT_TOKEN || tokens.JACK_BOT_TOKEN || "",
     TONY_BOT_TOKEN: process.env.TONY_BOT_TOKEN || tokens.TONY_BOT_TOKEN || "",
     TELEGRAM_THREAD_ID: String(payload.threadId || process.env.TELEGRAM_THREAD_ID || ""),
@@ -106,6 +116,7 @@ function buildEnv(payload) {
     TARGET_TYPE: payload.targetType || "groups",
     BOT_ROLE: payload.botRole || "admin",
     GROUP_NAME: payload.groupName || "",
+    GROUP_DESCRIPTION: payload.groupDescription || "",
     TOPIC_TEMPLATE_JSON: payload.topics ? JSON.stringify(payload.topics) : "",
     DELETE_DUPLICATE_TOPICS: payload.deleteTopics === false ? "false" : "true",
     TOKEN_FILE: payload.tokenFile || ".env.telegram-tokens.local"
