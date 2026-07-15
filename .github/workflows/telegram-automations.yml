@@ -4,8 +4,9 @@ on:
   schedule:
     # Vercel Hobby only supports daily Cron Jobs. The shared distribution
     # scheduler runs here every five minutes and remains protected by the
-    # same server-side CRON_SECRET used by the API route.
-    - cron: "*/5 * * * *"
+    # same server-side CRON_SECRET used by the API route. Start at minute 2
+    # to avoid GitHub Actions' busiest start-of-hour scheduling window.
+    - cron: "2/5 * * * *"
   workflow_dispatch:
     inputs:
       job:
@@ -24,7 +25,7 @@ concurrency:
 
 jobs:
   distribution:
-    if: github.event.schedule == '*/5 * * * *' || inputs.job == 'distribution'
+    if: github.event_name == 'schedule' || inputs.job == 'distribution'
     runs-on: ubuntu-latest
     steps:
       - name: Run content distribution scheduler
