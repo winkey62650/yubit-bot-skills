@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 
 import {
   getSpeakerWebhookSecret,
@@ -28,7 +28,7 @@ export async function POST(request) {
   }
 
   try {
-    const result = await processSpeakerTelegramUpdate(update);
+    const result = await processSpeakerTelegramUpdate(update, { defer: after });
     return NextResponse.json({ ok: true, result: sanitizeTradingResponse(result) });
   } catch (error) {
     console.error("SpeakerBot webhook processing failed", {

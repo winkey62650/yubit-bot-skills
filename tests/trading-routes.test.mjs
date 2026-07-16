@@ -8,6 +8,8 @@ test("SpeakerBot webhook is public only at its dedicated secret-verified route",
   assert.match(route, /x-telegram-bot-api-secret-token/i);
   assert.match(route, /verifySpeakerWebhookSecret/);
   assert.match(route, /processSpeakerTelegramUpdate/);
+  assert.match(route, /import \{ after, NextResponse \} from ["']next\/server["']/);
+  assert.match(route, /defer: after/);
   assert.match(route, /export const runtime = ["']nodejs["']/);
   assert.match(middleware, /\/api\/telegram\/speaker-webhook/);
   assert.doesNotMatch(middleware, /pathname\.startsWith\(["']\/api\/trading/);

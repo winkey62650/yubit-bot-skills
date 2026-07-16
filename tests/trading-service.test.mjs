@@ -333,6 +333,66 @@ test("SpeakerBot accepts only private enabled Traders and returns actionable hel
   assert.doesNotMatch(JSON.stringify(replies), /alice-secret|alice-key/);
 });
 
+test("SpeakerBot acknowledges a claimed update before running deferred work", async () => {
+  const { repository } = await configuredTradingDesk();
+  const replies = [];
+  let deferredTask;
+  const update = privateUpdate(10, 1001, "/start");
+  const deps = dependencies(repository, {
+    defer(task) {
+      deferredTask = task;
+    },
+    telegram: async (_token, method, payload) => {
+      assert.equal(method, "sendMessage");
+      replies.push(payload);
+      return { message_id: replies.length };
+    },
+  });
+
+  const accepted = await processSpeakerTelegramUpdate(update, deps);
+  assert.equal(accepted.status, "accepted");
+  assert.equal(replies.length, 0);
+  assert.equal(typeof deferredTask, "function");
+  assert.equal((await processSpeakerTelegramUpdate(update, deps)).status, "duplicate_update");
+
+  await deferredTask();
+  assert.equal(replies.length, 1);
+  assert.match(replies[0].text, /BTCUSDT 1234567890/);
+});
+
+test("Trader refresh command performs a fresh YUBIT reconciliation before replying", async () => {
+  const { repository, trader, accountId } = await configuredTradingDesk();
+  const signal = await createTrackingSignal(repository, trader, accountId, {
+    exchangeOrderId: "refresh_1234",
+  });
+  const replies = [];
+  let reconciliationCalls = 0;
+  const result = await processSpeakerTelegramUpdate(
+    privateUpdate(11, 1001, "/refresh BTCUSDT refresh_1234"),
+    dependencies(repository, {
+      telegram: async (_token, method, payload) => {
+        assert.equal(method, "sendMessage");
+        replies.push(payload);
+        return { message_id: replies.length };
+      },
+      yubitClientFactory: () => ({
+        async getClosedPnl() {
+          reconciliationCalls += 1;
+          return { list: [] };
+        },
+      }),
+    }),
+  );
+
+  assert.equal(result.status, "refresh");
+  assert.equal(reconciliationCalls, 1);
+  const refreshed = await repository.getSignal(signal.id);
+  assert.equal(refreshed.checkAttempts, 1);
+  assert.equal(refreshed.lastCheckedAt, "2026-07-16T08:00:00.000Z");
+  assert.match(replies[0].text, /Refresh: pending/);
+  assert.match(replies[0].text, /Last checked: 2026-07-16T08:00:00.000Z/);
+});
+
 test("a verified filled order creates one immutable signal and delivers to every target", async () => {
   const { repository, trader, destinations } = await configuredTradingDesk();
   const calls = [];
