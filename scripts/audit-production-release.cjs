@@ -80,7 +80,7 @@ async function jsonRequest(response, label) {
   }
 
   const templateExpectations = {
-    "daily-events": { kind: "events", marker: /full English brief follows/i },
+    "daily-events": { kind: "events", marker: /MORNING MARKET BRIEF/i },
     "daily-analysis": { kind: "analysis", marker: /DAILY MARKET ANALYSIS/i },
     "whale-hourly": { kind: "whale", marker: /WHALE ALERT · SMART MONEY SIGNAL/i }
   };

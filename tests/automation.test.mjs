@@ -101,7 +101,8 @@ test("daily events normalize a flexible daily market brief instead of a fixed ec
   assert.equal(brief.headline, "MORNING MARKET BRIEF · JULY 15");
   assert.equal(brief.dateLabel, "JULY 15");
   assert.equal(brief.items.length, 3);
-  assert.match(brief.caption, /full English brief follows as a second Telegram message/i);
+  assert.equal(brief.caption, "<b>🌅 MORNING MARKET BRIEF · JULY 15</b>");
+  assert.doesNotMatch(brief.caption, /Executive read|Today's desk brief|full English brief follows|Story count/i);
   assert.match(brief.fullText, /1\. Equities advanced: The Nasdaq led/);
   assert.match(brief.fullText, /Source: <a href="https:\/\/www\.reuters\.com\/markets\/">Reuters<\/a>/);
   assert.doesNotMatch(`${brief.subline}\n${brief.caption}`, /11 stories|08:00|hourly/i);
