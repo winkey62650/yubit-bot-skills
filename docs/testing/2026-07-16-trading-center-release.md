@@ -15,24 +15,27 @@
 - `npm test`：179/179 通过
 - `npm run check`：通过
 - `npm run build`：通过，包含 `/trading`、SpeakerBot Webhook、交易管理、追踪和 PNL 图片接口
-- 本地 Chrome 1366×768 只读浏览器验收：通过登录必填校验、交易日志、Trader 管理、发布目标和系统状态；无失败接口、未捕获异常或页面级横向溢出
+- Vercel Preview Chrome 1366×768 线上验收：通过登录必填校验、正常登录、交易日志、Trader 管理、发布目标和系统状态；无失败接口、未捕获异常或页面级横向溢出
 - 受版本控制文件密钥扫描：179 个文件，未发现 Telegram Bot Token 或私钥
 - 关键场景覆盖：重复更新、重复订单、429 重试、单目标失败、并发追踪、盈利/非盈利/歧义 PNL、凭证加密、接口脱敏、受保护管理接口和 UI 可访问性
 
 ## 线上配置证据
 
 - Vercel 项目：`yubit-bot-skills-academy`
+- `code/academy` 已推送，对应 Vercel Preview 已构建完成并达到 `READY`；未部署或提升到生产环境
 - Neon/Postgres：已连接生产与预览环境
-- 登录、SpeakerBot、数据库、Cron 以及交易中心新增的三项服务端密钥：均已登记
+- Preview 登录和数据库连接验证通过；SpeakerBot 可识别，但 Webhook 尚未完成 Preview 环境的真实配置
+- Cron 以及交易中心新增的三项服务端密钥：均已登记
 - Vercel `CRON_SECRET` 与 GitHub `YUBIT_CRON_SECRET`：已同时轮换为同一随机值
 - 仓库中不保存 Trader API Key、API Secret、Webhook Secret 或 PNL 签名密钥
 
 ## 尚未放行的外部验收
 
-1. 当前分支尚未推送，因此预览和生产部署尚未包含本次交易中心代码。
-2. 曾在会话中暴露的三个 Telegram Bot Token 必须先在 BotFather 轮换；仅确认环境变量存在不等于确认已轮换。
-3. 需要至少一个真实 Trader Telegram 数字 ID 和一个关闭交易/转账/提现权限的 YUBIT 只读 API 账户，才能完成真实订单核验。
-4. 真实验收需要完成：私聊提交一笔已成交订单、信号进入指定 Topic、五分钟后状态刷新、盈利订单仅发布一次 PNL、后台证据链完整。
+1. Preview 功能与 UI 验收已通过，但当前仍为预览环境，未获得生产发布授权。
+2. Preview 系统状态显示 SpeakerBot Webhook 未配置，且尚无真实 Trader、YUBIT 账户和发布目标；这三项需在后台完成配置后再做真群验收。
+3. 曾在会话中暴露的三个 Telegram Bot Token 必须先在 BotFather 轮换；仅确认环境变量存在不等于确认已轮换。
+4. 需要至少一个真实 Trader Telegram 数字 ID 和一个关闭交易/转账/提现权限的 YUBIT 只读 API 账户，才能完成真实订单核验。
+5. 真实验收需要完成：私聊提交一笔已成交订单、信号进入指定 Topic、五分钟后状态刷新、盈利订单仅发布一次 PNL、后台证据链完整。
 
 ## 放行标准
 
