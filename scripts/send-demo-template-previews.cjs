@@ -110,6 +110,7 @@ async function json(response, label) {
           topic: { name: topic.name || topic.title, threadId: topic.threadId },
           status: execution.result?.status,
           message: run.message,
+          error: targetResult.error || null,
           messageIds: targetResult.messageIds || (targetResult.messageId ? [targetResult.messageId] : []),
           imageUrl: run.preview?.imageUrl || null,
           checks

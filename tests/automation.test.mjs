@@ -141,7 +141,7 @@ test("Telegram photo delivery uploads the poster when Telegram cannot fetch its 
   const fetchImpl = async (url, options = {}) => {
     calls.push({ url: String(url), options });
     if (calls.length === 1) {
-      return new Response(JSON.stringify({ ok: false, description: "Bad Request: failed to get HTTP URL content" }), {
+      return new Response(JSON.stringify({ ok: false, description: "Bad Request: wrong type of the web page content" }), {
         status: 400,
         headers: { "content-type": "application/json" }
       });
