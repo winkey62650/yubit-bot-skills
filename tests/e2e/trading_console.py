@@ -18,6 +18,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[2]
 BASE_URL = os.environ.get("E2E_BASE_URL", "http://localhost:3000").rstrip("/")
 SCREENSHOT = Path(os.environ.get("E2E_SCREENSHOT", "/tmp/trading-console-1366x768.png"))
+VERCEL_BYPASS_SECRET = os.environ.get("VERCEL_AUTOMATION_BYPASS_SECRET", "").strip()
 
 
 def local_env() -> dict[str, str]:
@@ -61,7 +62,13 @@ def main() -> None:
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(channel="chrome", headless=True)
-        context = browser.new_context(viewport={"width": 1366, "height": 768})
+        context_options: dict[str, object] = {"viewport": {"width": 1366, "height": 768}}
+        if VERCEL_BYPASS_SECRET:
+            context_options["extra_http_headers"] = {
+                "x-vercel-protection-bypass": VERCEL_BYPASS_SECRET,
+                "x-vercel-set-bypass-cookie": "true",
+            }
+        context = browser.new_context(**context_options)
         page = context.new_page()
         page.on(
             "console",
@@ -79,7 +86,7 @@ def main() -> None:
             else None,
         )
 
-        page.goto(f"{BASE_URL}/trading", wait_until="networkidle")
+        page.goto(f"{BASE_URL}/trading", wait_until="domcontentloaded")
         page.wait_for_url("**/login")
 
         # Browser-native required-field validation must prevent empty submission.
@@ -93,9 +100,9 @@ def main() -> None:
         page.get_by_label("账号").fill(username)
         page.get_by_label("密码").fill(password)
         page.get_by_role("button", name="登录后台").click()
-        page.wait_for_url("**/group-config", wait_until="networkidle")
+        page.wait_for_url("**/group-config")
 
-        page.goto(f"{BASE_URL}/trading", wait_until="networkidle")
+        page.goto(f"{BASE_URL}/trading", wait_until="domcontentloaded")
         if page.url.endswith("/login"):
             cookie_details = [
                 {
