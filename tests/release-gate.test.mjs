@@ -4,14 +4,18 @@ import test from "node:test";
 
 const require = createRequire(import.meta.url);
 const {
+  authorizeReleaseAuditMode,
   authorizeProductionConfiguration,
   buildVercelProtectionHeaders,
+  collectAuditEvidence,
   PRODUCTION_RELEASE_PAGES,
   authorizeLiveTelegramOperation,
   evaluateConfiguredGroup,
   evaluatePreviewTradingIsolation,
+  evaluateReleasePage,
   evaluateRequiredAutomationRule,
   evaluateTradingRelease,
+  normalizeReleaseAuditMode,
   normalizeReleaseStage,
   selectAutomationRuleForReconciliation,
   withAsyncCleanup,
@@ -40,6 +44,44 @@ test("release stage defaults to strict production and rejects unknown values", (
   assert.equal(normalizeReleaseStage(), "production");
   assert.equal(normalizeReleaseStage(" PREVIEW "), "preview");
   assert.throws(() => normalizeReleaseStage("staging"), /RELEASE_STAGE/);
+});
+
+test("release audit is read-only by default and active production validation requires double confirmation", () => {
+  assert.equal(normalizeReleaseAuditMode(), "read-only");
+  assert.equal(normalizeReleaseAuditMode(" VALIDATION "), "validation");
+  assert.throws(() => normalizeReleaseAuditMode("write"), /RELEASE_AUDIT_MODE/);
+
+  assert.deepEqual(authorizeReleaseAuditMode({
+    RELEASE_STAGE: "production",
+  }), {
+    stage: "production",
+    mode: "read-only",
+    allowActiveValidation: false,
+  });
+  assert.deepEqual(authorizeReleaseAuditMode({
+    RELEASE_STAGE: "preview",
+    RELEASE_AUDIT_MODE: "validation",
+  }), {
+    stage: "preview",
+    mode: "validation",
+    allowActiveValidation: true,
+  });
+  assert.throws(
+    () => authorizeReleaseAuditMode({
+      RELEASE_STAGE: "production",
+      RELEASE_AUDIT_MODE: "validation",
+    }),
+    /ALLOW_PRODUCTION_AUDIT_WRITES=true/,
+  );
+  assert.deepEqual(authorizeReleaseAuditMode({
+    RELEASE_STAGE: "production",
+    RELEASE_AUDIT_MODE: "validation",
+    ALLOW_PRODUCTION_AUDIT_WRITES: "true",
+  }), {
+    stage: "production",
+    mode: "validation",
+    allowActiveValidation: true,
+  });
 });
 
 test("live Telegram operations require an explicit production double confirmation", () => {
@@ -129,6 +171,39 @@ test("release audit cleanup runs after both success and failure", async () => {
     /login rejected/,
   );
   assert.equal(events.at(-1), "close:failed-browser");
+});
+
+test("release audit reports broken pages without aborting the remaining audit", () => {
+  assert.deepEqual(evaluateReleasePage({
+    route: "/trading",
+    status: 404,
+    textLength: 120,
+  }), ["/trading: HTTP 404"]);
+  assert.deepEqual(evaluateReleasePage({
+    route: "/distribution",
+    status: 200,
+    textLength: 0,
+  }), ["/distribution: 页面没有可见内容"]);
+  assert.deepEqual(evaluateReleasePage({
+    route: "/bots",
+    status: 200,
+    textLength: 120,
+  }), []);
+});
+
+test("release audit isolates one failed API while retaining the remaining evidence", async () => {
+  const result = await collectAuditEvidence({
+    automation: async () => ({ jobs: [{ id: "daily-events" }] }),
+    trading: async () => {
+      throw new Error("交易中心: HTTP 404");
+    },
+    bots: async () => ({ bots: [{ username: "Bonnie_geniustrader_bot" }] }),
+  });
+
+  assert.deepEqual(result.data.automation.jobs, [{ id: "daily-events" }]);
+  assert.deepEqual(result.data.trading, {});
+  assert.equal(result.data.bots.bots[0].username, "Bonnie_geniustrader_bot");
+  assert.deepEqual(result.failures, ["trading: 交易中心: HTTP 404"]);
 });
 
 test("configured group accepts extra topics when all seven template slots are valid", () => {

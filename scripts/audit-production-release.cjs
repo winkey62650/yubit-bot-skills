@@ -2,17 +2,24 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { chromium } = require("playwright");
 const {
+  authorizeReleaseAuditMode,
   buildVercelProtectionHeaders,
+  collectAuditEvidence,
   PRODUCTION_RELEASE_PAGES,
   evaluateConfiguredGroup,
   evaluatePreviewTradingIsolation,
+  evaluateReleasePage,
   evaluateRequiredAutomationRule,
   evaluateTradingRelease,
-  normalizeReleaseStage,
   withAsyncCleanup,
 } = require("../lib/release-gate.cjs");
 
-const releaseStage = normalizeReleaseStage(process.env.RELEASE_STAGE);
+const auditPolicy = authorizeReleaseAuditMode(process.env);
+const releaseStage = auditPolicy.stage;
+const configuredBaseUrl = String(process.env.TEST_BASE_URL || "").trim();
+if (releaseStage === "preview" && !configuredBaseUrl) {
+  throw new Error("Preview 主动验收必须显式设置 TEST_BASE_URL，避免误连生产环境");
+}
 const baseUrl = String(process.env.TEST_BASE_URL || "https://yubit-bot-skills-academy.vercel.app").replace(/\/$/, "");
 const username = process.env.TEST_USERNAME;
 const password = process.env.TEST_PASSWORD;
@@ -50,45 +57,64 @@ async function runAudit(browser) {
 
   const pageResults = [];
   for (const route of pages) {
-    const response = await page.goto(`${baseUrl}${route}`, { waitUntil: "networkidle", timeout: 30_000 });
-    if (!response || !response.ok()) throw new Error(`${route}: HTTP ${response?.status() || "无响应"}`);
-    const result = {
-      route,
-      status: response.status(),
-      title: await page.title(),
-      textLength: (await page.locator("body").innerText()).length
-    };
-    if (!result.textLength) throw new Error(`${route}: 页面没有可见内容`);
-    await page.screenshot({ path: path.join(artifactDir, `${route.slice(1).replaceAll("/", "-")}.png`), fullPage: true });
-    pageResults.push(result);
+    try {
+      const response = await page.goto(`${baseUrl}${route}`, { waitUntil: "networkidle", timeout: 30_000 });
+      const result = {
+        route,
+        status: response?.status() ?? null,
+        title: await page.title(),
+        textLength: (await page.locator("body").innerText()).length
+      };
+      result.failures = evaluateReleasePage(result);
+      await page.screenshot({ path: path.join(artifactDir, `${route.slice(1).replaceAll("/", "-")}.png`), fullPage: true });
+      pageResults.push(result);
+    } catch (error) {
+      pageResults.push({
+        route,
+        status: null,
+        title: "",
+        textLength: 0,
+        failures: [`${route}: ${error.message}`]
+      });
+    }
   }
 
-  const [automation, bots, groups, distribution, social, trading] = await Promise.all([
-    jsonRequest(await context.request.get(`${baseUrl}/api/automation-status`), "自动任务状态"),
-    jsonRequest(await context.request.get(`${baseUrl}/api/bot-groups`), "Bot 状态"),
-    jsonRequest(await context.request.get(`${baseUrl}/api/group-config`), "群配置"),
-    jsonRequest(await context.request.get(`${baseUrl}/api/distribution`), "内容分发"),
-    jsonRequest(await context.request.get(`${baseUrl}/api/social-packages`), "社交来源"),
-    jsonRequest(await context.request.get(`${baseUrl}/api/trading`), "交易中心")
-  ]);
+  const evidence = await collectAuditEvidence({
+    automation: async () => jsonRequest(await context.request.get(`${baseUrl}/api/automation-status`), "自动任务状态"),
+    bots: async () => jsonRequest(await context.request.get(`${baseUrl}/api/bot-groups`), "Bot 状态"),
+    groups: async () => jsonRequest(await context.request.get(`${baseUrl}/api/group-config`), "群配置"),
+    distribution: async () => jsonRequest(await context.request.get(`${baseUrl}/api/distribution`), "内容分发"),
+    social: async () => jsonRequest(await context.request.get(`${baseUrl}/api/social-packages`), "社交来源"),
+    trading: async () => jsonRequest(await context.request.get(`${baseUrl}/api/trading`), "交易中心")
+  });
+  const {
+    automation = {},
+    bots = {},
+    groups = {},
+    distribution = {},
+    social = {},
+    trading = {},
+  } = evidence.data;
 
   const validations = [];
-  for (const rule of (distribution.rules || []).filter((item) => (
-    releaseStage === "production" && item.enabled === true
-  ))) {
-    const response = await context.request.post(`${baseUrl}/api/distribution`, {
-      data: { action: "validate", id: rule.id },
-      timeout: 30_000
-    });
-    const payload = await jsonRequest(response, `验证规则 ${rule.name}`);
-    validations.push({
-      id: rule.id,
-      name: rule.name,
-      kind: rule.kind,
-      enabled: rule.enabled,
-      ok: payload.result?.ok === true,
-      checks: (payload.result?.checks || []).map(({ key, ok, message }) => ({ key, ok, message }))
-    });
+  if (auditPolicy.allowActiveValidation) {
+    for (const rule of (distribution.rules || []).filter((item) => (
+      releaseStage === "production" && item.enabled === true
+    ))) {
+      const response = await context.request.post(`${baseUrl}/api/distribution`, {
+        data: { action: "validate", id: rule.id },
+        timeout: 30_000
+      });
+      const payload = await jsonRequest(response, `验证规则 ${rule.name}`);
+      validations.push({
+        id: rule.id,
+        name: rule.name,
+        kind: rule.kind,
+        enabled: rule.enabled,
+        ok: payload.result?.ok === true,
+        checks: (payload.result?.checks || []).map(({ key, ok, message }) => ({ key, ok, message }))
+      });
+    }
   }
 
   const templateExpectations = {
@@ -97,34 +123,38 @@ async function runAudit(browser) {
     "whale-hourly": { kind: "whale", marker: /WHALE ALERT · SMART MONEY SIGNAL/i }
   };
   const templatePreviews = [];
-  for (const [jobId, expected] of Object.entries(templateExpectations)) {
-    const payload = await jsonRequest(await context.request.post(`${baseUrl}/api/automation-test`, {
-      data: { jobId },
-      timeout: 30_000
-    }), `预览模板 ${jobId}`);
-    const preview = payload.result?.preview || {};
-    const copy = `${preview.headline || ""}\n${preview.caption || ""}\n${preview.fullText || ""}`;
-    const imageUrl = preview.imageUrl;
-    let imageOk = false;
-    let imageContentType = null;
-    if (imageUrl) {
-      const imageResponse = await context.request.get(imageUrl, { timeout: 30_000 });
-      imageContentType = imageResponse.headers()["content-type"] || null;
-      const bytes = await imageResponse.body();
-      imageOk = imageResponse.ok() && imageContentType?.includes("image/png") && bytes.subarray(1, 4).toString("ascii") === "PNG";
+  if (auditPolicy.allowActiveValidation) {
+    for (const [jobId, expected] of Object.entries(templateExpectations)) {
+      const payload = await jsonRequest(await context.request.post(`${baseUrl}/api/automation-test`, {
+        data: { jobId },
+        timeout: 30_000
+      }), `预览模板 ${jobId}`);
+      const preview = payload.result?.preview || {};
+      const copy = `${preview.headline || ""}\n${preview.caption || ""}\n${preview.fullText || ""}`;
+      const imageUrl = preview.imageUrl;
+      let imageOk = false;
+      let imageContentType = null;
+      if (imageUrl) {
+        const imageResponse = await context.request.get(imageUrl, { timeout: 30_000 });
+        imageContentType = imageResponse.headers()["content-type"] || null;
+        const bytes = await imageResponse.body();
+        imageOk = imageResponse.ok() && imageContentType?.includes("image/png") && bytes.subarray(1, 4).toString("ascii") === "PNG";
+      }
+      templatePreviews.push({
+        jobId,
+        imageUrl,
+        imageOk,
+        imageContentType,
+        copyOk: expected.marker.test(copy),
+        kindOk: Boolean(imageUrl && new URL(imageUrl).searchParams.get("kind") === expected.kind)
+      });
     }
-    templatePreviews.push({
-      jobId,
-      imageUrl,
-      imageOk,
-      imageContentType,
-      copyOk: expected.marker.test(copy),
-      kindOk: Boolean(imageUrl && new URL(imageUrl).searchParams.get("kind") === expected.kind)
-    });
   }
 
   const report = {
     stage: releaseStage,
+    auditMode: auditPolicy.mode,
+    remoteMutationsPerformed: auditPolicy.allowActiveValidation,
     baseUrl,
     checkedAt: new Date().toISOString(),
     pages: pageResults,
@@ -195,6 +225,8 @@ async function runAudit(browser) {
     { contentType: "whale-signals", schedulePreset: "hourly" }
   ].map((definition) => evaluateRequiredAutomationRule(currentRules, definition));
   const commonFailures = [
+    ...pageResults.flatMap((item) => item.failures || []),
+    ...evidence.failures.map((message) => `接口异常：${message}`),
     ...consoleErrors.map((item) => `浏览器控制台：${item.message}`),
     ...pageErrors.map((item) => `页面异常：${item.message}`),
     ...expectedBots.filter((username) => !actualBots.has(username)).map((username) => `Bot 不在线：@${username}`),
@@ -214,6 +246,8 @@ async function runAudit(browser) {
     ...templatePreviews.filter((item) => !item.imageOk || !item.copyOk || !item.kindOk).map((item) => `线上模板预览异常：${item.jobId}`),
   ];
   const productionFailures = [
+    ...(!auditPolicy.allowActiveValidation
+      ? ["生产规则与模板的主动验收尚未执行（当前为严格只读审计）"] : []),
     ...validations.filter((item) => !item.ok).map((item) => `规则验证失败：${item.name}`),
     ...(enabledBroadcastRules.length < 7
       ? ["Telegram 广播规则至少需要 7 条已启用规则"] : []),
@@ -230,6 +264,9 @@ async function runAudit(browser) {
     ...(releaseStage === "preview" ? previewFailures : productionFailures),
   ];
   report.warnings = [];
+  if (!auditPolicy.allowActiveValidation) {
+    report.warnings.push("严格只读模式已跳过会写入 dry-run 运行记录的规则验证与模板预览。若需主动验收，必须单独启用 validation 模式；生产环境还需额外确认写入授权。");
+  }
   if (!(social.packages || []).some((item) => item.enabled !== false || item.status === "已启用")) {
     report.warnings.push("尚未配置代理 X / YouTube 来源；入口和抓取能力已上线，但不会产生代理更新。");
   }

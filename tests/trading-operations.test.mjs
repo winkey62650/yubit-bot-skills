@@ -65,8 +65,10 @@ test("production release audit is reproducible and includes trading readiness", 
   const liveDelivery = await readFile(new URL("scripts/test-production-automation-delivery.cjs", root), "utf8");
 
   assert.equal(packageJson.scripts["release:audit"], "node scripts/audit-production-release.cjs");
-  assert.match(packageJson.scripts["release:audit:preview"], /RELEASE_STAGE=preview/);
-  assert.match(packageJson.scripts["release:audit:production"], /RELEASE_STAGE=production/);
+  assert.match(packageJson.scripts["release:audit:preview"], /RELEASE_STAGE=preview.*RELEASE_AUDIT_MODE=validation/);
+  assert.match(packageJson.scripts["release:audit:production"], /RELEASE_STAGE=production.*RELEASE_AUDIT_MODE=read-only/);
+  assert.match(packageJson.scripts["release:audit:production:validation"], /RELEASE_STAGE=production.*RELEASE_AUDIT_MODE=validation/);
+  assert.doesNotMatch(packageJson.scripts["release:audit:production:validation"], /ALLOW_PRODUCTION_AUDIT_WRITES=true/);
   assert.equal(packageJson.scripts["release:reconcile"], "node scripts/reconcile-production-release.cjs");
   assert.equal(packageJson.scripts["release:test:automations"], "node scripts/test-production-automation-delivery.cjs");
   assert.ok(packageJson.devDependencies?.playwright);
@@ -77,6 +79,9 @@ test("production release audit is reproducible and includes trading readiness", 
   assert.match(audit, /TEST_BROWSER_CHANNEL/);
   assert.match(audit, /channel: browserChannel/);
   assert.match(audit, /evaluatePreviewTradingIsolation\(trading\)/);
+  assert.match(audit, /authorizeReleaseAuditMode/);
+  assert.match(audit, /auditPolicy\.allowActiveValidation/);
+  assert.match(audit, /remoteMutationsPerformed/);
   assert.match(reconciliation, /authorizeLiveTelegramOperation/);
   assert.match(liveDelivery, /authorizeLiveTelegramOperation/);
 });
