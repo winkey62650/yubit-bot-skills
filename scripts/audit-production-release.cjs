@@ -1,21 +1,22 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { chromium } = require("playwright");
+const {
+  PRODUCTION_RELEASE_PAGES,
+  evaluateConfiguredGroup,
+  evaluateRequiredAutomationRule,
+  evaluateTradingRelease,
+} = require("../lib/release-gate.cjs");
 
 const baseUrl = String(process.env.TEST_BASE_URL || "https://yubit-bot-skills-academy.vercel.app").replace(/\/$/, "");
 const username = process.env.TEST_USERNAME;
 const password = process.env.TEST_PASSWORD;
+const browserChannel = String(process.env.TEST_BROWSER_CHANNEL ?? "chrome").trim();
 const artifactDir = path.resolve(process.env.TEST_ARTIFACT_DIR || "artifacts/release-gate-production");
 
 if (!username || !password) throw new Error("TEST_USERNAME and TEST_PASSWORD are required");
 
-const pages = [
-  "/distribution",
-  "/bots",
-  "/group-config",
-  "/new-group",
-  "/settings"
-];
+const pages = PRODUCTION_RELEASE_PAGES;
 
 async function jsonRequest(response, label) {
   const body = await response.json().catch(() => ({}));
@@ -26,7 +27,10 @@ async function jsonRequest(response, label) {
 
 (async () => {
   fs.mkdirSync(artifactDir, { recursive: true });
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({
+    headless: true,
+    ...(browserChannel ? { channel: browserChannel } : {})
+  });
   const context = await browser.newContext({ viewport: { width: 1366, height: 768 } });
   const page = await context.newPage();
   const consoleErrors = [];
@@ -54,16 +58,17 @@ async function jsonRequest(response, label) {
     pageResults.push(result);
   }
 
-  const [automation, bots, groups, distribution, social] = await Promise.all([
+  const [automation, bots, groups, distribution, social, trading] = await Promise.all([
     jsonRequest(await context.request.get(`${baseUrl}/api/automation-status`), "自动任务状态"),
     jsonRequest(await context.request.get(`${baseUrl}/api/bot-groups`), "Bot 状态"),
     jsonRequest(await context.request.get(`${baseUrl}/api/group-config`), "群配置"),
     jsonRequest(await context.request.get(`${baseUrl}/api/distribution`), "内容分发"),
-    jsonRequest(await context.request.get(`${baseUrl}/api/social-packages`), "社交来源")
+    jsonRequest(await context.request.get(`${baseUrl}/api/social-packages`), "社交来源"),
+    jsonRequest(await context.request.get(`${baseUrl}/api/trading`), "交易中心")
   ]);
 
   const validations = [];
-  for (const rule of distribution.rules || []) {
+  for (const rule of (distribution.rules || []).filter((item) => item.enabled === true)) {
     const response = await context.request.post(`${baseUrl}/api/distribution`, {
       data: { action: "validate", id: rule.id },
       timeout: 30_000
@@ -134,7 +139,11 @@ async function jsonRequest(response, label) {
     configuredGroups: (groups.groups || []).map((group) => ({
       title: group.title,
       chatId: group.chatId,
-      topicCount: Array.isArray(group.topics) ? group.topics.length : 0
+      topicCount: Array.isArray(group.topics) ? group.topics.length : 0,
+      topics: (group.topics || []).map((topic) => ({
+        name: topic.name || topic.title,
+        threadId: topic.threadId ?? topic.topicId ?? topic.id ?? null
+      }))
     })),
     automationJobs: automation.jobs,
     rules: (distribution.rules || []).map((rule) => ({
@@ -155,6 +164,10 @@ async function jsonRequest(response, label) {
       xCount: (item.sources || []).filter((source) => source.platform === "x").length,
       youtubeCount: (item.sources || []).filter((source) => source.platform === "youtube").length
     })),
+    trading: {
+      metrics: trading.metrics || {},
+      health: trading.health || {}
+    },
     validations,
     templatePreviews
   };
@@ -167,14 +180,12 @@ async function jsonRequest(response, label) {
   ]);
   const currentRules = distribution.rules || [];
   const broadcastRules = currentRules.filter((rule) => rule.kind === "broadcast");
+  const enabledBroadcastRules = broadcastRules.filter((rule) => rule.enabled);
   const requiredAutomations = [
     { contentType: "daily-events", schedulePreset: "daily-0800-utc" },
     { contentType: "daily-analysis", schedulePreset: "daily-0800-utc" },
     { contentType: "whale-signals", schedulePreset: "hourly" }
-  ].map(({ contentType, schedulePreset }) => ({
-    contentType, schedulePreset,
-    rule: currentRules.find((rule) => rule.kind === "automation" && rule.contentType === contentType)
-  }));
+  ].map((definition) => evaluateRequiredAutomationRule(currentRules, definition));
   const failures = [
     ...consoleErrors.map((item) => `浏览器控制台：${item.message}`),
     ...pageErrors.map((item) => `页面异常：${item.message}`),
@@ -183,24 +194,25 @@ async function jsonRequest(response, label) {
     ...[...expectedGroups].flatMap(([chatId, title]) => {
       const discovered = report.discoveredGroups.find((group) => group.chatId === chatId);
       const configured = report.configuredGroups.find((group) => group.chatId === chatId);
+      const configuredResult = evaluateConfiguredGroup(configured, { expectedTitle: title });
       return [
         ...(!discovered || discovered.title !== title || discovered.type !== "supergroup" || discovered.botCount !== 3
           ? [`群实时识别异常：${title}`] : []),
-        ...(!configured || configured.title !== title || configured.topicCount !== 7
-          ? [`群配置异常：${title} 应有 7 个 Topic`] : [])
+        ...(!configuredResult.ok
+          ? [`群配置异常：${title} 缺少有效的标准 Topic ${configuredResult.missingTopicNumbers.join("、") || "或群名称不匹配"}`] : [])
       ];
     }),
     ...(!report.database?.ok || report.database?.driver !== "postgres" || report.database?.durable !== true
       ? ["生产数据库不是健康的持久化 Postgres"] : []),
-    ...(broadcastRules.length !== 7 || broadcastRules.some((rule) => !rule.enabled)
-      ? ["Telegram 广播规则必须是 7 条且全部启用"] : []),
-    ...requiredAutomations.flatMap(({ contentType, schedulePreset, rule }) => (!rule || !rule.enabled || rule.schedulePreset !== schedulePreset || (rule.targets || []).length < 2
-      ? [`自动发布规则异常：${contentType}`] : [])),
+    ...(enabledBroadcastRules.length < 7
+      ? ["Telegram 广播规则至少需要 7 条已启用规则"] : []),
+    ...requiredAutomations.flatMap((result) => result.failures),
     ...templatePreviews.filter((item) => !item.imageOk || !item.copyOk || !item.kindOk).map((item) => `线上模板预览异常：${item.jobId}`),
     ...["daily-events", "daily-analysis", "whale-hourly"].flatMap((jobId) => {
       const job = (automation.jobs || []).find((item) => item.id === jobId);
       return !job?.target?.configured || job.target.count < 2 ? [`自动任务状态未读取到数据库目标：${jobId}`] : [];
-    })
+    }),
+    ...evaluateTradingRelease(trading)
   ];
   report.warnings = [];
   if (!(social.packages || []).some((item) => item.enabled !== false || item.status === "已启用")) {

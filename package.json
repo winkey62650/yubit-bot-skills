@@ -9,9 +9,12 @@
     "serve:local": "node --env-file=.env server.mjs",
     "build": "next build",
     "start": "next start -H 127.0.0.1",
-    "check": "node --check server.mjs && node --check crypto-news-sources.mjs && node --check templates.mjs && node --check setup-telegram-community.mjs && node --check apply-existing-telegram-topics.mjs && node --check binance-futures-sma-signal.mjs && node --check tradfi-market-signal.mjs && node --check news-poster.mjs && node --check run-15m-cycle.mjs && node --check market-discussion-agents.mjs && node --check mod1-helper.mjs && node --check monitor-health-to-lark.mjs && node --check lib/automation-jobs.mjs && node --check lib/deployment-config.mjs && node --check lib/trading-domain.mjs && node --check lib/trading-crypto.mjs && node --check lib/yubit-readonly-client.mjs && node --check lib/trading-repository.mjs && node --check lib/trading-service.mjs && node --check lib/pnl-card.mjs && node --check scripts/batch-manage.mjs && node --check scripts/bulk-send.mjs && node --check scripts/new-group-setup.mjs && node --check scripts/close-duplicate-topics.mjs && node --check scripts/repair-topic-names.mjs && node --check scripts/token-settings.mjs && node --check scripts/card-sender.mjs",
+    "check": "node --check server.mjs && node --check crypto-news-sources.mjs && node --check templates.mjs && node --check setup-telegram-community.mjs && node --check apply-existing-telegram-topics.mjs && node --check binance-futures-sma-signal.mjs && node --check tradfi-market-signal.mjs && node --check news-poster.mjs && node --check run-15m-cycle.mjs && node --check market-discussion-agents.mjs && node --check mod1-helper.mjs && node --check monitor-health-to-lark.mjs && node --check lib/automation-jobs.mjs && node --check lib/deployment-config.mjs && node --check lib/release-gate.cjs && node --check lib/trading-domain.mjs && node --check lib/trading-crypto.mjs && node --check lib/yubit-readonly-client.mjs && node --check lib/trading-repository.mjs && node --check lib/trading-service.mjs && node --check lib/pnl-card.mjs && node --check scripts/audit-production-release.cjs && node --check scripts/reconcile-production-release.cjs && node --check scripts/test-production-automation-delivery.cjs && node --check scripts/batch-manage.mjs && node --check scripts/bulk-send.mjs && node --check scripts/new-group-setup.mjs && node --check scripts/close-duplicate-topics.mjs && node --check scripts/repair-topic-names.mjs && node --check scripts/token-settings.mjs && node --check scripts/card-sender.mjs",
     "test": "node --test tests/*.test.mjs",
     "test:e2e:trading": "python3 tests/e2e/trading_console.py",
+    "release:audit": "node scripts/audit-production-release.cjs",
+    "release:reconcile": "node scripts/reconcile-production-release.cjs",
+    "release:test:automations": "node scripts/test-production-automation-delivery.cjs",
     "signal:futures": "node binance-futures-sma-signal.mjs",
     "signal:tradfi": "node tradfi-market-signal.mjs",
     "news": "node news-poster.mjs",
@@ -38,6 +41,9 @@
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "tailwindcss": "3.4.17"
+  },
+  "devDependencies": {
+    "playwright": "1.61.1"
   },
   "overrides": {
     "postcss": "8.5.10"

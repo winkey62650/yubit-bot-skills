@@ -1,4 +1,5 @@
-const { chromium } = require("playwright");
+const { request } = require("playwright");
+const { selectAutomationRuleForReconciliation } = require("../lib/release-gate.cjs");
 
 const baseUrl = String(process.env.TEST_BASE_URL || "https://yubit-bot-skills-academy.vercel.app").replace(/\/$/, "");
 const username = process.env.TEST_USERNAME;
@@ -16,45 +17,42 @@ async function readJson(response, label) {
 }
 
 (async () => {
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext();
+  const api = await request.newContext({ baseURL: baseUrl });
   try {
-    await readJson(await context.request.post(`${baseUrl}/api/auth/login`, {
+    await readJson(await api.post("/api/auth/login", {
       data: { username, password }
     }), "登录");
 
     // Reading the overview also reconciles stale display names from stable chat/thread IDs.
-    const initial = await readJson(await context.request.get(`${baseUrl}/api/distribution`), "读取分发配置");
-    const requiredRules = (initial.rules || []).filter((rule) => (
-      rule.kind === "automation" && requiredContentTypes.has(rule.contentType)
+    const initial = await readJson(await api.get("/api/distribution"), "读取分发配置");
+    const requiredRules = [...requiredContentTypes].map((contentType) => (
+      selectAutomationRuleForReconciliation(initial.rules || [], contentType)
     ));
-    const missing = [...requiredContentTypes].filter((contentType) => (
-      !requiredRules.some((rule) => rule.contentType === contentType)
-    ));
-    if (missing.length) throw new Error(`缺少自动发布规则：${missing.join(", ")}`);
 
     const enabled = [];
     for (const rule of requiredRules) {
       if (rule.enabled) continue;
-      await readJson(await context.request.post(`${baseUrl}/api/distribution`, {
+      await readJson(await api.post("/api/distribution", {
         data: { action: "toggle", id: rule.id, enabled: true }
       }), `启用 ${rule.contentType}`);
       enabled.push(rule.contentType);
     }
 
-    const final = await readJson(await context.request.get(`${baseUrl}/api/distribution`), "复核分发配置");
-    const summary = (final.rules || [])
-      .filter((rule) => rule.kind === "automation" && requiredContentTypes.has(rule.contentType))
-      .map((rule) => ({
+    const final = await readJson(await api.get("/api/distribution"), "复核分发配置");
+    const reconciledRules = [...requiredContentTypes].map((contentType) => (
+      selectAutomationRuleForReconciliation(final.rules || [], contentType)
+    ));
+    const summary = reconciledRules.map((rule) => ({
         contentType: rule.contentType,
         enabled: rule.enabled,
         schedulePreset: rule.schedulePreset,
         targetCount: (rule.targets || []).length
       }));
-    console.log(JSON.stringify({ ok: summary.every((rule) => rule.enabled), enabled, rules: summary }, null, 2));
+    const ok = summary.length === requiredContentTypes.size && summary.every((rule) => rule.enabled);
+    if (!ok) throw new Error("自动发布规则对账后仍未全部启用");
+    console.log(JSON.stringify({ ok, enabled, rules: summary }, null, 2));
   } finally {
-    await context.close();
-    await browser.close();
+    await api.dispose();
   }
 })().catch((error) => {
   console.error(error.message);

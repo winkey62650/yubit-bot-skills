@@ -57,3 +57,19 @@ test("syntax check covers every trading server module", async () => {
     assert.match(packageJson.scripts.check, new RegExp(`node --check ${file.replaceAll("/", "\\/")}`));
   }
 });
+
+test("production release audit is reproducible and includes trading readiness", async () => {
+  const packageJson = JSON.parse(await readFile(new URL("package.json", root), "utf8"));
+  const audit = await readFile(new URL("scripts/audit-production-release.cjs", root), "utf8");
+
+  assert.equal(packageJson.scripts["release:audit"], "node scripts/audit-production-release.cjs");
+  assert.equal(packageJson.scripts["release:reconcile"], "node scripts/reconcile-production-release.cjs");
+  assert.equal(packageJson.scripts["release:test:automations"], "node scripts/test-production-automation-delivery.cjs");
+  assert.ok(packageJson.devDependencies?.playwright);
+  assert.match(packageJson.scripts.check, /node --check lib\/release-gate\.cjs/);
+  assert.match(packageJson.scripts.check, /node --check scripts\/audit-production-release\.cjs/);
+  assert.match(audit, /\/api\/trading/);
+  assert.match(audit, /evaluateTradingRelease\(trading\)/);
+  assert.match(audit, /TEST_BROWSER_CHANNEL/);
+  assert.match(audit, /channel: browserChannel/);
+});
