@@ -6,6 +6,7 @@ import {
   configureSpeakerWebhook,
   getTradingHealth,
   processSpeakerTelegramUpdate,
+  runTradingReconciliation,
   sanitizeTradingResponse,
   saveExchangeAccount,
   saveTrader,
@@ -396,4 +397,123 @@ test("SpeakerBot webhook configuration uses the dedicated public route and secre
   assert.equal(calls[0].payload.url, "https://academy.example/api/telegram/speaker-webhook");
   assert.equal(calls[0].payload.secret_token, "speaker-webhook-secret");
   assert.equal(JSON.stringify(result).includes("speaker-webhook-secret"), false);
+});
+
+async function createTrackingSignal(repository, trader, accountId, overrides = {}) {
+  return (await repository.createSignal({
+    traderId: trader.id,
+    accountId,
+    exchangeOrderId: "close_1234",
+    symbol: "BTCUSDT",
+    side: "Long",
+    leverage: 5,
+    filledQty: 2,
+    avgEntryPrice: 100,
+    openedAt: "2026-07-16T07:00:00.000Z",
+    status: "tracking",
+    nextCheckAt: "2026-07-16T07:59:00.000Z",
+    ...overrides,
+  })).signal;
+}
+
+test("reconciliation keeps an open order tracking with a bounded next check", async () => {
+  const { repository, trader, accountId } = await configuredTradingDesk();
+  const signal = await createTrackingSignal(repository, trader, accountId);
+  const result = await runTradingReconciliation(dependencies(repository, {
+    yubitClientFactory: () => ({ getClosedPnl: async () => ({ list: [] }) }),
+  }));
+
+  assert.deepEqual(result, { claimed: 1, closed: 0, pending: 1, needsReview: 0, failed: 0 });
+  const updated = await repository.getSignal(signal.id);
+  assert.equal(updated.status, "tracking");
+  assert.equal(updated.leaseUntil, null);
+  assert.equal(updated.lastCheckedAt, "2026-07-16T08:00:00.000Z");
+  assert.ok(Date.parse(updated.nextCheckAt) > Date.parse(updated.lastCheckedAt));
+});
+
+test("one verified profitable close publishes one signed PNL card to every target exactly once", async () => {
+  const { repository, trader, accountId, destinations } = await configuredTradingDesk();
+  const signal = await createTrackingSignal(repository, trader, accountId);
+  const sends = [];
+  const deps = dependencies(repository, {
+    env: {
+      APP_BASE_URL: "https://academy.example",
+      PNL_CARD_SIGNING_SECRET: "pnl-card-signing-secret-with-enough-entropy",
+    },
+    telegram: async (_token, method, payload) => {
+      sends.push({ method, payload });
+      return { message_id: 7000 + sends.length };
+    },
+    yubitClientFactory: () => ({
+      getClosedPnl: async ({ symbol }) => ({
+        list: [{
+          orderId: "close_1234",
+          symbol,
+          side: "Sell",
+          closedSize: "2",
+          avgExitPrice: "110",
+          closedPnl: "20",
+          updatedTime: 1_768_464_000_000,
+        }],
+      }),
+    }),
+  });
+
+  const first = await runTradingReconciliation(deps);
+  const second = await runTradingReconciliation(deps);
+  assert.deepEqual(first, { claimed: 1, closed: 1, pending: 0, needsReview: 0, failed: 0 });
+  assert.equal(second.claimed, 0);
+
+  const updated = await repository.getSignal(signal.id);
+  assert.equal(updated.status, "closed_profit");
+  assert.equal(updated.realizedPnl, 20);
+  assert.equal(updated.roi, 50);
+  assert.equal(updated.avgExitPrice, 110);
+  const publication = await repository.getPnlPublicationBySignal(signal.id);
+  assert.equal(publication.status, "delivered");
+  assert.match(publication.cardAssetUrl, /^https:\/\/academy\.example\/api\/media\/pnl-card\?token=/);
+  assert.equal(JSON.stringify(publication.cardPayload).includes("signing-secret"), false);
+  const deliveries = await repository.listDeliveries({ signalId: signal.id });
+  const pnlDeliveries = deliveries.filter((row) => row.publicationType === "pnl_card");
+  assert.equal(pnlDeliveries.length, destinations.length);
+  assert.ok(pnlDeliveries.every((row) => row.status === "delivered"));
+  assert.equal(sends.length, destinations.length);
+  assert.ok(sends.every((call) => call.method === "sendPhoto"));
+  assert.ok(sends.every((call) => /PROFIT CLOSED/.test(call.payload.caption)));
+  assert.ok(sends.every((call) => call.payload.photo === publication.cardAssetUrl));
+});
+
+test("non-profit closes are logged but never create a Telegram PNL delivery", async () => {
+  const { repository, trader, accountId } = await configuredTradingDesk();
+  const signal = await createTrackingSignal(repository, trader, accountId, { exchangeOrderId: "loss_1234" });
+  const sends = [];
+  const result = await runTradingReconciliation(dependencies(repository, {
+    telegram: async (...args) => { sends.push(args); return { message_id: 1 }; },
+    yubitClientFactory: () => ({
+      getClosedPnl: async () => ({ list: [{ orderId: "loss_1234", closedPnl: "-2", avgExitPrice: "99" }] }),
+    }),
+  }));
+
+  assert.equal(result.closed, 1);
+  assert.equal((await repository.getSignal(signal.id)).status, "closed_non_profit");
+  assert.equal((await repository.getPnlPublicationBySignal(signal.id)).status, "skipped_non_profit");
+  assert.equal((await repository.listDeliveries({ signalId: signal.id })).length, 0);
+  assert.equal(sends.length, 0);
+});
+
+test("ambiguous close records pause the order for review and never publish", async () => {
+  const { repository, trader, accountId } = await configuredTradingDesk();
+  const signal = await createTrackingSignal(repository, trader, accountId, { exchangeOrderId: "ambiguous_1" });
+  const result = await runTradingReconciliation(dependencies(repository, {
+    yubitClientFactory: () => ({
+      getClosedPnl: async () => ({ list: [
+        { orderId: "ambiguous_1", closedPnl: "10" },
+        { orderId: "ambiguous_1", closedPnl: "11" },
+      ] }),
+    }),
+  }));
+
+  assert.equal(result.needsReview, 1);
+  assert.equal((await repository.getSignal(signal.id)).status, "needs_review");
+  assert.equal(await repository.getPnlPublicationBySignal(signal.id), null);
 });
