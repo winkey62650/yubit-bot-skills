@@ -233,6 +233,20 @@ test("daily analysis delivery URL carries the latest dynamic poster fields", () 
   assert.equal(url.searchParams.get("catalyst"), "24H MOMENTUM · CROSS-ASSET FLOW");
 });
 
+test("automation preview card URL stays on the immutable deployment origin", () => {
+  const url = new URL(automation.buildCardUrl("events", ["CRYPTO", "MACRO"], {
+    dateLabel: "JULY 16",
+    subline: "MARKET IMPACT · VERIFIED SOURCES"
+  }, {
+    baseUrl: "https://academy-git-code-academy-immutable.vercel.app/api/automation-test?from=audit"
+  }));
+
+  assert.equal(url.origin, "https://academy-git-code-academy-immutable.vercel.app");
+  assert.equal(url.pathname, "/api/media/card");
+  assert.equal(url.searchParams.get("kind"), "events");
+  assert.equal(url.searchParams.get("date"), "JULY 16");
+});
+
 test("daily analysis Telegram copy matches the complete approved preview structure", () => {
   assert.equal(typeof automation.buildDailyAnalysisSnapshot, "function");
   const snapshot = automation.buildDailyAnalysisSnapshot([
