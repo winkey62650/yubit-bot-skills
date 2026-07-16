@@ -159,6 +159,23 @@ test("daily market brief keeps whole story blocks within Telegram photo caption 
   assert.equal((brief.caption.match(/<a href=/g) || []).length, (brief.caption.match(/<\/a>/g) || []).length);
 });
 
+test("daily market brief removes tracking parameters so three priority stories fit the photo caption", () => {
+  const brief = automation.buildDailyMarketBrief({
+    date: "2026-07-16",
+    stories: Array.from({ length: 3 }, (_, index) => ({
+      title: `Priority event ${index + 1}`,
+      summary: "A consequential crypto and macro development changed liquidity, positioning and the next market catalyst across major assets.",
+      source: "Cointelegraph",
+      url: `https://cointelegraph.com/news/priority-${index + 1}?utm_source=rss_feed&utm_medium=rss&utm_campaign=rss_partner_inbound`,
+      category: "Crypto"
+    }))
+  }, new Date("2026-07-16T08:00:00.000Z"));
+
+  assert.match(brief.caption, /3\. <b>CRYPTO<\/b> · Priority event 3/);
+  assert.doesNotMatch(brief.caption, /utm_source|utm_medium|utm_campaign/);
+  assert.ok(brief.caption.length <= 1024);
+});
+
 test("Telegram photo delivery uploads the poster when Telegram cannot fetch its URL", async () => {
   assert.equal(typeof automation.telegramCall, "function");
   const calls = [];
