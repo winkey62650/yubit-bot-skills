@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { runAutomationJob } from "../../../../lib/automation-jobs.mjs";
+import { cronSecretConfig } from "../../../../lib/deployment-config.mjs";
 
 export const maxDuration = 60;
 
@@ -13,6 +14,6 @@ export async function GET(request) {
 }
 
 function authorized(request) {
-  const secret = process.env.CRON_SECRET;
+  const secret = cronSecretConfig(process.env).secret;
   return Boolean(secret && request.headers.get("authorization") === `Bearer ${secret}`);
 }

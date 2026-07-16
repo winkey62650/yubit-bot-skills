@@ -13,10 +13,10 @@ test("SpeakerBot webhook is public only at its dedicated secret-verified route",
   assert.doesNotMatch(middleware, /pathname\.startsWith\(["']\/api\/trading/);
 });
 
-test("trading reconciliation cron requires CRON_SECRET and the PNL image route verifies a signed token", async () => {
+test("trading reconciliation cron requires environment-isolated cron credentials and the PNL image route verifies a signed token", async () => {
   const cron = await readFile(new URL("../app/api/cron/trading-reconcile/route.js", import.meta.url), "utf8");
   const card = await readFile(new URL("../app/api/media/pnl-card/route.js", import.meta.url), "utf8");
-  assert.match(cron, /process\.env\.CRON_SECRET/);
+  assert.match(cron, /cronSecretConfig\(process\.env\)/);
   assert.match(cron, /Bearer/);
   assert.match(cron, /runTradingReconciliation/);
   assert.match(card, /verifyPnlCardPayload/);
@@ -51,4 +51,11 @@ test("authenticated trading management routes expose safe operator actions and i
   assert.match(refresh, /tradingErrorStatus/);
   assert.match(retry, /tradingErrorStatus/);
   assert.doesNotMatch(middleware, /pathname\.startsWith\(["']\/api\/trading/);
+});
+
+test("trading system status exposes missing cron configuration and gates release readiness on infrastructure", async () => {
+  const page = await readFile(new URL("../app/trading/page.jsx", import.meta.url), "utf8");
+  assert.match(page, /定时密钥未配置/);
+  assert.match(page, /health\.scheduler\?\.ok/);
+  assert.match(page, /health\.database\?\.ok[\s\S]*speaker\.ok[\s\S]*health\.scheduler\?\.ok/);
 });

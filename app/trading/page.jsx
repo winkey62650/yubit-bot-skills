@@ -288,6 +288,23 @@ function DestinationManagement({ data, groups, busy, form, setForm, onPost }) {
 function SystemHealth({ data, busy, onPost }) {
   const health = data.health || {};
   const speaker = health.speakerBot || {};
+  const scheduler = health.scheduler || {};
+  const releaseReady = Boolean(
+    health.database?.ok
+    && speaker.ok
+    && health.scheduler?.ok
+    && data.metrics.enabledTraders
+    && data.metrics.verifiedAccounts
+    && data.metrics.enabledDestinations
+  );
+  const schedulerValue = !scheduler.configured
+    ? "定时密钥未配置"
+    : scheduler.lastRunAt
+      ? "调度已运行"
+      : "等待首次运行";
+  const schedulerDetail = scheduler.lastRunAt
+    ? `上次 ${formatDate(scheduler.lastRunAt)}`
+    : scheduler.errorCode || "尚无记录";
   const webhookDetail = speaker.webhookConfigured
     ? speaker.webhookMatchesDeployment
       ? `Webhook 正常 · 待处理 ${speaker.pendingUpdates || 0}`
@@ -297,7 +314,12 @@ function SystemHealth({ data, busy, onPost }) {
     ? "预览环境必须使用独立测试 Bot，系统不会复用或覆盖正式 SpeakerBot 的 Webhook。"
     : "正式环境只会把 SpeakerBot Webhook 配置到当前正式地址。";
   return <div className="grid gap-5">
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><HealthCard title="数据库" ok={health.database?.ok} value={health.database?.ok ? "连接正常" : "连接异常"} detail={health.database?.driver || health.database?.errorCode || "未配置"} /><HealthCard title="SpeakerBot" ok={speaker.ok} value={speaker.username ? `@${speaker.username}` : speaker.configured ? "已配置" : "未配置"} detail={webhookDetail} /><HealthCard title="订单追踪" ok={!health.scheduler?.errorCode || health.scheduler?.errorCode === "NOT_RUN_YET"} value={health.scheduler?.lastRunAt ? "调度已运行" : "等待首次运行"} detail={health.scheduler?.lastRunAt ? `上次 ${formatDate(health.scheduler.lastRunAt)}` : health.scheduler?.errorCode || "尚无记录"} /><HealthCard title="上线准备" ok={Boolean(data.metrics.enabledTraders && data.metrics.verifiedAccounts && data.metrics.enabledDestinations)} value={`${data.metrics.enabledTraders || 0} Trader · ${data.metrics.verifiedAccounts || 0} 账户`} detail={`${data.metrics.enabledDestinations || 0} 个发布目标`} /></div>
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <HealthCard title="数据库" ok={health.database?.ok} value={health.database?.ok ? "连接正常" : "连接异常"} detail={health.database?.driver || health.database?.errorCode || "未配置"} />
+      <HealthCard title="SpeakerBot" ok={speaker.ok} value={speaker.username ? `@${speaker.username}` : speaker.configured ? "已配置" : "未配置"} detail={webhookDetail} />
+      <HealthCard title="订单追踪" ok={scheduler.ok} value={schedulerValue} detail={schedulerDetail} />
+      <HealthCard title="上线准备" ok={releaseReady} value={`${data.metrics.enabledTraders || 0} Trader · ${data.metrics.verifiedAccounts || 0} 账户`} detail={releaseReady ? `${data.metrics.enabledDestinations || 0} 个发布目标` : "数据库、Bot、定时追踪和运营配置必须全部正常"} />
+    </div>
     <Card className="p-5 md:p-6">
       <SectionHead title="SpeakerBot 接收入口" desc="Webhook 只接收 SpeakerBot 私聊消息，并校验 Telegram Secret Token。不会在页面展示 Bot Token 或 API Secret。" />
       <div className="mt-4 rounded-lg border border-[#e7c883] bg-[#fff9e9] p-4 text-sm leading-6 text-[#6f551d]">{previewNotice}{speaker.expectedWebhookUrl ? <p className="mt-2 break-all font-mono text-xs">目标：{speaker.expectedWebhookUrl}</p> : null}</div>

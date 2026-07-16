@@ -23,7 +23,9 @@ test("example environment documents trading secrets without committing values", 
     "SPEAKER_PREVIEW_TELEGRAM_WEBHOOK_SECRET",
     "SPEAKER_PREVIEW_WEBHOOK_ENABLED",
     "DATABASE_URL",
+    "PREVIEW_DATABASE_URL",
     "CRON_SECRET",
+    "PREVIEW_CRON_SECRET",
     "APP_BASE_URL",
   ]) {
     assert.match(example, new RegExp(`^${name}=`, "m"));
@@ -45,6 +47,7 @@ test("syntax check covers every trading server module", async () => {
   const packageJson = JSON.parse(await readFile(new URL("package.json", root), "utf8"));
   for (const file of [
     "lib/trading-domain.mjs",
+    "lib/deployment-config.mjs",
     "lib/trading-crypto.mjs",
     "lib/yubit-readonly-client.mjs",
     "lib/trading-repository.mjs",

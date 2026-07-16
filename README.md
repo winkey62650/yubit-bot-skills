@@ -59,16 +59,18 @@ SpeakerBot 不会自动开单，也不能修改或关闭订单。服务端只用
 除已有的 `AUTH_*` 配置外，生产环境必须配置：
 
 - `DATABASE_URL`：Neon/Postgres 持久化连接。
+- `PREVIEW_DATABASE_URL`：仅用于 Vercel Preview，必须指向独立 Neon 分支或数据库。Preview 会主动忽略通用的 `DATABASE_URL` 与 `POSTGRES_URL`，避免误写生产数据。
 - `SPEAKER_BOT_TOKEN`：轮换后的 SpeakerBot Token。
 - `SPEAKER_TELEGRAM_WEBHOOK_SECRET`：Telegram Webhook 校验密钥。
 - Preview 默认禁止配置 SpeakerBot Webhook。若要做真 Bot 验收，必须为 Preview 单独设置 `SPEAKER_PREVIEW_WEBHOOK_ENABLED=true`、`SPEAKER_PREVIEW_BOT_TOKEN` 和 `SPEAKER_PREVIEW_TELEGRAM_WEBHOOK_SECRET`；Preview 不会复用正式 Bot，也不会把 Webhook 指向正式域名。
 - `TRADER_CREDENTIALS_ENCRYPTION_KEY`：32 字节 base64 或 64 位 hex 的账户凭证加密密钥。
 - `PNL_CARD_SIGNING_SECRET`：PNL 卡片短期签名密钥。
 - `CRON_SECRET`：定时追踪接口密钥；GitHub Actions 中对应 `YUBIT_CRON_SECRET`。
+- `PREVIEW_CRON_SECRET`：仅用于 Preview 手动验证定时接口。Preview 会忽略生产 `CRON_SECRET`，两者不得复用。
 - `APP_BASE_URL`：当前 HTTPS 生产域名。
 - `YUBIT_API_BASE_URL`：可选，默认使用 `https://openapi.yubit.com`。
 
-GitHub Actions 每五分钟分别运行内容分发和订单追踪，两个任务有独立的成功/失败结果。首次上线后必须在系统状态页确认 Webhook，并至少观察一个完整追踪周期。
+GitHub Actions 每五分钟分别运行内容分发和订单追踪，两个任务有独立的成功/失败结果。GitHub 的 `YUBIT_CRON_SECRET` 必须与 Vercel Production 中非空的 `CRON_SECRET` 完全一致；系统状态页会将密钥缺失明确标记为未就绪。首次上线后必须确认 Webhook，并至少观察一个完整追踪周期。
 
 ## Requirements
 

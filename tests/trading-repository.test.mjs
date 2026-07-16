@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { JsonTradingRepository } from "../lib/trading-repository.mjs";
+import {
+  JsonTradingRepository,
+  getTradingRepository,
+  resetTradingRepositoryForTests,
+} from "../lib/trading-repository.mjs";
 
 function memoryRepository(now = () => new Date("2026-07-16T08:00:00.000Z")) {
   let value;
@@ -171,4 +175,49 @@ test("manual reconciliation claims exactly one tracking signal", async () => {
   assert.equal(claimed.checkAttempts, 1);
   assert.equal(await repository.claimSignalForCheck("manual-signal", now, 60_000), null);
   assert.equal(await repository.claimSignalForCheck("missing", now, 60_000), null);
+});
+
+test("trading preview refuses to reuse the generic production database URL", async () => {
+  const original = {
+    databaseUrl: process.env.DATABASE_URL,
+    postgresUrl: process.env.POSTGRES_URL,
+    previewDatabaseUrl: process.env.PREVIEW_DATABASE_URL,
+    vercel: process.env.VERCEL,
+    vercelEnv: process.env.VERCEL_ENV,
+    nodeEnv: process.env.NODE_ENV,
+    fallback: process.env.TRADING_ALLOW_JSON_FALLBACK,
+    blobToken: process.env.BLOB_READ_WRITE_TOKEN,
+  };
+
+  try {
+    process.env.DATABASE_URL = "not-a-database-url";
+    delete process.env.POSTGRES_URL;
+    delete process.env.PREVIEW_DATABASE_URL;
+    process.env.VERCEL = "1";
+    process.env.VERCEL_ENV = "preview";
+    process.env.NODE_ENV = "production";
+    delete process.env.TRADING_ALLOW_JSON_FALLBACK;
+    delete process.env.BLOB_READ_WRITE_TOKEN;
+    resetTradingRepositoryForTests();
+
+    await assert.rejects(
+      () => getTradingRepository(),
+      /PREVIEW_DATABASE_URL.*禁止复用生产数据库/
+    );
+  } finally {
+    for (const [key, value] of Object.entries({
+      DATABASE_URL: original.databaseUrl,
+      POSTGRES_URL: original.postgresUrl,
+      PREVIEW_DATABASE_URL: original.previewDatabaseUrl,
+      VERCEL: original.vercel,
+      VERCEL_ENV: original.vercelEnv,
+      NODE_ENV: original.nodeEnv,
+      TRADING_ALLOW_JSON_FALLBACK: original.fallback,
+      BLOB_READ_WRITE_TOKEN: original.blobToken,
+    })) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    resetTradingRepositoryForTests();
+  }
 });

@@ -12,22 +12,25 @@
 
 ## 自动化证据
 
-- `npm test`：182/182 通过
+- `npm test`：189/189 通过
 - `npm run check`：通过
 - `npm run build`：通过，包含 `/trading`、SpeakerBot Webhook、交易管理、追踪和 PNL 图片接口
 - Vercel Preview Chrome 1366×768 线上验收：通过登录必填校验、正常登录、交易日志、Trader 管理、发布目标和系统状态；无失败接口、未捕获异常或页面级横向溢出
-- 受版本控制文件密钥扫描：179 个文件，未发现 Telegram Bot Token 或私钥
+- 受版本控制文件密钥扫描：未发现 Telegram Bot Token、数据库凭证或私钥
 - 关键场景覆盖：重复更新、重复订单、429 重试、单目标失败、并发追踪、盈利/非盈利/歧义 PNL、凭证加密、接口脱敏、受保护管理接口和 UI 可访问性
 - Preview 隔离新增覆盖：默认拒绝复用正式 SpeakerBot、仅接受 Preview 专用 Bot/Secret、强制使用当前不可变 Preview URL，并识别指向旧部署的 Webhook
+- Preview 数据库隔离新增覆盖：必须显式设置 `PREVIEW_DATABASE_URL`，不会回退复用 Production 的 `DATABASE_URL` 或 `POSTGRES_URL`
+- 调度器健康门禁新增覆盖：`CRON_SECRET` 为空时明确标记未配置，不再误报“调度正常”或“上线就绪”
+- Preview 调度鉴权新增覆盖：仅读取 `PREVIEW_CRON_SECRET`，不复用 Production `CRON_SECRET`
 
 ## 线上配置证据
 
 - Vercel 项目：`yubit-bot-skills-academy`
 - `code/academy` 已推送，对应 Vercel Preview 已构建完成并达到 `READY`；未部署或提升到生产环境
-- Neon/Postgres：已连接生产与预览环境；当前变量作用域显示两者共用同一集成，尚未证明数据物理隔离
-- Preview 登录和数据库连接验证通过；Preview 默认禁用 SpeakerBot Webhook，且新版本不会读取正式 SpeakerBot Token
-- Cron 以及交易中心新增的三项服务端密钥：均已登记
-- GitHub Actions 最近一次正式 `distribution` 调度返回 HTTP 401，说明 GitHub `YUBIT_CRON_SECRET` 与 Vercel 正式 `CRON_SECRET` 当前不匹配；尚未放行
+- 已创建独立 Preview Neon 数据库并接入 `PREVIEW_DATABASE_URL`；新版代码会主动阻断 Preview 复用 Production 的通用数据库变量
+- 旧 Preview 已完成登录和数据库连接验证；新 Preview 默认禁用 SpeakerBot Webhook，不读取正式 SpeakerBot Token
+- 已为 Preview 单独配置非空 `PREVIEW_CRON_SECRET`；Production 的 `CRON_SECRET` 仍为空，GitHub Actions 中已存在 `YUBIT_CRON_SECRET`
+- GitHub Actions 最近一次正式 `distribution` 调度返回 HTTP 401；已确认根因为 Vercel Production 缺少非空 `CRON_SECRET`，而非应用内部调度失败
 - 仓库中不保存 Trader API Key、API Secret、Webhook Secret 或 PNL 签名密钥
 
 ## 尚未放行的外部验收
@@ -37,7 +40,7 @@
 3. 曾在会话中暴露的三个 Telegram Bot Token 必须先在 BotFather 轮换；仅确认环境变量存在不等于确认已轮换。
 4. 需要至少一个真实 Trader Telegram 数字 ID 和一个关闭交易/转账/提现权限的 YUBIT 只读 API 账户，才能完成真实订单核验。
 5. 真实验收需要完成：私聊提交一笔已成交订单、信号进入指定 Topic、五分钟后状态刷新、盈利订单仅发布一次 PNL、后台证据链完整。
-6. Preview 需要独立 Neon 分支/数据库后才允许写入真实 Trader、账户、目标或验收数据；当前只做只读 UI/API 验收。
+6. Preview 已使用独立 Neon 数据库，但仍不得写入正式 Trader、账户、目标或真实运营数据；验收只使用测试数据。
 7. GitHub `YUBIT_CRON_SECRET` 与 Vercel 正式 `CRON_SECRET` 需重新对齐，并以一次成功的手动调度作为证据。
 
 ## 放行标准

@@ -1,3 +1,4 @@
+import { cronSecretConfig } from "../../../../lib/deployment-config.mjs";
 import { runTradingReconciliation } from "../../../../lib/trading-service.mjs";
 
 export const runtime = "nodejs";
@@ -5,7 +6,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 function authorized(request) {
-  const secret = String(process.env.CRON_SECRET || "");
+  const secret = cronSecretConfig(process.env).secret;
   return Boolean(secret) && request.headers.get("authorization") === `Bearer ${secret}`;
 }
 

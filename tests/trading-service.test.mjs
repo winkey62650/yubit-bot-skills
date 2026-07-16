@@ -191,6 +191,7 @@ test("health summarizes database, SpeakerBot webhook, scheduler, accounts, and d
   const result = await getTradingHealth(dependencies(repository, {
     env: {
       APP_BASE_URL: "https://example.test",
+      CRON_SECRET: "configured-cron-secret",
       SPEAKER_TELEGRAM_WEBHOOK_SECRET: "speaker-webhook-secret",
     },
     telegram,
@@ -200,6 +201,8 @@ test("health summarizes database, SpeakerBot webhook, scheduler, accounts, and d
   assert.equal(result.speakerBot.webhookConfigured, true);
   assert.equal(result.speakerBot.webhookMatchesDeployment, true);
   assert.equal(result.speakerBot.configurationAllowed, true);
+  assert.equal(result.scheduler.configured, true);
+  assert.equal(result.scheduler.ok, true);
   assert.equal(result.scheduler.lastRunAt, "2026-07-16T07:55:00.000Z");
   assert.equal(result.accounts.length, 1);
   assert.equal(result.destinations.length, 1);
@@ -207,6 +210,26 @@ test("health summarizes database, SpeakerBot webhook, scheduler, accounts, and d
   assert.equal(responseText.includes(SPEAKER_TOKEN), false);
   assert.equal(responseText.includes("health-api-secret-never-show"), false);
   assert.equal(/ciphertext|authTag|credentialIv/i.test(responseText), false);
+});
+
+test("health marks the scheduler unready when CRON_SECRET is missing", async () => {
+  const { repository } = memoryRepository();
+  const result = await getTradingHealth(dependencies(repository, {
+    env: {
+      APP_BASE_URL: "https://example.test",
+      SPEAKER_TELEGRAM_WEBHOOK_SECRET: "speaker-webhook-secret",
+    },
+    telegram: async (_token, method) => {
+      if (method === "getMe") return { id: 77, username: "speaker_test_bot" };
+      if (method === "getWebhookInfo") return { url: "https://example.test/api/telegram/speaker-webhook" };
+      throw new Error(`unexpected ${method}`);
+    },
+  }));
+
+  assert.equal(result.scheduler.configured, false);
+  assert.equal(result.scheduler.ok, false);
+  assert.equal(result.scheduler.errorCode, "CRON_SECRET_REQUIRED");
+  assert.equal(JSON.stringify(result).includes("configured-cron-secret"), false);
 });
 
 test("sanitizeTradingResponse recursively removes secret fields and exact secret values", () => {

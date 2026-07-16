@@ -299,3 +299,48 @@ test("preview can explicitly use durable Blob-backed JSON while production still
     resetDistributionRepositoryForTests();
   }
 });
+
+test("preview refuses to reuse the generic production database URL", async () => {
+  const original = {
+    databaseUrl: process.env.DATABASE_URL,
+    postgresUrl: process.env.POSTGRES_URL,
+    previewDatabaseUrl: process.env.PREVIEW_DATABASE_URL,
+    vercel: process.env.VERCEL,
+    vercelEnv: process.env.VERCEL_ENV,
+    nodeEnv: process.env.NODE_ENV,
+    fallback: process.env.DISTRIBUTION_ALLOW_JSON_FALLBACK,
+    blobToken: process.env.BLOB_READ_WRITE_TOKEN
+  };
+
+  try {
+    process.env.DATABASE_URL = "not-a-database-url";
+    delete process.env.POSTGRES_URL;
+    delete process.env.PREVIEW_DATABASE_URL;
+    process.env.VERCEL = "1";
+    process.env.VERCEL_ENV = "preview";
+    process.env.NODE_ENV = "production";
+    delete process.env.DISTRIBUTION_ALLOW_JSON_FALLBACK;
+    delete process.env.BLOB_READ_WRITE_TOKEN;
+    resetDistributionRepositoryForTests();
+
+    await assert.rejects(
+      () => getDistributionRepository(),
+      /PREVIEW_DATABASE_URL.*禁止复用生产数据库/
+    );
+  } finally {
+    for (const [key, value] of Object.entries({
+      DATABASE_URL: original.databaseUrl,
+      POSTGRES_URL: original.postgresUrl,
+      PREVIEW_DATABASE_URL: original.previewDatabaseUrl,
+      VERCEL: original.vercel,
+      VERCEL_ENV: original.vercelEnv,
+      NODE_ENV: original.nodeEnv,
+      DISTRIBUTION_ALLOW_JSON_FALLBACK: original.fallback,
+      BLOB_READ_WRITE_TOKEN: original.blobToken
+    })) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    resetDistributionRepositoryForTests();
+  }
+});
