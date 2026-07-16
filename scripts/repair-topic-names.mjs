@@ -24,6 +24,18 @@ const expectedByOldName = new Map(
     ];
   })
 );
+// Older Demo/CryptoGuy groups were initialized with a different numbered
+// order.  Match those exact legacy labels so the repair is deterministic and
+// does not depend on Telegram's topic/thread ordering.
+const legacySequenceRenames = new Map([
+  ["2. Market Events", "3. Market Events"],
+  ["3. Market Analysis - Crypto/Stocks/TradFi", "4. Market Analysis - Crypto/Stocks/TradFi"],
+  ["4. YUBIT Updates", "7. YUBIT Updates"],
+  ["5. 7-Day PNL Challenge", "5. Community Signal"],
+  ["2. xxx's Trading Zone", "CryptoGuy Trading Zone"],
+  ["7. xxx's Trading Zone", "CryptoGuy Trading Zone"],
+  ["7. CryptoGuy Trading Zone", "CryptoGuy Trading Zone"]
+]);
 const updates = await telegram("getUpdates", {});
 const edits = [];
 const seenThreads = new Set();
@@ -36,7 +48,10 @@ for (const update of updates) {
   if (!topic || !threadId || message.chat?.id !== Number(chatId)) continue;
   if (deletedThreadIds.has(threadId) || repairedThreadIds.has(threadId) || seenThreads.has(threadId)) continue;
 
-  const cleanName = expectedByOldName.get(topic.name) || cleanTopicName(topic.name);
+  const cleanTopic = cleanTopicName(topic.name);
+  const cleanName = expectedByOldName.get(topic.name)
+    || legacySequenceRenames.get(cleanTopic)
+    || cleanTopic;
   if (!cleanName || cleanName === topic.name) continue;
 
   seenThreads.add(threadId);

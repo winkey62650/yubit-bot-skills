@@ -13,22 +13,40 @@ import {
 } from "../lib/distribution-domain.mjs";
 
 function productionGroups() {
+  const sourceTopics = [
+    ["1. Demo Topic 1", 101],
+    ["5. Community Signal", 105],
+    ["4. Market Analysis - Crypto/Stocks/TradFi", 104],
+    ["3. Market Events", 103],
+    ["6. Smart Money Tracker", 106],
+    ["7. YUBIT Updates", 107],
+    ["CryptoGuy Trading Zone", 102],
+  ];
+  const targetTopics = [
+    ["1. Target Topic 1", 201],
+    ["5. Community Signal", 205],
+    ["4. Market Analysis - Crypto/Stocks/TradFi", 204],
+    ["3. Market Events", 203],
+    ["6. Smart Money Tracker", 206],
+    ["7. YUBIT Updates", 207],
+    ["CryptoGuy Trading Zone", 202],
+  ];
   return [
     {
       chatId: "-1003710405969",
       title: "DEMO Academy",
-      topics: Array.from({ length: 7 }, (_, index) => ({
-        name: `${index + 1}. Demo Topic ${index + 1}`,
-        threadId: 100 + index + 1,
+      topics: sourceTopics.map(([name, threadId]) => ({
+        name,
+        threadId,
         verified: true,
       })),
     },
     {
       chatId: "-1004378187866",
       title: "CryptoGuy Academy",
-      topics: Array.from({ length: 7 }, (_, index) => ({
-        name: `${index + 1}. Target Topic ${index + 1}`,
-        threadId: 200 + index + 1,
+      topics: targetTopics.map(([name, threadId]) => ({
+        name,
+        threadId,
         verified: true,
       })),
     },
@@ -51,8 +69,8 @@ test("standard production provisioning builds three automations and seven disabl
     { contentType: "whale-signals", schedulePreset: "hourly" },
   ]);
   assert.deepEqual(automations.map((rule) => rule.targets.map((target) => target.threadId)), [
-    [102, 202],
     [103, 203],
+    [104, 204],
     [106, 206],
   ]);
 
@@ -91,7 +109,7 @@ test("standard production provisioning preserves existing rule identity and enab
   assert.equal(events.id, "existing-events");
   assert.equal(events.enabled, true);
   assert.equal(events.schedulePreset, "daily-0800-utc");
-  assert.deepEqual(events.targets.map((target) => target.threadId), [102, 202]);
+  assert.deepEqual(events.targets.map((target) => target.threadId), [103, 203]);
 
   const topicOne = rules.find((rule) => rule.kind === "broadcast" && rule.source.threadId === 101);
   assert.equal(topicOne.id, "existing-topic-one");

@@ -6,6 +6,7 @@ import {
   discoverTelegramChats,
   mergeBotGroupDiscoveries,
   mergeExpectedForumTopics,
+  orderTopicsByTemplate,
   reconcileGroupWithSetupState
 } from "../lib/telegram-discovery.mjs";
 
@@ -177,6 +178,36 @@ test("keeps thread ids observed on ordinary forum messages", () => {
   ]);
 
   assert.deepEqual(result.active[0].detectedTopicThreadIds, [14]);
+});
+
+test("orders managed topics by semantic template slots instead of Telegram thread ids", () => {
+  const expected = [
+    "1. READ FIRST - DISCLAIMER",
+    "5. Community Signal",
+    "4. Market Analysis - Crypto/Stocks/TradFi",
+    "3. Market Events",
+    "6. Smart Money Tracker",
+    "7. YUBIT Updates",
+    "CryptoGuy Trading Zone"
+  ].map((name) => ({ name }));
+  const actual = [
+    { name: "7. YUBIT Updates", threadId: 3 },
+    { name: "2. Market Events", threadId: 4 },
+    { name: "CryptoGuy Trading Zone", threadId: 5 },
+    { name: "1. READ FIRST - DISCLAIMER", threadId: 6 },
+    { name: "6. Smart Money Tracker", threadId: 7 },
+    { name: "5. Community Signal", threadId: 8 },
+    { name: "4. Market Analysis - Crypto/Stocks/TradFi", threadId: 9 }
+  ];
+  assert.deepEqual(orderTopicsByTemplate(actual, expected).map((topic) => topic.name), [
+    "1. READ FIRST - DISCLAIMER",
+    "5. Community Signal",
+    "4. Market Analysis - Crypto/Stocks/TradFi",
+    "2. Market Events",
+    "6. Smart Money Tracker",
+    "7. YUBIT Updates",
+    "CryptoGuy Trading Zone"
+  ]);
 });
 
 test("loads the known forum catalog without claiming unresolved thread bindings", () => {

@@ -12,8 +12,8 @@ if (!baseUrl || !username || !password) {
 }
 
 const allTemplates = [
-  { contentType: "daily-events", label: "Daily Events", topicSequence: 2 },
-  { contentType: "daily-analysis", label: "Daily Analysis", topicSequence: 3 },
+  { contentType: "daily-events", label: "Daily Events", topicSequence: 3 },
+  { contentType: "daily-analysis", label: "Daily Analysis", topicSequence: 4 },
   { contentType: "whale-signals", label: "Whale / Smart Money", topicSequence: 6 }
 ];
 const selectedTypes = new Set(String(process.env.TEST_CONTENT_TYPES || "")

@@ -10,17 +10,27 @@ import {
 } from "../templates.mjs";
 
 test("new topics keep their sequence in the Telegram name and use the requested icon set", () => {
-  assert.deepEqual(defaultTopicTemplate.map((topic) => topic.emoji), ["❗️", "📰", "💡", "🎉", "💰", "💎", "⚡️"]);
+  assert.deepEqual(defaultTopicTemplate.map(({ id, emoji, name }) => ({ id, emoji, name })), [
+    { id: "1", emoji: "❗️", name: "READ FIRST - DISCLAIMER" },
+    { id: "5", emoji: "💰", name: "Community Signal" },
+    { id: "4", emoji: "💡", name: "Market Analysis - Crypto/Stocks/TradFi" },
+    { id: "3", emoji: "📰", name: "Market Events" },
+    { id: "6", emoji: "💎", name: "Smart Money Tracker" },
+    { id: "7", emoji: "🎉", name: "YUBIT Updates" },
+    { id: "2", emoji: "⚡️", name: "CryptoGuy Trading Zone" }
+  ]);
   for (const topic of defaultTopicTemplate) {
-    assert.equal(topicNameWithSequence(topic), `${topic.id}. ${topic.name}`);
-    assert.equal(topicDisplayName(topic), `${topic.id}. ${topic.name}`);
+    const expectedName = topic.id === "2" ? "CryptoGuy Trading Zone" : `${topic.id}. ${topic.name}`;
+    assert.equal(topicNameWithSequence(topic), expectedName);
+    assert.equal(topicDisplayName(topic), expectedName);
   }
 });
 
 test("saved drafts migrate only the old default icons", () => {
   assert.equal(migrateTopicTemplate({ id: "1", emoji: "⚠️", name: "1. READ FIRST - DISCLAIMER" }).emoji, "❗️");
-  assert.equal(migrateTopicTemplate({ id: "4", emoji: "📢", name: "4. YUBIT Updates" }).emoji, "🎉");
-  assert.equal(migrateTopicTemplate({ id: "4", emoji: "🔥", name: "4. YUBIT Updates" }).emoji, "🔥");
+  assert.equal(migrateTopicTemplate({ id: "4", emoji: "📊", name: "4. Market Analysis - Crypto/Stocks/TradFi" }).emoji, "💡");
+  assert.equal(migrateTopicTemplate({ id: "7", emoji: "📢", name: "7. YUBIT Updates" }).emoji, "🎉");
+  assert.equal(migrateTopicTemplate({ id: "7", emoji: "🔥", name: "7. YUBIT Updates" }).emoji, "🔥");
 });
 
 test("topic sequence is not duplicated when the editable name already contains it", () => {

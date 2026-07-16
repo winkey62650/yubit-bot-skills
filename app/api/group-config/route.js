@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { readJson, writeJson } from "../../../lib/json-store";
 import { resolveDiscoveredGroups } from "../../../lib/group-config-policy.mjs";
-import { mergeExpectedForumTopics } from "../../../lib/telegram-discovery.mjs";
+import { mergeExpectedForumTopics, orderTopicsByTemplate } from "../../../lib/telegram-discovery.mjs";
 import { defaultTopicTemplate, topicDisplayName } from "../../../templates.mjs";
 
 export const dynamic = "force-dynamic";
 
 const groupConfigPath = "group-config.json";
 const legacySeedBindingIds = new Set(["news-market-events", "signal-market-analysis", "broadcast-market-events", "ricky-social", "official-updates"]);
-const expectedForumTopics = defaultTopicTemplate.map((topic) => ({ name: topicDisplayName(topic) }));
+const expectedForumTopics = defaultTopicTemplate.map((topic) => ({ id: String(topic.id || ""), name: topicDisplayName(topic) }));
 
 export async function GET() {
   const config = normalizeGroupConfig(await readJson(groupConfigPath, {}));
@@ -101,7 +101,7 @@ function normalizeGroup(group) {
   const storedTopics = normalizeTopics(group?.topics || []);
   const canUseTopics = group?.isForum === true || group?.canUseTopics === true;
   const topics = canUseTopics
-    ? mergeExpectedForumTopics(storedTopics, expectedForumTopics)
+    ? orderTopicsByTemplate(mergeExpectedForumTopics(storedTopics, expectedForumTopics), expectedForumTopics)
     : storedTopics;
   const detectedTopicThreadIds = normalizeThreadIds([
     ...(Array.isArray(group?.detectedTopicThreadIds) ? group.detectedTopicThreadIds : []),

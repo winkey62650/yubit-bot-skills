@@ -117,7 +117,15 @@
   </div>
   <script>
     const defaultGroups = [
-      { title: "YUBIT test", chatId: "", canUseTopics: true, topics: [{ name: "Market Events" }, { name: "Market Analysis - Crypto/Stocks/TradFi" }, { name: "YUBIT Updates" }, { name: "Ricky's Trading Zone" }] },
+      { title: "YUBIT test", chatId: "", canUseTopics: true, topics: [
+        { name: "1. READ FIRST - DISCLAIMER", emoji: "❗️" },
+        { name: "5. Community Signal", emoji: "💰" },
+        { name: "4. Market Analysis - Crypto/Stocks/TradFi", emoji: "💡" },
+        { name: "3. Market Events", emoji: "📰" },
+        { name: "6. Smart Money Tracker", emoji: "💎" },
+        { name: "7. YUBIT Updates", emoji: "🎉" },
+        { name: "CryptoGuy Trading Zone", emoji: "⚡️" }
+      ] },
       { title: "YUBIT Winkey Main", chatId: "", canUseTopics: true, topics: [{ name: "YUBIT Updates" }] }
     ];
     const configPools = {
@@ -146,10 +154,10 @@
     let botGroups = [];
     let botMembershipLoaded = false;
     let bindingRows = [
-      { id: "news-market-events", group: "YUBIT test", topic: "Market Events", type: "新闻配置", config: "Crypto News Default", bot: "Trader1", status: "已启用" },
-      { id: "signal-market-analysis", group: "YUBIT test", topic: "Market Analysis - Crypto/Stocks/TradFi", type: "信号配置", config: "Futures SMA", bot: "Trader1", status: "已启用" },
-      { id: "broadcast-market-events", group: "YUBIT test", topic: "Market Events", type: "广播", config: "Demo 群全部消息广播", bot: "YUBITadmin", frequency: "实时", status: "已启用" },
-      { id: "ricky-social", group: "YUBIT test", topic: "Ricky's Trading Zone", type: "代理社媒", config: "Ricky 社媒转发包", bot: "YUBITadmin", frequency: "每 5 分钟", status: "已启用" },
+      { id: "news-market-events", group: "YUBIT test", topic: "3. Market Events", type: "新闻配置", config: "Crypto News Default", bot: "Trader1", status: "已启用" },
+      { id: "signal-market-analysis", group: "YUBIT test", topic: "4. Market Analysis - Crypto/Stocks/TradFi", type: "信号配置", config: "Futures SMA", bot: "Trader1", status: "已启用" },
+      { id: "broadcast-market-events", group: "YUBIT test", topic: "3. Market Events", type: "广播", config: "Demo 群全部消息广播", bot: "YUBITadmin", frequency: "实时", status: "已启用" },
+      { id: "ricky-social", group: "YUBIT test", topic: "CryptoGuy Trading Zone", type: "代理社媒", config: "Ricky 社媒转发包", bot: "YUBITadmin", frequency: "每 5 分钟", status: "已启用" },
       { id: "official-updates", group: "YUBIT Winkey Main", topic: "YUBIT Updates", type: "新闻配置", config: "Official Updates", bot: "YUBITadmin", status: "待检查" }
     ];
 

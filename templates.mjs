@@ -110,29 +110,35 @@ export const defaultTopicTemplate = [
     contentVersion: readFirstContentVersion,
     messages: readFirstPinnedMessages
   },
-  { id: "2", emoji: "📰", name: "Market Events", attribute: "关闭话题" },
-  { id: "3", emoji: "💡", name: "Market Analysis - Crypto/Stocks/TradFi", attribute: "关闭话题" },
-  { id: "4", emoji: "🎉", name: "YUBIT Updates", attribute: "频道禁言" },
-  { id: "5", emoji: "💰", name: "7-Day PNL Challenge", attribute: "交流频道" },
+  { id: "5", emoji: "💰", name: "Community Signal", attribute: "交流频道" },
+  { id: "4", emoji: "💡", name: "Market Analysis - Crypto/Stocks/TradFi", attribute: "关闭话题" },
+  { id: "3", emoji: "📰", name: "Market Events", attribute: "关闭话题" },
   { id: "6", emoji: "💎", name: "Smart Money Tracker", attribute: "关闭话题" },
-  { id: "7", emoji: "⚡️", name: "xxx's Trading Zone", attribute: "交流频道" }
+  { id: "7", emoji: "🎉", name: "YUBIT Updates", attribute: "频道禁言" },
+  // id 2 remains the stable routing identity, but the requested production
+  // label is intentionally unnumbered and appears last in the catalog.
+  { id: "2", emoji: "⚡️", name: "CryptoGuy Trading Zone", attribute: "交流频道" }
 ];
 
 const legacyDefaultIcons = Object.freeze({
-  "1": "⚠️",
-  "2": "📅",
-  "3": "📊",
-  "4": "📢",
-  "5": "🏆",
-  "6": "🐳",
-  "7": "🎯"
+  // Previous releases used a different semantic order and icons.  Keep all
+  // known legacy values so existing saved templates are migrated idempotently
+  // while custom icons remain untouched.
+  "1": ["⚠️"],
+  "2": ["📅", "📰"],
+  "3": ["📊"],
+  "4": ["📢", "📊"],
+  "5": ["🏆"],
+  "6": ["🐳"],
+  "7": ["🎯", "📢"]
 });
 
 export function migrateTopicTemplate(topic) {
   const sequence = String(topic?.id || "").trim();
   const currentIcon = String(topic?.emoji || "").trim();
   const replacement = defaultTopicTemplate.find((item) => item.id === sequence)?.emoji;
-  if (!replacement || currentIcon !== legacyDefaultIcons[sequence]) return { ...topic };
+  const legacyIcons = legacyDefaultIcons[sequence] ?? [];
+  if (!replacement || !legacyIcons.includes(currentIcon)) return { ...topic };
   return { ...topic, emoji: replacement };
 }
 
@@ -141,6 +147,9 @@ export function topicNameWithSequence(topic) {
   const sequence = String(topic?.id || "").trim();
   if (!sequence) return name;
   const nameWithoutSequence = name.replace(/^\d+\.\s*/, "").trim();
+  if (sequence === "2" && /^(?:xxx's|cryptoguy|ricky's)?\s*trading zone$/i.test(nameWithoutSequence)) {
+    return "CryptoGuy Trading Zone";
+  }
   return `${sequence}. ${nameWithoutSequence}`;
 }
 

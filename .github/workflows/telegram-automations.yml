@@ -7,6 +7,10 @@ on:
     # same server-side CRON_SECRET used by the API route. Start at minute 2
     # to avoid GitHub Actions' busiest start-of-hour scheduling window.
     - cron: "2/5 * * * *"
+    # Agent source crawling is intentionally separate: the endpoint has its
+    # own four-hour idempotency slot, so running it on every five-minute tick
+    # would waste requests and obscure the actual 4h cadence.
+    - cron: "15 */4 * * *"
   workflow_dispatch:
     inputs:
       job:
@@ -24,40 +28,52 @@ concurrency:
 
 jobs:
   distribution:
-    if: github.event_name == 'schedule' || inputs.job == 'distribution'
+    if: (github.event_name == 'schedule' && github.event.schedule == '2/5 * * * *') || inputs.job == 'distribution'
     runs-on: ubuntu-latest
     steps:
       - name: Run content distribution scheduler
-        run: >-
-          curl --fail-with-body --retry 2 --retry-all-errors --max-time 90
-          -H "Authorization: Bearer $YUBIT_CRON_SECRET"
-          "$APP_BASE_URL/api/cron/distribution"
+        run: |
+          if [ -z "$YUBIT_CRON_SECRET" ]; then
+            echo "YUBIT_CRON_SECRET is missing; configure the same non-empty value as Vercel Production CRON_SECRET." >&2
+            exit 1
+          fi
+          curl --fail-with-body --retry 2 --retry-all-errors --max-time 90 \
+            -H "Authorization: Bearer $YUBIT_CRON_SECRET" \
+            "$APP_BASE_URL/api/cron/distribution"
         env:
           APP_BASE_URL: https://yubit-bot-skills-academy.vercel.app
           YUBIT_CRON_SECRET: ${{ secrets.YUBIT_CRON_SECRET }}
 
   trading:
-    if: github.event_name == 'schedule' || inputs.job == 'trading'
+    if: (github.event_name == 'schedule' && github.event.schedule == '2/5 * * * *') || inputs.job == 'trading'
     runs-on: ubuntu-latest
     steps:
       - name: Reconcile verified YUBIT orders
-        run: >-
-          curl --fail-with-body --retry 2 --retry-all-errors --max-time 90
-          -H "Authorization: Bearer $YUBIT_CRON_SECRET"
-          "$APP_BASE_URL/api/cron/trading-reconcile"
+        run: |
+          if [ -z "$YUBIT_CRON_SECRET" ]; then
+            echo "YUBIT_CRON_SECRET is missing; configure the same non-empty value as Vercel Production CRON_SECRET." >&2
+            exit 1
+          fi
+          curl --fail-with-body --retry 2 --retry-all-errors --max-time 90 \
+            -H "Authorization: Bearer $YUBIT_CRON_SECRET" \
+            "$APP_BASE_URL/api/cron/trading-reconcile"
         env:
           APP_BASE_URL: https://yubit-bot-skills-academy.vercel.app
           YUBIT_CRON_SECRET: ${{ secrets.YUBIT_CRON_SECRET }}
 
   agents:
-    if: inputs.job == 'agents'
+    if: (github.event_name == 'schedule' && github.event.schedule == '15 */4 * * *') || inputs.job == 'agents'
     runs-on: ubuntu-latest
     steps:
       - name: Run agent information crawl
-        run: >-
-          curl --fail-with-body --retry 2 --max-time 90
-          -H "Authorization: Bearer $YUBIT_CRON_SECRET"
-          "$APP_BASE_URL/api/cron/agents"
+        run: |
+          if [ -z "$YUBIT_CRON_SECRET" ]; then
+            echo "YUBIT_CRON_SECRET is missing; configure the same non-empty value as Vercel Production CRON_SECRET." >&2
+            exit 1
+          fi
+          curl --fail-with-body --retry 2 --max-time 90 \
+            -H "Authorization: Bearer $YUBIT_CRON_SECRET" \
+            "$APP_BASE_URL/api/cron/agents"
         env:
           APP_BASE_URL: https://yubit-bot-skills-academy.vercel.app
           YUBIT_CRON_SECRET: ${{ secrets.YUBIT_CRON_SECRET }}

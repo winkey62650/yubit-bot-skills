@@ -161,15 +161,15 @@ This keeps the workflow clean: first build/test packages, then bind packages to 
 
 ## Telegram Topic Template
 
-The current YUBIT template uses these topic lanes:
+The current YUBIT template uses these numbered topic lanes (the numeric prefix is part of the stable display name):
 
-- `READ FIRST - DISCLAIMER`
-- `Market Events`
-- `Market Analysis - Crypto/Stocks/TradFi`
-- `YUBIT Updates`
-- `7-Day PNL Challenge`
-- `Smart Money Tracker`
-- `xxx's Trading Zone`
+- `1. READ FIRST - DISCLAIMER`
+- `5. Community Signal`
+- `4. Market Analysis - Crypto/Stocks/TradFi`
+- `3. Market Events`
+- `6. Smart Money Tracker`
+- `7. YUBIT Updates`
+- `CryptoGuy Trading Zone`
 
 Read-only topics are treated as closed topics during setup. Discussion topics remain open.
 

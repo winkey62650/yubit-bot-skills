@@ -22,10 +22,10 @@ const demoChatId = process.env.DEMO_TELEGRAM_CHAT_ID || "-1003710405969";
 const demoTestTopicPath = join(root, ".runtime", "demo-test-topic.json");
 const fallbackNewsImageUrl = "https://images.unsplash.com/photo-1640340434855-6084b1f4901c?auto=format&fit=crop&w=1200&q=80";
 const defaultBindings = [
-  { id: "news-market-events", group: "YUBIT test", topic: "Market Events", type: "新闻配置", config: "Crypto News Default", bot: "Trader1", status: "已启用" },
-  { id: "signal-market-analysis", group: "YUBIT test", topic: "Market Analysis - Crypto/Stocks/TradFi", type: "信号配置", config: "Futures SMA", bot: "Trader1", status: "已启用" },
-  { id: "broadcast-market-events", group: "YUBIT test", topic: "Market Events", type: "广播", config: "Demo 群全部消息广播", bot: "YUBITadmin", frequency: "实时", status: "已启用" },
-  { id: "ricky-social", group: "YUBIT test", topic: "Ricky's Trading Zone", type: "代理社媒", config: "Ricky 社媒转发包", bot: "YUBITadmin", frequency: "每 5 分钟", status: "已启用" },
+  { id: "news-market-events", group: "YUBIT test", topic: "3. Market Events", type: "新闻配置", config: "Crypto News Default", bot: "Trader1", status: "已启用" },
+  { id: "signal-market-analysis", group: "YUBIT test", topic: "4. Market Analysis - Crypto/Stocks/TradFi", type: "信号配置", config: "Futures SMA", bot: "Trader1", status: "已启用" },
+  { id: "broadcast-market-events", group: "YUBIT test", topic: "3. Market Events", type: "广播", config: "Demo 群全部消息广播", bot: "YUBITadmin", frequency: "实时", status: "已启用" },
+  { id: "ricky-social", group: "YUBIT test", topic: "CryptoGuy Trading Zone", type: "代理社媒", config: "Ricky 社媒转发包", bot: "YUBITadmin", frequency: "每 5 分钟", status: "已启用" },
   { id: "official-updates", group: "YUBIT Winkey Main", topic: "YUBIT Updates", type: "新闻配置", config: "Official Updates", bot: "YUBITadmin", status: "待检查" }
 ];
 
@@ -965,7 +965,7 @@ async function saveBroadcastRules(body) {
 function defaultBroadcastRules() {
   return [
     { name: "Demo Topic 全部消息广播", group: "YUBIT × Agent Community DEMO", chatId: demoChatId, topic: "test", topicId: 330, listen: "全部消息", bot: "YUBITadmin", frequency: "实时", status: "已启用" },
-    { name: "合约交易信号广播", group: "YUBIT × Agent Community DEMO", chatId: demoChatId, topic: "3. Market Analysis - Crypto/Stocks/TradFi", topicId: 10, listen: "全部消息", bot: "YUBITadmin", frequency: "实时", status: "已启用" }
+    { name: "合约交易信号广播", group: "YUBIT × Agent Community DEMO", chatId: demoChatId, topic: "4. Market Analysis - Crypto/Stocks/TradFi", topicId: 10, listen: "全部消息", bot: "YUBITadmin", frequency: "实时", status: "已启用" }
   ];
 }
 
