@@ -76,6 +76,8 @@ test("market events sample preserves the supplied July 7 briefing without imposi
   assert.match(preview.items.join(" "), /SpaceX/i);
   assert.match(preview.items.join(" "), /Strategy/i);
   assert.match(preview.disclaimer, /verify/i);
+  assert.match(template.runtimeNote, /先单独发送海报.*再发送.*英文/i);
+  assert.doesNotMatch(template.runtimeNote, /合并成一条/);
 });
 
 test("events, analysis and whale templates are previewable before live data is requested", () => {

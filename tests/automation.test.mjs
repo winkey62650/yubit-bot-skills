@@ -124,7 +124,7 @@ test("market events executive summary describes selected coverage, not the size 
   assert.doesNotMatch(summary, /30|31|candidate/i);
 });
 
-test("daily market brief delivery combines poster and copy in one Telegram photo message", () => {
+test("daily market brief delivery sends a standalone poster followed by the market event copy", () => {
   assert.equal(typeof automation.buildDailyMarketBriefTelegramPlan, "function");
   const target = { chatId: "-1004378187866", threadId: 8 };
   const plan = automation.buildDailyMarketBriefTelegramPlan({
@@ -132,12 +132,14 @@ test("daily market brief delivery combines poster and copy in one Telegram photo
     fullText: "1. First story\n\n2. Second story"
   }, target, "https://example.com/poster.png");
 
-  assert.deepEqual(plan.map((item) => item.method), ["sendPhoto"]);
-  assert.deepEqual(plan.map((item) => item.payload.chat_id), [target.chatId]);
-  assert.deepEqual(plan.map((item) => item.payload.message_thread_id), [target.threadId]);
+  assert.deepEqual(plan.map((item) => item.method), ["sendPhoto", "sendMessage"]);
+  assert.deepEqual(plan.map((item) => item.payload.chat_id), [target.chatId, target.chatId]);
+  assert.deepEqual(plan.map((item) => item.payload.message_thread_id), [target.threadId, target.threadId]);
   assert.equal(plan[0].payload.photo, "https://example.com/poster.png");
-  assert.match(plan[0].payload.caption, /Second story/);
-  assert.ok(plan[0].payload.caption.length <= 1024);
+  assert.equal(Object.hasOwn(plan[0].payload, "caption"), false);
+  assert.equal(plan[1].payload.text, "1. First story\n\n2. Second story");
+  assert.equal(plan[1].payload.parse_mode, "HTML");
+  assert.equal(plan[1].payload.disable_web_page_preview, true);
 });
 
 test("daily market brief keeps whole story blocks within Telegram photo caption limits", () => {
@@ -173,6 +175,7 @@ test("daily market brief removes tracking parameters so three priority stories f
 
   assert.match(brief.caption, /3\. <b>CRYPTO<\/b> · Priority event 3/);
   assert.doesNotMatch(brief.caption, /utm_source|utm_medium|utm_campaign/);
+  assert.doesNotMatch(brief.fullText, /utm_source|utm_medium|utm_campaign/);
   assert.ok(brief.caption.length <= 1024);
 });
 
