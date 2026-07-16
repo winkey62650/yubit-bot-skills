@@ -210,6 +210,36 @@ test("orders managed topics by semantic template slots instead of Telegram threa
   ]);
 });
 
+test("preserves the editorial order when expected topics carry numeric template ids", () => {
+  const expected = [
+    { id: "1", name: "1. READ FIRST - DISCLAIMER" },
+    { id: "5", name: "5. Community Signal" },
+    { id: "4", name: "4. Market Analysis - Crypto/Stocks/TradFi" },
+    { id: "3", name: "3. Market Events" },
+    { id: "6", name: "6. Smart Money Tracker" },
+    { id: "7", name: "7. YUBIT Updates" },
+    { id: "2", name: "CryptoGuy Trading Zone" }
+  ];
+  const actual = [
+    { name: "7. YUBIT Updates", threadId: 12 },
+    { name: "2. Market Events", threadId: 8 },
+    { name: "7. xxx's Trading Zone", threadId: 18 },
+    { name: "1. READ FIRST - DISCLAIMER", threadId: 6 },
+    { name: "6. Smart Money Tracker", threadId: 16 },
+    { name: "5. 7-Day PNL Challenge", threadId: 14 },
+    { name: "3. Market Analysis - Crypto/Stocks/TradFi", threadId: 10 }
+  ];
+  assert.deepEqual(orderTopicsByTemplate(actual, expected).map((topic) => topic.name), [
+    "1. READ FIRST - DISCLAIMER",
+    "5. 7-Day PNL Challenge",
+    "3. Market Analysis - Crypto/Stocks/TradFi",
+    "2. Market Events",
+    "6. Smart Money Tracker",
+    "7. YUBIT Updates",
+    "7. xxx's Trading Zone"
+  ]);
+});
+
 test("loads the known forum catalog without claiming unresolved thread bindings", () => {
   const bot = (name) => ({
     name,
@@ -280,17 +310,20 @@ test("collapses legacy template placeholders and duplicate numbered topic events
     { name: "📅 2. Market Events", source: "template" }
   ], [
     { name: "1. READ FIRST - DISCLAIMER" },
-    { name: "2. Market Events" },
-    { name: "3. Market Analysis - Crypto/Stocks/TradFi" },
-    { name: "4. YUBIT Updates" },
-    { name: "5. 7-Day PNL Challenge" },
+    { name: "5. Community Signal" },
+    { name: "4. Market Analysis - Crypto/Stocks/TradFi" },
+    { name: "3. Market Events" },
     { name: "6. Smart Money Tracker" },
-    { name: "7. xxx's Trading Zone" }
+    { name: "7. YUBIT Updates" },
+    { name: "CryptoGuy Trading Zone" }
   ]);
 
   assert.equal(topics.length, 7);
-  assert.deepEqual(topics.map((topic) => topic.threadId), [3, 8, 11, 14, 17, 19, 22]);
-  assert.equal(topics[6].name, "7. CryptoGuy Trading Zone");
+  assert.deepEqual(topics.map((topic) => topic.threadId), [3, 17, 11, 8, 19, 14, 22]);
+  assert.equal(topics[0].name, "1. READ FIRST - DISCLAIMER");
+  assert.equal(topics[1].name, "5. Community Signal");
+  assert.equal(topics[3].name, "3. Market Events");
+  assert.equal(topics[6].name, "CryptoGuy Trading Zone");
 });
 
 test("uses completed setup state as the authority for managed topic ids", () => {
