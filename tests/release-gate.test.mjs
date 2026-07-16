@@ -4,6 +4,7 @@ import test from "node:test";
 
 const require = createRequire(import.meta.url);
 const {
+  authorizeProductionConfiguration,
   buildVercelProtectionHeaders,
   PRODUCTION_RELEASE_PAGES,
   authorizeLiveTelegramOperation,
@@ -70,6 +71,37 @@ test("live Telegram operations require an explicit production double confirmatio
   }), {
     stage: "production",
     baseUrl: "https://academy.example.com",
+  });
+});
+
+test("production configuration planning is read-only by default and applying requires a separate confirmation", () => {
+  assert.throws(
+    () => authorizeProductionConfiguration({}, { operation: "生产标准规则初始化" }),
+    /RELEASE_STAGE=production.*TEST_BASE_URL/s,
+  );
+  assert.deepEqual(authorizeProductionConfiguration({
+    RELEASE_STAGE: "production",
+    TEST_BASE_URL: "https://academy.example.com/",
+  }, { operation: "生产标准规则初始化" }), {
+    stage: "production",
+    baseUrl: "https://academy.example.com",
+    apply: false,
+  });
+  assert.throws(
+    () => authorizeProductionConfiguration({
+      RELEASE_STAGE: "production",
+      TEST_BASE_URL: "https://academy.example.com",
+    }, { operation: "生产标准规则初始化", apply: true }),
+    /APPLY_PRODUCTION_CONFIGURATION=true/,
+  );
+  assert.deepEqual(authorizeProductionConfiguration({
+    RELEASE_STAGE: "production",
+    TEST_BASE_URL: "https://academy.example.com",
+    APPLY_PRODUCTION_CONFIGURATION: "true",
+  }, { operation: "生产标准规则初始化", apply: true }), {
+    stage: "production",
+    baseUrl: "https://academy.example.com",
+    apply: true,
   });
 });
 

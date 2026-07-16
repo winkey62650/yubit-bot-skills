@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import * as distributionDomain from "../lib/distribution-domain.mjs";
 import {
   computeNextRunAt,
   ensureAutomationNextRunAt,
@@ -10,6 +11,110 @@ import {
   findDistributionTargetMismatches,
   validateDistributionRule
 } from "../lib/distribution-domain.mjs";
+
+function productionGroups() {
+  return [
+    {
+      chatId: "-1003710405969",
+      title: "DEMO Academy",
+      topics: Array.from({ length: 7 }, (_, index) => ({
+        name: `${index + 1}. Demo Topic ${index + 1}`,
+        threadId: 100 + index + 1,
+        verified: true,
+      })),
+    },
+    {
+      chatId: "-1004378187866",
+      title: "CryptoGuy Academy",
+      topics: Array.from({ length: 7 }, (_, index) => ({
+        name: `${index + 1}. Target Topic ${index + 1}`,
+        threadId: 200 + index + 1,
+        verified: true,
+      })),
+    },
+  ];
+}
+
+test("standard production provisioning builds three automations and seven disabled one-to-one broadcasts", () => {
+  assert.equal(typeof distributionDomain.buildStandardProductionDistributionRules, "function");
+  const rules = distributionDomain.buildStandardProductionDistributionRules(productionGroups());
+  const repeated = distributionDomain.buildStandardProductionDistributionRules(productionGroups());
+
+  assert.equal(rules.length, 10);
+  assert.ok(rules.every((rule) => rule.enabled === false));
+  assert.deepEqual(rules.map((rule) => rule.id), repeated.map((rule) => rule.id));
+
+  const automations = rules.filter((rule) => rule.kind === "automation");
+  assert.deepEqual(automations.map(({ contentType, schedulePreset }) => ({ contentType, schedulePreset })), [
+    { contentType: "daily-events", schedulePreset: "daily-0800-utc" },
+    { contentType: "daily-analysis", schedulePreset: "daily-0800-utc" },
+    { contentType: "whale-signals", schedulePreset: "hourly" },
+  ]);
+  assert.deepEqual(automations.map((rule) => rule.targets.map((target) => target.threadId)), [
+    [102, 202],
+    [103, 203],
+    [106, 206],
+  ]);
+
+  const broadcasts = rules.filter((rule) => rule.kind === "broadcast");
+  assert.equal(broadcasts.length, 7);
+  assert.ok(broadcasts.every((rule) => rule.mode === "automatic"));
+  assert.deepEqual(broadcasts.map((rule) => [rule.source.threadId, rule.targets[0].threadId]), [
+    [101, 201], [102, 202], [103, 203], [104, 204], [105, 205], [106, 206], [107, 207],
+  ]);
+});
+
+test("standard production provisioning preserves existing rule identity and enabled state", () => {
+  assert.equal(typeof distributionDomain.buildStandardProductionDistributionRules, "function");
+  const existing = [
+    normalizeDistributionRule({
+      id: "existing-events",
+      kind: "automation",
+      name: "Old events",
+      contentType: "daily-events",
+      schedulePreset: "every-5-minutes",
+      enabled: true,
+      targets: [{ chatId: "-1", threadId: 1 }],
+    }),
+    normalizeDistributionRule({
+      id: "existing-topic-one",
+      kind: "broadcast",
+      name: "Old topic one",
+      source: { chatId: "-1003710405969", threadId: 101 },
+      targets: [{ chatId: "-1", threadId: 1 }],
+      enabled: true,
+    }),
+  ];
+  const rules = distributionDomain.buildStandardProductionDistributionRules(productionGroups(), { currentRules: existing });
+
+  const events = rules.find((rule) => rule.contentType === "daily-events");
+  assert.equal(events.id, "existing-events");
+  assert.equal(events.enabled, true);
+  assert.equal(events.schedulePreset, "daily-0800-utc");
+  assert.deepEqual(events.targets.map((target) => target.threadId), [102, 202]);
+
+  const topicOne = rules.find((rule) => rule.kind === "broadcast" && rule.source.threadId === 101);
+  assert.equal(topicOne.id, "existing-topic-one");
+  assert.equal(topicOne.enabled, true);
+  assert.equal(topicOne.targets[0].threadId, 201);
+});
+
+test("standard production provisioning refuses missing or ambiguous numbered topics", () => {
+  assert.equal(typeof distributionDomain.buildStandardProductionDistributionRules, "function");
+  const missing = productionGroups();
+  missing[1].topics = missing[1].topics.filter((topic) => !topic.name.startsWith("6."));
+  assert.throws(
+    () => distributionDomain.buildStandardProductionDistributionRules(missing),
+    /CryptoGuy Academy.*6 号 Topic/,
+  );
+
+  const ambiguous = productionGroups();
+  ambiguous[0].topics.push({ name: "2. Duplicate", threadId: 999, verified: true });
+  assert.throws(
+    () => distributionDomain.buildStandardProductionDistributionRules(ambiguous),
+    /DEMO Academy.*2 号 Topic.*2 个/,
+  );
+});
 
 test("an automatic job keeps every stable chat and thread target", () => {
   const rule = normalizeDistributionRule({

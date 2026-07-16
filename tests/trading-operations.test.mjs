@@ -80,3 +80,18 @@ test("production release audit is reproducible and includes trading readiness", 
   assert.match(reconciliation, /authorizeLiveTelegramOperation/);
   assert.match(liveDelivery, /authorizeLiveTelegramOperation/);
 });
+
+test("standard production distribution provisioning is preview-only until separately authorized to save", async () => {
+  const packageJson = JSON.parse(await readFile(new URL("package.json", root), "utf8"));
+  assert.equal(packageJson.scripts["release:provision"], "node scripts/provision-production-distribution.cjs");
+  assert.match(packageJson.scripts.check, /node --check scripts\/provision-production-distribution\.cjs/);
+
+  const script = await readFile(new URL("scripts/provision-production-distribution.cjs", root), "utf8");
+  assert.match(script, /authorizeProductionConfiguration/);
+  assert.match(script, /buildStandardProductionDistributionRules/);
+  assert.match(script, /PROVISION_APPLY/);
+  assert.match(script, /apply:\s*provisionApply/);
+  assert.match(script, /TEST_USERNAME\s*\|\|\s*process\.env\.AUTH_USERNAME/);
+  assert.match(script, /TEST_PASSWORD\s*\|\|\s*process\.env\.AUTH_PASSWORD/);
+  assert.doesNotMatch(script, /authorizeLiveTelegramOperation/);
+});

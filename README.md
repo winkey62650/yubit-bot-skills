@@ -72,6 +72,27 @@ SpeakerBot 不会自动开单，也不能修改或关闭订单。服务端只用
 
 GitHub Actions 每五分钟分别运行内容分发和订单追踪，两个任务有独立的成功/失败结果。GitHub 的 `YUBIT_CRON_SECRET` 必须与 Vercel Production 中非空的 `CRON_SECRET` 完全一致；系统状态页会将密钥缺失明确标记为未就绪。首次上线后必须确认 Webhook，并至少观察一个完整追踪周期。
 
+### 生产标准分发规则
+
+`release:provision` 根据已保存的两个真实群及其 1–7 号 Topic 生成标准配置：3 条自动发布规则（Market Events、Market Analysis、Whale Signals）和 7 条 DEMO → CryptoGuy 一对一广播规则。它按稳定的 `chatId + threadId` 绑定；Topic 改名不会改变路由。若标准 Topic 缺失或编号重复，命令会停止，不会猜测。
+
+默认仅输出计划，不保存、不配置 Webhook、不启用新规则，也不发送 Telegram 消息：
+
+```bash
+RELEASE_STAGE=production TEST_BASE_URL=https://your-production.example.com \
+  npm run release:provision
+```
+
+确认计划后，保存生产配置需要同时提供两项独立确认；新建规则仍保持关闭，已有规则保留原启停状态：
+
+```bash
+RELEASE_STAGE=production TEST_BASE_URL=https://your-production.example.com \
+  PROVISION_APPLY=true APPLY_PRODUCTION_CONFIGURATION=true \
+  npm run release:provision
+```
+
+启用规则、设置 ForwardBot Webhook 和真群验收属于另一道门禁，必须另行设置 `ALLOW_LIVE_TELEGRAM=true`，不能由初始化命令代替。
+
 ## Requirements
 
 - Node.js 20+
