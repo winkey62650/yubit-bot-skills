@@ -77,12 +77,28 @@ test("standard production provisioning builds five SpeakerBot automations and se
     [106, 206],
     [102, 202],
   ]);
+  assert.deepEqual(automations.map((rule) => rule.targets[0].topicName), [
+    "7. YUBIT Updates",
+    "3. Market Events",
+    "4. Market Analysis - Crypto/Stocks/TradFi",
+    "6. Smart Money Tracker",
+    "2. CryptoGuy Trading Zone",
+  ]);
 
   const broadcasts = rules.filter((rule) => rule.kind === "broadcast");
   assert.equal(broadcasts.length, 7);
   assert.ok(broadcasts.every((rule) => rule.mode === "automatic"));
   assert.deepEqual(broadcasts.map((rule) => [rule.source.threadId, rule.targets[0].threadId]), [
     [101, 201], [102, 202], [103, 203], [104, 204], [105, 205], [106, 206], [107, 207],
+  ]);
+  assert.deepEqual(broadcasts.map((rule) => rule.source.topicName), [
+    "1. READ FIRST - DISCLAIMER",
+    "2. CryptoGuy Trading Zone",
+    "3. Market Events",
+    "4. Market Analysis - Crypto/Stocks/TradFi",
+    "5. Community Signal",
+    "6. Smart Money Tracker",
+    "7. YUBIT Updates",
   ]);
 });
 
@@ -288,11 +304,11 @@ test("stable chat and thread IDs refresh stale group and topic display names", (
     chatId: "-1003710405969",
     threadId: 8,
     groupName: "DEMO Academy",
-    topicName: "2. Market Events"
+    topicName: "3. Market Events"
   });
   assert.equal(repaired.targets[0].id, "target-events");
   assert.equal(repaired.targets[0].groupName, "CryptoGuy Academy");
-  assert.equal(repaired.targets[0].topicName, "2. Market Events");
+  assert.equal(repaired.targets[0].topicName, "3. Market Events");
 });
 
 test("numbered topic identity survives an editable topic name change", () => {
