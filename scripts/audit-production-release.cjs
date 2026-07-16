@@ -82,7 +82,7 @@ async function jsonRequest(response, label) {
   const templateExpectations = {
     "daily-events": { kind: "events", marker: /full English brief follows/i },
     "daily-analysis": { kind: "analysis", marker: /DAILY MARKET ANALYSIS/i },
-    "whale-hourly": { kind: "whale", marker: /巨鲸动了，市场正在重新定价/ }
+    "whale-hourly": { kind: "whale", marker: /WHALE ALERT · SMART MONEY SIGNAL/i }
   };
   const templatePreviews = [];
   for (const [jobId, expected] of Object.entries(templateExpectations)) {
@@ -167,8 +167,12 @@ async function jsonRequest(response, label) {
   ]);
   const currentRules = distribution.rules || [];
   const broadcastRules = currentRules.filter((rule) => rule.kind === "broadcast");
-  const requiredAutomations = ["daily-events", "daily-analysis", "whale-signals"].map((contentType) => ({
-    contentType,
+  const requiredAutomations = [
+    { contentType: "daily-events", schedulePreset: "daily-0800-utc" },
+    { contentType: "daily-analysis", schedulePreset: "daily-0800-utc" },
+    { contentType: "whale-signals", schedulePreset: "hourly" }
+  ].map(({ contentType, schedulePreset }) => ({
+    contentType, schedulePreset,
     rule: currentRules.find((rule) => rule.kind === "automation" && rule.contentType === contentType)
   }));
   const failures = [
@@ -190,7 +194,7 @@ async function jsonRequest(response, label) {
       ? ["生产数据库不是健康的持久化 Postgres"] : []),
     ...(broadcastRules.length !== 7 || broadcastRules.some((rule) => !rule.enabled)
       ? ["Telegram 广播规则必须是 7 条且全部启用"] : []),
-    ...requiredAutomations.flatMap(({ contentType, rule }) => (!rule || !rule.enabled || rule.schedulePreset !== "daily-0800-utc" || (rule.targets || []).length < 2
+    ...requiredAutomations.flatMap(({ contentType, schedulePreset, rule }) => (!rule || !rule.enabled || rule.schedulePreset !== schedulePreset || (rule.targets || []).length < 2
       ? [`自动发布规则异常：${contentType}`] : [])),
     ...templatePreviews.filter((item) => !item.imageOk || !item.copyOk || !item.kindOk).map((item) => `线上模板预览异常：${item.jobId}`),
     ...["daily-events", "daily-analysis", "whale-hourly"].flatMap((jobId) => {

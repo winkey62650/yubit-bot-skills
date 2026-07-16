@@ -247,11 +247,11 @@ test("legacy bindings and broadcast rules migrate once and ambiguous rows stay d
   assert.equal(first.broadcastRules[0].status, "pending-confirmation");
 });
 
-test("legacy whale jobs migrate to the approved daily UTC schedule", () => {
+test("legacy whale jobs migrate to hourly monitoring with anomaly gating", () => {
   const migrated = migrateLegacyDistribution({
     groups: [{ title: "DEMO Academy", chatId: "-1001", topics: [{ name: "6. Smart Money Tracker", threadId: 16 }] }],
     bindings: [{ type: "自动发布", config: "大户挂单 & 巨鲸数据", group: "DEMO Academy", topic: "6. Smart Money Tracker", status: "已启用" }]
   });
   assert.equal(migrated.automaticRules[0].contentType, "whale-signals");
-  assert.equal(migrated.automaticRules[0].schedulePreset, "daily-0800-utc");
+  assert.equal(migrated.automaticRules[0].schedulePreset, "hourly");
 });

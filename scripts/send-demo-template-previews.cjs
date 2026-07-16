@@ -71,7 +71,7 @@ async function json(response, label) {
               kind: "automation",
               name: `DEMO template acceptance - ${template.label} - ${Date.now()}`,
               contentType: template.contentType,
-              schedulePreset: "daily-0800-utc",
+              schedulePreset: template.contentType === "whale-signals" ? "hourly" : "daily-0800-utc",
               enabled: false,
               targets: [{
                 chatId: String(demo.chatId),

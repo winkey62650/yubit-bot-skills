@@ -30,7 +30,7 @@ test("social source readiness distinguishes stable sources from limited X fallba
 
 test("each automatic content template recommends the production schedule and real job", () => {
   assert.equal(recommendedScheduleFor("daily-events"), "daily-0800-utc");
-  assert.equal(recommendedScheduleFor("whale-signals"), "daily-0800-utc");
+  assert.equal(recommendedScheduleFor("whale-signals"), "hourly");
   assert.equal(recommendedScheduleFor("agent-sync"), "every-4-hours");
   assert.equal(getContentTemplate("daily-analysis").jobId, "daily-analysis");
   assert.match(getContentTemplate("news").runtimeNote, /执行时/);
@@ -95,14 +95,15 @@ test("all three editorial samples use generated poster assets", () => {
 test("whale preview exposes the approved poster and operating copy before publishing", () => {
   const template = getContentTemplate("whale-signals");
   const preview = template.preview;
-  assert.match(preview.headline, /巨鲸动了，市场正在重新定价/);
-  assert.match(preview.caption, /异动规模/);
-  assert.match(preview.caption, /关键动作/);
-  assert.match(preview.caption, /关键位置/);
-  assert.match(preview.caption, /当前状态/);
-  assert.match(preview.caption, /下一步重点观察/);
-  assert.match(preview.caption, /数据来源/);
-  assert.match(preview.disclaimer, /挂单也可能随时撤销/);
+  assert.equal(preview.language, "English");
+  assert.match(preview.headline, /WHALE ALERT/);
+  assert.match(preview.caption, /Visible size/);
+  assert.match(preview.caption, /Key action/);
+  assert.match(preview.caption, /Key level/);
+  assert.match(preview.caption, /Current read/);
+  assert.match(preview.caption, /What to watch next/);
+  assert.match(preview.caption, /Data source/);
+  assert.match(preview.disclaimer, /orders can be changed or cancelled/);
   assert.doesNotMatch(`${preview.headline}\n${preview.caption}`, /每小时|hourly|固定\s*\d+\s*条/i);
 });
 

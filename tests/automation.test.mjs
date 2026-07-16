@@ -9,7 +9,7 @@ test("all requested automation schedules are registered", () => {
   assert.equal(AUTOMATION_JOBS.find((job) => job.id === "news-feed").schedule, "最短每 5 分钟");
   assert.equal(AUTOMATION_JOBS.find((job) => job.id === "daily-events").schedule, "每日 08:00 UTC");
   assert.equal(AUTOMATION_JOBS.find((job) => job.id === "daily-analysis").schedule, "每日 08:00 UTC");
-  assert.equal(AUTOMATION_JOBS.find((job) => job.id === "whale-hourly").schedule, "每日 08:00 UTC");
+  assert.equal(AUTOMATION_JOBS.find((job) => job.id === "whale-hourly").schedule, "每小时检查，重大异动才发布");
   assert.equal(AUTOMATION_JOBS.find((job) => job.id === "agent-sync-4h").schedule, "每 4 小时");
 });
 
@@ -17,7 +17,7 @@ test("idempotency slots follow daily, hourly and four-hour windows", () => {
   const now = new Date("2026-07-14T10:42:00.000Z");
   assert.equal(automationSlot("daily-events", now), "2026-07-14");
   assert.equal(automationSlot("daily-analysis", now), "2026-07-14");
-  assert.equal(automationSlot("whale-hourly", now), "2026-07-14");
+  assert.equal(automationSlot("whale-hourly", now), "2026-07-14T10");
   assert.equal(automationSlot("agent-sync-4h", now), "2026-07-14T08");
   assert.equal(automationSlot("news-feed", now), "2026-07-14T10:40");
 });
@@ -44,7 +44,7 @@ test("legacy automation status resolves every database-backed distribution targe
   assert.deepEqual(target.targets.map((item) => item.chatId), ["-1001", "-1002"]);
 });
 
-test("whale alert turns a real order-book snapshot into the approved daily copy", () => {
+test("whale alert turns a material order-book snapshot into approved English copy", () => {
   assert.equal(typeof automation.buildWhaleAlert, "function");
   const alert = automation.buildWhaleAlert({
     bids: [["60000", "20"], ["59900", "2"]],
@@ -58,15 +58,30 @@ test("whale alert turns a real order-book snapshot into the approved daily copy"
   assert.equal(alert.imageKind, "whale");
   assert.equal(alert.poster.signal, "LARGE BID");
   assert.equal(alert.poster.pair, "BTC / USDT");
-  assert.match(alert.caption, /巨鲸动了，市场正在重新定价/);
+  assert.equal(alert.publishable, true);
+  assert.match(alert.caption, /WHALE ALERT · SMART MONEY SIGNAL/);
   assert.match(alert.caption, /2026-07-15 08:00 UTC/);
-  assert.match(alert.caption, /买单挂入/);
-  assert.match(alert.caption, /买墙支撑/);
-  assert.match(alert.caption, /下一步重点观察/);
-  assert.match(alert.caption, /订单簿快照不等于已完成买卖/);
+  assert.match(alert.caption, /Large bid added/);
+  assert.match(alert.caption, /Buy-wall support/);
+  assert.match(alert.caption, /What to watch next/);
+  assert.match(alert.caption, /does not mean a trade has been executed/);
   assert.match(alert.caption, /binance\.com\/en\/futures\/BTCUSDT/);
   assert.match(alert.caption, /#BTC #Binance #WhaleAlert #SmartMoney/);
   assert.ok(alert.caption.length <= 1024);
+});
+
+test("whale alert suppresses ordinary order-book noise", () => {
+  const alert = automation.buildWhaleAlert({
+    bids: [["60000", "1"], ["59900", "1"]],
+    asks: [["60100", "1"], ["60200", "1"]],
+    openInterest: 420000,
+    funding: 0.01,
+    markPrice: 60050,
+    source: "Binance"
+  }, new Date("2026-07-15T09:00:00.000Z"));
+
+  assert.equal(alert.publishable, false);
+  assert.match(alert.suppressionReason, /threshold/i);
 });
 
 test("daily events normalize a flexible daily market brief instead of a fixed economic calendar", () => {
@@ -76,7 +91,7 @@ test("daily events normalize a flexible daily market brief instead of a fixed ec
     summary: "Risk appetite improved as equities and crypto advanced while energy prices eased.",
     subline: "EQUITIES FIRM · CRYPTO ADVANCES · ENERGY EASES",
     stories: [
-      { title: "Equities advanced", summary: "The Nasdaq led a broad risk-on session." },
+      { title: "Equities advanced", summary: "The Nasdaq led a broad risk-on session.", source: "Reuters", url: "https://www.reuters.com/markets/" },
       { title: "Bitcoin strengthened", summary: "Bitcoin recovered alongside technology shares." },
       { title: "Oil retreated", summary: "Crude prices gave back part of the recent rise." }
     ]
@@ -87,6 +102,7 @@ test("daily events normalize a flexible daily market brief instead of a fixed ec
   assert.equal(brief.items.length, 3);
   assert.match(brief.caption, /full English brief follows as a second Telegram message/i);
   assert.match(brief.fullText, /1\. Equities advanced: The Nasdaq led/);
+  assert.match(brief.fullText, /Source: <a href="https:\/\/www\.reuters\.com\/markets\/">Reuters<\/a>/);
   assert.doesNotMatch(`${brief.subline}\n${brief.caption}`, /11 stories|08:00|hourly/i);
 });
 

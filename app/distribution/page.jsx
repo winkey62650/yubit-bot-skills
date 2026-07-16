@@ -246,8 +246,8 @@ function AutomationView({ form, setForm, rules, groups, socialPackages, busy, on
         <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm text-[#173f31]">{template.format}</strong><span className="rounded-full bg-white px-2.5 py-1 text-xs font-black text-ops-accent">推荐：{labelFor(schedules, template.recommendedSchedule)}</span></div>
         <p className="mt-2 text-sm leading-6 text-[#41564d]">{template.description}</p>
       </div>
-      <FormStep number="2" title="确认频率" desc="日更任务按 UTC 运行；系统会按时间窗口去重。" />
-      <Field label="预设频率"><select className={inputClass} value={form.schedulePreset} disabled={form.contentType === "whale-signals"} onChange={(event) => setForm({ ...form, schedulePreset: event.target.value })}>{schedules.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>{form.contentType === "whale-signals" ? <p className="mt-1 text-xs text-ops-muted">巨鲸数据固定每日生成一次，避免把短时盘口噪声包装成高频信号。</p> : null}</Field>
+      <FormStep number="2" title="确认频率" desc="日更任务按 UTC 运行；监控任务按时间窗口扫描并去重。" />
+      <Field label="预设频率"><select className={inputClass} value={form.schedulePreset} disabled={form.contentType === "whale-signals"} onChange={(event) => setForm({ ...form, schedulePreset: event.target.value })}>{schedules.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>{form.contentType === "whale-signals" ? <p className="mt-1 text-xs text-ops-muted">系统每小时检查真实订单簿，仅在异动达到阈值时发布，相同信号冷却期内不重复。</p> : null}</Field>
       <FormStep number="3" title="选择发布目标" desc={`建议发布到 ${template.destinationHint}，可同时选择多个 Topic。`} />
       <TargetPicker groups={groups} selected={form.targets} onChange={(targets) => setForm({ ...form, targets })} />
       <Toggle checked={form.enabled} label="创建后立即启用" onChange={(enabled) => setForm({ ...form, enabled })} />

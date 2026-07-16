@@ -14,8 +14,6 @@ on:
         required: true
         type: choice
         options:
-          - daily
-          - whale
           - agents
           - distribution
 
@@ -33,32 +31,6 @@ jobs:
           curl --fail-with-body --retry 2 --retry-all-errors --max-time 90
           -H "Authorization: Bearer $YUBIT_CRON_SECRET"
           "$APP_BASE_URL/api/cron/distribution"
-        env:
-          APP_BASE_URL: https://yubit-bot-skills-academy.vercel.app
-          YUBIT_CRON_SECRET: ${{ secrets.YUBIT_CRON_SECRET }}
-
-  daily:
-    if: inputs.job == 'daily'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Run Daily Events, Daily Analysis and Whale Alert
-        run: >-
-          curl --fail-with-body --retry 2 --max-time 90
-          -H "Authorization: Bearer $YUBIT_CRON_SECRET"
-          "$APP_BASE_URL/api/cron/daily"
-        env:
-          APP_BASE_URL: https://yubit-bot-skills-academy.vercel.app
-          YUBIT_CRON_SECRET: ${{ secrets.YUBIT_CRON_SECRET }}
-
-  whale:
-    if: inputs.job == 'whale'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Run whale and orderbook report
-        run: >-
-          curl --fail-with-body --retry 2 --max-time 60
-          -H "Authorization: Bearer $YUBIT_CRON_SECRET"
-          "$APP_BASE_URL/api/cron/whale"
         env:
           APP_BASE_URL: https://yubit-bot-skills-academy.vercel.app
           YUBIT_CRON_SECRET: ${{ secrets.YUBIT_CRON_SECRET }}

@@ -104,7 +104,7 @@ test("an automatic publishing rule can be run immediately with real per-target d
   const runner = async (jobId, options) => {
     assert.equal(jobId, "daily-events");
     assert.equal(options.dryRun, false);
-    assert.equal(options.force, true);
+    assert.equal(options.force, false);
     assert.deepEqual(options.targets, [target]);
     return {
       status: "success",
@@ -124,6 +124,36 @@ test("an automatic publishing rule can be run immediately with real per-target d
   assert.equal(deliveries.length, 1);
   assert.equal(deliveries[0].status, "success");
   assert.equal(deliveries[0].targetMessageId, 321);
+});
+
+test("a deduplicated or suppressed automation run creates no failed delivery records", async () => {
+  const rule = {
+    id: "rule-whale-suppressed",
+    kind: "automation",
+    name: "Whale monitor",
+    contentType: "whale-signals",
+    targets: [{ id: "target-whale", chatId: "-1001", threadId: 16 }]
+  };
+  const deliveries = [];
+  const events = [];
+  const repository = {
+    async getRule() { return rule; },
+    async listRules() { return []; },
+    async createEvent(event) { const saved = { id: "event-suppressed", ...event }; events.push(saved); return saved; },
+    async updateEvent(id, patch) { Object.assign(events.find((item) => item.id === id), patch); },
+    async createDelivery(delivery) { deliveries.push(delivery); return delivery; },
+    async updateDelivery() {},
+    async saveMapping() {}
+  };
+
+  const result = await runDistributionAutomationRule(rule.id, {
+    repository,
+    runner: async () => ({ status: "skipped", message: "No material whale signal", preview: { publishable: false } })
+  });
+
+  assert.equal(result.status, "skipped");
+  assert.equal(deliveries.length, 0);
+  assert.equal(events[0].payload.outcome, "skipped");
 });
 
 test("automatic multi-target publishing records broadcast mappings before its source webhook arrives", async () => {
