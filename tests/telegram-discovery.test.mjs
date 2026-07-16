@@ -210,6 +210,58 @@ test("orders managed topics by semantic template slots instead of Telegram threa
   ]);
 });
 
+test("excludes Telegram General Chat from the managed topic catalog and count", () => {
+  const expected = [
+    { id: "1", name: "1. READ FIRST - DISCLAIMER" },
+    { id: "5", name: "5. Community Signal" },
+    { id: "4", name: "4. Market Analysis - Crypto/Stocks/TradFi" },
+    { id: "3", name: "3. Market Events" },
+    { id: "6", name: "6. Smart Money Tracker" },
+    { id: "7", name: "7. YUBIT Updates" },
+    { id: "2", name: "CryptoGuy Trading Zone" }
+  ];
+  const actual = [
+    { name: "General Chat", threadId: 1 },
+    { name: "1. READ FIRST - DISCLAIMER", threadId: 6 },
+    { name: "5. Community Signal", threadId: 14 },
+    { name: "4. Market Analysis - Crypto/Stocks/TradFi", threadId: 10 },
+    { name: "3. Market Events", threadId: 8 },
+    { name: "6. Smart Money Tracker", threadId: 16 },
+    { name: "7. YUBIT Updates", threadId: 12 },
+    { name: "2. CryptoGuy Trading Zone", threadId: 18 }
+  ];
+
+  const merged = mergeExpectedForumTopics(actual, expected);
+  assert.equal(merged.length, 7);
+  assert.deepEqual(orderTopicsByTemplate(merged, expected).map((topic) => topic.name), expected.map((topic) => topic.name));
+  assert.equal(merged.some((topic) => topic.name === "General Chat"), false);
+
+  const bot = (name) => ({
+    name,
+    status: "在线",
+    groups: [{
+      chatId: forumId,
+      title: "DEMO Academy",
+      type: "supergroup",
+      membership: "administrator",
+      isForum: true,
+      canUseTopics: true,
+      canManageTopics: true,
+      permissions: { canPinMessages: true, canChangeInfo: true },
+      topics: actual,
+      detectedTopicThreadIds: actual.map((topic) => topic.threadId)
+    }]
+  });
+  const [group] = mergeBotGroupDiscoveries(
+    ["AdminBot", "SpeakerBot", "ForwardBot"].map(bot),
+    { expectedForumTopics: expected }
+  );
+  assert.equal(group.topics.length, 7);
+  assert.equal(group.topicCoverage.knownCount, 7);
+  assert.equal(group.topicCoverage.detectedThreadCount, 7);
+  assert.equal(group.detectedTopicThreadIds.includes(1), false);
+});
+
 test("preserves the editorial order when expected topics carry numeric template ids", () => {
   const expected = [
     { id: "1", name: "1. READ FIRST - DISCLAIMER" },
@@ -331,6 +383,7 @@ test("uses completed setup state as the authority for managed topic ids", () => 
     chatId: activeId,
     title: "CryptoGuy Academy",
     topics: [
+      { name: "General Chat", threadId: 1 },
       { name: "1. READ FIRST - DISCLAIMER", threadId: 3 },
       { name: "2. Market Events", threadId: 8 },
       { name: "7. CryptoGuy Trading Zone", threadId: 22 },
@@ -338,7 +391,7 @@ test("uses completed setup state as the authority for managed topic ids", () => 
       { name: "7. CryptoGuy Trading Zone", threadId: 66 },
       { name: "📅 2. Market Events", threadId: null, source: "template" }
     ],
-    detectedTopicThreadIds: [3, 8, 22, 51, 66]
+    detectedTopicThreadIds: [1, 3, 8, 22, 51, 66]
   };
   const setupState = {
     chatId: activeId,

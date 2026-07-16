@@ -1,11 +1,59 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildDistributionSourceOptions,
+  buildDistributionTargetOptions,
   buildBroadcastRouteSummary,
   buildSocialSourceReadiness,
   getContentTemplate,
+  orderedDistributionTopics,
   recommendedScheduleFor
 } from "../lib/distribution-ui.mjs";
+
+test("distribution selectors exclude General Chat and follow the managed editorial order", () => {
+  const topics = [
+    { name: "General Chat", threadId: 1 },
+    { name: "7. YUBIT Updates", threadId: 12 },
+    { name: "2. CryptoGuy Trading Zone", threadId: 18 },
+    { name: "3. Market Events", threadId: 8 },
+    { name: "1. READ FIRST - DISCLAIMER", threadId: 6 },
+    { name: "6. Smart Money Tracker", threadId: 16 },
+    { name: "5. Community Signal", threadId: 14 },
+    { name: "4. Market Analysis - Crypto/Stocks/TradFi", threadId: 10 }
+  ];
+  const expectedNames = [
+    "1. READ FIRST - DISCLAIMER",
+    "5. Community Signal",
+    "4. Market Analysis - Crypto/Stocks/TradFi",
+    "3. Market Events",
+    "6. Smart Money Tracker",
+    "7. YUBIT Updates",
+    "2. CryptoGuy Trading Zone"
+  ];
+  const groups = [{ chatId: "-1001", title: "DEMO Academy", topics }];
+
+  assert.deepEqual(orderedDistributionTopics(topics).map((topic) => topic.name), expectedNames);
+  assert.deepEqual(buildDistributionTargetOptions(groups).map((option) => option.target.topicName), expectedNames);
+  assert.deepEqual(buildDistributionSourceOptions(groups).slice(1).map((option) => option.source.topicName), expectedNames);
+  assert.equal(buildDistributionSourceOptions(groups)[0].source.topicName, "整群");
+  assert.equal(JSON.stringify(buildDistributionTargetOptions(groups)).includes("General Chat"), false);
+});
+
+test("every SpeakerBot content type points to its semantic numbered Topic", () => {
+  assert.deepEqual(Object.fromEntries([
+    "news",
+    "daily-events",
+    "daily-analysis",
+    "whale-signals",
+    "agent-sync"
+  ].map((contentType) => [contentType, getContentTemplate(contentType).destinationHint])), {
+    news: "7. YUBIT Updates",
+    "daily-events": "3. Market Events",
+    "daily-analysis": "4. Market Analysis - Crypto/Stocks/TradFi",
+    "whale-signals": "6. Smart Money Tracker",
+    "agent-sync": "2. CryptoGuy Trading Zone"
+  });
+});
 
 test("social source readiness distinguishes stable sources from limited X fallback", () => {
   assert.deepEqual(buildSocialSourceReadiness([]), {

@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { readJson, writeJson } from "../../../lib/json-store";
 import { resolveDiscoveredGroups } from "../../../lib/group-config-policy.mjs";
-import { mergeExpectedForumTopics, orderTopicsByTemplate } from "../../../lib/telegram-discovery.mjs";
+import {
+  mergeExpectedForumTopics,
+  orderTopicsByTemplate,
+  telegramSystemTopicThreadIds
+} from "../../../lib/telegram-discovery.mjs";
 import { defaultTopicTemplate, topicDisplayName } from "../../../templates.mjs";
 
 export const dynamic = "force-dynamic";
@@ -99,12 +103,14 @@ function normalizeGroup(group) {
   })).filter((bot) => bot.name) : [];
   const adminBotCount = bots.filter((bot) => bot.isAdmin).length;
   const storedTopics = normalizeTopics(group?.topics || []);
+  const systemThreadIds = telegramSystemTopicThreadIds(storedTopics);
   const canUseTopics = group?.isForum === true || group?.canUseTopics === true;
   const topics = canUseTopics
     ? orderTopicsByTemplate(mergeExpectedForumTopics(storedTopics, expectedForumTopics), expectedForumTopics)
     : storedTopics;
   const detectedTopicThreadIds = normalizeThreadIds([
-    ...(Array.isArray(group?.detectedTopicThreadIds) ? group.detectedTopicThreadIds : []),
+    ...(Array.isArray(group?.detectedTopicThreadIds) ? group.detectedTopicThreadIds : [])
+      .filter((threadId) => !systemThreadIds.has(Number(threadId))),
     ...topics.map((topic) => topic.threadId)
   ]);
   const resolvedTopicCount = topics.filter((topic) => topic.threadId).length;

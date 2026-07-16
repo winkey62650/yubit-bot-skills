@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import * as automation from "../lib/automation-jobs.mjs";
 
-const { AUTOMATION_JOBS, automationSlot } = automation;
+const { AUTOMATION_JOBS, automationSlot, automationTopicMatches } = automation;
 
 test("all requested automation schedules are registered", () => {
   assert.deepEqual(AUTOMATION_JOBS.map((job) => job.id), ["news-feed", "daily-events", "daily-analysis", "whale-hourly", "agent-sync-4h"]);
@@ -11,6 +11,15 @@ test("all requested automation schedules are registered", () => {
   assert.equal(AUTOMATION_JOBS.find((job) => job.id === "daily-analysis").schedule, "每日 08:00 UTC");
   assert.equal(AUTOMATION_JOBS.find((job) => job.id === "whale-hourly").schedule, "每小时检查，重大异动才发布");
   assert.equal(AUTOMATION_JOBS.find((job) => job.id === "agent-sync-4h").schedule, "每 4 小时");
+  assert.deepEqual(AUTOMATION_JOBS.map(({ id, topic, bot }) => ({ id, topic, bot })), [
+    { id: "news-feed", topic: "7. YUBIT Updates", bot: "SpeakerBot" },
+    { id: "daily-events", topic: "3. Market Events", bot: "SpeakerBot" },
+    { id: "daily-analysis", topic: "4. Market Analysis - Crypto/Stocks/TradFi", bot: "SpeakerBot" },
+    { id: "whale-hourly", topic: "6. Smart Money Tracker", bot: "SpeakerBot" },
+    { id: "agent-sync-4h", topic: "2. CryptoGuy Trading Zone", bot: "SpeakerBot" }
+  ]);
+  assert.equal(automationTopicMatches("CryptoGuy Trading Zone", "2. CryptoGuy Trading Zone"), true);
+  assert.equal(automationTopicMatches("⚡️ 2. CryptoGuy Trading Zone", "CryptoGuy Trading Zone"), true);
 });
 
 test("idempotency slots follow daily, hourly and four-hour windows", () => {

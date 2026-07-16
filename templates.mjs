@@ -115,8 +115,6 @@ export const defaultTopicTemplate = [
   { id: "3", emoji: "📰", name: "Market Events", attribute: "关闭话题" },
   { id: "6", emoji: "💎", name: "Smart Money Tracker", attribute: "关闭话题" },
   { id: "7", emoji: "🎉", name: "YUBIT Updates", attribute: "频道禁言" },
-  // id 2 remains the stable routing identity, but the requested production
-  // label is intentionally unnumbered and appears last in the catalog.
   { id: "2", emoji: "⚡️", name: "CryptoGuy Trading Zone", attribute: "交流频道" }
 ];
 
@@ -147,9 +145,6 @@ export function topicNameWithSequence(topic) {
   const sequence = String(topic?.id || "").trim();
   if (!sequence) return name;
   const nameWithoutSequence = name.replace(/^\d+\.\s*/, "").trim();
-  if (sequence === "2" && /^(?:xxx's|cryptoguy|ricky's)?\s*trading zone$/i.test(nameWithoutSequence)) {
-    return "CryptoGuy Trading Zone";
-  }
   return `${sequence}. ${nameWithoutSequence}`;
 }
 

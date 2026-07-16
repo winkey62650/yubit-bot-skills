@@ -4,7 +4,14 @@ import { useEffect, useState } from "react";
 import ConsoleShell from "../components/ConsoleShell";
 import { Card, Field, PageHeader, StatusPill, inputClass } from "../components/ui";
 import SocialSourceManager from "./SocialSourceManager";
-import { buildBroadcastRouteSummary, buildSocialSourceReadiness, getContentTemplate, recommendedScheduleFor } from "../../lib/distribution-ui.mjs";
+import {
+  buildBroadcastRouteSummary,
+  buildDistributionSourceOptions,
+  buildDistributionTargetOptions,
+  buildSocialSourceReadiness,
+  getContentTemplate,
+  recommendedScheduleFor
+} from "../../lib/distribution-ui.mjs";
 
 const tabs = [
   ["automation", "自动发布"],
@@ -373,12 +380,9 @@ function Toggle({ checked, label, onChange }) { return <label className="flex mi
 function SmallButton({ children, danger = false, disabled = false, onClick }) { return <button className={`min-h-9 rounded-lg border px-3 text-xs font-black disabled:opacity-40 ${danger ? "border-[#d85f5f] text-[#b94141]" : "border-ops-line text-[#33423b]"}`} disabled={disabled} onClick={onClick} type="button">{children}</button>; }
 
 function targetOptions(groups) {
-  return groups.flatMap((group) => (group.topics || []).filter((topic) => Number(topic.threadId || topic.topicId) > 0).map((topic) => {
-    const target = { chatId: String(group.chatId), threadId: Number(topic.threadId || topic.topicId), groupName: group.title || group.name || "", topicName: topic.name || topic.title || "" };
-    return { key: targetKey(target), label: `${target.groupName} / ${target.topicName}`, target };
-  }));
+  return buildDistributionTargetOptions(groups);
 }
-function sourceOptions(groups) { return groups.flatMap((group) => { const groupName = group.title || group.name || String(group.chatId); return [{ key: `${group.chatId}:0`, label: `${groupName} / 整群`, source: { chatId: String(group.chatId), threadId: "", groupName, topicName: "整群" } }, ...(group.topics || []).filter((topic) => topic.threadId || topic.topicId).map((topic) => ({ key: `${group.chatId}:${topic.threadId || topic.topicId}`, label: `${groupName} / ${topic.name || topic.title || topic.threadId || topic.topicId}`, source: { chatId: String(group.chatId), threadId: Number(topic.threadId || topic.topicId), groupName, topicName: topic.name || topic.title || "" } }))]; }); }
+function sourceOptions(groups) { return buildDistributionSourceOptions(groups); }
 function targetKey(value) { return `${value.chatId}:${Number(value.threadId || 0)}`; }
 function sourceKey(value) { return value?.chatId ? `${value.chatId}:${Number(value.threadId || 0)}` : ""; }
 function labelFor(options, value) { return options.find(([key]) => key === value)?.[1] || value || "未配置"; }

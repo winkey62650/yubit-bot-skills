@@ -20,7 +20,7 @@ test("new topics keep their sequence in the Telegram name and use the requested 
     { id: "2", emoji: "⚡️", name: "CryptoGuy Trading Zone" }
   ]);
   for (const topic of defaultTopicTemplate) {
-    const expectedName = topic.id === "2" ? "CryptoGuy Trading Zone" : `${topic.id}. ${topic.name}`;
+    const expectedName = `${topic.id}. ${topic.name}`;
     assert.equal(topicNameWithSequence(topic), expectedName);
     assert.equal(topicDisplayName(topic), expectedName);
   }

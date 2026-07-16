@@ -20,7 +20,7 @@ function productionGroups() {
     ["3. Market Events", 103],
     ["6. Smart Money Tracker", 106],
     ["7. YUBIT Updates", 107],
-    ["CryptoGuy Trading Zone", 102],
+    ["2. CryptoGuy Trading Zone", 102],
   ];
   const targetTopics = [
     ["1. Target Topic 1", 201],
@@ -29,7 +29,7 @@ function productionGroups() {
     ["3. Market Events", 203],
     ["6. Smart Money Tracker", 206],
     ["7. YUBIT Updates", 207],
-    ["CryptoGuy Trading Zone", 202],
+    ["2. CryptoGuy Trading Zone", 202],
   ];
   return [
     {
@@ -53,25 +53,29 @@ function productionGroups() {
   ];
 }
 
-test("standard production provisioning builds three automations and seven disabled one-to-one broadcasts", () => {
+test("standard production provisioning builds five SpeakerBot automations and seven disabled one-to-one ForwardBot broadcasts", () => {
   assert.equal(typeof distributionDomain.buildStandardProductionDistributionRules, "function");
   const rules = distributionDomain.buildStandardProductionDistributionRules(productionGroups());
   const repeated = distributionDomain.buildStandardProductionDistributionRules(productionGroups());
 
-  assert.equal(rules.length, 10);
+  assert.equal(rules.length, 12);
   assert.ok(rules.every((rule) => rule.enabled === false));
   assert.deepEqual(rules.map((rule) => rule.id), repeated.map((rule) => rule.id));
 
   const automations = rules.filter((rule) => rule.kind === "automation");
   assert.deepEqual(automations.map(({ contentType, schedulePreset }) => ({ contentType, schedulePreset })), [
+    { contentType: "news", schedulePreset: "every-5-minutes" },
     { contentType: "daily-events", schedulePreset: "daily-0800-utc" },
     { contentType: "daily-analysis", schedulePreset: "daily-0800-utc" },
     { contentType: "whale-signals", schedulePreset: "hourly" },
+    { contentType: "agent-sync", schedulePreset: "every-4-hours" },
   ]);
   assert.deepEqual(automations.map((rule) => rule.targets.map((target) => target.threadId)), [
+    [107, 207],
     [103, 203],
     [104, 204],
     [106, 206],
+    [102, 202],
   ]);
 
   const broadcasts = rules.filter((rule) => rule.kind === "broadcast");

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import ConsoleShell from "../components/ConsoleShell";
 import { Card, Field, Metric, PageHeader, StatusPill, inputClass } from "../components/ui";
+import { orderedDistributionTopics } from "../../lib/distribution-ui.mjs";
 
 const tabs = [
   ["logs", "交易日志"],
@@ -340,7 +341,7 @@ function Th({ children }) { return <th className="px-4 py-3 font-black">{childre
 function Td({ children, className = "" }) { return <td className={`px-4 py-3 align-top ${className}`}>{children}</td>; }
 
 function groupTopicOptions(groups) {
-  return groups.flatMap((group) => (group.topics || []).filter((topic) => Number(topic.threadId || topic.topicId) > 0).map((topic) => {
+  return groups.flatMap((group) => orderedDistributionTopics(group.topics || []).filter((topic) => Number(topic.threadId || topic.topicId) > 0).map((topic) => {
     const target = { chatId: String(group.chatId), threadId: Number(topic.threadId || topic.topicId), chatTitle: group.title || group.name || "", topicTitle: topic.name || topic.title || "" };
     return { key: `${target.chatId}:${target.threadId}`, label: `${target.chatTitle} / ${target.topicTitle}`, target };
   }));
