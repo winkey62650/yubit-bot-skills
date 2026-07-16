@@ -133,6 +133,26 @@ test("account verification decrypts server-side credentials and performs a read-
   assert.equal(JSON.stringify(result).includes("verification-secret-5678"), false);
 });
 
+test("account save cannot bypass YUBIT verification by assigning a verified status", async () => {
+  const { repository } = memoryRepository();
+  const created = await saveExchangeAccount({
+    label: "Unverified Desk",
+    apiKey: "unverified-key-1234",
+    apiSecret: "unverified-secret-5678",
+    traderIds: [],
+  }, dependencies(repository));
+
+  const edited = await saveExchangeAccount({
+    id: created.account.id,
+    label: "Unverified Desk",
+    status: "verified",
+    traderIds: [],
+  }, dependencies(repository));
+
+  assert.equal(edited.account.status, "pending");
+  assert.equal(edited.account.lastVerifiedAt, null);
+});
+
 test("destination management prevents duplicates, validates permissions, and sends through SpeakerBot", async () => {
   const { repository } = memoryRepository();
   const destination = await saveTradingDestination({

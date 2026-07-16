@@ -12,7 +12,7 @@
 
 ## 自动化证据
 
-- `npm test`：189/189 通过
+- `npm test`：192/192 通过
 - `npm run check`：通过
 - `npm run build`：通过，包含 `/trading`、SpeakerBot Webhook、交易管理、追踪和 PNL 图片接口
 - Vercel Preview Chrome 1366×768 线上验收：通过登录必填校验、正常登录、交易日志、Trader 管理、发布目标和系统状态；无失败接口、未捕获异常或页面级横向溢出
@@ -22,6 +22,7 @@
 - Preview 数据库隔离新增覆盖：必须显式设置 `PREVIEW_DATABASE_URL`，不会回退复用 Production 的 `DATABASE_URL` 或 `POSTGRES_URL`
 - 调度器健康门禁新增覆盖：`CRON_SECRET` 为空时明确标记未配置，不再误报“调度正常”或“上线就绪”
 - Preview 调度鉴权新增覆盖：仅读取 `PREVIEW_CRON_SECRET`，不复用 Production `CRON_SECRET`
+- YUBIT 账户验证门禁新增覆盖：新建账户或更换凭证后只能处于“待验证”，管理接口和页面均不能手动伪造“已验证”；必须由服务端执行真实查询验证
 
 ## 线上配置证据
 
@@ -48,6 +49,6 @@
 - 预览部署成功，并重复完成一次 Windows Chrome 1366×768 登录及交易中心四入口测试
 - Preview 与 Production 的 Bot 和数据库均完成环境隔离
 - 三个 Bot Token 已轮换，SpeakerBot Webhook 状态正常
-- YUBIT 账户只读权限验证通过，任何写权限都会被后台拒绝
+- YUBIT 查询权限验证通过，并由管理员在 YUBIT 后台确认该 API 已关闭交易、转账和提现权限
 - 一笔真实订单完成端到端验收且无重复发布
 - GitHub 定时任务鉴权恢复后，生产部署的受保护接口、定时任务和 Telegram 发送均返回成功

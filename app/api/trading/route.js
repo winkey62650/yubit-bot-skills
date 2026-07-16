@@ -43,7 +43,7 @@ export async function POST(request) {
       return NextResponse.json({ ok: true, message: "YUBIT 账户保存成功", result: await saveExchangeAccount(body.account ?? body) });
     }
     if (body.action === "verify-account") {
-      return NextResponse.json({ ok: true, message: "YUBIT 只读账户验证成功", result: await verifyExchangeAccount(body) });
+      return NextResponse.json({ ok: true, message: "YUBIT 查询权限验证成功", result: await verifyExchangeAccount(body) });
     }
     if (body.action === "save-destination") {
       return NextResponse.json({ ok: true, message: "发送目标保存成功", destination: await saveTradingDestination(body.destination ?? body) });
