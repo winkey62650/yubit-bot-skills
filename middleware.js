@@ -5,7 +5,7 @@ const publicPaths = new Set(["/login", "/api/auth/login"]);
 
 export async function middleware(request) {
   const { pathname } = request.nextUrl;
-  if (publicPaths.has(pathname) || pathname === "/api/telegram/webhook" || pathname.startsWith("/api/media/") || pathname.startsWith("/api/cron/") || pathname.startsWith("/templates/")) return NextResponse.next();
+  if (publicPaths.has(pathname) || pathname === "/api/telegram/webhook" || pathname === "/api/telegram/speaker-webhook" || pathname.startsWith("/api/media/") || pathname.startsWith("/api/cron/") || pathname.startsWith("/templates/")) return NextResponse.next();
 
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   const session = await verifySessionToken(token, process.env.AUTH_SECRET);

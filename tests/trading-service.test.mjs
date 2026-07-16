@@ -3,7 +3,9 @@ import test from "node:test";
 
 import { JsonTradingRepository } from "../lib/trading-repository.mjs";
 import {
+  configureSpeakerWebhook,
   getTradingHealth,
+  processSpeakerTelegramUpdate,
   sanitizeTradingResponse,
   saveExchangeAccount,
   saveTrader,
@@ -11,6 +13,7 @@ import {
   testTradingDestination,
   verifyExchangeAccount,
   verifyTradingDestination,
+  verifySpeakerWebhookSecret,
 } from "../lib/trading-service.mjs";
 
 const ENCRYPTION_KEY = Buffer.alloc(32, 7).toString("base64");
@@ -32,13 +35,14 @@ function memoryRepository(now = () => new Date("2026-07-16T08:00:00.000Z")) {
 function dependencies(repository, overrides = {}) {
   return {
     repository,
+    ...overrides,
     env: {
       TRADER_CREDENTIALS_ENCRYPTION_KEY: ENCRYPTION_KEY,
       SPEAKER_BOT_TOKEN: SPEAKER_TOKEN,
       ...overrides.env,
     },
     now: () => new Date("2026-07-16T08:00:00.000Z"),
-    ...overrides,
+    ...(overrides.now ? { now: overrides.now } : {}),
   };
 }
 
@@ -216,4 +220,180 @@ test("sanitizeTradingResponse recursively removes secret fields and exact secret
   assert.equal(result.nested.rows[0].botToken, undefined);
   assert.equal(result.nested.rows[0].lastErrorCode, "YUBIT_TIMEOUT");
   assert.equal(result.nested.message, "request failed for [REDACTED] with [REDACTED] and [REDACTED]");
+});
+
+test("SpeakerBot webhook secret verification fails closed", () => {
+  assert.equal(verifySpeakerWebhookSecret("same-secret", "same-secret"), true);
+  assert.equal(verifySpeakerWebhookSecret("", ""), false);
+  assert.equal(verifySpeakerWebhookSecret("short", "different-length"), false);
+  assert.equal(verifySpeakerWebhookSecret("same-secret", "other-secret"), false);
+});
+
+async function configuredTradingDesk() {
+  const { repository } = memoryRepository();
+  const trader = await repository.saveTrader({ displayName: "Alice", telegramUserId: "1001" });
+  const saved = await saveExchangeAccount({
+    label: "Alice Desk",
+    apiKey: "alice-key-123456",
+    apiSecret: "alice-secret-123456",
+    traderIds: [trader.id],
+  }, dependencies(repository));
+  await repository.saveAccount({ id: saved.account.id, label: saved.account.label, status: "verified" });
+  const destinationA = await repository.saveDestination({
+    scopeType: "workspace", chatId: "-100100", threadId: 70, chatTitle: "Demo", topicTitle: "Trading Zone",
+  });
+  const destinationB = await repository.saveDestination({
+    scopeType: "workspace", chatId: "-100200", threadId: 71, chatTitle: "CryptoGuy", topicTitle: "Trading Zone",
+  });
+  return { repository, trader, accountId: saved.account.id, destinations: [destinationA, destinationB] };
+}
+
+function privateUpdate(updateId, userId, text, messageId = updateId) {
+  return {
+    update_id: updateId,
+    message: {
+      message_id: messageId,
+      date: 1_768_000_000,
+      chat: { id: userId, type: "private" },
+      from: { id: userId, username: `user${userId}` },
+      text,
+    },
+  };
+}
+
+test("SpeakerBot accepts only private enabled Traders and returns actionable help", async () => {
+  const { repository, trader } = await configuredTradingDesk();
+  const replies = [];
+  const telegram = async (_token, method, payload) => {
+    if (method === "sendMessage") {
+      replies.push(payload);
+      return { message_id: replies.length };
+    }
+    throw new Error(`unexpected ${method}`);
+  };
+  const deps = dependencies(repository, { telegram });
+
+  const group = privateUpdate(1, 1001, "BTCUSDT 123456");
+  group.message.chat.type = "supergroup";
+  assert.equal((await processSpeakerTelegramUpdate(group, deps)).status, "ignored_non_private");
+  assert.equal((await processSpeakerTelegramUpdate({ update_id: 2, message: { chat: { id: 2, type: "private" }, text: "/start" } }, deps)).status, "ignored_missing_user");
+  assert.equal((await processSpeakerTelegramUpdate(privateUpdate(3, 9999, "/start"), deps)).status, "unauthorized");
+  await repository.saveTrader({ ...trader, status: "disabled" });
+  assert.equal((await processSpeakerTelegramUpdate(privateUpdate(4, 1001, "BTCUSDT 123456"), deps)).status, "trader_disabled");
+  await repository.saveTrader({ ...trader, status: "enabled" });
+  assert.equal((await processSpeakerTelegramUpdate(privateUpdate(5, 1001, "/start"), deps)).status, "help");
+  assert.equal((await processSpeakerTelegramUpdate(privateUpdate(6, 1001, "bad"), deps)).status, "invalid_format");
+  assert.match(replies.at(-1).text, /BTCUSDT 1234567890/);
+  assert.doesNotMatch(JSON.stringify(replies), /alice-secret|alice-key/);
+});
+
+test("a verified filled order creates one immutable signal and delivers to every target", async () => {
+  const { repository, trader, destinations } = await configuredTradingDesk();
+  const calls = [];
+  const telegram = async (_token, method, payload) => {
+    assert.equal(method, "sendMessage");
+    calls.push(payload);
+    return { message_id: 9000 + calls.length };
+  };
+  const yubitClientFactory = () => ({
+    async getOrderHistory({ symbol, orderId }) {
+      return { list: [{ orderId, symbol, orderStatus: "Filled", side: "Buy", leverage: "10", createdTime: 1_768_000_000_000 }] };
+    },
+    async getExecutions({ symbol, orderId }) {
+      return { list: [{ execId: "exec-1", orderId, symbol, execQty: "0.2", execPrice: "68000", execTime: 1_768_000_000_000 }] };
+    },
+  });
+
+  const result = await processSpeakerTelegramUpdate(
+    privateUpdate(20, 1001, "BTCUSDT order_12345\nTP: 70000\nSL: 66000\nRationale: Verified breakout"),
+    dependencies(repository, { telegram, yubitClientFactory }),
+  );
+
+  assert.equal(result.status, "published");
+  assert.equal(result.delivered, 2);
+  assert.equal(result.failed, 0);
+  const [signal] = await repository.listSignals({ traderId: trader.id });
+  assert.equal(signal.status, "tracking");
+  assert.equal(signal.exchangeOrderId, "order_12345");
+  assert.equal((await repository.listEvents(signal.id))[0].eventType, "verified");
+  const deliveries = await repository.listDeliveries({ signalId: signal.id });
+  assert.equal(deliveries.length, destinations.length);
+  assert.ok(deliveries.every((row) => row.status === "delivered"));
+  const publicMessages = calls.filter((payload) => String(payload.chat_id).startsWith("-100"));
+  assert.equal(publicMessages.length, 2);
+  assert.ok(publicMessages.every((payload) => /Verified by YUBIT/.test(payload.text)));
+  assert.ok(publicMessages.every((payload) => [70, 71].includes(payload.message_thread_id)));
+});
+
+test("duplicate updates and shared-account duplicate orders never republish", async () => {
+  const { repository, trader, accountId } = await configuredTradingDesk();
+  const second = await repository.saveTrader({ displayName: "Bob", telegramUserId: "1002" });
+  await repository.linkTraderAccounts(second.id, [accountId], accountId);
+  const sends = [];
+  const telegram = async (_token, _method, payload) => {
+    sends.push(payload);
+    return { message_id: sends.length };
+  };
+  const client = () => ({
+    getOrderHistory: async ({ orderId, symbol }) => ({ list: [{ orderId, symbol, orderStatus: "Filled", side: "Sell" }] }),
+    getExecutions: async ({ orderId }) => ({ list: [{ orderId, execId: "e1", execQty: "1", execPrice: "100", execTime: 1_768_000_000_000 }] }),
+  });
+  const deps = dependencies(repository, { telegram, yubitClientFactory: client });
+
+  const first = privateUpdate(30, Number(trader.telegramUserId), "ETHUSDT shared_1234");
+  assert.equal((await processSpeakerTelegramUpdate(first, deps)).status, "published");
+  const publicSendCount = sends.filter((payload) => String(payload.chat_id).startsWith("-100")).length;
+  assert.equal((await processSpeakerTelegramUpdate(first, deps)).status, "duplicate_update");
+  assert.equal((await processSpeakerTelegramUpdate(privateUpdate(31, 1002, "ETHUSDT shared_1234"), deps)).status, "existing_order");
+  assert.equal(sends.filter((payload) => String(payload.chat_id).startsWith("-100")).length, publicSendCount);
+  assert.equal((await repository.listSignals({})).length, 1);
+});
+
+test("one Telegram target failure is isolated and a bounded 429 retry succeeds", async () => {
+  const { repository } = await configuredTradingDesk();
+  const attempts = new Map();
+  const telegram = async (_token, _method, payload) => {
+    const key = String(payload.chat_id);
+    attempts.set(key, (attempts.get(key) || 0) + 1);
+    if (key === "-100100" && attempts.get(key) === 1) {
+      const error = new Error("TELEGRAM_RATE_LIMITED");
+      error.retryAfter = 0;
+      throw error;
+    }
+    if (key === "-100200") throw new Error("TELEGRAM_API_ERROR:403");
+    return { message_id: 777 };
+  };
+  const result = await processSpeakerTelegramUpdate(privateUpdate(40, 1001, "SOLUSDT retry_1234"), dependencies(repository, {
+    telegram,
+    sleep: async () => {},
+    yubitClientFactory: () => ({
+      getOrderHistory: async ({ orderId, symbol }) => ({ list: [{ orderId, symbol, orderStatus: "Filled", side: "Buy" }] }),
+      getExecutions: async ({ orderId }) => ({ list: [{ orderId, execId: "e1", execQty: "2", execPrice: "150" }] }),
+    }),
+  }));
+  assert.equal(result.delivered, 1);
+  assert.equal(result.failed, 1);
+  assert.equal(attempts.get("-100100"), 2);
+  const deliveries = await repository.listDeliveries({});
+  assert.deepEqual(deliveries.map((row) => row.status).sort(), ["delivered", "failed"]);
+});
+
+test("SpeakerBot webhook configuration uses the dedicated public route and secret token", async () => {
+  const { repository } = memoryRepository();
+  const calls = [];
+  const result = await configureSpeakerWebhook(dependencies(repository, {
+    env: {
+      APP_BASE_URL: "https://academy.example",
+      SPEAKER_TELEGRAM_WEBHOOK_SECRET: "speaker-webhook-secret",
+    },
+    telegram: async (_token, method, payload) => {
+      calls.push({ method, payload });
+      return true;
+    },
+  }));
+  assert.equal(result.ok, true);
+  assert.equal(calls[0].method, "setWebhook");
+  assert.equal(calls[0].payload.url, "https://academy.example/api/telegram/speaker-webhook");
+  assert.equal(calls[0].payload.secret_token, "speaker-webhook-secret");
+  assert.equal(JSON.stringify(result).includes("speaker-webhook-secret"), false);
 });
