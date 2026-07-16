@@ -4,6 +4,7 @@ import test from "node:test";
 
 const require = createRequire(import.meta.url);
 const {
+  buildVercelProtectionHeaders,
   PRODUCTION_RELEASE_PAGES,
   evaluateConfiguredGroup,
   evaluateRequiredAutomationRule,
@@ -21,6 +22,14 @@ function standardTopics() {
 
 test("production release gate covers the trading center", () => {
   assert.ok(PRODUCTION_RELEASE_PAGES.includes("/trading"));
+});
+
+test("release audit only sends Vercel protection headers when a bypass secret is configured", () => {
+  assert.equal(buildVercelProtectionHeaders(""), undefined);
+  assert.deepEqual(buildVercelProtectionHeaders("  preview-secret  "), {
+    "x-vercel-protection-bypass": "preview-secret",
+    "x-vercel-set-bypass-cookie": "true",
+  });
 });
 
 test("release audit cleanup runs after both success and failure", async () => {

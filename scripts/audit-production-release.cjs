@@ -2,6 +2,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { chromium } = require("playwright");
 const {
+  buildVercelProtectionHeaders,
   PRODUCTION_RELEASE_PAGES,
   evaluateConfiguredGroup,
   evaluateRequiredAutomationRule,
@@ -14,6 +15,7 @@ const username = process.env.TEST_USERNAME;
 const password = process.env.TEST_PASSWORD;
 const browserChannel = String(process.env.TEST_BROWSER_CHANNEL ?? "chrome").trim();
 const artifactDir = path.resolve(process.env.TEST_ARTIFACT_DIR || "artifacts/release-gate-production");
+const protectionHeaders = buildVercelProtectionHeaders(process.env.VERCEL_AUTOMATION_BYPASS_SECRET);
 
 if (!username || !password) throw new Error("TEST_USERNAME and TEST_PASSWORD are required");
 
@@ -28,7 +30,10 @@ async function jsonRequest(response, label) {
 
 async function runAudit(browser) {
   fs.mkdirSync(artifactDir, { recursive: true });
-  const context = await browser.newContext({ viewport: { width: 1366, height: 768 } });
+  const context = await browser.newContext({
+    viewport: { width: 1366, height: 768 },
+    ...(protectionHeaders ? { extraHTTPHeaders: protectionHeaders } : {}),
+  });
   const page = await context.newPage();
   const consoleErrors = [];
   const pageErrors = [];

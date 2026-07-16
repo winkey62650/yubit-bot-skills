@@ -3,6 +3,9 @@ import "./globals.css";
 export const metadata = {
   title: "YUBIT Ops Console",
   description: "Telegram community operations console for YUBIT bot skills.",
+  icons: {
+    icon: "/favicon.svg"
+  },
   robots: {
     index: false,
     follow: false,
