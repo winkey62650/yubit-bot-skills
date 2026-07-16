@@ -73,7 +73,7 @@ GitHub Actions 每五分钟分别运行内容分发和订单追踪，两个任�
 
 - Node.js 20+
 - Python 3
-- Python package: `Pillow`
+- Python packages: `Pillow`, `Playwright`
 
 Install the Python renderer dependency:
 
@@ -86,6 +86,14 @@ Check JavaScript syntax:
 ```bash
 npm run check
 ```
+
+交易中心浏览器验收要求本地后台已运行在 `http://localhost:3000`，并能从进程环境、`.env` 或 `.env.local` 读取 `AUTH_USERNAME` 与 `AUTH_PASSWORD`。验收只读取页面，不会保存 Trader、账户或发布目标：
+
+```bash
+npm run test:e2e:trading
+```
+
+该测试固定使用 Chrome 的 1366×768 视口，覆盖登录必填校验、交易中心四个入口、页面级横向溢出、失败接口和浏览器异常。
 
 ## Local Ops Console
 
