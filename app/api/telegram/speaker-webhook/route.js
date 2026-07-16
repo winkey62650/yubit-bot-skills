@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import {
+  getSpeakerWebhookSecret,
   processSpeakerTelegramUpdate,
   sanitizeTradingResponse,
   verifySpeakerWebhookSecret,
@@ -12,7 +13,7 @@ export const maxDuration = 30;
 
 export async function POST(request) {
   const actualSecret = request.headers.get("x-telegram-bot-api-secret-token");
-  if (!verifySpeakerWebhookSecret(actualSecret, process.env.SPEAKER_TELEGRAM_WEBHOOK_SECRET)) {
+  if (!verifySpeakerWebhookSecret(actualSecret, getSpeakerWebhookSecret(process.env))) {
     return NextResponse.json({ ok: false, error: "Webhook verification failed" }, { status: 401 });
   }
 

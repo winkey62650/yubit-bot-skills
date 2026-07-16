@@ -33,6 +33,8 @@ test("trading center provides accessible operator flows and durable refresh stat
   assert.match(page, /apiKeyMasked/);
   assert.match(page, /navigator\.clipboard\.writeText/);
   assert.match(page, /window\.confirm/);
+  assert.match(page, /预览环境必须使用独立测试 Bot/);
+  assert.match(page, /configurationAllowed/);
   assert.match(page, /fetch\(["']\/api\/trading["'], \{ cache: ["']no-store["'] \}\)/);
   assert.match(page, /\/api\/trading\/signals\/\$\{.*\}\/refresh/);
   assert.match(page, /\/api\/trading\/deliveries\/\$\{.*\}\/retry/);

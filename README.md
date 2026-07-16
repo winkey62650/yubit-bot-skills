@@ -61,6 +61,7 @@ SpeakerBot 不会自动开单，也不能修改或关闭订单。服务端只用
 - `DATABASE_URL`：Neon/Postgres 持久化连接。
 - `SPEAKER_BOT_TOKEN`：轮换后的 SpeakerBot Token。
 - `SPEAKER_TELEGRAM_WEBHOOK_SECRET`：Telegram Webhook 校验密钥。
+- Preview 默认禁止配置 SpeakerBot Webhook。若要做真 Bot 验收，必须为 Preview 单独设置 `SPEAKER_PREVIEW_WEBHOOK_ENABLED=true`、`SPEAKER_PREVIEW_BOT_TOKEN` 和 `SPEAKER_PREVIEW_TELEGRAM_WEBHOOK_SECRET`；Preview 不会复用正式 Bot，也不会把 Webhook 指向正式域名。
 - `TRADER_CREDENTIALS_ENCRYPTION_KEY`：32 字节 base64 或 64 位 hex 的账户凭证加密密钥。
 - `PNL_CARD_SIGNING_SECRET`：PNL 卡片短期签名密钥。
 - `CRON_SECRET`：定时追踪接口密钥；GitHub Actions 中对应 `YUBIT_CRON_SECRET`。

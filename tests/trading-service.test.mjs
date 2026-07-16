@@ -188,10 +188,18 @@ test("health summarizes database, SpeakerBot webhook, scheduler, accounts, and d
     throw new Error(`unexpected ${method}`);
   };
 
-  const result = await getTradingHealth(dependencies(repository, { telegram }));
+  const result = await getTradingHealth(dependencies(repository, {
+    env: {
+      APP_BASE_URL: "https://example.test",
+      SPEAKER_TELEGRAM_WEBHOOK_SECRET: "speaker-webhook-secret",
+    },
+    telegram,
+  }));
   assert.equal(result.database.ok, true);
   assert.equal(result.speakerBot.ok, true);
   assert.equal(result.speakerBot.webhookConfigured, true);
+  assert.equal(result.speakerBot.webhookMatchesDeployment, true);
+  assert.equal(result.speakerBot.configurationAllowed, true);
   assert.equal(result.scheduler.lastRunAt, "2026-07-16T07:55:00.000Z");
   assert.equal(result.accounts.length, 1);
   assert.equal(result.destinations.length, 1);
@@ -411,6 +419,75 @@ test("SpeakerBot webhook configuration uses the dedicated public route and secre
   assert.equal(calls[0].payload.url, "https://academy.example/api/telegram/speaker-webhook");
   assert.equal(calls[0].payload.secret_token, "speaker-webhook-secret");
   assert.equal(JSON.stringify(result).includes("speaker-webhook-secret"), false);
+});
+
+test("Preview refuses to reuse the production SpeakerBot or production application URL", async () => {
+  const { repository } = memoryRepository();
+  const calls = [];
+
+  await assert.rejects(
+    configureSpeakerWebhook(dependencies(repository, {
+      env: {
+        VERCEL_ENV: "preview",
+        VERCEL_URL: "academy-preview.vercel.app",
+        APP_BASE_URL: "https://academy.example",
+        SPEAKER_TELEGRAM_WEBHOOK_SECRET: "production-webhook-secret",
+      },
+      telegram: async (...args) => {
+        calls.push(args);
+        return true;
+      },
+    })),
+    /SPEAKER_PREVIEW_WEBHOOK_DISABLED/,
+  );
+  assert.equal(calls.length, 0);
+});
+
+test("Preview webhook opt-in requires an isolated Bot and targets the immutable preview URL", async () => {
+  const { repository } = memoryRepository();
+  const calls = [];
+  const result = await configureSpeakerWebhook(dependencies(repository, {
+    env: {
+      VERCEL_ENV: "preview",
+      VERCEL_URL: "academy-preview.vercel.app",
+      APP_BASE_URL: "https://academy.example",
+      SPEAKER_PREVIEW_WEBHOOK_ENABLED: "true",
+      SPEAKER_PREVIEW_BOT_TOKEN: "987654:preview-speaker-token",
+      SPEAKER_PREVIEW_TELEGRAM_WEBHOOK_SECRET: "preview-webhook-secret",
+    },
+    telegram: async (token, method, payload) => {
+      calls.push({ token, method, payload });
+      return true;
+    },
+  }));
+
+  assert.equal(result.url, "https://academy-preview.vercel.app/api/telegram/speaker-webhook");
+  assert.equal(calls[0].token, "987654:preview-speaker-token");
+  assert.equal(calls[0].payload.secret_token, "preview-webhook-secret");
+  assert.equal(JSON.stringify(result).includes("preview-webhook-secret"), false);
+});
+
+test("health reports a stale SpeakerBot webhook instead of marking it healthy", async () => {
+  const { repository } = memoryRepository();
+  const telegram = async (_token, method) => {
+    if (method === "getMe") return { id: 77, username: "speaker_test_bot" };
+    if (method === "getWebhookInfo") return { url: "https://old-preview.vercel.app/api/telegram/speaker-webhook" };
+    throw new Error(`unexpected ${method}`);
+  };
+
+  const result = await getTradingHealth(dependencies(repository, {
+    env: {
+      APP_BASE_URL: "https://academy.example",
+      SPEAKER_TELEGRAM_WEBHOOK_SECRET: "speaker-webhook-secret",
+    },
+    telegram,
+  }));
+
+  assert.equal(result.speakerBot.webhookConfigured, true);
+  assert.equal(result.speakerBot.webhookMatchesDeployment, false);
+  assert.equal(result.speakerBot.ok, false);
+  assert.equal(result.speakerBot.errorCode, "TELEGRAM_WEBHOOK_TARGET_MISMATCH");
+  assert.equal(result.speakerBot.expectedWebhookUrl, "https://academy.example/api/telegram/speaker-webhook");
 });
 
 async function createTrackingSignal(repository, trader, accountId, overrides = {}) {
