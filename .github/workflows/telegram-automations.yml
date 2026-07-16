@@ -16,6 +16,7 @@ on:
         options:
           - agents
           - distribution
+          - trading
 
 concurrency:
   group: telegram-automation-${{ github.event.schedule || inputs.job }}
@@ -31,6 +32,19 @@ jobs:
           curl --fail-with-body --retry 2 --retry-all-errors --max-time 90
           -H "Authorization: Bearer $YUBIT_CRON_SECRET"
           "$APP_BASE_URL/api/cron/distribution"
+        env:
+          APP_BASE_URL: https://yubit-bot-skills-academy.vercel.app
+          YUBIT_CRON_SECRET: ${{ secrets.YUBIT_CRON_SECRET }}
+
+  trading:
+    if: github.event_name == 'schedule' || inputs.job == 'trading'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reconcile verified YUBIT orders
+        run: >-
+          curl --fail-with-body --retry 2 --retry-all-errors --max-time 90
+          -H "Authorization: Bearer $YUBIT_CRON_SECRET"
+          "$APP_BASE_URL/api/cron/trading-reconcile"
         env:
           APP_BASE_URL: https://yubit-bot-skills-academy.vercel.app
           YUBIT_CRON_SECRET: ${{ secrets.YUBIT_CRON_SECRET }}
