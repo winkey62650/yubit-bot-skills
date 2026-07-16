@@ -2,11 +2,12 @@ name: Telegram automations
 
 on:
   schedule:
-    # Vercel Hobby only supports daily Cron Jobs. The shared distribution
-    # scheduler runs here every five minutes and remains protected by the
-    # same server-side CRON_SECRET used by the API route. Start at minute 2
-    # to avoid GitHub Actions' busiest start-of-hour scheduling window.
+    # GitHub Actions is the external scheduler for the production API. Keep
+    # the five-minute distribution slot separate from the four-hour agent
+    # crawl so every automation has an explicit cadence and idempotency slot.
+    # Start at minute 2 to avoid the busiest start-of-hour scheduling window.
     - cron: "2/5 * * * *"
+    - cron: "15 */4 * * *"
   workflow_dispatch:
     inputs:
       job:
@@ -14,10 +15,9 @@ on:
         required: true
         type: choice
         options:
-          - daily
-          - whale
           - agents
           - distribution
+          - trading
 
 concurrency:
   group: telegram-automation-${{ github.event.schedule || inputs.job }}
@@ -25,53 +25,52 @@ concurrency:
 
 jobs:
   distribution:
-    if: github.event_name == 'schedule' || inputs.job == 'distribution'
+    if: (github.event_name == 'schedule' && github.event.schedule == '2/5 * * * *') || inputs.job == 'distribution'
     runs-on: ubuntu-latest
     steps:
       - name: Run content distribution scheduler
-        run: >-
-          curl --fail-with-body --retry 2 --retry-all-errors --max-time 90
-          -H "Authorization: Bearer $YUBIT_CRON_SECRET"
-          "$APP_BASE_URL/api/cron/distribution"
+        run: |
+          if [ -z "$YUBIT_CRON_SECRET" ]; then
+            echo "YUBIT_CRON_SECRET is missing; configure the same non-empty value as Vercel Production CRON_SECRET." >&2
+            exit 1
+          fi
+          curl --fail-with-body --retry 2 --retry-all-errors --max-time 90 \
+            -H "Authorization: Bearer $YUBIT_CRON_SECRET" \
+            "$APP_BASE_URL/api/cron/distribution"
         env:
           APP_BASE_URL: https://yubit-bot-skills-academy.vercel.app
           YUBIT_CRON_SECRET: ${{ secrets.YUBIT_CRON_SECRET }}
 
-  daily:
-    if: inputs.job == 'daily'
+  trading:
+    if: (github.event_name == 'schedule' && github.event.schedule == '2/5 * * * *') || inputs.job == 'trading'
     runs-on: ubuntu-latest
     steps:
-      - name: Run Daily Events and Daily Analysis
-        run: >-
-          curl --fail-with-body --retry 2 --max-time 90
-          -H "Authorization: Bearer $YUBIT_CRON_SECRET"
-          "$APP_BASE_URL/api/cron/daily"
-        env:
-          APP_BASE_URL: https://yubit-bot-skills-academy.vercel.app
-          YUBIT_CRON_SECRET: ${{ secrets.YUBIT_CRON_SECRET }}
-
-  whale:
-    if: inputs.job == 'whale'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Run hourly whale and orderbook report
-        run: >-
-          curl --fail-with-body --retry 2 --max-time 60
-          -H "Authorization: Bearer $YUBIT_CRON_SECRET"
-          "$APP_BASE_URL/api/cron/whale"
+      - name: Reconcile verified YUBIT orders
+        run: |
+          if [ -z "$YUBIT_CRON_SECRET" ]; then
+            echo "YUBIT_CRON_SECRET is missing; configure the same non-empty value as Vercel Production CRON_SECRET." >&2
+            exit 1
+          fi
+          curl --fail-with-body --retry 2 --retry-all-errors --max-time 90 \
+            -H "Authorization: Bearer $YUBIT_CRON_SECRET" \
+            "$APP_BASE_URL/api/cron/trading-reconcile"
         env:
           APP_BASE_URL: https://yubit-bot-skills-academy.vercel.app
           YUBIT_CRON_SECRET: ${{ secrets.YUBIT_CRON_SECRET }}
 
   agents:
-    if: inputs.job == 'agents'
+    if: (github.event_name == 'schedule' && github.event.schedule == '15 */4 * * *') || inputs.job == 'agents'
     runs-on: ubuntu-latest
     steps:
       - name: Run agent information crawl
-        run: >-
-          curl --fail-with-body --retry 2 --max-time 90
-          -H "Authorization: Bearer $YUBIT_CRON_SECRET"
-          "$APP_BASE_URL/api/cron/agents"
+        run: |
+          if [ -z "$YUBIT_CRON_SECRET" ]; then
+            echo "YUBIT_CRON_SECRET is missing; configure the same non-empty value as Vercel Production CRON_SECRET." >&2
+            exit 1
+          fi
+          curl --fail-with-body --retry 2 --max-time 90 \
+            -H "Authorization: Bearer $YUBIT_CRON_SECRET" \
+            "$APP_BASE_URL/api/cron/agents"
         env:
           APP_BASE_URL: https://yubit-bot-skills-academy.vercel.app
           YUBIT_CRON_SECRET: ${{ secrets.YUBIT_CRON_SECRET }}
