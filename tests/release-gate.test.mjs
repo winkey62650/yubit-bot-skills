@@ -9,6 +9,7 @@ const {
   evaluateRequiredAutomationRule,
   evaluateTradingRelease,
   selectAutomationRuleForReconciliation,
+  withAsyncCleanup,
 } = require("../lib/release-gate.cjs");
 
 function standardTopics() {
@@ -20,6 +21,32 @@ function standardTopics() {
 
 test("production release gate covers the trading center", () => {
   assert.ok(PRODUCTION_RELEASE_PAGES.includes("/trading"));
+});
+
+test("release audit cleanup runs after both success and failure", async () => {
+  const events = [];
+  const result = await withAsyncCleanup(
+    async () => ({ id: "browser" }),
+    async (resource) => {
+      events.push(`use:${resource.id}`);
+      return "done";
+    },
+    async (resource) => events.push(`close:${resource.id}`),
+  );
+  assert.equal(result, "done");
+  assert.deepEqual(events, ["use:browser", "close:browser"]);
+
+  await assert.rejects(
+    withAsyncCleanup(
+      async () => ({ id: "failed-browser" }),
+      async () => {
+        throw new Error("login rejected");
+      },
+      async (resource) => events.push(`close:${resource.id}`),
+    ),
+    /login rejected/,
+  );
+  assert.equal(events.at(-1), "close:failed-browser");
 });
 
 test("configured group accepts extra topics when all seven template slots are valid", () => {

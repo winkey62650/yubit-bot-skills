@@ -6,6 +6,7 @@ const {
   evaluateConfiguredGroup,
   evaluateRequiredAutomationRule,
   evaluateTradingRelease,
+  withAsyncCleanup,
 } = require("../lib/release-gate.cjs");
 
 const baseUrl = String(process.env.TEST_BASE_URL || "https://yubit-bot-skills-academy.vercel.app").replace(/\/$/, "");
@@ -25,12 +26,8 @@ async function jsonRequest(response, label) {
   return body;
 }
 
-(async () => {
+async function runAudit(browser) {
   fs.mkdirSync(artifactDir, { recursive: true });
-  const browser = await chromium.launch({
-    headless: true,
-    ...(browserChannel ? { channel: browserChannel } : {})
-  });
   const context = await browser.newContext({ viewport: { width: 1366, height: 768 } });
   const page = await context.newPage();
   const consoleErrors = [];
@@ -222,9 +219,17 @@ async function jsonRequest(response, label) {
   report.failures = failures;
   fs.writeFileSync(path.join(artifactDir, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
   console.log(JSON.stringify(report, null, 2));
-  await browser.close();
   if (!report.ok) process.exitCode = 1;
-})().catch((error) => {
+}
+
+withAsyncCleanup(
+  () => chromium.launch({
+    headless: true,
+    ...(browserChannel ? { channel: browserChannel } : {})
+  }),
+  runAudit,
+  (browser) => browser.close(),
+).catch((error) => {
   console.error(error.stack || error.message);
   process.exitCode = 1;
 });
