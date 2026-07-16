@@ -101,7 +101,10 @@ test("daily events normalize a flexible daily market brief instead of a fixed ec
   assert.equal(brief.headline, "MORNING MARKET BRIEF · JULY 15");
   assert.equal(brief.dateLabel, "JULY 15");
   assert.equal(brief.items.length, 3);
-  assert.equal(brief.caption, "<b>🌅 MORNING MARKET BRIEF · JULY 15</b>");
+  assert.match(brief.caption, /<b>🌅 MORNING MARKET BRIEF · JULY 15<\/b>/);
+  assert.match(brief.caption, /1\. Equities advanced: The Nasdaq led/);
+  assert.match(brief.caption, /Source: <a href="https:\/\/www\.reuters\.com\/markets\/">Reuters<\/a>/);
+  assert.ok(brief.caption.length <= 1024);
   assert.doesNotMatch(brief.caption, /Executive read|Today's desk brief|full English brief follows|Story count/i);
   assert.match(brief.fullText, /1\. Equities advanced: The Nasdaq led/);
   assert.match(brief.fullText, /Source: <a href="https:\/\/www\.reuters\.com\/markets\/">Reuters<\/a>/);
@@ -121,19 +124,39 @@ test("market events executive summary describes selected coverage, not the size 
   assert.doesNotMatch(summary, /30|31|candidate/i);
 });
 
-test("daily market brief delivery sends the poster and full copy to the same Topic", () => {
+test("daily market brief delivery combines poster and copy in one Telegram photo message", () => {
   assert.equal(typeof automation.buildDailyMarketBriefTelegramPlan, "function");
   const target = { chatId: "-1004378187866", threadId: 8 };
   const plan = automation.buildDailyMarketBriefTelegramPlan({
-    caption: "<b>Morning brief</b>",
+    caption: "<b>Morning brief</b>\n\n1. First story\n\n2. Second story",
     fullText: "1. First story\n\n2. Second story"
   }, target, "https://example.com/poster.png");
 
-  assert.deepEqual(plan.map((item) => item.method), ["sendPhoto", "sendMessage"]);
-  assert.deepEqual(plan.map((item) => item.payload.chat_id), [target.chatId, target.chatId]);
-  assert.deepEqual(plan.map((item) => item.payload.message_thread_id), [target.threadId, target.threadId]);
+  assert.deepEqual(plan.map((item) => item.method), ["sendPhoto"]);
+  assert.deepEqual(plan.map((item) => item.payload.chat_id), [target.chatId]);
+  assert.deepEqual(plan.map((item) => item.payload.message_thread_id), [target.threadId]);
   assert.equal(plan[0].payload.photo, "https://example.com/poster.png");
-  assert.match(plan[1].payload.text, /Second story/);
+  assert.match(plan[0].payload.caption, /Second story/);
+  assert.ok(plan[0].payload.caption.length <= 1024);
+});
+
+test("daily market brief keeps whole story blocks within Telegram photo caption limits", () => {
+  const brief = automation.buildDailyMarketBrief({
+    date: "2026-07-16",
+    stories: Array.from({ length: 8 }, (_, index) => ({
+      title: `Market event ${index + 1}`,
+      summary: `${"A material cross-asset development changed positioning and liquidity conditions across crypto markets. ".repeat(5)}Final sentence.`,
+      source: "Primary market source",
+      url: `https://example.com/markets/${index + 1}`,
+      category: "Crypto"
+    }))
+  }, new Date("2026-07-16T08:00:00.000Z"));
+
+  assert.ok(brief.caption.length <= 1024);
+  assert.match(brief.caption, /1\. <b>CRYPTO<\/b>/);
+  assert.match(brief.caption, /Source: <a href="https:\/\/example\.com\/markets\/1">Primary market source<\/a>/);
+  assert.match(brief.caption, /<i>Market commentary only\.<\/i>$/);
+  assert.equal((brief.caption.match(/<a href=/g) || []).length, (brief.caption.match(/<\/a>/g) || []).length);
 });
 
 test("Telegram photo delivery uploads the poster when Telegram cannot fetch its URL", async () => {

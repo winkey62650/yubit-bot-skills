@@ -64,7 +64,9 @@ test("market events sample preserves the supplied July 7 briefing without imposi
   assert.equal(preview.language, "English");
   assert.ok(preview.items.length > 0);
   assert.match(template.itemCountPolicy, /动态/);
-  assert.equal(preview.caption, "🌅 MORNING MARKET BRIEF · JULY 7");
+  assert.match(preview.caption, /^🌅 MORNING MARKET BRIEF · JULY 7/);
+  assert.match(preview.caption, /1\. US equities rebounded/);
+  assert.ok(preview.caption.length <= 1024);
   assert.doesNotMatch(preview.caption, /Executive read|full English brief follows|Story count|full 11-story/i);
   assert.match(preview.headline, /MORNING MARKET BRIEF/i);
   assert.match(preview.items.join(" "), /Nasdaq/i);
@@ -81,7 +83,7 @@ test("events, analysis and whale templates are previewable before live data is r
     const preview = getContentTemplate(contentType).preview;
     assert.equal(preview.branding, "neutral");
     assert.match(preview.imageUrl, /^\/(api\/media\/card\?kind=|templates\/)/);
-    assert.ok(preview.caption.length > (contentType === "daily-events" ? 20 : 80));
+    assert.ok(preview.caption.length > 80);
     assert.ok(preview.sections.length >= 3);
     assert.doesNotMatch(JSON.stringify(preview), /yubit/i);
   }
