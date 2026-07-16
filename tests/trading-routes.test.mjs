@@ -24,3 +24,31 @@ test("trading reconciliation cron requires CRON_SECRET and the PNL image route v
   assert.match(card, /new ImageResponse/);
   assert.match(card, /export const runtime = ["']nodejs["']/);
 });
+
+test("authenticated trading management routes expose safe operator actions and idempotent recovery", async () => {
+  const dashboard = await readFile(new URL("../app/api/trading/route.js", import.meta.url), "utf8");
+  const detail = await readFile(new URL("../app/api/trading/signals/[id]/route.js", import.meta.url), "utf8");
+  const refresh = await readFile(new URL("../app/api/trading/signals/[id]/refresh/route.js", import.meta.url), "utf8");
+  const retry = await readFile(new URL("../app/api/trading/deliveries/[id]/retry/route.js", import.meta.url), "utf8");
+  const middleware = await readFile(new URL("../middleware.js", import.meta.url), "utf8");
+
+  assert.match(dashboard, /export const dynamic = ["']force-dynamic["']/);
+  for (const action of [
+    "save-trader",
+    "save-account",
+    "verify-account",
+    "save-destination",
+    "verify-destination",
+    "test-destination",
+    "configure-webhook",
+  ]) assert.match(dashboard, new RegExp(action));
+  assert.match(dashboard, /操作成功|保存成功|验证/);
+  assert.match(detail, /getTradingSignalDetail/);
+  assert.match(refresh, /refreshTradingSignal/);
+  assert.match(retry, /retryTradingDelivery/);
+  assert.match(dashboard, /tradingErrorStatus/);
+  assert.match(detail, /tradingErrorStatus/);
+  assert.match(refresh, /tradingErrorStatus/);
+  assert.match(retry, /tradingErrorStatus/);
+  assert.doesNotMatch(middleware, /pathname\.startsWith\(["']\/api\/trading/);
+});

@@ -5,13 +5,18 @@ import { JsonTradingRepository } from "../lib/trading-repository.mjs";
 import {
   configureSpeakerWebhook,
   getTradingHealth,
+  getTradingManagementOverview,
+  getTradingSignalDetail,
   processSpeakerTelegramUpdate,
+  refreshTradingSignal,
+  retryTradingDelivery,
   runTradingReconciliation,
   sanitizeTradingResponse,
   saveExchangeAccount,
   saveTrader,
   saveTradingDestination,
   testTradingDestination,
+  tradingErrorStatus,
   verifyExchangeAccount,
   verifyTradingDestination,
   verifySpeakerWebhookSecret,
@@ -228,6 +233,15 @@ test("SpeakerBot webhook secret verification fails closed", () => {
   assert.equal(verifySpeakerWebhookSecret("", ""), false);
   assert.equal(verifySpeakerWebhookSecret("short", "different-length"), false);
   assert.equal(verifySpeakerWebhookSecret("same-secret", "other-secret"), false);
+});
+
+test("management errors map to safe operator HTTP statuses", () => {
+  assert.equal(tradingErrorStatus(Object.assign(new Error("explicit"), { statusCode: 418 })), 418);
+  assert.equal(tradingErrorStatus(new Error("Trader 不存在")), 404);
+  assert.equal(tradingErrorStatus(new Error("该发送目标已存在")), 409);
+  assert.equal(tradingErrorStatus(new Error("交易中心数据库未配置：请设置 DATABASE_URL")), 503);
+  assert.equal(tradingErrorStatus(new Error("TELEGRAM_TOKEN_REQUIRED")), 503);
+  assert.equal(tradingErrorStatus(new Error("交易对格式无效")), 400);
 });
 
 async function configuredTradingDesk() {
@@ -516,4 +530,105 @@ test("ambiguous close records pause the order for review and never publish", asy
   assert.equal(result.needsReview, 1);
   assert.equal((await repository.getSignal(signal.id)).status, "needs_review");
   assert.equal(await repository.getPnlPublicationBySignal(signal.id), null);
+});
+
+test("management overview and signal detail expose joined operational facts without secrets", async () => {
+  const { repository, trader, accountId, destinations } = await configuredTradingDesk();
+  const signal = await createTrackingSignal(repository, trader, accountId);
+  await repository.appendEvent({
+    signalId: signal.id,
+    eventType: "verified",
+    actorType: "trader",
+    actorId: trader.id,
+    payload: { official: true },
+  });
+  await repository.createDelivery({
+    signalId: signal.id,
+    publicationType: "signal",
+    destinationId: destinations[0].id,
+    status: "failed",
+    errorCode: "TELEGRAM_API_ERROR:403",
+  });
+
+  const deps = dependencies(repository, {
+    telegram: async (_token, method) => {
+      if (method === "getMe") return { id: 77, username: "speaker_test_bot" };
+      if (method === "getWebhookInfo") return { url: "https://academy.example/api/telegram/speaker-webhook" };
+      throw new Error(`unexpected ${method}`);
+    },
+  });
+  const overview = await getTradingManagementOverview(deps);
+  assert.equal(overview.metrics.totalSignals, 1);
+  assert.equal(overview.metrics.failedDeliveries, 1);
+  assert.deepEqual(overview.accounts[0].traderIds, [trader.id]);
+  assert.ok(Array.isArray(overview.logs));
+
+  const detail = await getTradingSignalDetail(signal.id, deps);
+  assert.equal(detail.signal.id, signal.id);
+  assert.equal(detail.trader.displayName, "Alice");
+  assert.equal(detail.account.id, accountId);
+  assert.equal(detail.events[0].eventType, "verified");
+  assert.equal(detail.deliveries[0].destination.chatId, destinations[0].chatId);
+  assert.equal(/ciphertext|apiSecret|credentialIv|authTag/i.test(JSON.stringify({ overview, detail })), false);
+});
+
+test("manual refresh and failed delivery retry remain idempotent", async () => {
+  const { repository, trader, accountId, destinations } = await configuredTradingDesk();
+  const signal = await createTrackingSignal(repository, trader, accountId);
+  const createdDelivery = await repository.createDelivery({
+    signalId: signal.id,
+    publicationType: "signal",
+    destinationId: destinations[0].id,
+  });
+  await repository.updateDelivery(createdDelivery.delivery.id, {
+    status: "failed",
+    errorCode: "TELEGRAM_API_ERROR:403",
+  });
+  const sends = [];
+  const deps = dependencies(repository, {
+    telegram: async (_token, method, payload) => {
+      if (method === "sendMessage") {
+        sends.push(payload);
+        return { message_id: 8080 };
+      }
+      if (method === "getMe") return { id: 77, username: "speaker_test_bot" };
+      if (method === "getWebhookInfo") return { url: "https://academy.example/api/telegram/speaker-webhook" };
+      throw new Error(`unexpected ${method}`);
+    },
+    yubitClientFactory: () => ({ getClosedPnl: async () => ({ list: [] }) }),
+  });
+
+  const refreshed = await refreshTradingSignal(signal.id, deps);
+  assert.equal(refreshed.signal.status, "tracking");
+  assert.equal(refreshed.signal.checkAttempts, 1);
+
+  const firstRetry = await retryTradingDelivery(createdDelivery.delivery.id, deps);
+  const secondRetry = await retryTradingDelivery(createdDelivery.delivery.id, deps);
+  assert.equal(firstRetry.delivery.status, "delivered");
+  assert.equal(secondRetry.alreadyDelivered, true);
+  assert.equal(sends.length, 1);
+  assert.equal(sends[0].message_thread_id, destinations[0].threadId);
+});
+
+test("manual retry validates its dependencies before claiming a delivery", async () => {
+  const { repository, trader, accountId, destinations } = await configuredTradingDesk();
+  const signal = await createTrackingSignal(repository, trader, accountId);
+  const created = await repository.createDelivery({
+    signalId: signal.id,
+    publicationType: "unsupported",
+    destinationId: destinations[0].id,
+  });
+  await repository.updateDelivery(created.delivery.id, {
+    status: "failed",
+    attempts: 2,
+    errorCode: "LEGACY_DELIVERY_TYPE",
+  });
+
+  await assert.rejects(
+    retryTradingDelivery(created.delivery.id, dependencies(repository)),
+    /TRADING_DELIVERY_TYPE_UNSUPPORTED/,
+  );
+  const unchanged = await repository.getDelivery(created.delivery.id);
+  assert.equal(unchanged.status, "failed");
+  assert.equal(unchanged.attempts, 2);
 });

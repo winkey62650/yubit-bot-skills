@@ -152,3 +152,23 @@ test("reconciliation leases prevent concurrent claims and expire safely", async 
   assert.equal(signal.checkAttempts, 2);
   assert.equal(signal.lastCheckedAt, "2026-07-16T08:01:01.000Z");
 });
+
+test("manual reconciliation claims exactly one tracking signal", async () => {
+  const now = new Date("2026-07-16T08:00:00.000Z");
+  const repository = memoryRepository(() => now);
+  await repository.createSignal({
+    id: "manual-signal",
+    accountId: "account-1",
+    traderId: "trader-1",
+    symbol: "BTCUSDT",
+    exchangeOrderId: "ORDER-200",
+    status: "tracking",
+    nextCheckAt: "2026-07-17T08:00:00.000Z",
+  });
+
+  const claimed = await repository.claimSignalForCheck("manual-signal", now, 60_000);
+  assert.equal(claimed.id, "manual-signal");
+  assert.equal(claimed.checkAttempts, 1);
+  assert.equal(await repository.claimSignalForCheck("manual-signal", now, 60_000), null);
+  assert.equal(await repository.claimSignalForCheck("missing", now, 60_000), null);
+});
