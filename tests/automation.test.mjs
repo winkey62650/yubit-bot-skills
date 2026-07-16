@@ -135,6 +135,47 @@ test("daily market brief delivery sends the poster and full copy to the same Top
   assert.match(plan[1].payload.text, /Second story/);
 });
 
+test("Telegram photo delivery uploads the poster when Telegram cannot fetch its URL", async () => {
+  assert.equal(typeof automation.telegramCall, "function");
+  const calls = [];
+  const fetchImpl = async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    if (calls.length === 1) {
+      return new Response(JSON.stringify({ ok: false, description: "Bad Request: failed to get HTTP URL content" }), {
+        status: 400,
+        headers: { "content-type": "application/json" }
+      });
+    }
+    if (calls.length === 2) {
+      return new Response(new Uint8Array([137, 80, 78, 71]), {
+        status: 200,
+        headers: { "content-type": "image/png" }
+      });
+    }
+    return new Response(JSON.stringify({ ok: true, result: { message_id: 530 } }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  };
+
+  const result = await automation.telegramCall("speaker-token", "sendPhoto", {
+    chat_id: "-1003710405969",
+    message_thread_id: 8,
+    photo: "https://example.com/events.png",
+    caption: "Morning brief",
+    parse_mode: "HTML"
+  }, fetchImpl);
+
+  assert.equal(result.message_id, 530);
+  assert.equal(calls.length, 3);
+  assert.equal(calls[1].url, "https://example.com/events.png");
+  assert.ok(calls[2].options.body instanceof FormData);
+  assert.equal(calls[2].options.body.get("chat_id"), "-1003710405969");
+  assert.equal(calls[2].options.body.get("message_thread_id"), "8");
+  assert.equal(calls[2].options.body.get("caption"), "Morning brief");
+  assert.equal(calls[2].options.body.get("photo").type, "image/png");
+});
+
 test("daily analysis delivery URL carries the latest dynamic poster fields", () => {
   assert.equal(typeof automation.buildCardUrl, "function");
   const url = new URL(automation.buildCardUrl("analysis", [], {
