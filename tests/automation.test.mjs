@@ -65,8 +65,9 @@ test("whale alert turns a material order-book snapshot into approved English cop
   assert.match(alert.caption, /Buy-wall support/);
   assert.match(alert.caption, /What to watch next/);
   assert.match(alert.caption, /does not mean a trade has been executed/);
-  assert.match(alert.caption, /binance\.com\/en\/futures\/BTCUSDT/);
-  assert.match(alert.caption, /#BTC #Binance #WhaleAlert #SmartMoney/);
+  assert.doesNotMatch(alert.caption, /Data source|binance\.com\/en\/futures\/BTCUSDT/i);
+  assert.doesNotMatch(alert.caption, /#BTC|#Binance|#WhaleAlert|#SmartMoney/i);
+  assert.match(alert.caption, /not investment advice\.$/);
   assert.ok(alert.caption.length <= 1024);
 });
 

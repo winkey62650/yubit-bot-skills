@@ -102,7 +102,9 @@ test("whale preview exposes the approved poster and operating copy before publis
   assert.match(preview.caption, /Key level/);
   assert.match(preview.caption, /Current read/);
   assert.match(preview.caption, /What to watch next/);
-  assert.match(preview.caption, /Data source/);
+  assert.doesNotMatch(preview.caption, /Data source|SOURCE URL/i);
+  assert.doesNotMatch(preview.caption, /#\[ASSET\]|#\[VENUE\]|#WhaleAlert|#SmartMoney/i);
+  assert.match(preview.caption, /not investment advice\.$/);
   assert.match(preview.disclaimer, /orders can be changed or cancelled/);
   assert.doesNotMatch(`${preview.headline}\n${preview.caption}`, /每小时|hourly|固定\s*\d+\s*条/i);
 });
