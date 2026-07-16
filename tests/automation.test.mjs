@@ -106,6 +106,19 @@ test("daily events normalize a flexible daily market brief instead of a fixed ec
   assert.doesNotMatch(`${brief.subline}\n${brief.caption}`, /11 stories|08:00|hourly/i);
 });
 
+test("market events executive summary describes selected coverage, not the size of the candidate feed", () => {
+  assert.equal(typeof automation.buildMarketEventsExecutiveSummary, "function");
+  const stories = [
+    ...Array.from({ length: 30 }, (_, index) => ({ title: `Candidate ${index + 1}`, category: "Crypto" })),
+    { title: "Macro catalyst", category: "Macro" }
+  ];
+  const summary = automation.buildMarketEventsExecutiveSummary(stories.slice(0, 6).concat(stories.at(-1)));
+
+  assert.match(summary, /crypto and macro developments/i);
+  assert.match(summary, /market impact over volume/i);
+  assert.doesNotMatch(summary, /30|31|candidate/i);
+});
+
 test("daily market brief delivery sends the poster and full copy to the same Topic", () => {
   assert.equal(typeof automation.buildDailyMarketBriefTelegramPlan, "function");
   const target = { chatId: "-1004378187866", threadId: 8 };
