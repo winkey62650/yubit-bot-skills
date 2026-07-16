@@ -115,6 +115,17 @@ test("standard production provisioning preserves existing rule identity and enab
       targets: [{ chatId: "-1", threadId: 1 }],
     }),
     normalizeDistributionRule({
+      id: "temporary-events",
+      kind: "automation",
+      name: "Temporary events",
+      contentType: "daily-events",
+      schedulePreset: "daily-0800-utc",
+      enabled: true,
+      runOnce: true,
+      nextRunAt: "2026-07-17T12:00:00.000Z",
+      targets: [{ chatId: "-2", threadId: 2 }],
+    }),
+    normalizeDistributionRule({
       id: "existing-topic-one",
       kind: "broadcast",
       name: "Old topic one",
@@ -360,6 +371,31 @@ test("enabled automation rules receive a future first run while disabled rules s
 
   assert.equal(enabled.nextRunAt, "2026-07-14T09:00:00.000Z");
   assert.equal(disabled.nextRunAt, null);
+});
+
+test("one-time automation keeps its explicit execution time and requires one", () => {
+  const scheduled = normalizeDistributionRule({
+    id: "one-time-analysis",
+    kind: "automation",
+    name: "Daily Analysis · One-time",
+    contentType: "daily-analysis",
+    schedulePreset: "daily-0800-utc",
+    enabled: true,
+    runOnce: true,
+    nextRunAt: "2026-07-17T12:34:00.000Z",
+    targets: [{ chatId: "-1001", threadId: 10 }],
+  });
+  assert.equal(scheduled.runOnce, true);
+  assert.equal(
+    ensureAutomationNextRunAt(scheduled, new Date("2026-07-17T11:34:00.000Z")).nextRunAt,
+    "2026-07-17T12:34:00.000Z",
+  );
+
+  const missingTime = { ...scheduled, nextRunAt: null };
+  assert.deepEqual(validateDistributionRule(missingTime), [{
+    field: "nextRunAt",
+    message: "一次性任务必须设置执行时间",
+  }]);
 });
 
 test("legacy bindings and broadcast rules migrate once and ambiguous rows stay disabled", () => {

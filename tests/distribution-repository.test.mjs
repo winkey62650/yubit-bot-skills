@@ -3,6 +3,39 @@ import test from "node:test";
 
 import { PostgresDistributionRepository } from "../lib/distribution-repository.mjs";
 
+test("Postgres rules persist and atomically claim one-time automation state", async () => {
+  const repository = Object.create(PostgresDistributionRepository.prototype);
+  const calls = [];
+  repository.getRule = async () => ({ id: "one-time-events", runOnce: true });
+  repository.sql = {
+    async query(sql, params) {
+      calls.push({ sql, params });
+      return [];
+    },
+  };
+
+  await repository.saveRule({
+    id: "one-time-events",
+    kind: "automation",
+    name: "Daily Events · One-time",
+    contentType: "daily-events",
+    schedulePreset: "daily-0800-utc",
+    enabled: true,
+    runOnce: true,
+    nextRunAt: "2026-07-17T12:00:00.000Z",
+    targets: [{ chatId: "-1001", threadId: 8 }],
+  });
+
+  assert.match(calls[0].sql, /run_once/);
+  assert.equal(calls[0].params[8], true);
+
+  calls.length = 0;
+  await repository.claimDueAutomationRules(new Date("2026-07-17T12:02:00.000Z"));
+  assert.match(calls[0].sql, /enabled = CASE WHEN run_once THEN false/);
+  assert.match(calls[0].sql, /status = CASE WHEN run_once THEN 'running'/);
+  assert.match(calls[0].sql, /next_run_at = CASE WHEN run_once THEN NULL/);
+});
+
 test("Postgres delivery records preserve every Telegram message id", async () => {
   const repository = Object.create(PostgresDistributionRepository.prototype);
   let captured = null;

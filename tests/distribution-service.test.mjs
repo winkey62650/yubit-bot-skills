@@ -10,6 +10,7 @@ import {
   ensureAutomationSchedules,
   parseBackfillReferences,
   processTelegramWebhookUpdate,
+  runDueDistributionJobs,
   runDistributionAutomationRule,
   verifyTelegramWebhookSecret
 } from "../lib/distribution-service.mjs";
@@ -57,6 +58,7 @@ test("existing enabled rules with no next run are repaired without touching sche
     async listRules() {
       return [
         { id: "missing", kind: "automation", enabled: true, schedulePreset: "every-4-hours", nextRunAt: null },
+        { id: "one-time", kind: "automation", enabled: true, runOnce: true, schedulePreset: "hourly", nextRunAt: null },
         { id: "ready", kind: "automation", enabled: true, schedulePreset: "hourly", nextRunAt: "2026-07-14T10:00:00.000Z" }
       ];
     },
@@ -67,6 +69,61 @@ test("existing enabled rules with no next run are repaired without touching sche
   assert.equal(saved.length, 1);
   assert.equal(saved[0].id, "missing");
   assert.equal(saved[0].nextRunAt, "2026-07-14T12:00:00.000Z");
+});
+
+test("a due one-time automation executes once and is archived as completed", async () => {
+  const target = { id: "target-once", chatId: "-1001", threadId: 8 };
+  const rule = {
+    id: "one-time-events",
+    kind: "automation",
+    name: "Daily Events · One-time",
+    contentType: "daily-events",
+    schedulePreset: "daily-0800-utc",
+    enabled: true,
+    runOnce: true,
+    status: "ready",
+    nextRunAt: "2026-07-17T12:00:00.000Z",
+    targets: [target],
+  };
+  const savedRules = [];
+  let claimed = false;
+  const events = [];
+  const deliveries = [];
+  const repository = {
+    async cleanupExpired() {},
+    async getMeta() { return { completedAt: "2026-07-01T00:00:00.000Z" }; },
+    async claimDueAutomationRules() {
+      if (claimed) return [];
+      claimed = true;
+      return [rule];
+    },
+    async listRules() { return []; },
+    async createEvent(event) { const saved = { id: "event-once", ...event }; events.push(saved); return saved; },
+    async updateEvent(id, patch) { Object.assign(events.find((event) => event.id === id), patch); },
+    async createDelivery(delivery) { const saved = { id: "delivery-once", ...delivery }; deliveries.push(saved); return saved; },
+    async updateDelivery(id, patch) { return Object.assign(deliveries.find((delivery) => delivery.id === id), patch); },
+    async saveMapping() {},
+    async saveRule(saved) { savedRules.push(saved); return saved; },
+  };
+  const runner = async (jobId, options) => {
+    assert.equal(jobId, "daily-events");
+    assert.deepEqual(options.targets, [target]);
+    return { status: "success", preview: { targetResults: [{ target, status: "success", messageId: 700 }] } };
+  };
+
+  const first = await runDueDistributionJobs(new Date("2026-07-17T12:02:00.000Z"), { repository, runner });
+  const second = await runDueDistributionJobs(new Date("2026-07-17T12:07:00.000Z"), { repository, runner });
+
+  assert.equal(first.claimed, 1);
+  assert.equal(first.results[0].status, "success");
+  assert.equal(second.claimed, 0);
+  assert.equal(events.length, 1);
+  assert.equal(deliveries.length, 1);
+  assert.equal(savedRules.length, 1);
+  assert.equal(savedRules[0].enabled, false);
+  assert.equal(savedRules[0].runOnce, true);
+  assert.equal(savedRules[0].status, "completed");
+  assert.equal(savedRules[0].nextRunAt, null);
 });
 
 test("an automatic publishing rule can be run immediately with real per-target delivery records", async () => {

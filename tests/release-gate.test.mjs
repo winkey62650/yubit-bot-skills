@@ -358,6 +358,16 @@ test("automation release gate requires exactly one enabled rule per content type
   assert.equal(healthy.ok, true);
   assert.equal(healthy.rule.id, "active");
 
+  const withTemporaryRun = evaluateRequiredAutomationRule([
+    ...rules,
+    { ...rules[1], id: "temporary", runOnce: true, nextRunAt: "2026-07-17T12:00:00.000Z" },
+  ], {
+    contentType: "daily-analysis",
+    schedulePreset: "daily-0800-utc",
+  });
+  assert.equal(withTemporaryRun.ok, true);
+  assert.equal(withTemporaryRun.rule.id, "active");
+
   const duplicate = evaluateRequiredAutomationRule([
     ...rules,
     { ...rules[1], id: "duplicate" },
