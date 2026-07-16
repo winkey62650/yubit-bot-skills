@@ -192,9 +192,9 @@ test("daily analysis delivery URL carries the latest dynamic poster fields", () 
 test("daily analysis Telegram copy matches the complete approved preview structure", () => {
   assert.equal(typeof automation.buildDailyAnalysisSnapshot, "function");
   const snapshot = automation.buildDailyAnalysisSnapshot([
-    { symbol: "BTC", price: 65479, change: 2.51, sma20: 62357, trend: "Bullish", source: "Binance" },
-    { symbol: "ETH", price: 3450, change: 1.25, sma20: 3310, trend: "Bullish", source: "Binance" },
-    { symbol: "SOL", price: 168, change: -0.4, sma20: 162, trend: "Bullish", source: "Binance" }
+    { symbol: "BTC", price: 65479, change: 2.51, sma20: 62357, trend: "Bullish", source: "OKX fallback" },
+    { symbol: "ETH", price: 3450, change: 1.25, sma20: 3310, trend: "Bullish", source: "OKX fallback" },
+    { symbol: "SOL", price: 168, change: -0.4, sma20: 162, trend: "Bullish", source: "OKX fallback" }
   ], new Date("2026-07-15T08:00:00.000Z"));
 
   assert.equal(snapshot.poster.regime, "RISK ON");
@@ -205,5 +205,6 @@ test("daily analysis Telegram copy matches the complete approved preview structu
   assert.match(snapshot.caption, /Levels to watch:<\/b>/);
   assert.match(snapshot.caption, /Catalyst:<\/b>/);
   assert.match(snapshot.caption, /Not investment advice/);
+  assert.doesNotMatch(snapshot.caption, /OKX fallback|fallback market data/i);
   assert.doesNotMatch(snapshot.caption, /YUBIT|08:00 UTC|updates hourly/i);
 });
