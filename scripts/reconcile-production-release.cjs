@@ -1,7 +1,12 @@
 const { request } = require("playwright");
-const { selectAutomationRuleForReconciliation } = require("../lib/release-gate.cjs");
+const {
+  authorizeLiveTelegramOperation,
+  selectAutomationRuleForReconciliation,
+} = require("../lib/release-gate.cjs");
 
-const baseUrl = String(process.env.TEST_BASE_URL || "https://yubit-bot-skills-academy.vercel.app").replace(/\/$/, "");
+const { baseUrl } = authorizeLiveTelegramOperation(process.env, {
+  operation: "生产自动发布规则对账",
+});
 const username = process.env.TEST_USERNAME;
 const password = process.env.TEST_PASSWORD;
 const requiredContentTypes = new Set(["daily-events", "daily-analysis", "whale-signals"]);

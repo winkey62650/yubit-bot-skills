@@ -61,8 +61,12 @@ test("syntax check covers every trading server module", async () => {
 test("production release audit is reproducible and includes trading readiness", async () => {
   const packageJson = JSON.parse(await readFile(new URL("package.json", root), "utf8"));
   const audit = await readFile(new URL("scripts/audit-production-release.cjs", root), "utf8");
+  const reconciliation = await readFile(new URL("scripts/reconcile-production-release.cjs", root), "utf8");
+  const liveDelivery = await readFile(new URL("scripts/test-production-automation-delivery.cjs", root), "utf8");
 
   assert.equal(packageJson.scripts["release:audit"], "node scripts/audit-production-release.cjs");
+  assert.match(packageJson.scripts["release:audit:preview"], /RELEASE_STAGE=preview/);
+  assert.match(packageJson.scripts["release:audit:production"], /RELEASE_STAGE=production/);
   assert.equal(packageJson.scripts["release:reconcile"], "node scripts/reconcile-production-release.cjs");
   assert.equal(packageJson.scripts["release:test:automations"], "node scripts/test-production-automation-delivery.cjs");
   assert.ok(packageJson.devDependencies?.playwright);
@@ -72,4 +76,7 @@ test("production release audit is reproducible and includes trading readiness", 
   assert.match(audit, /evaluateTradingRelease\(trading\)/);
   assert.match(audit, /TEST_BROWSER_CHANNEL/);
   assert.match(audit, /channel: browserChannel/);
+  assert.match(audit, /evaluatePreviewTradingIsolation\(trading\)/);
+  assert.match(reconciliation, /authorizeLiveTelegramOperation/);
+  assert.match(liveDelivery, /authorizeLiveTelegramOperation/);
 });

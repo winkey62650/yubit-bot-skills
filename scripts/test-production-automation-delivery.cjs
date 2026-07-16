@@ -1,8 +1,11 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { request } = require("playwright");
+const { authorizeLiveTelegramOperation } = require("../lib/release-gate.cjs");
 
-const baseUrl = String(process.env.TEST_BASE_URL || "https://yubit-bot-skills-academy.vercel.app").replace(/\/$/, "");
+const { baseUrl } = authorizeLiveTelegramOperation(process.env, {
+  operation: "生产自动发布真群验收",
+});
 const username = process.env.TEST_USERNAME;
 const password = process.env.TEST_PASSWORD;
 const reportPath = path.resolve(process.env.TEST_REPORT_PATH || "artifacts/production-automation-delivery/report.json");

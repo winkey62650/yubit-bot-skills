@@ -6,9 +6,12 @@ const require = createRequire(import.meta.url);
 const {
   buildVercelProtectionHeaders,
   PRODUCTION_RELEASE_PAGES,
+  authorizeLiveTelegramOperation,
   evaluateConfiguredGroup,
+  evaluatePreviewTradingIsolation,
   evaluateRequiredAutomationRule,
   evaluateTradingRelease,
+  normalizeReleaseStage,
   selectAutomationRuleForReconciliation,
   withAsyncCleanup,
 } = require("../lib/release-gate.cjs");
@@ -29,6 +32,44 @@ test("release audit only sends Vercel protection headers when a bypass secret is
   assert.deepEqual(buildVercelProtectionHeaders("  preview-secret  "), {
     "x-vercel-protection-bypass": "preview-secret",
     "x-vercel-set-bypass-cookie": "true",
+  });
+});
+
+test("release stage defaults to strict production and rejects unknown values", () => {
+  assert.equal(normalizeReleaseStage(), "production");
+  assert.equal(normalizeReleaseStage(" PREVIEW "), "preview");
+  assert.throws(() => normalizeReleaseStage("staging"), /RELEASE_STAGE/);
+});
+
+test("live Telegram operations require an explicit production double confirmation", () => {
+  assert.throws(
+    () => authorizeLiveTelegramOperation({}, { operation: "自动发布真群验收" }),
+    /RELEASE_STAGE=production.*ALLOW_LIVE_TELEGRAM=true.*TEST_BASE_URL/s,
+  );
+  assert.throws(
+    () => authorizeLiveTelegramOperation({
+      RELEASE_STAGE: "preview",
+      ALLOW_LIVE_TELEGRAM: "true",
+      TEST_BASE_URL: "https://preview.example.com",
+    }),
+    /只能在 production 阶段运行/,
+  );
+  assert.throws(
+    () => authorizeLiveTelegramOperation({
+      RELEASE_STAGE: "production",
+      ALLOW_LIVE_TELEGRAM: "true",
+      TEST_BASE_URL: "http://example.com",
+    }),
+    /HTTPS/,
+  );
+
+  assert.deepEqual(authorizeLiveTelegramOperation({
+    RELEASE_STAGE: "production",
+    ALLOW_LIVE_TELEGRAM: "true",
+    TEST_BASE_URL: "https://academy.example.com/",
+  }), {
+    stage: "production",
+    baseUrl: "https://academy.example.com",
   });
 });
 
@@ -135,6 +176,34 @@ test("trading release gate reports every missing production dependency", () => {
     "尚未启用 Trader",
     "尚未配置并验证 YUBIT 只读账户",
     "交易信号发布目标少于 2 个",
+  ]);
+});
+
+test("preview trading gate requires an isolated database and a disabled SpeakerBot webhook", () => {
+  assert.deepEqual(evaluatePreviewTradingIsolation({
+    health: {
+      database: { ok: true, driver: "postgres", durable: true },
+      speakerBot: {
+        environment: "preview",
+        configured: false,
+        configurationAllowed: false,
+        errorCode: "SPEAKER_PREVIEW_WEBHOOK_DISABLED",
+      },
+    },
+  }), []);
+
+  assert.deepEqual(evaluatePreviewTradingIsolation({
+    health: {
+      database: { ok: true, driver: "json-local", durable: false },
+      speakerBot: {
+        environment: "preview",
+        configured: true,
+        configurationAllowed: true,
+      },
+    },
+  }), [
+    "Preview 交易中心数据库不是健康的持久化 Postgres",
+    "Preview SpeakerBot Webhook 未保持隔离禁用状态",
   ]);
 });
 

@@ -5,16 +5,19 @@ const {
   buildVercelProtectionHeaders,
   PRODUCTION_RELEASE_PAGES,
   evaluateConfiguredGroup,
+  evaluatePreviewTradingIsolation,
   evaluateRequiredAutomationRule,
   evaluateTradingRelease,
+  normalizeReleaseStage,
   withAsyncCleanup,
 } = require("../lib/release-gate.cjs");
 
+const releaseStage = normalizeReleaseStage(process.env.RELEASE_STAGE);
 const baseUrl = String(process.env.TEST_BASE_URL || "https://yubit-bot-skills-academy.vercel.app").replace(/\/$/, "");
 const username = process.env.TEST_USERNAME;
 const password = process.env.TEST_PASSWORD;
 const browserChannel = String(process.env.TEST_BROWSER_CHANNEL ?? "chrome").trim();
-const artifactDir = path.resolve(process.env.TEST_ARTIFACT_DIR || "artifacts/release-gate-production");
+const artifactDir = path.resolve(process.env.TEST_ARTIFACT_DIR || `artifacts/release-gate-${releaseStage}`);
 const protectionHeaders = buildVercelProtectionHeaders(process.env.VERCEL_AUTOMATION_BYPASS_SECRET);
 
 if (!username || !password) throw new Error("TEST_USERNAME and TEST_PASSWORD are required");
@@ -70,7 +73,9 @@ async function runAudit(browser) {
   ]);
 
   const validations = [];
-  for (const rule of (distribution.rules || []).filter((item) => item.enabled === true)) {
+  for (const rule of (distribution.rules || []).filter((item) => (
+    releaseStage === "production" && item.enabled === true
+  ))) {
     const response = await context.request.post(`${baseUrl}/api/distribution`, {
       data: { action: "validate", id: rule.id },
       timeout: 30_000
@@ -119,6 +124,7 @@ async function runAudit(browser) {
   }
 
   const report = {
+    stage: releaseStage,
     baseUrl,
     checkedAt: new Date().toISOString(),
     pages: pageResults,
@@ -188,10 +194,9 @@ async function runAudit(browser) {
     { contentType: "daily-analysis", schedulePreset: "daily-0800-utc" },
     { contentType: "whale-signals", schedulePreset: "hourly" }
   ].map((definition) => evaluateRequiredAutomationRule(currentRules, definition));
-  const failures = [
+  const commonFailures = [
     ...consoleErrors.map((item) => `浏览器控制台：${item.message}`),
     ...pageErrors.map((item) => `页面异常：${item.message}`),
-    ...validations.filter((item) => !item.ok).map((item) => `规则验证失败：${item.name}`),
     ...expectedBots.filter((username) => !actualBots.has(username)).map((username) => `Bot 不在线：@${username}`),
     ...[...expectedGroups].flatMap(([chatId, title]) => {
       const discovered = report.discoveredGroups.find((group) => group.chatId === chatId);
@@ -205,23 +210,36 @@ async function runAudit(browser) {
       ];
     }),
     ...(!report.database?.ok || report.database?.driver !== "postgres" || report.database?.durable !== true
-      ? ["生产数据库不是健康的持久化 Postgres"] : []),
+      ? ["内容分发数据库不是健康的持久化 Postgres"] : []),
+    ...templatePreviews.filter((item) => !item.imageOk || !item.copyOk || !item.kindOk).map((item) => `线上模板预览异常：${item.jobId}`),
+  ];
+  const productionFailures = [
+    ...validations.filter((item) => !item.ok).map((item) => `规则验证失败：${item.name}`),
     ...(enabledBroadcastRules.length < 7
       ? ["Telegram 广播规则至少需要 7 条已启用规则"] : []),
     ...requiredAutomations.flatMap((result) => result.failures),
-    ...templatePreviews.filter((item) => !item.imageOk || !item.copyOk || !item.kindOk).map((item) => `线上模板预览异常：${item.jobId}`),
     ...["daily-events", "daily-analysis", "whale-hourly"].flatMap((jobId) => {
       const job = (automation.jobs || []).find((item) => item.id === jobId);
       return !job?.target?.configured || job.target.count < 2 ? [`自动任务状态未读取到数据库目标：${jobId}`] : [];
     }),
     ...evaluateTradingRelease(trading)
   ];
+  const previewFailures = evaluatePreviewTradingIsolation(trading);
+  const failures = [
+    ...commonFailures,
+    ...(releaseStage === "preview" ? previewFailures : productionFailures),
+  ];
   report.warnings = [];
   if (!(social.packages || []).some((item) => item.enabled !== false || item.status === "已启用")) {
     report.warnings.push("尚未配置代理 X / YouTube 来源；入口和抓取能力已上线，但不会产生代理更新。");
   }
+  if (releaseStage === "preview" && productionFailures.length) {
+    report.warnings.push("Preview 已通过安全验收；下列生产依赖仍需在正式发布前完成。上线前不会自动启用规则或发送真实 Telegram 消息。");
+  }
   report.ok = failures.length === 0;
   report.failures = failures;
+  report.productionReady = [...commonFailures, ...productionFailures].length === 0;
+  report.productionBlockers = productionFailures;
   fs.writeFileSync(path.join(artifactDir, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
   console.log(JSON.stringify(report, null, 2));
   if (!report.ok) process.exitCode = 1;

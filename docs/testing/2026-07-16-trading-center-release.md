@@ -12,7 +12,7 @@
 
 ## 自动化证据
 
-- `npm test`：192/192 通过
+- `npm test`：206/206 通过
 - `npm run check`：通过
 - `npm run build`：通过，包含 `/trading`、SpeakerBot Webhook、交易管理、追踪和 PNL 图片接口
 - Vercel Preview Chrome 1366×768 线上验收：通过登录必填校验、正常登录、交易日志、Trader 管理、发布目标和系统状态；无失败接口、未捕获异常或页面级横向溢出
@@ -23,6 +23,8 @@
 - 调度器健康门禁新增覆盖：`CRON_SECRET` 为空时明确标记未配置，不再误报“调度正常”或“上线就绪”
 - Preview 调度鉴权新增覆盖：仅读取 `PREVIEW_CRON_SECRET`，不复用 Production `CRON_SECRET`
 - YUBIT 账户验证门禁新增覆盖：新建账户或更换凭证后只能处于“待验证”，管理接口和页面均不能手动伪造“已验证”；必须由服务端执行真实查询验证
+- 发布门禁已拆分为 Preview 安全验收与 Production 严格验收：Preview 只在数据库隔离、Webhook 禁用、页面、群识别和模板均正常时通过，同时单列所有生产依赖，不会用测试环境的“绿灯”代替正式上线条件
+- 真实规则对账和真群投递脚本已加入三重保护：必须显式确认 `RELEASE_STAGE=production`、`ALLOW_LIVE_TELEGRAM=true` 和明确的 HTTPS `TEST_BASE_URL`，否则在联网前直接停止
 
 ## 线上配置证据
 
@@ -33,6 +35,7 @@
 - 已为 Preview 单独配置非空 `PREVIEW_CRON_SECRET`；Production 的 `CRON_SECRET` 仍为空，GitHub Actions 中已存在 `YUBIT_CRON_SECRET`
 - GitHub Actions 最近一次正式 `distribution` 调度返回 HTTP 401；已确认根因为 Vercel Production 缺少非空 `CRON_SECRET`，而非应用内部调度失败
 - 仓库中不保存 Trader API Key、API Secret、Webhook Secret 或 PNL 签名密钥
+- Preview 审计使用 `npm run release:audit:preview`；Production 审计使用 `npm run release:audit:production`，后者继续严格检查广播规则、自动发布目标、SpeakerBot Webhook、Trader、只读账户和调度器
 
 ## 尚未放行的外部验收
 
