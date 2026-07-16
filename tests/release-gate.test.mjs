@@ -12,6 +12,7 @@ const {
   authorizeLiveTelegramOperation,
   evaluateConfiguredGroup,
   evaluatePreviewTradingIsolation,
+  evaluateReleaseFingerprint,
   evaluateReleasePage,
   evaluateRequiredAutomationRule,
   evaluateTradingRelease,
@@ -30,6 +31,37 @@ function standardTopics() {
 
 test("production release gate covers the trading center", () => {
   assert.ok(PRODUCTION_RELEASE_PAGES.includes("/trading"));
+});
+
+test("production release gate exposes a deployment fingerprint evaluator", () => {
+  assert.equal(typeof evaluateReleaseFingerprint, "function");
+});
+
+test("deployment fingerprint proves the expected release and required capabilities", () => {
+  const healthy = {
+    schemaVersion: "2026-07-16.trading-center.v1",
+    commitSha: "33b4bc01651176ca77ed341707658c3ac11267e4",
+    capabilities: [
+      "content-distribution",
+      "telegram-broadcast",
+      "multi-trader-trading-center",
+    ],
+  };
+  assert.deepEqual(evaluateReleaseFingerprint(healthy, {
+    expectedCommitSha: "33b4bc0",
+  }), []);
+
+  assert.deepEqual(evaluateReleaseFingerprint({
+    schemaVersion: "legacy",
+    commitSha: "old-release",
+    capabilities: ["content-distribution"],
+  }, {
+    expectedCommitSha: "33b4bc0",
+  }), [
+    "线上发布指纹版本不匹配",
+    "线上发布指纹缺少能力：telegram-broadcast、multi-trader-trading-center",
+    "线上提交与预期提交不一致",
+  ]);
 });
 
 test("release audit only sends Vercel protection headers when a bypass secret is configured", () => {

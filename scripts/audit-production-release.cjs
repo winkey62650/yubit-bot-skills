@@ -8,6 +8,7 @@ const {
   PRODUCTION_RELEASE_PAGES,
   evaluateConfiguredGroup,
   evaluatePreviewTradingIsolation,
+  evaluateReleaseFingerprint,
   evaluateReleasePage,
   evaluateRequiredAutomationRule,
   evaluateTradingRelease,
@@ -80,6 +81,7 @@ async function runAudit(browser) {
   }
 
   const evidence = await collectAuditEvidence({
+    releaseInfo: async () => jsonRequest(await context.request.get(`${baseUrl}/api/release-info`), "发布指纹"),
     automation: async () => jsonRequest(await context.request.get(`${baseUrl}/api/automation-status`), "自动任务状态"),
     bots: async () => jsonRequest(await context.request.get(`${baseUrl}/api/bot-groups`), "Bot 状态"),
     groups: async () => jsonRequest(await context.request.get(`${baseUrl}/api/group-config`), "群配置"),
@@ -88,6 +90,7 @@ async function runAudit(browser) {
     trading: async () => jsonRequest(await context.request.get(`${baseUrl}/api/trading`), "交易中心")
   });
   const {
+    releaseInfo = {},
     automation = {},
     bots = {},
     groups = {},
@@ -157,6 +160,7 @@ async function runAudit(browser) {
     remoteMutationsPerformed: auditPolicy.allowActiveValidation,
     baseUrl,
     checkedAt: new Date().toISOString(),
+    releaseInfo,
     pages: pageResults,
     consoleErrors,
     pageErrors,
@@ -227,6 +231,9 @@ async function runAudit(browser) {
   const commonFailures = [
     ...pageResults.flatMap((item) => item.failures || []),
     ...evidence.failures.map((message) => `接口异常：${message}`),
+    ...evaluateReleaseFingerprint(releaseInfo, {
+      expectedCommitSha: process.env.EXPECTED_COMMIT_SHA,
+    }),
     ...consoleErrors.map((item) => `浏览器控制台：${item.message}`),
     ...pageErrors.map((item) => `页面异常：${item.message}`),
     ...expectedBots.filter((username) => !actualBots.has(username)).map((username) => `Bot 不在线：@${username}`),

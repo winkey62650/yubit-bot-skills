@@ -73,7 +73,11 @@ test("production release audit is reproducible and includes trading readiness", 
   assert.equal(packageJson.scripts["release:test:automations"], "node scripts/test-production-automation-delivery.cjs");
   assert.ok(packageJson.devDependencies?.playwright);
   assert.match(packageJson.scripts.check, /node --check lib\/release-gate\.cjs/);
+  assert.match(packageJson.scripts.check, /node --check lib\/release-info\.mjs/);
   assert.match(packageJson.scripts.check, /node --check scripts\/audit-production-release\.cjs/);
+  assert.match(audit, /\/api\/release-info/);
+  assert.match(audit, /evaluateReleaseFingerprint\(releaseInfo,\s*\{/);
+  assert.match(audit, /expectedCommitSha:\s*process\.env\.EXPECTED_COMMIT_SHA/);
   assert.match(audit, /\/api\/trading/);
   assert.match(audit, /evaluateTradingRelease\(trading\)/);
   assert.match(audit, /TEST_BROWSER_CHANNEL/);
