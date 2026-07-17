@@ -14,18 +14,21 @@ const defaultSettings = {
   status: "暂停"
 };
 
-const checks = [
-  ["本地控制台", "server.mjs", "http://localhost:4173/admin-group-config.html", "正常"],
-  ["新闻脚本", "news-poster.mjs", "npm run news", "正常"],
-  ["信号脚本", "run-15m-cycle.mjs", "npm run cycle:15m", "正常"],
-  ["新群初始化", "scripts/new-group-setup.mjs", "npm run manage:new-group", "正常"],
-  ["Lark 推送", "monitor-health-to-lark.mjs", "npm run monitor:health", "待配置"]
+const pendingChecks = [
+  { name: "生产后台", target: "/login", message: "等待首次检查", ok: null },
+  { name: "内容分发调度", target: "production-worker", message: "等待首次检查", ok: null },
+  { name: "自动发布任务", target: "automation-jobs", message: "等待首次检查", ok: null },
+  { name: "新群初始化", target: "new-group-setup", message: "等待首次检查", ok: null },
+  { name: "Lark 推送", target: "Lark Webhook", message: "等待首次检查", ok: null }
 ];
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState(defaultSettings);
   const [saveStatus, setSaveStatus] = useState("正在读取云端设置...");
   const [saving, setSaving] = useState(false);
+  const [monitorStatus, setMonitorStatus] = useState(null);
+  const [testing, setTesting] = useState(false);
+  const [testStatus, setTestStatus] = useState("尚未执行真实推送测试");
 
   useEffect(() => {
     loadWorkspaceState("settings")
@@ -38,7 +41,21 @@ export default function SettingsPage() {
         }
       })
       .catch((error) => setSaveStatus(`读取失败：${error.message}`));
+    refreshMonitorStatus().catch((error) => setTestStatus(`读取运行状态失败：${error.message}`));
   }, []);
+
+  async function refreshMonitorStatus() {
+    const response = await fetch("/api/lark-monitor", { cache: "no-store" });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || "读取 Lark 运行状态失败");
+    setMonitorStatus(data.status);
+    if (data.status.lastError) {
+      setTestStatus(`最近推送失败：${data.status.lastError}`);
+    } else if (data.status.lastSuccessfulNotificationAt) {
+      setTestStatus(`最近成功推送 · ${new Date(data.status.lastSuccessfulNotificationAt).toLocaleString()}`);
+    }
+    return data.status;
+  }
 
   function update(field, value) {
     setSettings((current) => ({ ...current, [field]: value }));
@@ -60,16 +77,42 @@ export default function SettingsPage() {
     }
   }
 
+  async function testLark() {
+    if (testing || saving || !settings.webhook.trim()) return;
+    setTesting(true);
+    setTestStatus("正在保存当前配置并发送真实测试消息...");
+    try {
+      const saved = await saveWorkspaceState("settings", settings);
+      setSettings(saved.state);
+      setSaveStatus(`已保存到云端 · ${new Date(saved.updatedAt).toLocaleString()}`);
+      const response = await fetch("/api/lark-monitor", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "test" })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.error || "Lark 测试推送失败");
+      const status = await refreshMonitorStatus();
+      setTestStatus(`测试消息已送达 · ${new Date(status.lastSuccessfulNotificationAt).toLocaleString()}`);
+    } catch (error) {
+      setTestStatus(`测试失败：${error.message}`);
+    } finally {
+      setTesting(false);
+    }
+  }
+
   const configured = Boolean(settings.webhook) && settings.status === "启用";
+  const verified = monitorStatus?.verified === true;
+  const checks = monitorStatus?.lastResult?.checks?.length ? monitorStatus.lastResult.checks : pendingChecks;
 
   return (
     <ConsoleShell>
       <PageHeader title="系统设置" desc="配置程序健康检查、定时监控和 Lark 告警推送；保存后可在其他设备登录恢复。" />
       <section className="mb-5 grid gap-0 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops md:grid-cols-4">
         <MetricBox label="检查频率" value={settings.frequency} sub="可按业务低频调整" />
-        <MetricBox label="监控程序" value="5" sub="控制台 / 新闻 / 信号 / 建群 / Lark" />
+        <MetricBox label="监控程序" value="5" sub="后台 / 内容分发 / 自动任务 / 建群 / Lark" />
         <MetricBox label="告警渠道" value="Lark" sub="Webhook 推送" />
-        <MetricBox label="当前状态" value={configured ? "已启用" : "待配置"} sub={configured ? "云端设置已就绪" : "填入 Webhook 并启用"} />
+        <MetricBox label="当前状态" value={verified ? "已验证" : configured ? "待验证" : "待配置"} sub={verified ? "真实消息已成功送达" : configured ? "请发送测试消息" : "填入 Webhook 并启用"} />
       </section>
 
       <Card className="p-6">
@@ -84,25 +127,30 @@ export default function SettingsPage() {
         </div>
         <div className="mt-5 flex flex-wrap items-center gap-3">
           <button className="rounded-lg bg-ops-accent px-5 py-3 text-sm font-black text-white disabled:opacity-60" disabled={saving} onClick={save} type="button">{saving ? "保存中..." : "保存设置"}</button>
+          <button className="rounded-lg border border-ops-accent bg-white px-5 py-3 text-sm font-black text-ops-accent disabled:opacity-50" disabled={testing || saving || !settings.webhook.trim()} onClick={testLark} type="button">{testing ? "测试中..." : "发送测试消息"}</button>
           <span className="text-xs font-bold text-ops-accent">{saveStatus}</span>
         </div>
+        <div className={`mt-3 rounded-lg px-4 py-3 text-sm font-bold ${verified ? "bg-[#e6f7ef] text-ops-accent" : "bg-[#fff4df] text-[#9a671d]"}`}>{testStatus}</div>
       </Card>
 
       <Card className="mt-5 overflow-hidden">
         <div className="border-b border-ops-line p-5">
           <h2 className="text-xl font-black">程序健康检查</h2>
-          <p className="mt-1 text-sm text-ops-muted">定时检查脚本是否可运行、控制台是否可访问，并把结果发到 Lark。</p>
+          <p className="mt-1 text-sm text-ops-muted">生产 Worker 每分钟核对是否到达检查时间；到点后按上方频率执行，异常时根据阈值推送。</p>
+          {monitorStatus?.lastRunAt ? <p className="mt-2 text-xs font-bold text-ops-accent">最近检查：{new Date(monitorStatus.lastRunAt).toLocaleString()} · {monitorStatus.lastResult?.summary}</p> : null}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[900px] text-sm">
             <thead className="bg-[#f9fbfa] text-left text-xs uppercase text-ops-muted">
-              <tr><th className="px-5 py-3">项目</th><th className="px-5 py-3">检查对象</th><th className="px-5 py-3">检查方式</th><th className="px-5 py-3">状态</th></tr>
+              <tr><th className="px-5 py-3">项目</th><th className="px-5 py-3">检查对象</th><th className="px-5 py-3">结果</th><th className="px-5 py-3">状态</th></tr>
             </thead>
             <tbody>
               {checks.map((check) => (
-                <tr className="border-t border-ops-line" key={check[0]}>
-                  {check.slice(0, 3).map((cell) => <td className="px-5 py-4" key={cell}>{cell}</td>)}
-                  <td className="px-5 py-4"><StatusPill tone={check[3] === "正常" ? "green" : "amber"}>{check[3]}</StatusPill></td>
+                <tr className="border-t border-ops-line" key={check.name}>
+                  <td className="px-5 py-4 font-bold">{check.name}</td>
+                  <td className="px-5 py-4">{check.target || "—"}</td>
+                  <td className="px-5 py-4">{check.message || "—"}{Number.isFinite(check.latencyMs) ? ` · ${check.latencyMs}ms` : ""}</td>
+                  <td className="px-5 py-4"><StatusPill tone={check.ok === true ? "green" : "amber"}>{check.ok === true ? "正常" : check.ok === false ? "异常" : "待检查"}</StatusPill></td>
                 </tr>
               ))}
             </tbody>

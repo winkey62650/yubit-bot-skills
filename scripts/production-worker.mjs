@@ -7,6 +7,7 @@ const DEFAULTS = Object.freeze({
   distributionIntervalMs: 15_000,
   tradingIntervalMs: 5 * 60_000,
   agentIntervalMs: 4 * 60 * 60_000,
+  larkIntervalMs: 60_000,
   requestTimeoutMs: 90_000,
   maxDistributionClaims: 10,
 });
@@ -33,6 +34,7 @@ export function buildWorkerConfig(env = process.env) {
     ),
     tradingIntervalMs: positiveInteger(env.WORKER_TRADING_INTERVAL_MS, DEFAULTS.tradingIntervalMs),
     agentIntervalMs: positiveInteger(env.WORKER_AGENT_INTERVAL_MS, DEFAULTS.agentIntervalMs),
+    larkIntervalMs: positiveInteger(env.WORKER_LARK_INTERVAL_MS, DEFAULTS.larkIntervalMs),
     requestTimeoutMs: positiveInteger(env.WORKER_REQUEST_TIMEOUT_MS, DEFAULTS.requestTimeoutMs),
     maxDistributionClaims: positiveInteger(
       env.WORKER_MAX_DISTRIBUTION_CLAIMS,
@@ -136,6 +138,7 @@ export async function startProductionWorker({ env = process.env, fetchImpl = fet
     distributionIntervalMs: config.distributionIntervalMs,
     tradingIntervalMs: config.tradingIntervalMs,
     agentIntervalMs: config.agentIntervalMs,
+    larkIntervalMs: config.larkIntervalMs,
   });
 
   const done = Promise.all([
@@ -165,6 +168,14 @@ export async function startProductionWorker({ env = process.env, fetchImpl = fet
       signal: controller.signal,
       logger,
       task: () => callEndpoint("/api/cron/agents"),
+    }),
+    runLoop({
+      name: "lark-monitor",
+      intervalMs: config.larkIntervalMs,
+      initialDelayMs: 10_000,
+      signal: controller.signal,
+      logger,
+      task: () => callEndpoint("/api/cron/lark"),
     }),
   ]);
 

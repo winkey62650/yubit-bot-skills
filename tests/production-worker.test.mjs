@@ -24,6 +24,7 @@ test("buildWorkerConfig targets the private local web service", () => {
   assert.equal(config.distributionIntervalMs, 15_000);
   assert.equal(config.tradingIntervalMs, 300_000);
   assert.equal(config.agentIntervalMs, 14_400_000);
+  assert.equal(config.larkIntervalMs, 60_000);
 });
 
 test("buildWorkerConfig rejects a missing cron secret", () => {
@@ -55,6 +56,7 @@ test("worker process stays alive between scheduled runs", async () => {
       WORKER_DISTRIBUTION_INTERVAL_MS: "1000",
       WORKER_TRADING_INTERVAL_MS: "1000",
       WORKER_AGENT_INTERVAL_MS: "1000",
+      WORKER_LARK_INTERVAL_MS: "1000",
       WORKER_REQUEST_TIMEOUT_MS: "1000",
     },
     stdio: "ignore",
