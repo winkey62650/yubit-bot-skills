@@ -558,6 +558,44 @@ test("SpeakerBot retries an unfiltered order-history lookup when YUBIT returns n
   ]);
 });
 
+test("SpeakerBot treats separator variants of the same YUBIT symbol as equivalent", async () => {
+  const { repository } = await configuredTradingDesk();
+  const orderId = "f48f4cac-ffd7-4bf4-84b2-46655e9bb02c";
+  const result = await processSpeakerTelegramUpdate(
+    privateUpdate(221, 1001, `BTCUSDT ${orderId}`),
+    dependencies(repository, {
+      telegram: async () => ({ message_id: 9011 }),
+      yubitClientFactory: () => ({
+        async getOrderHistory() {
+          return {
+            list: [{
+              orderId,
+              symbol: "BTC-USDT",
+              orderStatus: "Filled",
+              side: "Buy",
+              createdTime: 1_768_000_000_000,
+            }],
+          };
+        },
+        async getExecutions() {
+          return {
+            list: [{
+              execId: "separator-symbol-exec",
+              orderId,
+              symbol: "BTC/USDT",
+              execQty: "0.01",
+              execPrice: "62829.9",
+              execTime: 1_768_000_000_000,
+            }],
+          };
+        },
+      }),
+    }),
+  );
+
+  assert.equal(result.status, "published");
+});
+
 test("SpeakerBot persists a safe YUBIT failure code when order verification fails", async () => {
   const { repository, readState } = await configuredTradingDesk();
   const result = await processSpeakerTelegramUpdate(
