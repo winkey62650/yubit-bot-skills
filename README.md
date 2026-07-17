@@ -70,7 +70,28 @@ SpeakerBot 不会自动开单，也不能修改或关闭订单。服务端只用
 - `APP_BASE_URL`：当前 HTTPS 生产域名。
 - `YUBIT_API_BASE_URL`：可选，默认使用 `https://openapi.yubit.com`。
 
-GitHub Actions 每五分钟分别运行内容分发和订单追踪，两个任务有独立的成功/失败结果。GitHub 的 `YUBIT_CRON_SECRET` 必须与 Vercel Production 中非空的 `CRON_SECRET` 完全一致；系统状态页会将密钥缺失明确标记为未就绪。首次上线后必须确认 Webhook，并至少观察一个完整追踪周期。
+独立服务器生产环境由 `yubit-academy-worker` 常驻服务执行调度：每 15 秒检查到期的内容任务、每 5 分钟追踪订单、每 4 小时同步代理信息。GitHub Actions 仅保留手动故障回退，不再承担生产定时器。首次上线后必须确认 Webhook，并至少观察一个完整追踪周期。
+
+### 独立服务器部署
+
+生产服务器使用不可变 release 目录和 `current` 软链接，旧 release 会保留用于快速回滚。两项 systemd 服务分别运行后台页面与定时 worker，Nginx 只把公网 HTTPS 流量转发到本机 `127.0.0.1:4174`。
+
+1. 将生产密钥写入 `/etc/yubit-academy/production.env`，权限设为 `600`。密钥不得进入 Git。
+2. 确认 `/opt/yubit-node/bin/node` 为 Node.js 20 或更新版本。
+3. 从仓库根目录执行：
+
+```bash
+sudo install -d -m 0755 /etc/yubit-academy
+SERVER_NAME=academy.example.com SERVER_IP=203.0.113.10 bash deploy/server/deploy.sh
+```
+
+部署脚本会先在新 release 中完成依赖安装、语法检查、全部单元测试和生产构建，成功后才切换服务；任何构建失败都不会替换当前线上版本。生产调度日志可通过以下命令查看：
+
+```bash
+sudo journalctl -u yubit-academy-worker.service -f
+```
+
+`APP_BASE_URL` 必须和最终 HTTPS 域名一致，否则 Telegram 无法读取动态海报，也无法正确设置 Webhook。服务器重启后两项服务会自动恢复。
 
 ### 生产标准分发规则
 

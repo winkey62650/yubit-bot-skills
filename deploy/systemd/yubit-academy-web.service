@@ -1,0 +1,25 @@
+[Unit]
+Description=YUBIT Academy administration web service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/yubit-academy/current
+EnvironmentFile=/etc/yubit-academy/production.env
+EnvironmentFile=-/etc/yubit-academy/release.env
+Environment=NODE_ENV=production
+Environment=PORT=4174
+Environment=PATH=/opt/yubit-node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/opt/yubit-node/bin/node /opt/yubit-academy/current/node_modules/next/dist/bin/next start -H 127.0.0.1 -p 4174
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

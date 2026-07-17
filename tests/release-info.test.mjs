@@ -45,6 +45,23 @@ test("release endpoint and release gate share the same fingerprint contract", ()
   assert.deepEqual(REQUIRED_RELEASE_CAPABILITIES, RELEASE_CAPABILITIES);
 });
 
+test("release info supports an independent server deployment fingerprint", () => {
+  assert.deepEqual(buildReleaseInfo({
+    APP_RELEASE_SHA: "123456abcdef",
+    APP_RELEASE_REF: "code/academy",
+    APP_ENVIRONMENT: "production",
+    APP_DEPLOYMENT_URL: "https://academy.example.com",
+  }), {
+    ok: true,
+    schemaVersion: RELEASE_SCHEMA_VERSION,
+    commitSha: "123456abcdef",
+    gitRef: "code/academy",
+    environment: "production",
+    deploymentUrl: "https://academy.example.com",
+    capabilities: RELEASE_CAPABILITIES,
+  });
+});
+
 test("release info has explicit local fallbacks and never serializes secrets", () => {
   const payload = buildReleaseInfo({ AUTH_PASSWORD: "must-not-leak" });
   assert.equal(payload.commitSha, "local");
