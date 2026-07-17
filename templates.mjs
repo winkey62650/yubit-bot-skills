@@ -140,6 +140,55 @@ export function migrateTopicTemplate(topic) {
   return { ...topic, emoji: replacement };
 }
 
+export function migrateTopicTemplateList(topics = []) {
+  const migrated = (Array.isArray(topics) ? topics : []).map(migrateTopicTemplate);
+  const savedBySemantic = new Map();
+
+  for (const topic of migrated) {
+    const semantic = topicSemanticKey(topic?.name);
+    if (!semantic || savedBySemantic.has(semantic)) return migrated;
+    savedBySemantic.set(semantic, topic);
+  }
+
+  if (savedBySemantic.size !== defaultTopicTemplate.length) return migrated;
+  const isLegacyLayout = defaultTopicTemplate.some((canonical) => {
+    const saved = savedBySemantic.get(topicSemanticKey(canonical.name));
+    return !saved || String(saved.id || "") !== canonical.id;
+  }) || migrated.some((topic) => /7-day\s+pnl\s+challenge/i.test(String(topic?.name || "")));
+
+  if (!isLegacyLayout) return migrated;
+
+  return defaultTopicTemplate.map((canonical) => {
+    const saved = savedBySemantic.get(topicSemanticKey(canonical.name));
+    return {
+      ...canonical,
+      ...saved,
+      id: canonical.id,
+      emoji: canonical.emoji,
+      name: topicNameWithSequence(canonical),
+      attribute: canonical.attribute,
+      announcement: saved?.announcement || canonical.announcement || "",
+      imageUrl: saved?.imageUrl || canonical.imageUrl || ""
+    };
+  });
+}
+
+function topicSemanticKey(value) {
+  const name = String(value || "")
+    .replace(/^[^\p{Letter}\p{Number}]+/u, "")
+    .replace(/^\d+\.\s*/, "")
+    .trim()
+    .toLowerCase();
+  if (name.includes("read first") && name.includes("disclaimer")) return "read-first";
+  if (name.includes("community signal") || name.includes("7-day pnl challenge")) return "community-signal";
+  if (name.includes("market analysis")) return "market-analysis";
+  if (name.includes("market events")) return "market-events";
+  if (name.includes("smart money tracker")) return "smart-money";
+  if (name.includes("yubit updates")) return "yubit-updates";
+  if (name.includes("trading zone")) return "trading-zone";
+  return "";
+}
+
 export function topicNameWithSequence(topic) {
   const name = String(topic?.name || "").replace(/^[^\p{Letter}\p{Number}]+/u, "").trim();
   const sequence = String(topic?.id || "").trim();

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   defaultTopicTemplate,
   migrateTopicTemplate,
+  migrateTopicTemplateList,
   readFirstContentVersion,
   readFirstPinnedMessages,
   topicDisplayName,
@@ -24,6 +25,31 @@ test("new topics keep their sequence in the Telegram name and use the requested 
     assert.equal(topicNameWithSequence(topic), expectedName);
     assert.equal(topicDisplayName(topic), expectedName);
   }
+});
+
+test("legacy saved new-group drafts migrate to the canonical business order", () => {
+  const legacyTopics = [
+    { id: "1", emoji: "❗️", name: "1. READ FIRST - DISCLAIMER", attribute: "关闭话题", announcement: "saved notice" },
+    { id: "2", emoji: "⚡️", name: "2. Market Events", attribute: "关闭话题" },
+    { id: "3", emoji: "💡", name: "3. Market Analysis - Crypto/Stocks/TradFi", attribute: "关闭话题" },
+    { id: "4", emoji: "🎉", name: "4. YUBIT Updates", attribute: "关闭话题" },
+    { id: "5", emoji: "💰", name: "5. 7-Day PNL Challenge", attribute: "交流频道" },
+    { id: "6", emoji: "💎", name: "6. Smart Money Tracker", attribute: "关闭话题" },
+    { id: "7", emoji: "⚡️", name: "7. CryptoGuy Trading Zone", attribute: "交流频道" }
+  ];
+
+  const migrated = migrateTopicTemplateList(legacyTopics);
+
+  assert.deepEqual(migrated.map(({ id, emoji, name, attribute }) => ({ id, emoji, name, attribute })), [
+    { id: "1", emoji: "❗️", name: "1. READ FIRST - DISCLAIMER", attribute: "关闭话题" },
+    { id: "5", emoji: "💰", name: "5. Community Signal", attribute: "交流频道" },
+    { id: "4", emoji: "💡", name: "4. Market Analysis - Crypto/Stocks/TradFi", attribute: "关闭话题" },
+    { id: "3", emoji: "📰", name: "3. Market Events", attribute: "关闭话题" },
+    { id: "6", emoji: "💎", name: "6. Smart Money Tracker", attribute: "关闭话题" },
+    { id: "7", emoji: "🎉", name: "7. YUBIT Updates", attribute: "频道禁言" },
+    { id: "2", emoji: "⚡️", name: "2. CryptoGuy Trading Zone", attribute: "交流频道" }
+  ]);
+  assert.equal(migrated[0].announcement, "saved notice", "operator content is retained during the layout migration");
 });
 
 test("saved drafts migrate only the old default icons", () => {

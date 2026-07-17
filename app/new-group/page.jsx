@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import ConsoleShell from "../components/ConsoleShell";
 import { Card, Field, PageHeader, StatusPill, inputClass } from "../components/ui";
-import { defaultTopicTemplate, migrateTopicTemplate, topicNameWithSequence } from "../../templates.mjs";
+import { defaultTopicTemplate, migrateTopicTemplateList, topicNameWithSequence } from "../../templates.mjs";
 import { selectPreferredInitializationGroup } from "../../lib/telegram-discovery.mjs";
 import { loadWorkspaceState, saveWorkspaceState } from "../../lib/workspace-client";
 
@@ -57,8 +57,7 @@ export default function NewGroupPage() {
         setGroupDescription(savedDraft.groupDescription || "");
         setBotRole("admin");
         if (savedDraft.topics?.length) {
-          setTopics(savedDraft.topics.map((savedTopic) => {
-            const topic = migrateTopicTemplate(savedTopic);
+          setTopics(migrateTopicTemplateList(savedDraft.topics).map((topic) => {
             return [topic.id, topic.emoji, topic.name, topic.attribute, topic.announcement || "", topic.imageUrl || ""];
           }));
         }
