@@ -355,6 +355,9 @@ test("GitHub Actions invokes the durable distribution scheduler every five off-p
   assert.match(workflow, /secrets\.YUBIT_CRON_SECRET/);
   assert.match(distributionJob, /--max-time 55/);
   assert.doesNotMatch(distributionJob, /--retry/);
+  assert.match(distributionJob, /for attempt in 1 2 3/);
+  assert.match(distributionJob, /claimed=.*\.claimed \/\/ 0/);
+  assert.match(distributionJob, /if \[ "\$claimed" = "0" \]/);
 });
 
 test("preview can explicitly use durable Blob-backed JSON while production still requires Postgres", async () => {
