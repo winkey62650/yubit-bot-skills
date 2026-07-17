@@ -133,6 +133,33 @@ test("account verification decrypts server-side credentials and performs a read-
   assert.equal(JSON.stringify(result).includes("verification-secret-5678"), false);
 });
 
+test("account credentials ignore accidental copy whitespace before YUBIT verification", async () => {
+  const { repository } = memoryRepository();
+  const account = await saveExchangeAccount({
+    label: "Copied Credentials",
+    apiKey: "  copied-key-1234\n",
+    apiSecret: "\t copied-secret-5678 \r\n",
+    traderIds: [],
+  }, dependencies(repository));
+  const credentialsSeen = [];
+
+  await verifyExchangeAccount({ accountId: account.account.id, symbol: "BTCUSDT" }, dependencies(repository, {
+    yubitClientFactory: (credentials) => {
+      credentialsSeen.push(credentials);
+      return {
+        async getOrderHistory() {
+          return { list: [] };
+        },
+      };
+    },
+  }));
+
+  assert.deepEqual(credentialsSeen[0], {
+    apiKey: "copied-key-1234",
+    apiSecret: "copied-secret-5678",
+  });
+});
+
 test("account save cannot bypass YUBIT verification by assigning a verified status", async () => {
   const { repository } = memoryRepository();
   const created = await saveExchangeAccount({

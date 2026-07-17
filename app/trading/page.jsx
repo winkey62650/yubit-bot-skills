@@ -74,7 +74,7 @@ export default function TradingPage() {
       await loadAll(false);
       return result;
     } catch (postError) {
-      setError(postError.message || "操作失败");
+      setError(yubitAccountError(postError.message || "操作失败"));
       return null;
     } finally {
       setBusy("");
@@ -146,7 +146,7 @@ export default function TradingPage() {
       />
 
       {notice ? <div className="mb-5 rounded-lg border border-[#b8dfcd] bg-[#f2faf6] px-4 py-3 text-sm font-bold text-[#285845]" role="status">{notice}</div> : null}
-      {error ? <div className="mb-5 rounded-lg border border-[#efc2bd] bg-[#fff6f5] px-4 py-3 text-sm font-bold text-[#9d3128]" role="alert">读取失败：{error}</div> : null}
+      {error ? <div className="mb-5 rounded-lg border border-[#efc2bd] bg-[#fff6f5] px-4 py-3 text-sm font-bold text-[#9d3128]" role="alert">操作失败：{error}</div> : null}
 
       <div className="mb-5 flex gap-2 overflow-x-auto border-b border-ops-line" role="tablist" aria-label="交易中心功能">
         {tabs.map(([key, label]) => <button aria-selected={view === key} className={`min-h-12 whitespace-nowrap border-b-2 px-4 text-sm font-black ${view === key ? "border-ops-accent text-ops-accent" : "border-transparent text-ops-muted"}`} key={key} onClick={() => changeView(key)} role="tab" type="button">{label}</button>)}
@@ -250,7 +250,7 @@ function TraderManagement({ data, busy, traderForm, setTraderForm, accountForm, 
 
     <div className="grid gap-5">
       <Card className="p-5 md:p-6"><SectionHead title={accountForm.id ? "编辑 YUBIT 查询账户" : "新增 YUBIT 查询账户"} desc="一个账户可关联多个 Trader；Trader 提交订单号时系统会从关联账户中核验。" /><div className="mt-4 rounded-lg border border-[#e7c883] bg-[#fff9e9] p-4 text-sm leading-6 text-[#6f551d]"><strong>安全要求：</strong>创建 API 时必须关闭交易、转账和提现权限，仅保留查询权限。后台验证只确认查询接口可用，管理员仍需在 YUBIT 确认权限范围。凭证只在服务端加密保存，页面不会回显 API Secret。</div><form className="mt-5 grid gap-4" onSubmit={saveAccountForm}><Field label="账户名称"><input className={inputClass} onChange={(event) => setAccountForm({ ...accountForm, label: event.target.value })} placeholder="例如 Trader A 主账户" required value={accountForm.label} /></Field><Field label="API Key"><input autoComplete="off" className={inputClass} onChange={(event) => setAccountForm({ ...accountForm, apiKey: event.target.value })} placeholder={accountForm.id ? "留空表示不更换" : "只读 API Key"} required={!accountForm.id} type="password" value={accountForm.apiKey} /></Field><Field label="API Secret"><input autoComplete="new-password" className={inputClass} onChange={(event) => setAccountForm({ ...accountForm, apiSecret: event.target.value })} placeholder={accountForm.id ? "留空表示不更换" : "只读 API Secret"} required={!accountForm.id} type="password" value={accountForm.apiSecret} /></Field><fieldset className="grid gap-2"><legend className="text-sm font-bold text-ops-muted">关联 Trader</legend>{!data.traders.length ? <p className="text-sm text-ops-muted">请先新增 Trader。</p> : data.traders.map((trader) => <label className="flex items-center gap-2 rounded-lg border border-ops-line p-3 text-sm font-bold" key={trader.id}><input checked={accountForm.traderIds.includes(trader.id)} onChange={() => setAccountForm({ ...accountForm, traderIds: toggleValue(accountForm.traderIds, trader.id) })} type="checkbox" />{trader.displayName}</label>)}</fieldset>{accountForm.id ? <label className="flex items-center gap-3 rounded-lg border border-ops-line p-3 text-sm font-bold"><input checked={accountForm.status !== "disabled"} onChange={(event) => setAccountForm({ ...accountForm, status: event.target.checked ? "pending" : "disabled" })} type="checkbox" />启用此查询账户；重新启用后需再次验证</label> : null}<FormActions busy={busy === "save-account"} editing={Boolean(accountForm.id)} onCancel={() => setAccountForm(emptyAccount)} /></form></Card>
-      <Card className="p-5 md:p-6"><SectionHead title="YUBIT 查询账户" desc={`${data.metrics.verifiedAccounts || 0} 个查询验证通过`} />{!data.accounts.length ? <Empty text="暂无查询账户。账户保存后请立即验证查询权限。" /> : <div className="mt-4 grid gap-3">{data.accounts.map((account) => <div className="rounded-lg border border-ops-line p-4" key={account.id}><div className="flex items-start justify-between gap-3"><div><strong>{account.label}</strong><button className="mt-1 block break-all text-left font-mono text-xs text-ops-accent" onClick={() => onCopy(account.apiKeyMasked, "脱敏 API Key")} type="button">{account.apiKeyMasked || "Key 已加密"}</button><p className="mt-1 text-xs text-ops-muted">关联 {account.traderIds?.length || 0} 名 Trader · {account.lastVerifiedAt ? `上次验证 ${formatDate(account.lastVerifiedAt)}` : "尚未验证"}</p></div><StatusPill tone={account.status === "verified" ? "green" : "amber"}>{accountStatus(account.status)}</StatusPill></div>{account.lastErrorCode ? <p className="mt-2 break-all text-xs text-[#9d3128]">{account.lastErrorCode}</p> : null}<div className="mt-3 flex flex-wrap gap-2"><SmallButton onClick={() => editAccount(account)}>编辑</SmallButton><input aria-label="验证币种" className={`${inputClass} min-h-9 w-28`} onChange={(event) => setVerifySymbol(event.target.value.toUpperCase())} value={verifySymbol} /><SmallButton disabled={busy === "verify-account"} onClick={() => onPost({ action: "verify-account", accountId: account.id, symbol: verifySymbol }, "YUBIT 查询权限验证成功")}>{busy === "verify-account" ? "验证中…" : "验证查询权限"}</SmallButton></div></div>)}</div>}</Card>
+      <Card className="p-5 md:p-6"><SectionHead title="YUBIT 查询账户" desc={`${data.metrics.verifiedAccounts || 0} 个查询验证通过`} />{!data.accounts.length ? <Empty text="暂无查询账户。账户保存后请立即验证查询权限。" /> : <div className="mt-4 grid gap-3">{data.accounts.map((account) => <div className="rounded-lg border border-ops-line p-4" key={account.id}><div className="flex items-start justify-between gap-3"><div><strong>{account.label}</strong><button className="mt-1 block break-all text-left font-mono text-xs text-ops-accent" onClick={() => onCopy(account.apiKeyMasked, "脱敏 API Key")} type="button">{account.apiKeyMasked || "Key 已加密"}</button><p className={`mt-1 text-xs ${account.traderIds?.length ? "text-ops-muted" : "font-bold text-[#9d3128]"}`}>{account.traderIds?.length ? `关联 ${account.traderIds.length} 名 Trader` : "尚未关联 Trader，请编辑账户并勾选 Trader"} · {account.lastVerifiedAt ? `上次验证 ${formatDate(account.lastVerifiedAt)}` : "尚未验证"}</p></div><StatusPill tone={account.status === "verified" ? "green" : "amber"}>{accountStatus(account.status)}</StatusPill></div>{account.lastErrorCode ? <p className="mt-2 break-all text-xs leading-5 text-[#9d3128]">{yubitAccountError(account.lastErrorCode)}</p> : null}<div className="mt-3 flex flex-wrap gap-2"><SmallButton onClick={() => editAccount(account)}>编辑</SmallButton><input aria-label="验证币种" className={`${inputClass} min-h-9 w-28`} onChange={(event) => setVerifySymbol(event.target.value.toUpperCase())} value={verifySymbol} /><SmallButton disabled={busy === "verify-account"} onClick={() => onPost({ action: "verify-account", accountId: account.id, symbol: verifySymbol }, "YUBIT 查询权限验证成功")}>{busy === "verify-account" ? "验证中…" : "验证查询权限"}</SmallButton></div></div>)}</div>}</Card>
     </div>
   </div>;
 }
@@ -354,6 +354,23 @@ function directionLabel(value) { return String(value || "").toLowerCase() === "s
 function signalTone(status) { return ["closed_profit", "tracking"].includes(status) ? "green" : "amber"; }
 function signalStatus(status) { return ({ tracking: "追踪中", closed_profit: "盈利已结算", closed_loss: "亏损已结算", needs_review: "需要复核", rejected: "已拒绝", verified: "已核验", pending: "待核验" })[status] || status || "未知"; }
 function accountStatus(status) { return ({ pending: "待验证", verified: "已验证", invalid: "验证失败", disabled: "已停用" })[status] || status || "未知"; }
+function yubitAccountError(value) {
+  const error = String(value || "");
+  const messages = [
+    ["26200002", "YUBIT 请求时间校验失败，请稍后重试；若持续出现请检查服务器时间。"],
+    ["26200003", "API Key 无效，请确认粘贴的是当前 YUBIT 账户创建的 Key。"],
+    ["26200004", "API 签名不匹配，请重新粘贴同一组 API Key 和 API Secret；系统会自动去除复制时带入的首尾空格。"],
+    ["26200005", "YUBIT 查询权限不足，请为该 API Key 开启订单只读查询权限，并保持交易、转账和提现权限关闭。"],
+    ["26200006", "YUBIT 请求过于频繁，请稍后再验证。"],
+    ["26200012", "生产服务器公网 IP 尚未加入该 API Key 的白名单，请在 YUBIT API 设置中补充后重新验证。"],
+    ["26200013", "API Key 已过期，请在 YUBIT 重新创建只读凭证。"],
+    ["26200030", "YUBIT 上游服务暂时异常，请稍后重新验证。"],
+    ["YUBIT_NETWORK_ERROR", "生产服务器暂时无法连接 YUBIT OpenAPI，请检查网络后重试。"],
+    ["YUBIT_TIMEOUT", "YUBIT OpenAPI 响应超时，请稍后重新验证。"],
+  ];
+  const match = messages.find(([code]) => error.includes(code));
+  return match ? `${match[1]}（${match[0]}）` : error;
+}
 function deliveryStatus(status) { return ({ pending: "待发送", sending: "发送中", delivered: "已送达", failed: "发送失败" })[status] || status || "未知"; }
 function publicationLabel(value) { return value === "pnl_card" ? "盈利 PNL 卡片" : "交易信号"; }
 function eventLabel(value) { return ({ verified: "订单已核验", tracking_started: "开始持续追踪", order_updated: "订单状态更新", closed_profit: "盈利结算", closed_loss: "亏损结算", needs_review: "转人工复核", published: "信号已发布" })[value] || value || "状态更新"; }

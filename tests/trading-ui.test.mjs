@@ -31,6 +31,9 @@ test("trading center provides accessible operator flows and durable refresh stat
   assert.match(page, /type=["']password["']/);
   assert.match(page, /关闭交易、转账和提现权限/);
   assert.match(page, /验证查询权限/);
+  assert.match(page, /26200004/);
+  assert.match(page, /首尾空格/);
+  assert.match(page, /生产服务器公网 IP/);
   assert.doesNotMatch(page, /<option value="verified">已验证<\/option>/);
   assert.match(page, /apiKeyMasked/);
   assert.match(page, /navigator\.clipboard\.writeText/);
