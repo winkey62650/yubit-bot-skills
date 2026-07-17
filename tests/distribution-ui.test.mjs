@@ -5,10 +5,35 @@ import {
   buildDistributionTargetOptions,
   buildBroadcastRouteSummary,
   buildSocialSourceReadiness,
+  bulkDeleteNotice,
+  failedBulkDeleteIds,
   getContentTemplate,
   orderedDistributionTopics,
+  reconcileRuleSelection,
   recommendedScheduleFor
 } from "../lib/distribution-ui.mjs";
+
+test("rule selection keeps only unique rules that still exist", () => {
+  assert.deepEqual(
+    reconcileRuleSelection(["rule-a", "missing", "rule-a"], [{ id: "rule-a" }, { id: "rule-b" }]),
+    ["rule-a"]
+  );
+});
+
+test("bulk deletion helpers retain failures and produce an actionable notice", () => {
+  const partial = {
+    deleted: 2,
+    failed: 1,
+    results: [
+      { id: "rule-a", ok: true },
+      { id: "rule-b", ok: false, error: "database timeout" },
+      { id: "rule-c", ok: true }
+    ]
+  };
+  assert.deepEqual(failedBulkDeleteIds(partial), ["rule-b"]);
+  assert.equal(bulkDeleteNotice(partial), "已删除 2 条，1 条失败：database timeout");
+  assert.equal(bulkDeleteNotice({ deleted: 3, failed: 0, results: [] }), "已删除 3 条规则。");
+});
 
 test("distribution selectors exclude General Chat and follow the managed editorial order", () => {
   const topics = [
