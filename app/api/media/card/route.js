@@ -1,19 +1,20 @@
 import React from "react";
 import { ImageResponse } from "next/og";
 import { getMediaCardTemplate, normalizePosterMetrics } from "../../../../lib/media-card-template.mjs";
+import { loadMediaCardArtwork } from "../../../../lib/media-card-artwork.mjs";
 
-export const runtime = "edge";
+export const runtime = "nodejs";
 
 export async function GET(request) {
   const url = new URL(request.url);
   const kind = url.searchParams.get("kind");
   const card = getMediaCardTemplate(kind);
   const metrics = normalizePosterMetrics([url.searchParams.get("m1"), url.searchParams.get("m2"), url.searchParams.get("m3")]);
+  const artworkUrl = await loadMediaCardArtwork(kind);
   const e = React.createElement;
   if (kind === "events") {
     const dateLabel = cleanPosterText(url.searchParams.get("date"), "TODAY", 24);
     const subline = cleanPosterText(url.searchParams.get("subline"), "GLOBAL MARKETS · CRYPTO · COMPANIES", 72);
-    const artworkUrl = new URL("/templates/morning-market-brief-bg-v2.png", request.url).toString();
     return new ImageResponse(
       e("div", { style: { position: "relative", width: "100%", height: "100%", display: "flex", overflow: "hidden", color: "#f8fbff", background: "#020b19", fontFamily: "Arial" } },
         e("img", { src: artworkUrl, width: 1200, height: 675, style: { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" } }),
@@ -50,7 +51,6 @@ export async function GET(request) {
     const regime = cleanPosterText(url.searchParams.get("regime"), "MARKET REGIME", 24);
     const levels = cleanPosterText(url.searchParams.get("levels"), "KEY LEVELS", 52);
     const catalyst = cleanPosterText(url.searchParams.get("catalyst"), "NEXT CATALYST", 52);
-    const artworkUrl = new URL("/templates/daily-market-analysis.png", request.url).toString();
     const values = [
       { value: regime, top: 270, color: "#75c7ff" },
       { value: levels, top: 479, color: "#58edf2" },
@@ -87,7 +87,6 @@ export async function GET(request) {
     const amount = cleanPosterText(url.searchParams.get("amount"), "$—", 24);
     const price = cleanPosterText(url.searchParams.get("price"), "$—", 24);
     const status = cleanPosterText(url.searchParams.get("status"), "ORDER BOOK SNAPSHOT", 32);
-    const artworkUrl = new URL("/templates/whale-alert-bg-v2.png", request.url).toString();
     return new ImageResponse(
       e("div", { style: { position: "relative", width: "100%", height: "100%", display: "flex", overflow: "hidden", color: "#f5fbff", background: "#020914", fontFamily: "Arial" } },
         e("img", { src: artworkUrl, width: 1200, height: 675, style: { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" } }),
