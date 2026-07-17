@@ -65,7 +65,8 @@ sudo nginx -t
 
 sudo systemctl daemon-reload
 sudo systemctl disable --now yubit-bot-skills.service yubit-news-console.service 2>/dev/null || true
-sudo systemctl enable --now yubit-academy-web.service
+sudo systemctl enable yubit-academy-web.service
+sudo systemctl restart yubit-academy-web.service
 
 for attempt in {1..30}; do
   if curl --fail --silent --show-error --max-time 5 http://127.0.0.1:4174/login >/dev/null; then
@@ -78,7 +79,8 @@ for attempt in {1..30}; do
   sleep 2
 done
 
-sudo systemctl enable --now yubit-academy-worker.service
+sudo systemctl enable yubit-academy-worker.service
+sudo systemctl restart yubit-academy-worker.service
 sudo systemctl reload nginx
 
 if [[ "$ENABLE_HTTPS" == "1" ]]; then

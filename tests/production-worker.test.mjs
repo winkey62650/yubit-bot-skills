@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, symlink } from "node:fs/promises";
+import { mkdtemp, readFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
@@ -67,6 +67,17 @@ test("worker process stays alive between scheduled runs", async () => {
     await new Promise((resolve) => child.once("close", resolve));
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("server deployment restarts both services after changing the current release", async () => {
+  const deployScript = await readFile(
+    fileURLToPath(new URL("../deploy/server/deploy.sh", import.meta.url)),
+    "utf8",
+  );
+
+  assert.match(deployScript, /systemctl restart yubit-academy-web\.service/);
+  assert.match(deployScript, /systemctl restart yubit-academy-worker\.service/);
+  assert.doesNotMatch(deployScript, /enable --now yubit-academy-(?:web|worker)\.service/);
 });
 
 test("callCronEndpoint authenticates and validates the response", async () => {
