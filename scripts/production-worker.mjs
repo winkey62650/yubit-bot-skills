@@ -94,7 +94,6 @@ function delay(ms, signal) {
   if (signal.aborted) return Promise.resolve();
   return new Promise((resolve) => {
     const timer = setTimeout(resolve, ms);
-    timer.unref?.();
     signal.addEventListener("abort", () => {
       clearTimeout(timer);
       resolve();

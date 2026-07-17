@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawn } from "node:child_process";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -37,6 +38,33 @@ test("worker entrypoint remains executable through the production current symlin
     await symlink(workerPath, symlinkPath);
     assert.equal(isMainModule(symlinkPath, new URL("../scripts/production-worker.mjs", import.meta.url).href), true);
   } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("worker process stays alive between scheduled runs", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "yubit-worker-process-"));
+  const workerPath = fileURLToPath(new URL("../scripts/production-worker.mjs", import.meta.url));
+  const symlinkPath = join(directory, "production-worker.mjs");
+  await symlink(workerPath, symlinkPath);
+  const child = spawn(process.execPath, [symlinkPath], {
+    env: {
+      ...process.env,
+      CRON_SECRET: "test-cron-secret",
+      WORKER_BASE_URL: "http://127.0.0.1:9",
+      WORKER_DISTRIBUTION_INTERVAL_MS: "1000",
+      WORKER_TRADING_INTERVAL_MS: "1000",
+      WORKER_AGENT_INTERVAL_MS: "1000",
+      WORKER_REQUEST_TIMEOUT_MS: "1000",
+    },
+    stdio: "ignore",
+  });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.equal(child.exitCode, null);
+  } finally {
+    child.kill("SIGTERM");
+    await new Promise((resolve) => child.once("close", resolve));
     await rm(directory, { recursive: true, force: true });
   }
 });
