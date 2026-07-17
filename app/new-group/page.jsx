@@ -2,8 +2,11 @@
 
 import { useEffect, useState } from "react";
 import ConsoleShell from "../components/ConsoleShell";
+import LiveStatusStamp from "../components/LiveStatusStamp";
 import { Card, Field, PageHeader, StatusPill, inputClass } from "../components/ui";
+import { useLiveAutoRefresh } from "../hooks/useLiveAutoRefresh";
 import { defaultTopicTemplate, migrateTopicTemplateList, topicNameWithSequence } from "../../templates.mjs";
+import { buildInitializationChecklist, getBotOperationalStatus } from "../../lib/live-status.mjs";
 import { selectPreferredInitializationGroup } from "../../lib/telegram-discovery.mjs";
 import { loadWorkspaceState, saveWorkspaceState } from "../../lib/workspace-client";
 
@@ -25,6 +28,8 @@ export default function NewGroupPage() {
   const [groups, setGroups] = useState([]);
   const [groupsLoaded, setGroupsLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [generatedAt, setGeneratedAt] = useState("");
+  const [refreshError, setRefreshError] = useState("");
   const [discoveryStatus, setDiscoveryStatus] = useState("正在识别群与机器人...");
   const [dryRun, setDryRun] = useState(true);
   const [draftLoaded, setDraftLoaded] = useState(false);
@@ -32,6 +37,7 @@ export default function NewGroupPage() {
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState({ active: false, value: 0, label: "等待执行" });
   const selectedGroup = groups.find((group) => String(group.chatId) === String(chatId)) || null;
+  const checklist = buildInitializationChecklist({ groupName, topics, group: selectedGroup, generatedAt });
 
   useEffect(() => {
     initialize();
@@ -47,6 +53,11 @@ export default function NewGroupPage() {
     }, 600);
     return () => window.clearTimeout(timer);
   }, [draftLoaded, groupName, groupDescription, chatId, botRole, dryRun, topics]);
+
+  useLiveAutoRefresh(
+    () => refreshGroups(chatId, { silent: true }),
+    { enabled: groupsLoaded && !running }
+  );
 
   async function initialize() {
     let savedDraft = null;
@@ -83,11 +94,13 @@ export default function NewGroupPage() {
     });
   }
 
-  async function refreshGroups(preferredChatId = chatId) {
+  async function refreshGroups(preferredChatId = chatId, { silent = false } = {}) {
     if (refreshing) return;
     setRefreshing(true);
-    setGroupsLoaded(false);
-    setDiscoveryStatus("正在从 Telegram 实时刷新...");
+    if (!silent) {
+      setGroupsLoaded(false);
+      setDiscoveryStatus("正在从 Telegram 实时刷新...");
+    }
     try {
       const response = await fetch(`/api/chats?refresh=${Date.now()}`, { cache: "no-store" });
       const data = await response.json();
@@ -95,6 +108,8 @@ export default function NewGroupPage() {
       const liveGroups = data.chats || [];
       setGroups(liveGroups);
       setBots(data.bots?.length ? data.bots : currentBotFallback);
+      setGeneratedAt(data.generatedAt || new Date().toISOString());
+      setRefreshError("");
       const preferred = selectPreferredInitializationGroup(liveGroups, preferredChatId);
       if (preferred) {
         setChatId(String(preferred.chatId));
@@ -110,7 +125,8 @@ export default function NewGroupPage() {
         setDiscoveryStatus(liveGroups.length ? `已识别 ${liveGroups.length} 个群；${readyCount} 个群已开启 Topics 且三个 Bot 均为管理员` : "未识别到群，请确认 Bot 已加入并重新刷新");
       }
     } catch (error) {
-      setDiscoveryStatus(`刷新失败：${error.message}`);
+      setRefreshError(error.message);
+      if (!silent) setDiscoveryStatus(`刷新失败：${error.message}`);
     } finally {
       setGroupsLoaded(true);
       setRefreshing(false);
@@ -143,6 +159,8 @@ export default function NewGroupPage() {
       if (!saveResponse.ok || !saved.ok) throw new Error(saved.error || "群配置保存失败");
       setGroups(saved.groups || mergedGroups);
       setBots(data.bots?.length ? data.bots : currentBotFallback);
+      setGeneratedAt(data.generatedAt || new Date().toISOString());
+      setRefreshError("");
       setChatId(String(verifiedGroup.chatId));
       setGroupName(verifiedGroup.title);
       setDiscoveryStatus(`${verifiedGroup.title} 已直接核验：三个 Bot 管理员 ${verifiedGroup.adminBotCount}/3，${verifiedGroup.canUseTopics ? "Topics 已开启" : "Topics 未开启"}`);
@@ -250,6 +268,7 @@ export default function NewGroupPage() {
             </div>
             <p className="mt-2 text-sm font-bold text-ops-muted">{discoveryStatus}</p>
             <p className="mt-1 text-xs font-bold text-ops-muted">无需在这台 Mac 登录三个 Bot；这里始终通过服务器端 Bot API 复核。</p>
+            <div className="mt-3"><LiveStatusStamp generatedAt={generatedAt} error={refreshError} refreshing={refreshing} /></div>
             {selectedGroup && !selectedGroup.readyForInitialization && <p className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-sm font-bold text-amber-800">{selectedGroup.initializationBlockReason}。Topics 必须由群主在 Telegram 客户端开启。</p>}
             <p className="mt-1 text-xs font-bold text-ops-accent">{saveStatus}</p>
           </div>
@@ -284,15 +303,21 @@ export default function NewGroupPage() {
           )}
         </Card>
         <Card className="p-5">
-          <h2 className="text-lg font-black">初始化清单</h2>
+          <h2 className="text-lg font-black">本次初始化准备</h2>
+          <p className="mt-1 text-xs leading-5 text-ops-muted">“已配置”只表示表单内容准备完成；群权限和 Bot 状态来自 Telegram 实时核验。</p>
           <div className="mt-4 grid gap-3 text-sm">
-            {["设置群资料", "创建分区", "设置公告", "置顶消息"].map((item) => <div className="flex items-center justify-between" key={item}><span>{item}</span><StatusPill>已就绪</StatusPill></div>)}
-            <div className="flex items-center justify-between"><span>权限检查</span><StatusPill tone="amber">待执行</StatusPill></div>
+            {checklist.map((item) => {
+              const ready = item.kind === "live" ? item.value === "已通过" : !["待填写", "待配置", "未配置"].includes(item.value);
+              return <div className="flex items-center justify-between gap-3" key={item.label}><span>{item.label}</span><StatusPill tone={ready ? "green" : "amber"}>{item.value}</StatusPill></div>;
+            })}
           </div>
           <div className="mt-5 border-t border-ops-line pt-5">
             <h3 className="font-black">当前三个 Bot</h3>
             <div className="mt-3 grid gap-2 text-sm">
-              {bots.map((bot) => <div className="rounded-lg bg-[#fbfcfb] px-3 py-2" key={bot.name}><div className="flex items-center justify-between gap-2"><strong>{bot.name}</strong><StatusPill tone={bot.status === "在线" ? "green" : "amber"}>{bot.status || "等待刷新"}</StatusPill></div><div className="mt-1 break-all text-xs text-ops-muted">@{bot.username || bot.expectedUsername}</div></div>)}
+              {bots.map((bot) => {
+                const botStatus = getBotOperationalStatus({ bot, group: selectedGroup, generatedAt });
+                return <div className="rounded-lg bg-[#fbfcfb] px-3 py-2" key={bot.name}><div className="flex items-center justify-between gap-2"><strong>{bot.name}</strong><StatusPill tone={botStatus.tone}>{botStatus.label}</StatusPill></div><div className="mt-1 break-all text-xs text-ops-muted">@{bot.username || bot.expectedUsername}</div><div className="mt-1 text-xs text-ops-muted">{botStatus.detail}</div></div>;
+              })}
             </div>
           </div>
           <div className="mt-5 border-t border-ops-line pt-5">

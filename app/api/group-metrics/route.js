@@ -2,11 +2,16 @@ import { existsSync, readFileSync } from "node:fs";
 import { NextResponse } from "next/server";
 import { getTelegramGroupMetrics } from "../../../lib/telegram-metrics.mjs";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const tokens = readTokenEnv(".env.telegram-tokens.local");
   const token = tokens.YUBITADMIN_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN;
   const result = await getTelegramGroupMetrics(token);
-  return NextResponse.json(result, { status: result.ok ? 200 : 500 });
+  return NextResponse.json(result, {
+    status: result.ok ? 200 : 500,
+    headers: { "cache-control": "no-store, max-age=0" }
+  });
 }
 
 function readTokenEnv(path) {

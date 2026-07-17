@@ -72,6 +72,17 @@ test("new-group UI never presents stale draft identity as an already recognized 
   assert.match(source, /setGroupName\(preferred\.title\)/);
 });
 
+test("new-group UI does not present static ready or online labels as live Telegram state", () => {
+  const source = readFileSync(new URL("../app/new-group/page.jsx", import.meta.url), "utf8");
+
+  assert.doesNotMatch(source, /\["设置群资料", "创建分区", "设置公告", "置顶消息"\]/);
+  assert.doesNotMatch(source, />已就绪<\/StatusPill>/);
+  assert.match(source, /buildInitializationChecklist/);
+  assert.match(source, /getBotOperationalStatus/);
+  assert.match(source, /setGeneratedAt\(data\.generatedAt/);
+  assert.match(source, /useLiveAutoRefresh/);
+});
+
 function runSetup(extraEnv = {}) {
   const dir = mkdtempSync(join(tmpdir(), "yubit-setup-test-"));
   const configPath = join(dir, "config.json");

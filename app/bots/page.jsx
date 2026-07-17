@@ -2,7 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import ConsoleShell from "../components/ConsoleShell";
+import LiveStatusStamp from "../components/LiveStatusStamp";
 import { Card, PageHeader, StatusPill } from "../components/ui";
+import { useLiveAutoRefresh } from "../hooks/useLiveAutoRefresh";
+import { getBotOperationalStatus } from "../../lib/live-status.mjs";
 
 const fallbackBots = [
   { name: "AdminBot", role: "群管理 / 建群 / 公告", username: "Bonnie_geniustrader_bot", status: "读取中", groups: [] },
@@ -15,26 +18,32 @@ export default function BotsPage() {
   const [status, setStatus] = useState("正在读取 Telegram 实时状态");
   const [running, setRunning] = useState(true);
   const [generatedAt, setGeneratedAt] = useState("");
+  const [refreshError, setRefreshError] = useState("");
   const coveredGroupCount = useMemo(() => new Set(bots.flatMap((bot) => (bot.groups || []).map((group) => String(group.id)))).size, [bots]);
-  const onlineCount = bots.filter((bot) => bot.status === "在线").length;
+  const availableCount = bots.filter((bot) => bot.apiAvailable ?? (bot.status === "在线")).length;
 
   useEffect(() => { refresh(); }, []);
+  useLiveAutoRefresh(() => refresh({ silent: true }), { enabled: !running });
 
-  async function refresh() {
-    setRunning(true);
-    setStatus("读取中");
+  async function refresh({ silent = false } = {}) {
+    if (!silent) {
+      setRunning(true);
+      setStatus("读取中");
+    }
     try {
       const response = await fetch(`/api/bot-groups?t=${Date.now()}`, { cache: "no-store" });
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error(data.error || "读取失败");
       setBots(data.bots || fallbackBots);
       setGeneratedAt(data.generatedAt || "");
+      setRefreshError("");
       const hidden = Math.max(...(data.bots || []).map((bot) => Number(bot.migratedGroupsHidden || 0)), 0);
       setStatus(hidden ? `已刷新 · 已隐藏 ${hidden} 条迁移历史` : "已刷新");
     } catch (error) {
-      setStatus(`失败：${error.message}`);
+      setRefreshError(error.message);
+      if (!silent) setStatus("刷新失败");
     } finally {
-      setRunning(false);
+      if (!silent) setRunning(false);
     }
   }
 
@@ -43,11 +52,12 @@ export default function BotsPage() {
       <PageHeader
         title="机器人配置"
         desc="按 Telegram 当前成员身份核验三个 Bot 所在群；已退出群和升级前的旧群会自动隐藏。"
-        action={<button className="min-h-10 rounded-lg border border-ops-accent px-5 text-sm font-black text-ops-accent" disabled={running} onClick={refresh}>{running ? "刷新中..." : "刷新机器人群"}</button>}
+        action={<button className="min-h-10 rounded-lg border border-ops-accent px-5 text-sm font-black text-ops-accent" disabled={running} onClick={() => refresh()}>{running ? "刷新中..." : "刷新机器人群"}</button>}
       />
+      <div className="mb-4"><LiveStatusStamp generatedAt={generatedAt} error={refreshError} refreshing={running} /></div>
       <section className="mb-5 grid gap-0 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops md:grid-cols-4">
         <MetricBox label="机器人" value={String(bots.length)} sub="已配置角色" />
-        <MetricBox label="在线" value={String(onlineCount)} sub="Bot API 可连通" />
+        <MetricBox label="API 可用" value={String(availableCount)} sub="仅表示 Bot API 与身份核验通过" />
         <MetricBox label="有效群" value={String(coveredGroupCount)} sub="已去重并核验成员身份" />
         <MetricBox label="状态" value={status} sub={generatedAt ? new Date(generatedAt).toLocaleString("zh-CN") : "不显示 Token"} />
       </section>
@@ -61,8 +71,9 @@ export default function BotsPage() {
               <tr><th className="px-5 py-3">机器人</th><th className="px-5 py-3">职责</th><th className="px-5 py-3">当前有效群</th><th className="px-5 py-3">状态</th></tr>
             </thead>
             <tbody>
-              {bots.map((bot) => (
-                <tr className="border-t border-ops-line align-top" key={bot.name}>
+              {bots.map((bot) => {
+                const botStatus = getBotOperationalStatus({ bot, generatedAt });
+                return <tr className="border-t border-ops-line align-top" key={bot.name}>
                   <td className="px-5 py-4"><b>{bot.name}</b>{bot.username ? <div className="mt-1 text-xs text-ops-muted">@{bot.username}</div> : null}</td>
                   <td className="px-5 py-4">{bot.role}</td>
                   <td className="px-5 py-4">
@@ -73,14 +84,14 @@ export default function BotsPage() {
                       </div>
                     ))}</div> : <span className="text-ops-muted">暂无有效群，请确认机器人已入群并产生过更新</span>}
                   </td>
-                  <td className="px-5 py-4"><StatusPill tone={bot.status === "在线" ? "green" : "amber"}>{bot.status}</StatusPill></td>
-                </tr>
-              ))}
+                  <td className="px-5 py-4"><StatusPill tone={botStatus.tone}>{botStatus.label}</StatusPill><div className="mt-2 text-xs text-ops-muted">{botStatus.detail}</div></td>
+                </tr>;
+              })}
             </tbody>
           </table>
         </div>
       </Card>
-      <div className="mt-4 rounded-lg border border-ops-line bg-white px-5 py-4 text-sm leading-6 text-ops-muted">说明：Telegram Bot API 不提供“列出全部群”的接口。这里基于机器人收到的群更新、已保存群配置，再用实时成员身份逐一复核；群迁移旧 ID、已退出和被移除的群不会计入有效群。</div>
+      <div className="mt-4 rounded-lg border border-ops-line bg-white px-5 py-4 text-sm leading-6 text-ops-muted">说明：“API 可用”不等于 Bot 已在某个群拥有管理员权限。群卡片会分别显示成员身份和 Topic 权限；Telegram 不提供“列出全部群”的接口，因此后台基于群事件与已保存群逐一实时复核。</div>
     </ConsoleShell>
   );
 }
