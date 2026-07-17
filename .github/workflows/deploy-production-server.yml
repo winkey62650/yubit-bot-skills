@@ -1,0 +1,36 @@
+name: Deploy production server
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: yubit-academy-production-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - name: Install SSH password helper
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq sshpass
+
+      - name: Deploy the latest code/academy release
+        env:
+          SSHPASS: ${{ secrets.YUBIT_SERVER_PASSWORD }}
+        run: |
+          if [ -z "$SSHPASS" ]; then
+            echo "YUBIT_SERVER_PASSWORD is not configured." >&2
+            exit 1
+          fi
+          sshpass -e ssh \
+            -o ConnectTimeout=20 \
+            -o ServerAliveInterval=10 \
+            -o StrictHostKeyChecking=accept-new \
+            ubuntu@152.32.161.174 \
+            'cd /opt/yubit-academy/current && bash deploy/server/deploy.sh'
