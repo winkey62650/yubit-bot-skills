@@ -92,6 +92,18 @@ if [[ "$ENABLE_HTTPS" == "1" ]]; then
 fi
 
 curl --fail --silent --show-error --max-time 10 "https://$SERVER_NAME/login" >/dev/null
+public_location="$(curl --fail --silent --show-error --head --max-time 10 "https://$SERVER_NAME/" \
+  | tr -d '\r' | awk 'tolower($1) == "location:" { print $2; exit }')"
+if [[ "$public_location" != "https://$SERVER_NAME/login" ]]; then
+  echo "Public root redirects to an invalid login URL: ${public_location:-missing}" >&2
+  exit 1
+fi
+ip_location="$(curl --fail --silent --show-error --head --max-time 10 "http://$SERVER_IP/" \
+  | tr -d '\r' | awk 'tolower($1) == "location:" { print $2; exit }')"
+if [[ "$ip_location" != "https://$SERVER_NAME/" ]]; then
+  echo "Server IP does not redirect to the public HTTPS URL: ${ip_location:-missing}" >&2
+  exit 1
+fi
 sudo systemctl is-active --quiet yubit-academy-web.service
 sudo systemctl is-active --quiet yubit-academy-worker.service
 

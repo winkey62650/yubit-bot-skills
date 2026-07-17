@@ -80,6 +80,30 @@ test("server deployment restarts both services after changing the current releas
   assert.doesNotMatch(deployScript, /enable --now yubit-academy-(?:web|worker)\.service/);
 });
 
+test("production redirects use the public HTTPS origin instead of the private listener", async () => {
+  const middleware = await readFile(
+    fileURLToPath(new URL("../middleware.js", import.meta.url)),
+    "utf8",
+  );
+  const nginx = await readFile(
+    fileURLToPath(new URL("../deploy/nginx/yubit-academy.conf", import.meta.url)),
+    "utf8",
+  );
+  const deployScript = await readFile(
+    fileURLToPath(new URL("../deploy/server/deploy.sh", import.meta.url)),
+    "utf8",
+  );
+
+  assert.match(middleware, /process\.env\.APP_BASE_URL/);
+  assert.doesNotMatch(middleware, /new URL\("\/login", request\.url\)/);
+  assert.match(nginx, /return 30[18] https:\/\/__SERVER_NAME__\$request_uri;/);
+  assert.doesNotMatch(nginx, /return 30[12] http:\/\/__SERVER_NAME__/);
+  assert.match(deployScript, /public_location=.*https:\/\/\$SERVER_NAME\//s);
+  assert.match(deployScript, /\$public_location" != "https:\/\/\$SERVER_NAME\/login/);
+  assert.match(deployScript, /ip_location=.*http:\/\/\$SERVER_IP\//s);
+  assert.match(deployScript, /\$ip_location" != "https:\/\/\$SERVER_NAME\//);
+});
+
 test("callCronEndpoint authenticates and validates the response", async () => {
   const requests = [];
   const result = await callCronEndpoint({

@@ -15,7 +15,8 @@ export async function middleware(request) {
     return NextResponse.json({ ok: false, error: "登录已失效，请重新登录" }, { status: 401 });
   }
 
-  const loginUrl = new URL("/login", request.url);
+  const publicOrigin = process.env.APP_BASE_URL || request.url;
+  const loginUrl = new URL("/login", publicOrigin);
   return NextResponse.redirect(loginUrl);
 }
 
