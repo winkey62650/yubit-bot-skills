@@ -518,6 +518,16 @@ test("GitHub Actions keeps distribution as a manual server recovery path", async
   assert.match(distributionJob, /if \[ "\$claimed" = "0" \]/);
 });
 
+test("production deployment applies an exact distribution allowlist while keeping Trader Demo-only", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/deploy-production-server.yml", import.meta.url), "utf8");
+
+  assert.match(workflow, /vars\.TELEGRAM_DISTRIBUTION_APPROVED_TARGETS/);
+  assert.match(workflow, /TELEGRAM_DEMO_ONLY=true/);
+  assert.match(workflow, /TELEGRAM_DISTRIBUTION_APPROVED_TARGETS=%s/);
+  assert.match(workflow, /TRADING_DEMO_ONLY=true/);
+  assert.match(workflow, /sudo install -m 0600/);
+});
+
 test("preview can explicitly use durable Blob-backed JSON while production still requires Postgres", async () => {
   const original = {
     databaseUrl: process.env.DATABASE_URL,

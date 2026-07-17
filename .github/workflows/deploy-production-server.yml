@@ -23,14 +23,35 @@ jobs:
       - name: Deploy the latest code/academy release
         env:
           SSHPASS: ${{ secrets.YUBIT_SERVER_PASSWORD }}
+          APPROVED_DISTRIBUTION_TARGETS: ${{ vars.TELEGRAM_DISTRIBUTION_APPROVED_TARGETS }}
         run: |
           if [ -z "$SSHPASS" ]; then
             echo "YUBIT_SERVER_PASSWORD is not configured." >&2
             exit 1
           fi
+          if ! [[ "$APPROVED_DISTRIBUTION_TARGETS" =~ ^-?[0-9]+:[1-9][0-9]*(,-?[0-9]+:[1-9][0-9]*)*$ ]]; then
+            echo "Production distribution target allowlist is missing or invalid." >&2
+            exit 1
+          fi
+          policy_b64="$(printf '%s' "$APPROVED_DISTRIBUTION_TARGETS" | base64 -w0)"
           sshpass -e ssh \
             -o ConnectTimeout=20 \
             -o ServerAliveInterval=10 \
             -o StrictHostKeyChecking=accept-new \
             ubuntu@152.32.161.174 \
-            'cd /opt/yubit-academy/current && bash deploy/server/deploy.sh'
+            "POLICY_B64='$policy_b64' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          env_file=/etc/yubit-academy/production.env
+          approved_targets="$(printf '%s' "$POLICY_B64" | base64 -d)"
+          env_tmp="$(mktemp)"
+          sudo awk '!/^(TELEGRAM_DEMO_ONLY|TELEGRAM_DISTRIBUTION_APPROVED_TARGETS|TRADING_DEMO_ONLY)=/' "$env_file" >"$env_tmp"
+          {
+            printf 'TELEGRAM_DEMO_ONLY=true\n'
+            printf 'TELEGRAM_DISTRIBUTION_APPROVED_TARGETS=%s\n' "$approved_targets"
+            printf 'TRADING_DEMO_ONLY=true\n'
+          } >>"$env_tmp"
+          sudo install -m 0600 -o root -g root "$env_tmp" "$env_file"
+          rm -f "$env_tmp"
+          cd /opt/yubit-academy/current
+          bash deploy/server/deploy.sh
+          REMOTE
