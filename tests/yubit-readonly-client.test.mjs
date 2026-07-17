@@ -27,11 +27,13 @@ test("creates the official sorted query signature", () => {
     apiSecret: API_SECRET,
     timestamp: NOW,
     recvWindow: 5000,
+    method: "GET",
+    path: "/oapi/contract/trade/private/v1/orders",
     params: { symbol: "BTCUSDT", limit: 20, orderId: "order_1234" },
   });
   const payload = "limit=20&orderId=order_1234&symbol=BTCUSDT";
   const expected = createHmac("sha256", API_SECRET)
-    .update(`${NOW}${API_KEY}5000${payload}`)
+    .update(`GET/oapi/contract/trade/private/v1/orders${NOW}${API_KEY}5000${payload}`)
     .digest("hex");
 
   assert.equal(result.payload, payload);
@@ -60,6 +62,7 @@ test("order history uses a signed GET request and official headers", async () =>
   assert.equal(calls[0][1].headers["MF-ACCESS-API-KEY"], API_KEY);
   assert.equal(calls[0][1].headers["MF-ACCESS-TIMESTAMP"], String(NOW));
   assert.equal(calls[0][1].headers["MF-ACCESS-RECV-WINDOW"], "5000");
+  assert.equal(calls[0][1].headers["MF-ACCESS-SIGN-VERSION"], "2");
   assert.match(calls[0][1].headers["MF-ACCESS-SIGN"], /^[a-f0-9]{64}$/);
   assert.equal("body" in calls[0][1], false);
 });

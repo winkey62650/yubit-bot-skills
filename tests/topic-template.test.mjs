@@ -27,7 +27,7 @@ test("new topics keep their sequence in the Telegram name and use the requested 
   }
 });
 
-test("legacy saved new-group drafts migrate to the canonical business order", () => {
+test("legacy saved new-group drafts migrate to the screenshot editorial order", () => {
   const legacyTopics = [
     { id: "1", emoji: "❗️", name: "1. READ FIRST - DISCLAIMER", attribute: "关闭话题", announcement: "saved notice" },
     { id: "2", emoji: "⚡️", name: "2. Market Events", attribute: "关闭话题" },
@@ -50,6 +50,24 @@ test("legacy saved new-group drafts migrate to the canonical business order", ()
     { id: "2", emoji: "⚡️", name: "2. CryptoGuy Trading Zone", attribute: "交流频道" }
   ]);
   assert.equal(migrated[0].announcement, "saved notice", "operator content is retained during the layout migration");
+});
+
+test("already migrated semantic drafts are still reordered while operator content is preserved", () => {
+  const saved = [
+    { id: "1", emoji: "❗️", name: "1. READ FIRST - DISCLAIMER", announcement: "custom notice" },
+    { id: "2", emoji: "⚡️", name: "2. CryptoGuy Trading Zone" },
+    { id: "3", emoji: "📰", name: "3. Market Events" },
+    { id: "4", emoji: "💡", name: "4. Market Analysis - Crypto/Stocks/TradFi" },
+    { id: "5", emoji: "💰", name: "5. Community Signal", imageUrl: "https://example.com/custom.png" },
+    { id: "6", emoji: "💎", name: "6. Smart Money Tracker" },
+    { id: "7", emoji: "🎉", name: "7. YUBIT Updates" }
+  ];
+
+  const migrated = migrateTopicTemplateList(saved);
+
+  assert.deepEqual(migrated.map((topic) => topic.id), ["1", "5", "4", "3", "6", "7", "2"]);
+  assert.equal(migrated[0].announcement, "custom notice");
+  assert.equal(migrated[1].imageUrl, "https://example.com/custom.png");
 });
 
 test("saved drafts migrate only the old default icons", () => {

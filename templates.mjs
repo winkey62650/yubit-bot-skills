@@ -151,13 +151,6 @@ export function migrateTopicTemplateList(topics = []) {
   }
 
   if (savedBySemantic.size !== defaultTopicTemplate.length) return migrated;
-  const isLegacyLayout = defaultTopicTemplate.some((canonical) => {
-    const saved = savedBySemantic.get(topicSemanticKey(canonical.name));
-    return !saved || String(saved.id || "") !== canonical.id;
-  }) || migrated.some((topic) => /7-day\s+pnl\s+challenge/i.test(String(topic?.name || "")));
-
-  if (!isLegacyLayout) return migrated;
-
   return defaultTopicTemplate.map((canonical) => {
     const saved = savedBySemantic.get(topicSemanticKey(canonical.name));
     return {

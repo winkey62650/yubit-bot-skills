@@ -86,13 +86,15 @@ test("a due one-time automation executes once and is archived as completed", asy
     targets: [target],
   };
   const savedRules = [];
+  const claimOptions = [];
   let claimed = false;
   const events = [];
   const deliveries = [];
   const repository = {
     async cleanupExpired() {},
     async getMeta() { return { completedAt: "2026-07-01T00:00:00.000Z" }; },
-    async claimDueAutomationRules() {
+    async claimDueAutomationRules(_now, options) {
+      claimOptions.push(options);
       if (claimed) return [];
       claimed = true;
       return [rule];
@@ -124,6 +126,43 @@ test("a due one-time automation executes once and is archived as completed", asy
   assert.equal(savedRules[0].runOnce, true);
   assert.equal(savedRules[0].status, "completed");
   assert.equal(savedRules[0].nextRunAt, null);
+  assert.equal(savedRules[0].leaseUntil, null);
+  assert.deepEqual(claimOptions, [{ limit: 1 }, { limit: 1 }]);
+});
+
+test("a failed one-time automation is requeued instead of being lost", async () => {
+  const rule = {
+    id: "one-time-retry",
+    kind: "automation",
+    name: "Daily Analysis · One-time",
+    contentType: "daily-analysis",
+    schedulePreset: "daily-0800-utc",
+    enabled: true,
+    runOnce: true,
+    status: "running",
+    nextRunAt: "2026-07-17T12:00:00.000Z",
+    leaseUntil: "2026-07-17T12:06:00.000Z",
+    targets: [{ id: "target", chatId: "-1001", threadId: 10 }]
+  };
+  const saved = [];
+  const repository = {
+    async cleanupExpired() {},
+    async getMeta() { return { completedAt: "2026-07-01T00:00:00.000Z" }; },
+    async claimDueAutomationRules() { return [rule]; },
+    async listRules() { return []; },
+    async saveRule(value) { saved.push(value); return value; }
+  };
+
+  const result = await runDueDistributionJobs(new Date("2026-07-17T12:02:00.000Z"), {
+    repository,
+    runner: async () => { throw new Error("temporary timeout"); }
+  });
+
+  assert.equal(result.results[0].status, "failed");
+  assert.equal(saved[0].enabled, true);
+  assert.equal(saved[0].status, "retrying");
+  assert.equal(saved[0].nextRunAt, "2026-07-17T12:07:00.000Z");
+  assert.equal(saved[0].leaseUntil, null);
 });
 
 test("an automatic publishing rule can be run immediately with real per-target delivery records", async () => {
@@ -309,10 +348,13 @@ test("multi-message market briefs map both the poster and full brief to prevent 
 
 test("GitHub Actions invokes the durable distribution scheduler every five off-peak minutes", async () => {
   const workflow = await readFile(new URL("../.github/workflows/telegram-automations.yml", import.meta.url), "utf8");
+  const distributionJob = workflow.split("  trading:")[0];
   assert.match(workflow, /cron: "2\/5 \* \* \* \*"/);
   assert.match(workflow, /github\.event_name == 'schedule'/);
   assert.match(workflow, /\/api\/cron\/distribution/);
   assert.match(workflow, /secrets\.YUBIT_CRON_SECRET/);
+  assert.match(distributionJob, /--max-time 55/);
+  assert.doesNotMatch(distributionJob, /--retry/);
 });
 
 test("preview can explicitly use durable Blob-backed JSON while production still requires Postgres", async () => {

@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { PostgresDistributionRepository } from "../lib/distribution-repository.mjs";
 
-test("Postgres rules persist and atomically claim one-time automation state", async () => {
+test("Postgres rules persist and claim one due automation with a recoverable lease", async () => {
   const repository = Object.create(PostgresDistributionRepository.prototype);
   const calls = [];
   repository.getRule = async () => ({ id: "one-time-events", runOnce: true });
@@ -30,10 +30,17 @@ test("Postgres rules persist and atomically claim one-time automation state", as
   assert.equal(calls[0].params[8], true);
 
   calls.length = 0;
-  await repository.claimDueAutomationRules(new Date("2026-07-17T12:02:00.000Z"));
-  assert.match(calls[0].sql, /enabled = CASE WHEN run_once THEN false/);
-  assert.match(calls[0].sql, /status = CASE WHEN run_once THEN 'running'/);
-  assert.match(calls[0].sql, /next_run_at = CASE WHEN run_once THEN NULL/);
+  await repository.claimDueAutomationRules(new Date("2026-07-17T12:02:00.000Z"), { limit: 1, leaseMs: 240000 });
+  assert.match(calls[0].sql, /FOR UPDATE SKIP LOCKED/);
+  assert.match(calls[0].sql, /LIMIT \$2/);
+  assert.match(calls[0].sql, /lease_until = \$3/);
+  assert.doesNotMatch(calls[0].sql, /enabled\s*=\s*false/);
+  assert.doesNotMatch(calls[0].sql, /next_run_at\s*=\s*NULL/);
+  assert.deepEqual(calls[0].params, [
+    "2026-07-17T12:02:00.000Z",
+    1,
+    "2026-07-17T12:06:00.000Z"
+  ]);
 });
 
 test("Postgres delivery records preserve every Telegram message id", async () => {
