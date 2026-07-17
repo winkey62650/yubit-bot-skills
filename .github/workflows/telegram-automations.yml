@@ -34,7 +34,7 @@ jobs:
             echo "YUBIT_CRON_SECRET is missing; configure the same non-empty value as Vercel Production CRON_SECRET." >&2
             exit 1
           fi
-          curl --fail-with-body --retry 2 --retry-all-errors --max-time 90 \
+          curl --fail-with-body --max-time 55 \
             -H "Authorization: Bearer $YUBIT_CRON_SECRET" \
             "$APP_BASE_URL/api/cron/distribution"
         env:
