@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-import { pathToFileURL } from "node:url";
+import { realpathSync } from "node:fs";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const DEFAULTS = Object.freeze({
   distributionIntervalMs: 15_000,
@@ -180,6 +181,15 @@ export async function startProductionWorker({ env = process.env, fetchImpl = fet
   };
 }
 
+export function isMainModule(argvPath = process.argv[1], moduleUrl = import.meta.url) {
+  if (!argvPath) return false;
+  try {
+    return realpathSync(argvPath) === realpathSync(fileURLToPath(moduleUrl));
+  } catch {
+    return pathToFileURL(argvPath).href === moduleUrl;
+  }
+}
+
 async function main() {
   const worker = await startProductionWorker();
   const stop = () => worker.stop();
@@ -188,8 +198,7 @@ async function main() {
   await worker.done;
 }
 
-const isMain = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
-if (isMain) {
+if (isMainModule()) {
   main().catch((error) => {
     structuredLogger("error", "worker.crashed", { error: String(error?.message || error) });
     process.exitCode = 1;

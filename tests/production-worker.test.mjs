@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   buildWorkerConfig,
   callCronEndpoint,
   drainDistributionQueue,
+  isMainModule,
 } from "../scripts/production-worker.mjs";
 
 test("buildWorkerConfig targets the private local web service", () => {
@@ -22,6 +27,18 @@ test("buildWorkerConfig targets the private local web service", () => {
 
 test("buildWorkerConfig rejects a missing cron secret", () => {
   assert.throws(() => buildWorkerConfig({}), /CRON_SECRET/);
+});
+
+test("worker entrypoint remains executable through the production current symlink", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "yubit-worker-"));
+  const workerPath = fileURLToPath(new URL("../scripts/production-worker.mjs", import.meta.url));
+  const symlinkPath = join(directory, "production-worker.mjs");
+  try {
+    await symlink(workerPath, symlinkPath);
+    assert.equal(isMainModule(symlinkPath, new URL("../scripts/production-worker.mjs", import.meta.url).href), true);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("callCronEndpoint authenticates and validates the response", async () => {
