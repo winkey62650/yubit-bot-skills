@@ -509,7 +509,9 @@ test("SpeakerBot webhook configuration uses the dedicated public route and secre
   const calls = [];
   const result = await configureSpeakerWebhook(dependencies(repository, {
     env: {
+      NODE_ENV: "production",
       APP_BASE_URL: "https://academy.example",
+      SPEAKER_BOT_TOKEN: "speaker-production-token",
       SPEAKER_TELEGRAM_WEBHOOK_SECRET: "speaker-webhook-secret",
     },
     telegram: async (_token, method, payload) => {
@@ -518,6 +520,7 @@ test("SpeakerBot webhook configuration uses the dedicated public route and secre
     },
   }));
   assert.equal(result.ok, true);
+  assert.equal(result.environment, "production");
   assert.equal(calls[0].method, "setWebhook");
   assert.equal(calls[0].payload.url, "https://academy.example/api/telegram/speaker-webhook");
   assert.equal(calls[0].payload.secret_token, "speaker-webhook-secret");

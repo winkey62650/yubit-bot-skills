@@ -4,8 +4,11 @@ import test from "node:test";
 
 const root = new URL("../", import.meta.url);
 
-test("five-minute automation runs trading reconciliation with the protected cron secret", async () => {
+test("manual recovery automation runs trading reconciliation with the protected cron secret", async () => {
   const workflow = await readFile(new URL(".github/workflows/telegram-automations.yml", root), "utf8");
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.doesNotMatch(workflow, /^\s+schedule:/m);
+  assert.match(workflow, /APP_BASE_URL: https:\/\/152-32-161-174\.sslip\.io/);
   assert.match(workflow, /trading-reconcile/);
   assert.match(workflow, /YUBIT_CRON_SECRET:\s*\$\{\{ secrets\.YUBIT_CRON_SECRET \}\}/);
   assert.match(workflow, /inputs\.job == 'trading'/);

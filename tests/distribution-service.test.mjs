@@ -346,11 +346,14 @@ test("multi-message market briefs map both the poster and full brief to prevent 
   assert.deepEqual(deliveries[0].targetMessageIds, [500, 501]);
 });
 
-test("GitHub Actions invokes the durable distribution scheduler every five off-peak minutes", async () => {
+test("GitHub Actions keeps distribution as a manual server recovery path", async () => {
   const workflow = await readFile(new URL("../.github/workflows/telegram-automations.yml", import.meta.url), "utf8");
   const distributionJob = workflow.split("  trading:")[0];
-  assert.match(workflow, /cron: "2\/5 \* \* \* \*"/);
-  assert.match(workflow, /github\.event_name == 'schedule'/);
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.doesNotMatch(workflow, /^\s+schedule:/m);
+  assert.doesNotMatch(workflow, /github\.event_name == 'schedule'/);
+  assert.match(distributionJob, /if: inputs\.job == 'distribution'/);
+  assert.match(workflow, /APP_BASE_URL: https:\/\/152-32-161-174\.sslip\.io/);
   assert.match(workflow, /\/api\/cron\/distribution/);
   assert.match(workflow, /secrets\.YUBIT_CRON_SECRET/);
   assert.match(distributionJob, /--max-time 55/);
