@@ -319,6 +319,7 @@ test("sanitizeTradingResponse recursively removes secret fields and exact secret
     ok: false,
     apiKey,
     apiKeyMasked: "leak***-key",
+    lastVerifiedAt: new Date("2026-07-17T05:00:00.000Z"),
     nested: {
       apiSecret: secret,
       credentialCiphertext: "encrypted-value",
@@ -331,6 +332,7 @@ test("sanitizeTradingResponse recursively removes secret fields and exact secret
 
   assert.equal(result.apiKey, undefined);
   assert.equal(result.apiKeyMasked, "leak***-key");
+  assert.equal(result.lastVerifiedAt, "2026-07-17T05:00:00.000Z");
   assert.equal(result.nested.apiSecret, undefined);
   assert.equal(result.nested.credentialCiphertext, undefined);
   assert.equal(result.nested.rows[0].botToken, undefined);
