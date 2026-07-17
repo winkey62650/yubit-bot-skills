@@ -616,6 +616,31 @@ test("order diagnostics expose only safe lookup metadata for a linked account", 
   assert.equal(JSON.stringify(result).includes("credentialCiphertext"), false);
 });
 
+test("order diagnostics identify matching field names without exposing unmatched order values", async () => {
+  const { diagnoseExchangeOrder } = await import("../lib/trading-service.mjs");
+  const { repository, accountId } = await configuredTradingDesk();
+  const orderId = "field_probe_order_1234";
+  const result = await diagnoseExchangeOrder({ accountId, symbol: "BTCUSDT", orderId }, dependencies(repository, {
+    yubitClientFactory: () => ({
+      getOrderHistory: async ({ orderId: requestedOrderId }) => ({
+        list: requestedOrderId ? [{
+          externalOrderIdentifier: orderId,
+          contractCode: "BTCUSDT",
+          privateMemo: "must-not-leak",
+        }] : [],
+      }),
+      getExecutions: async () => ({ list: [] }),
+    }),
+  }));
+
+  assert.equal(result.orderMatched, false);
+  assert.deepEqual(result.candidateOrderFieldKeys, ["contractCode", "externalOrderIdentifier", "privateMemo"]);
+  assert.deepEqual(result.orderIdMatchingKeys, ["externalOrderIdentifier"]);
+  assert.deepEqual(result.symbolMatchingKeys, ["contractCode"]);
+  assert.equal(JSON.stringify(result).includes("must-not-leak"), false);
+  assert.equal(JSON.stringify(result).includes(orderId), false);
+});
+
 test("duplicate updates and shared-account duplicate orders never republish", async () => {
   const { repository, trader, accountId } = await configuredTradingDesk();
   const second = await repository.saveTrader({ displayName: "Bob", telegramUserId: "1002" });
