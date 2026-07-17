@@ -110,6 +110,7 @@ test("a due one-time automation executes once and is archived as completed", asy
   const runner = async (jobId, options) => {
     assert.equal(jobId, "daily-events");
     assert.deepEqual(options.targets, [target]);
+    assert.equal(options.force, true);
     return { status: "success", preview: { targetResults: [{ target, status: "success", messageId: 700 }] } };
   };
 
@@ -128,6 +129,44 @@ test("a due one-time automation executes once and is archived as completed", asy
   assert.equal(savedRules[0].nextRunAt, null);
   assert.equal(savedRules[0].leaseUntil, null);
   assert.deepEqual(claimOptions, [{ limit: 1 }, { limit: 1 }]);
+});
+
+test("a skipped one-time automation is requeued instead of being reported as completed", async () => {
+  const rule = {
+    id: "one-time-skipped-whale",
+    kind: "automation",
+    name: "Whale Signals · One-time",
+    contentType: "whale-signals",
+    enabled: true,
+    runOnce: true,
+    status: "running",
+    nextRunAt: "2026-07-17T12:00:00.000Z",
+    targets: [{ id: "target", chatId: "-1001", threadId: 16 }]
+  };
+  const events = [];
+  const saved = [];
+  const repository = {
+    async cleanupExpired() {},
+    async getMeta() { return { completedAt: "2026-07-01T00:00:00.000Z" }; },
+    async claimDueAutomationRules() { return [rule]; },
+    async listRules() { return []; },
+    async createEvent(event) { const value = { id: "event-skipped", ...event }; events.push(value); return value; },
+    async updateEvent(id, patch) { Object.assign(events.find((event) => event.id === id), patch); },
+    async saveRule(value) { saved.push(value); return value; }
+  };
+
+  const result = await runDueDistributionJobs(new Date("2026-07-17T12:02:00.000Z"), {
+    repository,
+    runner: async (_jobId, options) => {
+      assert.equal(options.force, true);
+      return { status: "skipped", message: "no signal", preview: {} };
+    }
+  });
+
+  assert.equal(result.results[0].status, "skipped");
+  assert.equal(saved[0].enabled, true);
+  assert.equal(saved[0].status, "retrying");
+  assert.equal(saved[0].nextRunAt, "2026-07-17T12:07:00.000Z");
 });
 
 test("a failed one-time automation is requeued instead of being lost", async () => {

@@ -92,6 +92,28 @@ test("whale alert suppresses ordinary order-book noise", () => {
 
   assert.equal(alert.publishable, false);
   assert.match(alert.suppressionReason, /threshold/i);
+  assert.match(alert.caption, /largest visible liquidity concentration/i);
+  assert.doesNotMatch(alert.caption, /material liquidity concentration/i);
+});
+
+test("a one-time acceptance run can publish the real best available whale snapshot", () => {
+  assert.equal(typeof automation.shouldSuppressWhaleSignal, "function");
+  assert.equal(automation.shouldSuppressWhaleSignal({ publishable: false }, { force: false }), true);
+  assert.equal(automation.shouldSuppressWhaleSignal({ publishable: false }, { force: true }), false);
+  assert.equal(automation.shouldSuppressWhaleSignal({ publishable: true }, { force: false }), false);
+});
+
+test("dynamic poster URLs pin the approved template version on the current deployment", () => {
+  const url = new URL(automation.buildCardUrl("events", [], {
+    dateLabel: "JULY 17",
+    subline: "CRYPTO LEADS · EQUITIES FIRM"
+  }, { baseUrl: "https://academy.example/releases/old" }));
+
+  assert.equal(url.origin, "https://academy.example");
+  assert.equal(url.pathname, "/api/media/card");
+  assert.equal(url.searchParams.get("kind"), "events");
+  assert.equal(url.searchParams.get("date"), "JULY 17");
+  assert.equal(url.searchParams.get("v"), "market-card-v3");
 });
 
 test("daily events normalize a flexible daily market brief instead of a fixed economic calendar", () => {
