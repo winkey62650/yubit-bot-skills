@@ -635,6 +635,42 @@ test("SpeakerBot accepts a YUBIT contract suffix for the submitted base symbol",
   assert.equal(result.status, "published");
 });
 
+test("SpeakerBot trusts an exact YUBIT order id when the API uses an opaque contract symbol", async () => {
+  const { repository } = await configuredTradingDesk();
+  const orderId = "f48f4cac-ffd7-4bf4-84b2-46655e9bb02c";
+  const result = await processSpeakerTelegramUpdate(
+    privateUpdate(223, 1001, `BTCUSDT ${orderId}`),
+    dependencies(repository, {
+      telegram: async () => ({ message_id: 9013 }),
+      yubitClientFactory: () => ({
+        async getOrderHistory() {
+          return {
+            list: [{
+              orderId,
+              symbol: "OPAQUE_CONTRACT_42",
+              orderStatus: "Filled",
+              side: "Buy",
+            }],
+          };
+        },
+        async getExecutions() {
+          return {
+            list: [{
+              execId: "opaque-symbol-exec",
+              orderId,
+              symbol: "OPAQUE_CONTRACT_42",
+              execQty: "0.01",
+              execPrice: "62829.9",
+            }],
+          };
+        },
+      }),
+    }),
+  );
+
+  assert.equal(result.status, "published");
+});
+
 test("an administrator can recover an already-consumed Trader order without asking for another message", async () => {
   const { repository, readState, trader, destinations } = await configuredTradingDesk();
   const orderId = "f48f4cac-ffd7-4bf4-84b2-46655e9bb02c";
