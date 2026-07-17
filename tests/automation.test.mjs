@@ -103,17 +103,18 @@ test("a one-time acceptance run can publish the real best available whale snapsh
   assert.equal(automation.shouldSuppressWhaleSignal({ publishable: true }, { force: false }), false);
 });
 
-test("dynamic poster URLs pin the approved template version on the current deployment", () => {
+test("dynamic poster URLs pin the approved template version and content revision on the current deployment", () => {
   const url = new URL(automation.buildCardUrl("events", [], {
     dateLabel: "JULY 17",
     subline: "CRYPTO LEADS · EQUITIES FIRM"
-  }, { baseUrl: "https://academy.example/releases/old" }));
+  }, { baseUrl: "https://academy.example/releases/old", cacheKey: "abc123def4567890" }));
 
   assert.equal(url.origin, "https://academy.example");
   assert.equal(url.pathname, "/api/media/card");
   assert.equal(url.searchParams.get("kind"), "events");
   assert.equal(url.searchParams.get("date"), "JULY 17");
-  assert.equal(url.searchParams.get("v"), "market-card-v3");
+  assert.equal(url.searchParams.get("v"), "market-card-v4");
+  assert.equal(url.searchParams.get("rev"), "abc123def4567890");
 });
 
 test("daily events normalize a flexible daily market brief instead of a fixed economic calendar", () => {
@@ -132,6 +133,7 @@ test("daily events normalize a flexible daily market brief instead of a fixed ec
   assert.equal(brief.headline, "MORNING MARKET BRIEF · JULY 15");
   assert.equal(brief.dateLabel, "JULY 15");
   assert.equal(brief.items.length, 3);
+  assert.match(brief.contentHash, /^[a-f0-9]{64}$/);
   assert.match(brief.caption, /<b>🌅 MORNING MARKET BRIEF · JULY 15<\/b>/);
   assert.match(brief.caption, /1\. Equities advanced: The Nasdaq led/);
   assert.match(brief.caption, /Source: <a href="https:\/\/www\.reuters\.com\/markets\/">Reuters<\/a>/);

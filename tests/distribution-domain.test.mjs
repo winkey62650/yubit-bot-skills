@@ -53,7 +53,7 @@ function productionGroups() {
   ];
 }
 
-test("standard production provisioning builds five SpeakerBot automations and seven disabled one-to-one ForwardBot broadcasts", () => {
+test("standard production provisioning keeps editorial SpeakerBot automations in DEMO and builds seven disabled one-to-one ForwardBot broadcasts", () => {
   assert.equal(typeof distributionDomain.buildStandardProductionDistributionRules, "function");
   const rules = distributionDomain.buildStandardProductionDistributionRules(productionGroups());
   const repeated = distributionDomain.buildStandardProductionDistributionRules(productionGroups());
@@ -72,11 +72,17 @@ test("standard production provisioning builds five SpeakerBot automations and se
   ]);
   assert.deepEqual(automations.map((rule) => rule.targets.map((target) => target.threadId)), [
     [107, 207],
-    [103, 203],
-    [104, 204],
-    [106, 206],
+    [103],
+    [104],
+    [106],
     [102, 202],
   ]);
+  assert.deepEqual(
+    automations
+      .filter((rule) => ["daily-events", "daily-analysis", "whale-signals"].includes(rule.contentType))
+      .map((rule) => rule.targets.map((target) => target.chatId)),
+    [["-1003710405969"], ["-1003710405969"], ["-1003710405969"]],
+  );
   assert.deepEqual(automations.map((rule) => rule.targets[0].topicName), [
     "7. YUBIT Updates",
     "3. Market Events",
@@ -140,7 +146,7 @@ test("standard production provisioning preserves existing rule identity and enab
   assert.equal(events.id, "existing-events");
   assert.equal(events.enabled, true);
   assert.equal(events.schedulePreset, "daily-0800-utc");
-  assert.deepEqual(events.targets.map((target) => target.threadId), [103, 203]);
+  assert.deepEqual(events.targets.map((target) => target.threadId), [103]);
 
   const topicOne = rules.find((rule) => rule.kind === "broadcast" && rule.source.threadId === 101);
   assert.equal(topicOne.id, "existing-topic-one");
