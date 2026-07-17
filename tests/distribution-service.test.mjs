@@ -50,6 +50,35 @@ test("production backfill previews and publishes only to the approved Demo group
   );
 });
 
+test("production distribution allowlist opens only the approved CryptoGuy topics", async () => {
+  const demo = { id: "demo", chatId: "-1003710405969", threadId: 10 };
+  const cryptoAnalysis = { id: "crypto-analysis", chatId: "-1004378187866", threadId: 11 };
+  const cryptoSmartMoney = { id: "crypto-smart-money", chatId: "-1004378187866", threadId: 19 };
+  const cryptoTrader = { id: "crypto-trader", chatId: "-1004378187866", threadId: 17 };
+  const fightAnalysis = { id: "fight-analysis", chatId: "-1004309440933", threadId: 70 };
+  const rule = {
+    id: "broadcast-approved-topics",
+    kind: "broadcast",
+    source: { chatId: "-100source" },
+    targets: [demo, cryptoAnalysis, cryptoSmartMoney, cryptoTrader, fightAnalysis]
+  };
+  const repository = {
+    async getRule() { return rule; },
+    async findEventBySource() { return null; }
+  };
+  const env = {
+    NODE_ENV: "production",
+    TELEGRAM_DEMO_ONLY: "true",
+    TELEGRAM_DISTRIBUTION_APPROVED_TARGETS: "-1004378187866:11,-1004378187866:19"
+  };
+
+  const preview = await backfillRule(rule.id, "492", { preview: true, repository, env });
+
+  assert.deepEqual(preview.targets, [demo, cryptoAnalysis, cryptoSmartMoney]);
+  assert.equal(preview.targets.some((target) => target.id === "crypto-trader"), false);
+  assert.equal(preview.targets.some((target) => target.id === "fight-analysis"), false);
+});
+
 test("production retry refuses a failed delivery outside the Demo group", async () => {
   const repository = {
     async getDelivery() {
