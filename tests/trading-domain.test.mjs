@@ -30,6 +30,27 @@ Rationale: Breakout retest confirmed`),
   );
 });
 
+test("parses up to four numbered take-profit levels from the Trader card format", () => {
+  assert.deepEqual(
+    parseTraderMessage(`btcusdt 1234567890
+TP1• 64650
+TP2• 64750
+TP3• 64850
+TP4• 65050
+SL: 64300`),
+    {
+      ok: true,
+      type: "submit",
+      symbol: "BTCUSDT",
+      orderId: "1234567890",
+      annotations: {
+        takeProfit: "64650 | 64750 | 64850 | 65050",
+        stopLoss: "64300",
+      },
+    },
+  );
+});
+
 test("parses status and refresh commands only with a valid symbol and order id", () => {
   assert.deepEqual(parseTraderMessage("/status ethusdt order_9876"), {
     ok: true,
@@ -153,7 +174,7 @@ test("computes ROI only from complete auditable verified inputs", () => {
   assert.equal(computeVerifiedRoi({ entryPrice: 100, filledQty: 2, leverage: 5 }, {}), null);
 });
 
-test("formats verified facts separately from Trader annotations", () => {
+test("formats a verified signal as the approved bold Telegram Trader card", () => {
   const signal = {
     symbol: "BTCUSDT",
     direction: "Long",
@@ -162,8 +183,8 @@ test("formats verified facts separately from Trader annotations", () => {
     entryPrice: 62000,
     orderId: "1234567890",
     annotations: {
-      takeProfit: "70100",
-      stopLoss: "66500",
+      takeProfit: "64650 | 64750 | 64850 | 65050",
+      stopLoss: "64300",
       rationale: "Breakout retest confirmed",
     },
     realizedPnl: 186,
@@ -173,10 +194,30 @@ test("formats verified facts separately from Trader annotations", () => {
   const signalCopy = formatVerifiedSignal(signal, trader);
   const pnlCopy = formatPnlCaption(signal, trader);
 
-  assert.match(signalCopy, /Verified by YUBIT/);
-  assert.match(signalCopy, /Trader notes \(not exchange-verified\)/);
-  assert.match(signalCopy, /Alice/);
-  assert.match(signalCopy, /Order ID: 1234\*\*\*\*7890/);
+  assert.equal(signalCopy, [
+    "<b>Symbol : BTC/USDT</b>",
+    "",
+    "<b>📈 Positon: Long</b>",
+    "",
+    "<b>LV: 5x</b>",
+    "",
+    "<b>🎯 Entry: 62,000</b>",
+    "",
+    "<b>✅ TP :</b>",
+    "",
+    "<b>TP1• 64650</b>",
+    "",
+    "<b>TP2• 64750</b>",
+    "",
+    "<b>TP3• 64850</b>",
+    "",
+    "<b>TP4• 65050</b>",
+    "",
+    "<b>⚠️ SL</b>",
+    "",
+    "<b>• 64300</b>",
+  ].join("\n"));
+  assert.doesNotMatch(signalCopy, /Alice|Order ID|Rationale|Verified by YUBIT/);
   assert.match(pnlCopy, /Realized PNL: \+186 USDT/);
   assert.match(pnlCopy, /ROI: \+5%/);
   assert.doesNotMatch(pnlCopy, /Rationale/);

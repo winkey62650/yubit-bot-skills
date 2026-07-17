@@ -145,6 +145,11 @@ export default function TradingPage() {
         action={<button className="min-h-11 rounded-lg border border-ops-accent px-5 text-sm font-black text-ops-accent disabled:opacity-50" disabled={loading || Boolean(busy)} onClick={() => loadAll()} type="button">刷新数据</button>}
       />
 
+      <div className="mb-5 rounded-lg border border-[#d9bd73] bg-[#fff9e8] px-4 py-3" role="status">
+        <p className="text-sm font-black text-[#5f4513]">DEMO 验收锁已开启</p>
+        <p className="mt-1 text-xs leading-5 text-[#7b642f]">交易信号、盈利 PNL 和测试消息目前只会发送到 DEMO Academy。只有在你明确批准后，系统才会开放其他群。</p>
+      </div>
+
       {notice ? <div className="mb-5 rounded-lg border border-[#b8dfcd] bg-[#f2faf6] px-4 py-3 text-sm font-bold text-[#285845]" role="status">{notice}</div> : null}
       {error ? <div className="mb-5 rounded-lg border border-[#efc2bd] bg-[#fff6f5] px-4 py-3 text-sm font-bold text-[#9d3128]" role="alert">操作失败：{error}</div> : null}
 

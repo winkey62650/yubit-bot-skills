@@ -244,8 +244,39 @@ test("destination management prevents duplicates, validates permissions, and sen
   assert.equal(verified.destination.lastVerifiedAt, "2026-07-16T08:00:00.000Z");
   const sent = await testTradingDestination(destination.id, deps);
   assert.equal(sent.telegramMessageId, 9001);
-  assert.equal(calls.find((call) => call.method === "sendMessage").payload.message_thread_id, 42);
+  const testPayload = calls.find((call) => call.method === "sendMessage").payload;
+  assert.equal(testPayload.message_thread_id, 42);
+  assert.equal(testPayload.parse_mode, "HTML");
+  assert.match(testPayload.text, /<b>Symbol : BTC\/USDT<\/b>/);
   assert.ok(calls.every((call) => call.botToken === SPEAKER_TOKEN));
+});
+
+test("production test messages are blocked outside the configured DEMO group", async () => {
+  const { repository } = memoryRepository();
+  const destination = await saveTradingDestination({
+    scopeType: "workspace",
+    chatId: "-100200",
+    threadId: 71,
+    chatTitle: "CryptoGuy",
+    topicTitle: "Trading Zone",
+  }, dependencies(repository));
+  let telegramCalls = 0;
+
+  await assert.rejects(
+    testTradingDestination(destination.id, dependencies(repository, {
+      env: {
+        NODE_ENV: "production",
+        TRADING_DEMO_ONLY: "true",
+        DEMO_TELEGRAM_CHAT_ID: "-100100",
+      },
+      telegram: async () => {
+        telegramCalls += 1;
+        return { message_id: 1 };
+      },
+    })),
+    /DEMO_ONLY_TEST_POLICY/,
+  );
+  assert.equal(telegramCalls, 0);
 });
 
 test("health summarizes database, SpeakerBot webhook, scheduler, accounts, and destinations without secrets", async () => {
@@ -509,8 +540,44 @@ test("a verified filled order creates one immutable signal and delivers to every
   assert.ok(deliveries.every((row) => row.status === "delivered"));
   const publicMessages = calls.filter((payload) => String(payload.chat_id).startsWith("-100"));
   assert.equal(publicMessages.length, 2);
-  assert.ok(publicMessages.every((payload) => /Verified by YUBIT/.test(payload.text)));
+  assert.ok(publicMessages.every((payload) => /<b>Symbol : BTC\/USDT<\/b>/.test(payload.text)));
+  assert.ok(publicMessages.every((payload) => payload.parse_mode === "HTML"));
   assert.ok(publicMessages.every((payload) => [70, 71].includes(payload.message_thread_id)));
+});
+
+test("production Trader signals are delivered only to DEMO until explicit approval", async () => {
+  const { repository } = await configuredTradingDesk();
+  const calls = [];
+  const result = await processSpeakerTelegramUpdate(
+    privateUpdate(201, 1001, "BTCUSDT demo_only_123\nTP1• 70000\nSL: 66000"),
+    dependencies(repository, {
+      env: {
+        NODE_ENV: "production",
+        TRADING_DEMO_ONLY: "true",
+        DEMO_TELEGRAM_CHAT_ID: "-100100",
+      },
+      telegram: async (_token, method, payload) => {
+        assert.equal(method, "sendMessage");
+        calls.push(payload);
+        return { message_id: 9100 + calls.length };
+      },
+      yubitClientFactory: () => ({
+        async getOrderHistory({ symbol, orderId }) {
+          return { list: [{ orderId, symbol, orderStatus: "Filled", side: "Buy", leverage: "20" }] };
+        },
+        async getExecutions({ symbol, orderId }) {
+          return { list: [{ execId: "exec-demo-only", orderId, symbol, execQty: "0.2", execPrice: "64500" }] };
+        },
+      }),
+    }),
+  );
+
+  assert.equal(result.status, "published");
+  assert.equal(result.delivered, 1);
+  assert.equal(result.failed, 0);
+  const publicMessages = calls.filter((payload) => String(payload.chat_id).startsWith("-100"));
+  assert.equal(publicMessages.length, 1);
+  assert.equal(String(publicMessages[0].chat_id), "-100100");
 });
 
 test("SpeakerBot retries an unfiltered order-history lookup when YUBIT returns no exact-query rows", async () => {

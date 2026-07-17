@@ -52,6 +52,24 @@ test("a duplicate webhook update is accepted only once and fans out to every tar
   assert.equal((await repository.listDeliveries()).length, 2);
 });
 
+test("a delivery target filter keeps broadcast tests inside the approved DEMO group", async () => {
+  const repository = new MemoryDistributionRepository({ rules: [broadcastRule()] });
+  const calls = [];
+  const engine = new DistributionEngine({
+    repository,
+    telegram: async (method, payload) => {
+      calls.push({ method, payload });
+      return { message_id: 700 + calls.length };
+    },
+    targetFilter: (target) => String(target.chatId) === "-2001",
+  });
+
+  await engine.receiveUpdate(messageUpdate());
+
+  assert.deepEqual(calls.map((item) => item.payload.chat_id), ["-2001"]);
+  assert.deepEqual((await repository.listDeliveries()).map((item) => item.target.chatId), ["-2001"]);
+});
+
 test("a broadcast webhook reuses an existing automatic-publishing mapping instead of sending a duplicate", async () => {
   const rule = broadcastRule({ targets: [{ id: "target-a", chatId: "-2001", threadId: 21 }] });
   const repository = new MemoryDistributionRepository({

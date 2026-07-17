@@ -7,9 +7,11 @@ import {
   resetDistributionRepositoryForTests
 } from "../lib/distribution-repository.mjs";
 import {
+  backfillRule,
   ensureAutomationSchedules,
   parseBackfillReferences,
   processTelegramWebhookUpdate,
+  retryDistributionDelivery,
   runDueDistributionJobs,
   runDistributionAutomationRule,
   verifyTelegramWebhookSecret
@@ -18,6 +20,52 @@ import {
 test("manual backfill accepts IDs, ranges and Telegram links without exceeding 100 messages", () => {
   assert.deepEqual(parseBackfillReferences("77, 79-81\nhttps://t.me/c/12345/12/90"), [77, 79, 80, 81, 90]);
   assert.throws(() => parseBackfillReferences("1-101"), /最多 100/);
+});
+
+test("production backfill previews and publishes only to the approved Demo group", async () => {
+  const demo = { id: "demo", chatId: "-1003710405969", threadId: 5 };
+  const fight = { id: "fight", chatId: "-1004309440933", threadId: 5 };
+  const rule = {
+    id: "broadcast-demo-lock",
+    kind: "broadcast",
+    source: { chatId: "-100source" },
+    targets: [demo, fight]
+  };
+  const repository = {
+    async getRule() { return rule; },
+    async findEventBySource() { return null; }
+  };
+  const env = { NODE_ENV: "production" };
+
+  const preview = await backfillRule(rule.id, "492", { preview: true, repository, env });
+  assert.deepEqual(preview.targets, [demo]);
+
+  await assert.rejects(
+    () => backfillRule(rule.id, "492", {
+      preview: false,
+      repository: { ...repository, async getRule() { return { ...rule, targets: [fight] }; } },
+      env
+    }),
+    /DEMO_ONLY_TEST_POLICY/
+  );
+});
+
+test("production retry refuses a failed delivery outside the Demo group", async () => {
+  const repository = {
+    async getDelivery() {
+      return {
+        id: "delivery-fight",
+        eventId: "event-1",
+        status: "failed",
+        target: { id: "fight", chatId: "-1004309440933", threadId: 5 }
+      };
+    }
+  };
+
+  await assert.rejects(
+    () => retryDistributionDelivery("delivery-fight", { repository, env: { NODE_ENV: "production" } }),
+    /DEMO_ONLY_TEST_POLICY/
+  );
 });
 
 test("webhook secret verification rejects missing configuration and wrong values", () => {
@@ -289,6 +337,45 @@ test("a deduplicated or suppressed automation run creates no failed delivery rec
   assert.equal(result.status, "skipped");
   assert.equal(deliveries.length, 0);
   assert.equal(events[0].payload.outcome, "skipped");
+});
+
+test("production automation execution filters every non-DEMO target until approval", async () => {
+  const demo = { id: "target-demo", chatId: "-1001", threadId: 6 };
+  const other = { id: "target-other", chatId: "-2001", threadId: 6 };
+  const rule = {
+    id: "rule-demo-lock",
+    kind: "automation",
+    name: "DEMO acceptance",
+    contentType: "daily-analysis",
+    targets: [demo, other],
+  };
+  const deliveries = [];
+  const repository = {
+    async getRule() { return rule; },
+    async listRules() { return []; },
+    async createEvent(event) { return { id: "event-demo-lock", ...event }; },
+    async updateEvent() {},
+    async createDelivery(delivery) { const row = { id: `delivery-${deliveries.length}`, ...delivery }; deliveries.push(row); return row; },
+    async updateDelivery(id, patch) { return Object.assign(deliveries.find((item) => item.id === id), patch); },
+    async saveMapping() {},
+  };
+  let receivedTargets;
+
+  await runDistributionAutomationRule(rule.id, {
+    repository,
+    env: {
+      NODE_ENV: "production",
+      TELEGRAM_DEMO_ONLY: "true",
+      DEMO_TELEGRAM_CHAT_ID: "-1001",
+    },
+    runner: async (_jobId, options) => {
+      receivedTargets = options.targets;
+      return { status: "success", preview: { targetResults: [{ target: demo, status: "success", messageId: 701 }] } };
+    },
+  });
+
+  assert.deepEqual(receivedTargets, [demo]);
+  assert.deepEqual(deliveries.map((item) => item.target.chatId), ["-1001"]);
 });
 
 test("automatic multi-target publishing records broadcast mappings before its source webhook arrives", async () => {

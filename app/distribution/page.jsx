@@ -216,6 +216,11 @@ export default function DistributionPage() {
         action={<button className="min-h-11 rounded-lg border border-ops-accent px-5 text-sm font-black text-ops-accent disabled:opacity-50" disabled={Boolean(busy)} onClick={() => post({ action: "configure-webhook" }, "ForwardBot Webhook 已配置。")}>配置 ForwardBot Webhook</button>}
       />
 
+      <div className="mb-5 rounded-lg border border-[#d9bd73] bg-[#fff9e8] px-4 py-3" role="status">
+        <p className="text-sm font-black text-[#5f4513]">DEMO 验收锁已开启</p>
+        <p className="mt-1 text-xs leading-5 text-[#7b642f]">自动发布、Telegram 广播、历史回填和失败重试目前只会投递到 DEMO Academy。其他群需经你明确批准后才会开放。</p>
+      </div>
+
       <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         <Summary label="数据库" value={data.database?.ok ? "正常" : "待配置"} detail={data.database?.driver || "未连接"} />
         <Summary label="自动任务" value={automationRules.length} detail={`${automationRules.filter((rule) => rule.enabled).length} 条启用`} />
