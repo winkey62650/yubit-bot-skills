@@ -4,6 +4,7 @@ import {
   configureSpeakerWebhook,
   diagnoseExchangeOrder,
   getTradingManagementOverview,
+  recoverTraderOrder,
   sanitizeTradingResponse,
   saveExchangeAccount,
   saveTrader,
@@ -48,6 +49,9 @@ export async function POST(request) {
     }
     if (body.action === "diagnose-order") {
       return NextResponse.json({ ok: true, message: "订单只读诊断完成", result: await diagnoseExchangeOrder(body) });
+    }
+    if (body.action === "recover-order") {
+      return NextResponse.json({ ok: true, message: "订单恢复处理完成", result: await recoverTraderOrder(body) });
     }
     if (body.action === "save-destination") {
       return NextResponse.json({ ok: true, message: "发送目标保存成功", destination: await saveTradingDestination(body.destination ?? body) });

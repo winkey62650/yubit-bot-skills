@@ -8,6 +8,7 @@ import {
   getTradingManagementOverview,
   getTradingSignalDetail,
   processSpeakerTelegramUpdate,
+  recoverTraderOrder,
   refreshTradingSignal,
   retryTradingDelivery,
   runTradingReconciliation,
@@ -594,6 +595,75 @@ test("SpeakerBot treats separator variants of the same YUBIT symbol as equivalen
   );
 
   assert.equal(result.status, "published");
+});
+
+test("SpeakerBot accepts a YUBIT contract suffix for the submitted base symbol", async () => {
+  const { repository } = await configuredTradingDesk();
+  const orderId = "f48f4cac-ffd7-4bf4-84b2-46655e9bb02c";
+  const result = await processSpeakerTelegramUpdate(
+    privateUpdate(222, 1001, `BTCUSDT ${orderId}`),
+    dependencies(repository, {
+      telegram: async () => ({ message_id: 9012 }),
+      yubitClientFactory: () => ({
+        async getOrderHistory() {
+          return {
+            list: [{
+              orderId,
+              symbol: "BTC-USDT-PERP",
+              orderStatus: "Filled",
+              side: "Buy",
+              createdTime: 1_768_000_000_000,
+            }],
+          };
+        },
+        async getExecutions() {
+          return {
+            list: [{
+              execId: "suffixed-symbol-exec",
+              orderId,
+              symbol: "BTCUSDT_LINEAR",
+              execQty: "0.01",
+              execPrice: "62829.9",
+              execTime: 1_768_000_000_000,
+            }],
+          };
+        },
+      }),
+    }),
+  );
+
+  assert.equal(result.status, "published");
+});
+
+test("an administrator can recover an already-consumed Trader order without asking for another message", async () => {
+  const { repository, readState, trader, destinations } = await configuredTradingDesk();
+  const orderId = "f48f4cac-ffd7-4bf4-84b2-46655e9bb02c";
+  const telegramCalls = [];
+  const result = await recoverTraderOrder({
+    traderId: trader.id,
+    symbol: "BTCUSDT",
+    orderId,
+  }, dependencies(repository, {
+    recoveryUpdateId: -20260717001,
+    telegram: async (_token, method, payload) => {
+      telegramCalls.push({ method, payload });
+      return { message_id: 9100 + telegramCalls.length };
+    },
+    yubitClientFactory: () => ({
+      getOrderHistory: async () => ({
+        list: [{ orderId, symbol: "BTC-USDT-PERP", orderStatus: "Filled", side: "Buy" }],
+      }),
+      getExecutions: async () => ({
+        list: [{ orderId, symbol: "BTCUSDT_LINEAR", execId: "recovery-exec", execQty: "0.01", execPrice: "62829.9" }],
+      }),
+    }),
+  }));
+
+  assert.equal(result.status, "published");
+  assert.equal(result.delivered, destinations.length);
+  assert.equal(readState().signals.length, 1);
+  assert.equal(readState().deliveries.filter((row) => row.status === "delivered").length, destinations.length);
+  assert.match(telegramCalls.at(-1).payload.text, /Order verified and saved/);
 });
 
 test("SpeakerBot persists a safe YUBIT failure code when order verification fails", async () => {
