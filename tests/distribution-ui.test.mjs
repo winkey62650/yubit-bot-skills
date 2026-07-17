@@ -23,12 +23,12 @@ test("distribution selectors exclude General Chat and follow the managed editori
   ];
   const expectedNames = [
     "1. READ FIRST - DISCLAIMER",
-    "5. Community Signal",
-    "4. Market Analysis - Crypto/Stocks/TradFi",
+    "2. CryptoGuy Trading Zone",
     "3. Market Events",
+    "4. Market Analysis - Crypto/Stocks/TradFi",
+    "5. Community Signal",
     "6. Smart Money Tracker",
-    "7. YUBIT Updates",
-    "2. CryptoGuy Trading Zone"
+    "7. YUBIT Updates"
   ];
   const groups = [{ chatId: "-1001", title: "DEMO Academy", topics }];
 

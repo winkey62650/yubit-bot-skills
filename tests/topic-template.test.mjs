@@ -10,15 +10,15 @@ import {
   topicNameWithSequence
 } from "../templates.mjs";
 
-test("new topics keep their sequence in the Telegram name and use the requested icon set", () => {
+test("new topics are displayed in numeric 1-7 order and keep the requested icon set", () => {
   assert.deepEqual(defaultTopicTemplate.map(({ id, emoji, name }) => ({ id, emoji, name })), [
     { id: "1", emoji: "❗️", name: "READ FIRST - DISCLAIMER" },
-    { id: "5", emoji: "💰", name: "Community Signal" },
-    { id: "4", emoji: "💡", name: "Market Analysis - Crypto/Stocks/TradFi" },
+    { id: "2", emoji: "⚡️", name: "CryptoGuy Trading Zone" },
     { id: "3", emoji: "📰", name: "Market Events" },
+    { id: "4", emoji: "💡", name: "Market Analysis - Crypto/Stocks/TradFi" },
+    { id: "5", emoji: "💰", name: "Community Signal" },
     { id: "6", emoji: "💎", name: "Smart Money Tracker" },
-    { id: "7", emoji: "🎉", name: "YUBIT Updates" },
-    { id: "2", emoji: "⚡️", name: "CryptoGuy Trading Zone" }
+    { id: "7", emoji: "🎉", name: "YUBIT Updates" }
   ]);
   for (const topic of defaultTopicTemplate) {
     const expectedName = `${topic.id}. ${topic.name}`;
@@ -27,7 +27,7 @@ test("new topics keep their sequence in the Telegram name and use the requested 
   }
 });
 
-test("legacy saved new-group drafts migrate to the screenshot editorial order", () => {
+test("legacy saved new-group drafts migrate to numeric order without resetting attributes", () => {
   const legacyTopics = [
     { id: "1", emoji: "❗️", name: "1. READ FIRST - DISCLAIMER", attribute: "关闭话题", announcement: "saved notice" },
     { id: "2", emoji: "⚡️", name: "2. Market Events", attribute: "关闭话题" },
@@ -42,32 +42,33 @@ test("legacy saved new-group drafts migrate to the screenshot editorial order", 
 
   assert.deepEqual(migrated.map(({ id, emoji, name, attribute }) => ({ id, emoji, name, attribute })), [
     { id: "1", emoji: "❗️", name: "1. READ FIRST - DISCLAIMER", attribute: "关闭话题" },
-    { id: "5", emoji: "💰", name: "5. Community Signal", attribute: "交流频道" },
-    { id: "4", emoji: "💡", name: "4. Market Analysis - Crypto/Stocks/TradFi", attribute: "关闭话题" },
+    { id: "2", emoji: "⚡️", name: "2. CryptoGuy Trading Zone", attribute: "交流频道" },
     { id: "3", emoji: "📰", name: "3. Market Events", attribute: "关闭话题" },
+    { id: "4", emoji: "💡", name: "4. Market Analysis - Crypto/Stocks/TradFi", attribute: "关闭话题" },
+    { id: "5", emoji: "💰", name: "5. Community Signal", attribute: "交流频道" },
     { id: "6", emoji: "💎", name: "6. Smart Money Tracker", attribute: "关闭话题" },
-    { id: "7", emoji: "🎉", name: "7. YUBIT Updates", attribute: "频道禁言" },
-    { id: "2", emoji: "⚡️", name: "2. CryptoGuy Trading Zone", attribute: "交流频道" }
+    { id: "7", emoji: "🎉", name: "7. YUBIT Updates", attribute: "关闭话题" }
   ]);
   assert.equal(migrated[0].announcement, "saved notice", "operator content is retained during the layout migration");
 });
 
 test("already migrated semantic drafts are still reordered while operator content is preserved", () => {
   const saved = [
-    { id: "1", emoji: "❗️", name: "1. READ FIRST - DISCLAIMER", announcement: "custom notice" },
-    { id: "2", emoji: "⚡️", name: "2. CryptoGuy Trading Zone" },
-    { id: "3", emoji: "📰", name: "3. Market Events" },
-    { id: "4", emoji: "💡", name: "4. Market Analysis - Crypto/Stocks/TradFi" },
-    { id: "5", emoji: "💰", name: "5. Community Signal", imageUrl: "https://example.com/custom.png" },
-    { id: "6", emoji: "💎", name: "6. Smart Money Tracker" },
-    { id: "7", emoji: "🎉", name: "7. YUBIT Updates" }
+    { id: "1", emoji: "❗️", name: "1. READ FIRST - DISCLAIMER", attribute: "交流频道", announcement: "custom notice" },
+    { id: "2", emoji: "⚡️", name: "2. CryptoGuy Trading Zone", attribute: "频道禁言" },
+    { id: "3", emoji: "📰", name: "3. Market Events", attribute: "关闭话题" },
+    { id: "4", emoji: "💡", name: "4. Market Analysis - Crypto/Stocks/TradFi", attribute: "交流频道" },
+    { id: "5", emoji: "💰", name: "5. Community Signal", attribute: "频道禁言", imageUrl: "https://example.com/custom.png" },
+    { id: "6", emoji: "💎", name: "6. Smart Money Tracker", attribute: "交流频道" },
+    { id: "7", emoji: "🎉", name: "7. YUBIT Updates", attribute: "关闭话题" }
   ];
 
   const migrated = migrateTopicTemplateList(saved);
 
-  assert.deepEqual(migrated.map((topic) => topic.id), ["1", "5", "4", "3", "6", "7", "2"]);
+  assert.deepEqual(migrated.map((topic) => topic.id), ["1", "2", "3", "4", "5", "6", "7"]);
+  assert.deepEqual(migrated.map((topic) => topic.attribute), ["交流频道", "频道禁言", "关闭话题", "交流频道", "频道禁言", "交流频道", "关闭话题"]);
   assert.equal(migrated[0].announcement, "custom notice");
-  assert.equal(migrated[1].imageUrl, "https://example.com/custom.png");
+  assert.equal(migrated[4].imageUrl, "https://example.com/custom.png");
 });
 
 test("saved drafts migrate only the old default icons", () => {

@@ -110,13 +110,15 @@ export const defaultTopicTemplate = [
     contentVersion: readFirstContentVersion,
     messages: readFirstPinnedMessages
   },
-  { id: "5", emoji: "💰", name: "Community Signal", attribute: "交流频道" },
-  { id: "4", emoji: "💡", name: "Market Analysis - Crypto/Stocks/TradFi", attribute: "关闭话题" },
+  { id: "2", emoji: "⚡️", name: "CryptoGuy Trading Zone", attribute: "交流频道" },
   { id: "3", emoji: "📰", name: "Market Events", attribute: "关闭话题" },
+  { id: "4", emoji: "💡", name: "Market Analysis - Crypto/Stocks/TradFi", attribute: "关闭话题" },
+  { id: "5", emoji: "💰", name: "Community Signal", attribute: "交流频道" },
   { id: "6", emoji: "💎", name: "Smart Money Tracker", attribute: "关闭话题" },
-  { id: "7", emoji: "🎉", name: "YUBIT Updates", attribute: "频道禁言" },
-  { id: "2", emoji: "⚡️", name: "CryptoGuy Trading Zone", attribute: "交流频道" }
+  { id: "7", emoji: "🎉", name: "YUBIT Updates", attribute: "频道禁言" }
 ];
+
+const topicAttributes = new Set(["关闭话题", "频道禁言", "交流频道"]);
 
 const legacyDefaultIcons = Object.freeze({
   // Previous releases used a different semantic order and icons.  Keep all
@@ -159,7 +161,9 @@ export function migrateTopicTemplateList(topics = []) {
       id: canonical.id,
       emoji: canonical.emoji,
       name: topicNameWithSequence(canonical),
-      attribute: canonical.attribute,
+      // Attribute is operator-owned state.  Reordering and semantic migration
+      // must never reset a saved selection back to the template default.
+      attribute: topicAttributes.has(saved?.attribute) ? saved.attribute : canonical.attribute,
       announcement: saved?.announcement || canonical.announcement || "",
       imageUrl: saved?.imageUrl || canonical.imageUrl || ""
     };
