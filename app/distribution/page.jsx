@@ -1,15 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ConsoleShell from "../components/ConsoleShell";
 import { Card, Field, PageHeader, StatusPill, inputClass } from "../components/ui";
 import SocialSourceManager from "./SocialSourceManager";
 import {
+  bulkDeleteNotice,
   buildBroadcastRouteSummary,
   buildDistributionSourceOptions,
   buildDistributionTargetOptions,
   buildSocialSourceReadiness,
+  failedBulkDeleteIds,
   getContentTemplate,
+  reconcileRuleSelection,
   recommendedScheduleFor
 } from "../../lib/distribution-ui.mjs";
 
@@ -50,6 +53,8 @@ export default function DistributionPage() {
   const [automationForm, setAutomationForm] = useState(emptyAutomation);
   const [broadcastForm, setBroadcastForm] = useState(emptyBroadcast);
   const [validation, setValidation] = useState(null);
+  const [selectedAutomationRules, setSelectedAutomationRules] = useState([]);
+  const [selectedBroadcastRules, setSelectedBroadcastRules] = useState([]);
   const [selectedReviews, setSelectedReviews] = useState([]);
   const [backfill, setBackfill] = useState({ ruleId: "", references: "", preview: null });
 
@@ -167,6 +172,28 @@ export default function DistributionPage() {
     }
   }
 
+  async function deleteManyRules(ids, setSelected, kindLabel) {
+    if (!ids.length || !window.confirm(`确认删除已选的 ${ids.length} 条${kindLabel}？此操作不可撤销。`)) return;
+    setBusy(`delete-many-${kindLabel}`);
+    setNotice("");
+    try {
+      const response = await fetch("/api/distribution", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "delete-many", ids })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "批量删除失败");
+      setSelected(failedBulkDeleteIds(result));
+      setNotice(bulkDeleteNotice(result));
+      await loadAll();
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setBusy("");
+    }
+  }
+
   function changeView(next) {
     setView(next);
     window.history.replaceState(null, "", `/distribution?view=${next}`);
@@ -175,6 +202,11 @@ export default function DistributionPage() {
   const automationRules = data.rules.filter((rule) => rule.kind === "automation");
   const broadcastRules = data.rules.filter((rule) => rule.kind === "broadcast");
   const socialReadiness = buildSocialSourceReadiness(socialPackages);
+
+  useEffect(() => {
+    setSelectedAutomationRules((current) => reconcileRuleSelection(current, data.rules.filter((rule) => rule.kind === "automation")));
+    setSelectedBroadcastRules((current) => reconcileRuleSelection(current, data.rules.filter((rule) => rule.kind === "broadcast")));
+  }, [data.rules]);
 
   return (
     <ConsoleShell>
@@ -205,8 +237,8 @@ export default function DistributionPage() {
       </div>
 
       {loading ? <Card className="p-8 text-center font-bold text-ops-muted">正在加载持久化配置…</Card> : null}
-      {!loading && view === "automation" ? <AutomationView form={automationForm} setForm={setAutomationForm} rules={automationRules} groups={groups} socialPackages={socialPackages} busy={busy} onSave={() => saveRule(automationForm, () => setAutomationForm(emptyAutomation))} onEdit={setAutomationForm} onAction={post} onValidate={validate} onPersistSocial={saveSocialPackages} onNotice={setNotice} /> : null}
-      {!loading && view === "broadcast" ? <BroadcastView form={broadcastForm} setForm={setBroadcastForm} rules={broadcastRules} groups={groups} busy={busy} backfill={backfill} setBackfill={setBackfill} onBackfill={previewBackfill} onSave={() => saveRule(broadcastForm, () => setBroadcastForm(emptyBroadcast))} onEdit={setBroadcastForm} onAction={post} onValidate={validate} /> : null}
+      {!loading && view === "automation" ? <AutomationView form={automationForm} setForm={setAutomationForm} rules={automationRules} groups={groups} socialPackages={socialPackages} busy={busy} selected={selectedAutomationRules} setSelected={setSelectedAutomationRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedAutomationRules, "自动任务")} onSave={() => saveRule(automationForm, () => setAutomationForm(emptyAutomation))} onEdit={setAutomationForm} onAction={post} onValidate={validate} onPersistSocial={saveSocialPackages} onNotice={setNotice} /> : null}
+      {!loading && view === "broadcast" ? <BroadcastView form={broadcastForm} setForm={setBroadcastForm} rules={broadcastRules} groups={groups} busy={busy} selected={selectedBroadcastRules} setSelected={setSelectedBroadcastRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedBroadcastRules, "广播规则")} backfill={backfill} setBackfill={setBackfill} onBackfill={previewBackfill} onSave={() => saveRule(broadcastForm, () => setBroadcastForm(emptyBroadcast))} onEdit={setBroadcastForm} onAction={post} onValidate={validate} /> : null}
       {!loading && view === "review" ? <ReviewView events={data.review} selected={selectedReviews} setSelected={setSelectedReviews} busy={busy} onAction={reviewAction} /> : null}
       {!loading && view === "logs" ? <LogsView deliveries={data.deliveries} busy={busy} onRetry={async (id) => { setBusy("retry"); try { const response = await fetch("/api/distribution/logs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "retry", deliveryId: id }) }); const result = await response.json(); if (!response.ok || !result.ok) throw new Error(result.error); setNotice("失败目标已单独重试，不影响其他目标。"); await loadAll(); } catch (error) { setNotice(error.message); } finally { setBusy(""); } }} /> : null}
     </ConsoleShell>
@@ -217,7 +249,7 @@ export default function DistributionPage() {
   }
 }
 
-function AutomationView({ form, setForm, rules, groups, socialPackages, busy, onSave, onEdit, onAction, onValidate, onPersistSocial, onNotice }) {
+function AutomationView({ form, setForm, rules, groups, socialPackages, busy, selected, setSelected, onDeleteMany, onSave, onEdit, onAction, onValidate, onPersistSocial, onNotice }) {
   const template = getContentTemplate(form.contentType);
   const [confirmedFor, setConfirmedFor] = useState("");
   const [preview, setPreview] = useState(null);
@@ -262,11 +294,11 @@ function AutomationView({ form, setForm, rules, groups, socialPackages, busy, on
     </RuleForm>
     <TelegramTemplatePreview form={form} template={template} preview={preview} previewState={previewState} onGenerate={generatePreview} />
     </div>
-    <RuleList empty="暂无自动任务。" rules={rules} onEdit={(rule) => onEdit({ ...rule, targets: rule.targets.map(targetKey) })} onAction={onAction} onValidate={onValidate} />
+    <RuleList busy={busy} empty="暂无自动任务。" kindLabel="自动任务" rules={rules} selected={selected} setSelected={setSelected} onDeleteMany={onDeleteMany} onEdit={(rule) => onEdit({ ...rule, targets: rule.targets.map(targetKey) })} onAction={onAction} onValidate={onValidate} />
   </div>;
 }
 
-function BroadcastView({ form, setForm, rules, groups, busy, backfill, setBackfill, onBackfill, onSave, onEdit, onAction, onValidate }) {
+function BroadcastView({ form, setForm, rules, groups, busy, selected, setSelected, onDeleteMany, backfill, setBackfill, onBackfill, onSave, onEdit, onAction, onValidate }) {
   const sources = sourceOptions(groups);
   const sourceValue = sourceKey(form.source);
   const resolvedTargets = form.targets.map((key) => targetOptions(groups).find((option) => option.key === key)?.target).filter(Boolean);
@@ -288,7 +320,7 @@ function BroadcastView({ form, setForm, rules, groups, busy, backfill, setBackfi
       </RuleForm>
       <BroadcastRoutePreview route={route} targets={resolvedTargets} mode={form.mode} />
     </div>
-    <div className="grid items-start gap-5 xl:grid-cols-2"><BackfillPanel rules={rules} value={backfill} setValue={setBackfill} busy={busy} onRun={onBackfill} /><RuleList empty="暂无 Telegram 广播规则。" rules={rules} onEdit={(rule) => onEdit({ ...rule, source: { ...rule.source, threadId: rule.source.threadId || "" }, targets: rule.targets.map(targetKey) })} onAction={onAction} onValidate={onValidate} /></div>
+    <div className="grid items-start gap-5 xl:grid-cols-2"><BackfillPanel rules={rules} value={backfill} setValue={setBackfill} busy={busy} onRun={onBackfill} /><RuleList busy={busy} empty="暂无 Telegram 广播规则。" kindLabel="广播规则" rules={rules} selected={selected} setSelected={setSelected} onDeleteMany={onDeleteMany} onEdit={(rule) => onEdit({ ...rule, source: { ...rule.source, threadId: rule.source.threadId || "" }, targets: rule.targets.map(targetKey) })} onAction={onAction} onValidate={onValidate} /></div>
   </div>;
 }
 
@@ -353,8 +385,58 @@ function PreviewFact({ label, value }) {
   return <div className="rounded-lg bg-[#f6f9f7] p-3"><div className="text-[11px] font-bold text-ops-muted">{label}</div><div className="mt-1 font-black text-[#24362f]">{value}</div></div>;
 }
 
-function RuleList({ rules, empty, onEdit, onAction, onValidate }) {
-  return <Card className="overflow-hidden"><div className="border-b border-ops-line p-5"><h2 className="text-xl font-black">现有规则</h2><p className="mt-1 text-sm text-ops-muted">稳定键使用 Chat ID + Thread ID，群或 Topic 改名不会让规则失效。</p></div><div className="divide-y divide-ops-line">{rules.length ? rules.map((rule) => <article className="p-5" key={rule.id}><div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-black">{rule.name}</h3><StatusPill tone={rule.enabled ? "green" : "amber"}>{rule.runOnce ? rule.status === "completed" ? "已执行" : rule.status === "failed" ? "执行失败" : rule.status === "running" ? "执行中" : "等待执行" : rule.enabled ? "已启用" : "已暂停"}</StatusPill>{rule.runOnce ? <StatusPill tone="amber">一次性</StatusPill> : null}{rule.status === "pending-confirmation" ? <StatusPill tone="amber">待确认</StatusPill> : null}</div><p className="mt-2 text-sm text-ops-muted">{rule.kind === "automation" ? rule.runOnce ? `${labelFor(contentTypes, rule.contentType)} · 一次性执行 · ${rule.status === "completed" ? "已完成" : rule.status === "failed" ? "失败（可在运行记录中查看原因）" : rule.status === "running" ? "正在执行" : formatTime(rule.nextRunAt)}` : `${labelFor(contentTypes, rule.contentType)} · ${labelFor(schedules, rule.schedulePreset)} · 下次 ${formatTime(rule.nextRunAt)}` : `${rule.mode === "review" ? "审核模式" : "自动模式"} · 来源 ${rule.source?.chatId}${rule.source?.threadId ? `:${rule.source.threadId}` : ":整群"}`}</p><p className="mt-1 text-xs text-ops-muted">{rule.targets.length} 个目标 · {rule.targets.map((target) => `${target.groupName || target.chatId}/${target.topicName || target.threadId || "整群"}`).join("、")}</p></div><div className="flex flex-wrap gap-2">{rule.runOnce ? null : <SmallButton onClick={() => onEdit(rule)}>编辑</SmallButton>}<SmallButton onClick={() => onValidate(rule.id)}>验证配置</SmallButton>{rule.kind === "automation" ? rule.runOnce ? null : <SmallButton onClick={() => window.confirm("将按当前模板立即向全部目标发送真实内容，确认继续？") && onAction({ action: "run-now", id: rule.id }, "真实内容已发布，结果已写入运行记录。")}>立即发布</SmallButton> : <SmallButton onClick={() => onAction({ action: "test", id: rule.id }, "测试消息已按目标分别发送。")}>发送测试</SmallButton>}{rule.runOnce ? null : <SmallButton onClick={() => onAction({ action: "toggle", id: rule.id, enabled: !rule.enabled }, rule.enabled ? "规则已暂停。" : "规则已启用。")}>{rule.enabled ? "暂停" : "启用"}</SmallButton>}<SmallButton danger onClick={() => window.confirm("确认删除这条规则？") && onAction({ action: "delete", id: rule.id }, "规则已删除。")}>删除</SmallButton></div></div></article>) : <div className="p-8 text-center font-bold text-ops-muted">{empty}</div>}</div></Card>;
+function RuleList({ rules, empty, busy, kindLabel, selected, setSelected, onDeleteMany, onEdit, onAction, onValidate }) {
+  const selectAllRef = useRef(null);
+  const ruleIds = rules.map((rule) => String(rule.id));
+  const visibleSelected = reconcileRuleSelection(selected, rules);
+  const selectedCount = visibleSelected.length;
+  const allSelected = Boolean(ruleIds.length) && selectedCount === ruleIds.length;
+  const partiallySelected = selectedCount > 0 && !allSelected;
+
+  useEffect(() => {
+    if (selectAllRef.current) selectAllRef.current.indeterminate = partiallySelected;
+  }, [partiallySelected]);
+
+  function toggleRule(id) {
+    const key = String(id);
+    setSelected(visibleSelected.includes(key) ? visibleSelected.filter((selectedId) => selectedId !== key) : [...visibleSelected, key]);
+  }
+
+  return <Card className="overflow-hidden">
+    <div className="flex flex-col gap-4 border-b border-ops-line p-5 lg:flex-row lg:items-center lg:justify-between">
+      <div><h2 className="text-xl font-black">现有规则</h2><p className="mt-1 text-sm text-ops-muted">稳定键使用 Chat ID + Thread ID，群或 Topic 改名不会让规则失效。</p></div>
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="flex min-h-9 items-center gap-2 rounded-lg border border-ops-line px-3 text-xs font-black text-[#33423b]">
+          <input aria-label="选择当前列表全部规则" checked={allSelected} disabled={!rules.length || Boolean(busy)} onChange={(event) => setSelected(event.target.checked ? ruleIds : [])} ref={selectAllRef} type="checkbox" />
+          全选当前列表
+        </label>
+        <SmallButton disabled={!selectedCount || Boolean(busy)} onClick={() => setSelected([])}>清空选择</SmallButton>
+        <SmallButton danger disabled={!selectedCount || Boolean(busy)} onClick={() => onDeleteMany(visibleSelected)}>删除已选（{selectedCount}）</SmallButton>
+      </div>
+    </div>
+    <div className="divide-y divide-ops-line">{rules.length ? rules.map((rule) => {
+      const ruleId = String(rule.id);
+      return <article className="flex items-start gap-3 p-5" key={rule.id}>
+        <input aria-label={`选择规则：${rule.name}`} checked={visibleSelected.includes(ruleId)} className="mt-1" disabled={Boolean(busy)} onChange={() => toggleRule(ruleId)} type="checkbox" />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2"><h3 className="font-black">{rule.name}</h3><StatusPill tone={rule.enabled ? "green" : "amber"}>{rule.runOnce ? rule.status === "completed" ? "已执行" : rule.status === "failed" ? "执行失败" : rule.status === "running" ? "执行中" : "等待执行" : rule.enabled ? "已启用" : "已暂停"}</StatusPill>{rule.runOnce ? <StatusPill tone="amber">一次性</StatusPill> : null}{rule.status === "pending-confirmation" ? <StatusPill tone="amber">待确认</StatusPill> : null}</div>
+              <p className="mt-2 text-sm text-ops-muted">{rule.kind === "automation" ? rule.runOnce ? `${labelFor(contentTypes, rule.contentType)} · 一次性执行 · ${rule.status === "completed" ? "已完成" : rule.status === "failed" ? "失败（可在运行记录中查看原因）" : rule.status === "running" ? "正在执行" : formatTime(rule.nextRunAt)}` : `${labelFor(contentTypes, rule.contentType)} · ${labelFor(schedules, rule.schedulePreset)} · 下次 ${formatTime(rule.nextRunAt)}` : `${rule.mode === "review" ? "审核模式" : "自动模式"} · 来源 ${rule.source?.chatId}${rule.source?.threadId ? `:${rule.source.threadId}` : ":整群"}`}</p>
+              <p className="mt-1 text-xs text-ops-muted">{rule.targets.length} 个目标 · {rule.targets.map((target) => `${target.groupName || target.chatId}/${target.topicName || target.threadId || "整群"}`).join("、")}</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {rule.runOnce ? null : <SmallButton disabled={Boolean(busy)} onClick={() => onEdit(rule)}>编辑</SmallButton>}
+              <SmallButton disabled={Boolean(busy)} onClick={() => onValidate(rule.id)}>验证配置</SmallButton>
+              {rule.kind === "automation" ? rule.runOnce ? null : <SmallButton disabled={Boolean(busy)} onClick={() => window.confirm("将按当前模板立即向全部目标发送真实内容，确认继续？") && onAction({ action: "run-now", id: rule.id }, "真实内容已发布，结果已写入运行记录。")}>立即发布</SmallButton> : <SmallButton disabled={Boolean(busy)} onClick={() => onAction({ action: "test", id: rule.id }, "测试消息已按目标分别发送。")}>发送测试</SmallButton>}
+              {rule.runOnce ? null : <SmallButton disabled={Boolean(busy)} onClick={() => onAction({ action: "toggle", id: rule.id, enabled: !rule.enabled }, rule.enabled ? "规则已暂停。" : "规则已启用。")}>{rule.enabled ? "暂停" : "启用"}</SmallButton>}
+              <SmallButton danger disabled={Boolean(busy)} onClick={() => window.confirm(`确认删除这条${kindLabel}？`) && onAction({ action: "delete", id: rule.id }, "规则已删除。")}>删除</SmallButton>
+            </div>
+          </div>
+        </div>
+      </article>;
+    }) : <div className="p-8 text-center font-bold text-ops-muted">{empty}</div>}</div>
+  </Card>;
 }
 
 function TargetPicker({ groups, selected, onChange }) {
