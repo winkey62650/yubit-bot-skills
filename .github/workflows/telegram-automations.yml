@@ -34,9 +34,19 @@ jobs:
             echo "YUBIT_CRON_SECRET is missing; configure the same non-empty value as Vercel Production CRON_SECRET." >&2
             exit 1
           fi
-          curl --fail-with-body --max-time 55 \
-            -H "Authorization: Bearer $YUBIT_CRON_SECRET" \
-            "$APP_BASE_URL/api/cron/distribution"
+          # Each server request deliberately claims only one job so it stays
+          # inside Vercel's request limit. Drain at most three due jobs in this
+          # workflow run, using a fresh request (and timeout) for each job.
+          for attempt in 1 2 3; do
+            response=$(curl --fail-with-body --max-time 55 \
+              -H "Authorization: Bearer $YUBIT_CRON_SECRET" \
+              "$APP_BASE_URL/api/cron/distribution")
+            echo "$response"
+            claimed=$(printf '%s' "$response" | jq -r '.claimed // 0')
+            if [ "$claimed" = "0" ]; then
+              break
+            fi
+          done
         env:
           APP_BASE_URL: https://yubit-bot-skills-academy.vercel.app
           YUBIT_CRON_SECRET: ${{ secrets.YUBIT_CRON_SECRET }}
