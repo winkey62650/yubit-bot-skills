@@ -31,6 +31,11 @@ test("trading center provides accessible operator flows and durable refresh stat
   assert.match(page, /type=["']password["']/);
   assert.match(page, /关闭交易、转账和提现权限/);
   assert.match(page, /验证查询权限/);
+  assert.match(page, /订单核验已就绪/);
+  assert.match(page, /发布目标待配置/);
+  assert.match(page, /verifiedAccountCount/);
+  assert.match(page, /canVerifyOrders/);
+  assert.match(page, /canPublish/);
   assert.match(page, /26200004/);
   assert.match(page, /首尾空格/);
   assert.match(page, /生产服务器公网 IP/);

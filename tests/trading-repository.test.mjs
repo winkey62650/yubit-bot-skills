@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   JsonTradingRepository,
+  PostgresTradingRepository,
   getTradingRepository,
   resetTradingRepositoryForTests,
 } from "../lib/trading-repository.mjs";
@@ -57,6 +58,82 @@ test("account credentials are hidden by default and available only through expli
   assert.equal(secret.credentialCiphertext, "ciphertext");
   assert.equal(secret.credentialIv, "iv");
   assert.equal(secret.credentialAuthTag, "tag");
+});
+
+test("account verification metadata can be explicitly cleared in the JSON repository", async () => {
+  const repository = memoryRepository();
+  const account = await repository.saveAccount({
+    label: "Primary read-only",
+    credentialCiphertext: "ciphertext",
+    credentialIv: "iv",
+    credentialAuthTag: "tag",
+    apiKeyMasked: "abcd…wxyz",
+    status: "invalid",
+    lastVerifiedAt: null,
+    lastErrorCode: "YUBIT_API_ERROR:old"
+  });
+
+  const verified = await repository.saveAccount({
+    id: account.id,
+    label: account.label,
+    status: "verified",
+    lastVerifiedAt: "2026-07-17T06:00:00.000Z",
+    lastErrorCode: null
+  });
+
+  assert.equal(verified.status, "verified");
+  assert.equal(verified.lastVerifiedAt, "2026-07-17T06:00:00.000Z");
+  assert.equal(verified.lastErrorCode, null);
+});
+
+test("account verification metadata can be explicitly cleared in the Postgres repository", async () => {
+  const repository = Object.create(PostgresTradingRepository.prototype);
+  repository.getAccountWithCredentials = async () => ({
+    id: "account-1",
+    exchange: "yubit",
+    label: "Primary read-only",
+    credentialCiphertext: "ciphertext",
+    credentialIv: "iv",
+    credentialAuthTag: "tag",
+    keyVersion: 1,
+    apiKeyMasked: "abcd…wxyz",
+    status: "invalid",
+    lastVerifiedAt: null,
+    lastErrorCode: "YUBIT_API_ERROR:old"
+  });
+  let writtenValues;
+  repository.sql = {
+    query: async (_statement, values) => {
+      writtenValues = values;
+      return [{
+        id: values[0],
+        exchange: values[1],
+        label: values[2],
+        credential_ciphertext: values[3],
+        credential_iv: values[4],
+        credential_auth_tag: values[5],
+        key_version: values[6],
+        api_key_masked: values[7],
+        status: values[8],
+        last_verified_at: values[9],
+        last_error_code: values[10],
+        created_at: "2026-07-16T08:00:00.000Z",
+        updated_at: "2026-07-17T06:00:00.000Z"
+      }];
+    }
+  };
+
+  const verified = await repository.saveAccount({
+    id: "account-1",
+    label: "Primary read-only",
+    status: "verified",
+    lastVerifiedAt: "2026-07-17T06:00:00.000Z",
+    lastErrorCode: null
+  });
+
+  assert.equal(writtenValues[10], null);
+  assert.equal(verified.status, "verified");
+  assert.equal(verified.lastErrorCode, null);
 });
 
 test("Traders and accounts are linked many-to-many", async () => {

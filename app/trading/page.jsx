@@ -245,12 +245,57 @@ function TraderManagement({ data, busy, traderForm, setTraderForm, accountForm, 
   return <div className="grid items-start gap-5 xl:grid-cols-2">
     <div className="grid gap-5">
       <Card className="p-5 md:p-6"><SectionHead title={traderForm.id ? "编辑 Trader" : "新增 Trader"} desc="仅允许登记的 Telegram 数字 ID 向 SpeakerBot 提交订单。" /><form className="mt-5 grid gap-4" onSubmit={saveTraderForm}><Field label="Trader 名称"><input className={inputClass} onChange={(event) => setTraderForm({ ...traderForm, displayName: event.target.value })} required value={traderForm.displayName} /></Field><Field label="Telegram 数字 ID"><input className={inputClass} inputMode="numeric" onChange={(event) => setTraderForm({ ...traderForm, telegramUserId: event.target.value })} placeholder="例如 123456789" required value={traderForm.telegramUserId} /></Field><Field label="Telegram 用户名（可选）"><input className={inputClass} onChange={(event) => setTraderForm({ ...traderForm, telegramUsername: event.target.value })} placeholder="不需要填写 @" value={traderForm.telegramUsername || ""} /></Field><Field label="状态"><select className={inputClass} onChange={(event) => setTraderForm({ ...traderForm, status: event.target.value })} value={traderForm.status}><option value="enabled">启用</option><option value="disabled">停用</option></select></Field><FormActions busy={busy === "save-trader"} editing={Boolean(traderForm.id)} onCancel={() => setTraderForm(emptyTrader)} /></form></Card>
-      <Card className="p-5 md:p-6"><SectionHead title="Trader 列表" desc={`${data.metrics.enabledTraders || 0} 名已启用`} />{!data.traders.length ? <Empty text="暂无 Trader。请先登记 Trader 的 Telegram 数字 ID。" /> : <div className="mt-4 grid gap-3">{data.traders.map((trader) => <div className="rounded-lg border border-ops-line p-4" key={trader.id}><div className="flex items-start justify-between gap-3"><div><strong>{trader.displayName}</strong><button className="mt-1 block break-all text-left font-mono text-xs text-ops-accent" onClick={() => onCopy(trader.telegramUserId, "Telegram 数字 ID")} type="button">{trader.telegramUserId}</button><p className="mt-1 text-xs text-ops-muted">{trader.telegramUsername ? `@${trader.telegramUsername.replace(/^@/, "")}` : "未填写用户名"}</p></div><StatusPill tone={trader.status === "enabled" ? "green" : "amber"}>{trader.status === "enabled" ? "已启用" : "已停用"}</StatusPill></div><SmallButton className="mt-3" onClick={() => setTraderForm({ ...trader })}>编辑</SmallButton></div>)}</div>}</Card>
+      <Card className="p-5 md:p-6"><SectionHead title="Trader 列表" desc={`${data.metrics.orderReadyTraders || 0} 名订单核验已就绪`} />{!data.traders.length ? <Empty text="暂无 Trader。请先登记 Trader 的 Telegram 数字 ID。" /> : <div className="mt-4 grid gap-3">{data.traders.map((trader) => <TraderReadinessCard key={trader.id} onCopy={onCopy} onEdit={() => setTraderForm({ ...trader })} trader={trader} />)}</div>}</Card>
     </div>
 
     <div className="grid gap-5">
       <Card className="p-5 md:p-6"><SectionHead title={accountForm.id ? "编辑 YUBIT 查询账户" : "新增 YUBIT 查询账户"} desc="一个账户可关联多个 Trader；Trader 提交订单号时系统会从关联账户中核验。" /><div className="mt-4 rounded-lg border border-[#e7c883] bg-[#fff9e9] p-4 text-sm leading-6 text-[#6f551d]"><strong>安全要求：</strong>创建 API 时必须关闭交易、转账和提现权限，仅保留查询权限。后台验证只确认查询接口可用，管理员仍需在 YUBIT 确认权限范围。凭证只在服务端加密保存，页面不会回显 API Secret。</div><form className="mt-5 grid gap-4" onSubmit={saveAccountForm}><Field label="账户名称"><input className={inputClass} onChange={(event) => setAccountForm({ ...accountForm, label: event.target.value })} placeholder="例如 Trader A 主账户" required value={accountForm.label} /></Field><Field label="API Key"><input autoComplete="off" className={inputClass} onChange={(event) => setAccountForm({ ...accountForm, apiKey: event.target.value })} placeholder={accountForm.id ? "留空表示不更换" : "只读 API Key"} required={!accountForm.id} type="password" value={accountForm.apiKey} /></Field><Field label="API Secret"><input autoComplete="new-password" className={inputClass} onChange={(event) => setAccountForm({ ...accountForm, apiSecret: event.target.value })} placeholder={accountForm.id ? "留空表示不更换" : "只读 API Secret"} required={!accountForm.id} type="password" value={accountForm.apiSecret} /></Field><fieldset className="grid gap-2"><legend className="text-sm font-bold text-ops-muted">关联 Trader</legend>{!data.traders.length ? <p className="text-sm text-ops-muted">请先新增 Trader。</p> : data.traders.map((trader) => <label className="flex items-center gap-2 rounded-lg border border-ops-line p-3 text-sm font-bold" key={trader.id}><input checked={accountForm.traderIds.includes(trader.id)} onChange={() => setAccountForm({ ...accountForm, traderIds: toggleValue(accountForm.traderIds, trader.id) })} type="checkbox" />{trader.displayName}</label>)}</fieldset>{accountForm.id ? <label className="flex items-center gap-3 rounded-lg border border-ops-line p-3 text-sm font-bold"><input checked={accountForm.status !== "disabled"} onChange={(event) => setAccountForm({ ...accountForm, status: event.target.checked ? "pending" : "disabled" })} type="checkbox" />启用此查询账户；重新启用后需再次验证</label> : null}<FormActions busy={busy === "save-account"} editing={Boolean(accountForm.id)} onCancel={() => setAccountForm(emptyAccount)} /></form></Card>
-      <Card className="p-5 md:p-6"><SectionHead title="YUBIT 查询账户" desc={`${data.metrics.verifiedAccounts || 0} 个查询验证通过`} />{!data.accounts.length ? <Empty text="暂无查询账户。账户保存后请立即验证查询权限。" /> : <div className="mt-4 grid gap-3">{data.accounts.map((account) => <div className="rounded-lg border border-ops-line p-4" key={account.id}><div className="flex items-start justify-between gap-3"><div><strong>{account.label}</strong><button className="mt-1 block break-all text-left font-mono text-xs text-ops-accent" onClick={() => onCopy(account.apiKeyMasked, "脱敏 API Key")} type="button">{account.apiKeyMasked || "Key 已加密"}</button><p className={`mt-1 text-xs ${account.traderIds?.length ? "text-ops-muted" : "font-bold text-[#9d3128]"}`}>{account.traderIds?.length ? `关联 ${account.traderIds.length} 名 Trader` : "尚未关联 Trader，请编辑账户并勾选 Trader"} · {account.lastVerifiedAt ? `上次验证 ${formatDate(account.lastVerifiedAt)}` : "尚未验证"}</p></div><StatusPill tone={account.status === "verified" ? "green" : "amber"}>{accountStatus(account.status)}</StatusPill></div>{account.lastErrorCode ? <p className="mt-2 break-all text-xs leading-5 text-[#9d3128]">{yubitAccountError(account.lastErrorCode)}</p> : null}<div className="mt-3 flex flex-wrap gap-2"><SmallButton onClick={() => editAccount(account)}>编辑</SmallButton><input aria-label="验证币种" className={`${inputClass} min-h-9 w-28`} onChange={(event) => setVerifySymbol(event.target.value.toUpperCase())} value={verifySymbol} /><SmallButton disabled={busy === "verify-account"} onClick={() => onPost({ action: "verify-account", accountId: account.id, symbol: verifySymbol }, "YUBIT 查询权限验证成功")}>{busy === "verify-account" ? "验证中…" : "验证查询权限"}</SmallButton></div></div>)}</div>}</Card>
+      <Card className="p-5 md:p-6"><SectionHead title="YUBIT 查询账户" desc={`${data.metrics.verifiedAccounts || 0} 个查询验证通过`} />{!data.accounts.length ? <Empty text="暂无查询账户。账户保存后请立即验证查询权限。" /> : <div className="mt-4 grid gap-3">{data.accounts.map((account) => <ExchangeAccountCard account={account} busy={busy} key={account.id} onCopy={onCopy} onEdit={() => editAccount(account)} onPost={onPost} setVerifySymbol={setVerifySymbol} verifySymbol={verifySymbol} />)}</div>}</Card>
+    </div>
+  </div>;
+}
+
+function TraderReadinessCard({ trader, onCopy, onEdit }) {
+  const readiness = traderReadiness(trader);
+  return <div className="rounded-lg border border-ops-line p-4">
+    <div className="flex items-start justify-between gap-3">
+      <div>
+        <strong>{trader.displayName}</strong>
+        <p className="mt-1 text-xs text-ops-muted">{trader.telegramUsername ? `@${trader.telegramUsername.replace(/^@/, "")}` : "未填写用户名"}</p>
+        <button className="mt-1 block break-all text-left font-mono text-xs text-ops-accent" onClick={() => onCopy(trader.telegramUserId, "Telegram 数字 ID")} type="button">TG ID · {trader.telegramUserId}</button>
+      </div>
+      <StatusPill tone={readiness.tone}>{readiness.label}</StatusPill>
+    </div>
+    <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+      <p className={`rounded-md px-3 py-2 font-bold ${trader.canVerifyOrders ? "bg-[#f2faf6] text-[#285845]" : "bg-[#fff9e9] text-[#6f551d]"}`}>YUBIT · {trader.verifiedAccountCount || 0} 个已验证账户</p>
+      <p className={`rounded-md px-3 py-2 font-bold ${trader.canPublish ? "bg-[#f2faf6] text-[#285845]" : "bg-[#fff9e9] text-[#6f551d]"}`}>{trader.canPublish ? `发布 · ${trader.enabledDestinationCount} 个目标` : "发布目标待配置"}</p>
+    </div>
+    <SmallButton className="mt-3" onClick={onEdit}>编辑</SmallButton>
+  </div>;
+}
+
+function ExchangeAccountCard({ account, busy, onCopy, onEdit, onPost, setVerifySymbol, verifySymbol }) {
+  const disabled = account.status === "disabled";
+  const missingLink = !disabled && !account.traderIds?.length;
+  const linkText = disabled
+    ? "账户已停用，不参与订单核验"
+    : account.traderIds?.length
+      ? `关联 ${account.traderIds.length} 名 Trader`
+      : "尚未关联 Trader，请编辑账户并勾选 Trader";
+  return <div className="rounded-lg border border-ops-line p-4">
+    <div className="flex items-start justify-between gap-3">
+      <div>
+        <strong>{account.label}</strong>
+        <button className="mt-1 block break-all text-left font-mono text-xs text-ops-accent" onClick={() => onCopy(account.apiKeyMasked, "脱敏 API Key")} type="button">{account.apiKeyMasked || "Key 已加密"}</button>
+        <p className={`mt-1 text-xs ${missingLink ? "font-bold text-[#9d3128]" : "text-ops-muted"}`}>{linkText} · {account.lastVerifiedAt ? `上次验证 ${formatDate(account.lastVerifiedAt)}` : disabled ? "不需要验证" : "尚未验证"}</p>
+      </div>
+      <StatusPill tone={account.status === "verified" ? "green" : "amber"}>{accountStatus(account.status)}</StatusPill>
+    </div>
+    {account.status === "invalid" && account.lastErrorCode ? <p className="mt-2 break-all text-xs leading-5 text-[#9d3128]">{yubitAccountError(account.lastErrorCode)}</p> : null}
+    <div className="mt-3 flex flex-wrap gap-2">
+      <SmallButton onClick={onEdit}>编辑</SmallButton>
+      <input aria-label="验证币种" className={`${inputClass} min-h-9 w-28`} disabled={disabled} onChange={(event) => setVerifySymbol(event.target.value.toUpperCase())} value={verifySymbol} />
+      <SmallButton disabled={disabled || busy === "verify-account"} onClick={() => onPost({ action: "verify-account", accountId: account.id, symbol: verifySymbol }, "YUBIT 查询权限验证成功")}>{disabled ? "先启用账户" : busy === "verify-account" ? "验证中…" : "验证查询权限"}</SmallButton>
     </div>
   </div>;
 }
@@ -294,9 +339,7 @@ function SystemHealth({ data, busy, onPost }) {
     health.database?.ok
     && speaker.ok
     && health.scheduler?.ok
-    && data.metrics.enabledTraders
-    && data.metrics.verifiedAccounts
-    && data.metrics.enabledDestinations
+    && data.metrics.publishReadyTraders
   );
   const schedulerValue = !scheduler.configured
     ? "定时密钥未配置"
@@ -319,7 +362,7 @@ function SystemHealth({ data, busy, onPost }) {
       <HealthCard title="数据库" ok={health.database?.ok} value={health.database?.ok ? "连接正常" : "连接异常"} detail={health.database?.driver || health.database?.errorCode || "未配置"} />
       <HealthCard title="SpeakerBot" ok={speaker.ok} value={speaker.username ? `@${speaker.username}` : speaker.configured ? "已配置" : "未配置"} detail={webhookDetail} />
       <HealthCard title="订单追踪" ok={scheduler.ok} value={schedulerValue} detail={schedulerDetail} />
-      <HealthCard title="上线准备" ok={releaseReady} value={`${data.metrics.enabledTraders || 0} Trader · ${data.metrics.verifiedAccounts || 0} 账户`} detail={releaseReady ? `${data.metrics.enabledDestinations || 0} 个发布目标` : "数据库、Bot、定时追踪和运营配置必须全部正常"} />
+      <HealthCard title="上线准备" ok={releaseReady} value={`${data.metrics.orderReadyTraders || 0} Trader 核验就绪`} detail={releaseReady ? `${data.metrics.publishReadyTraders || 0} 名 Trader 可完整发布` : data.metrics.orderReadyTraders ? "订单核验已就绪，发布目标待配置" : "数据库、Bot、定时追踪和 Trader 账户关联必须全部正常"} />
     </div>
     <Card className="p-5 md:p-6">
       <SectionHead title="SpeakerBot 接收入口" desc="Webhook 只接收 SpeakerBot 私聊消息，并校验 Telegram Secret Token。不会在页面展示 Bot Token 或 API Secret。" />
@@ -353,6 +396,14 @@ function percent(value) { if (value === null || value === undefined || value ===
 function directionLabel(value) { return String(value || "").toLowerCase() === "sell" || String(value || "").toLowerCase() === "short" ? "Short" : "Long"; }
 function signalTone(status) { return ["closed_profit", "tracking"].includes(status) ? "green" : "amber"; }
 function signalStatus(status) { return ({ tracking: "追踪中", closed_profit: "盈利已结算", closed_loss: "亏损已结算", needs_review: "需要复核", rejected: "已拒绝", verified: "已核验", pending: "待核验" })[status] || status || "未知"; }
+function traderReadiness(trader) {
+  if (trader.status !== "enabled") return { label: "已停用", tone: "amber" };
+  if (trader.canPublish) return { label: "全流程已就绪", tone: "green" };
+  if (trader.canVerifyOrders) return { label: "订单核验已就绪", tone: "green" };
+  if (!trader.telegramReady) return { label: "Telegram 身份待完善", tone: "amber" };
+  if (trader.linkedAccountCount) return { label: "YUBIT 账户待验证", tone: "amber" };
+  return { label: "YUBIT 账户待关联", tone: "amber" };
+}
 function accountStatus(status) { return ({ pending: "待验证", verified: "已验证", invalid: "验证失败", disabled: "已停用" })[status] || status || "未知"; }
 function yubitAccountError(value) {
   const error = String(value || "");

@@ -133,6 +133,38 @@ test("account verification decrypts server-side credentials and performs a read-
   assert.equal(JSON.stringify(result).includes("verification-secret-5678"), false);
 });
 
+test("a successful YUBIT re-verification clears the previous validation error", async () => {
+  const { repository } = memoryRepository();
+  const account = await saveExchangeAccount({
+    label: "Recovered Desk",
+    apiKey: "recovered-key-1234",
+    apiSecret: "recovered-secret-5678",
+    traderIds: [],
+  }, dependencies(repository));
+  let shouldFail = true;
+  const deps = dependencies(repository, {
+    yubitClientFactory: () => ({
+      async getOrderHistory() {
+        if (shouldFail) throw new Error("YUBIT_API_ERROR:26200004");
+        return { list: [] };
+      },
+    }),
+  });
+
+  await assert.rejects(
+    verifyExchangeAccount({ accountId: account.account.id, symbol: "BTCUSDT" }, deps),
+    /26200004/,
+  );
+  assert.equal((await repository.getAccount(account.account.id)).status, "invalid");
+  assert.equal((await repository.getAccount(account.account.id)).lastErrorCode, "YUBIT_API_ERROR:26200004");
+
+  shouldFail = false;
+  const recovered = await verifyExchangeAccount({ accountId: account.account.id, symbol: "BTCUSDT" }, deps);
+  assert.equal(recovered.account.status, "verified");
+  assert.equal(recovered.account.lastErrorCode, null);
+  assert.equal((await repository.getAccount(account.account.id)).lastErrorCode, null);
+});
+
 test("account credentials ignore accidental copy whitespace before YUBIT verification", async () => {
   const { repository } = memoryRepository();
   const account = await saveExchangeAccount({
@@ -770,6 +802,14 @@ test("management overview and signal detail expose joined operational facts with
   const overview = await getTradingManagementOverview(deps);
   assert.equal(overview.metrics.totalSignals, 1);
   assert.equal(overview.metrics.failedDeliveries, 1);
+  assert.equal(overview.metrics.orderReadyTraders, 1);
+  assert.equal(overview.metrics.publishReadyTraders, 1);
+  assert.equal(overview.traders[0].telegramReady, true);
+  assert.equal(overview.traders[0].verifiedAccountCount, 1);
+  assert.deepEqual(overview.traders[0].verifiedAccountIds, [accountId]);
+  assert.equal(overview.traders[0].enabledDestinationCount, 2);
+  assert.equal(overview.traders[0].canVerifyOrders, true);
+  assert.equal(overview.traders[0].canPublish, true);
   assert.deepEqual(overview.accounts[0].traderIds, [trader.id]);
   assert.ok(Array.isArray(overview.logs));
 
@@ -780,6 +820,44 @@ test("management overview and signal detail expose joined operational facts with
   assert.equal(detail.events[0].eventType, "verified");
   assert.equal(detail.deliveries[0].destination.chatId, destinations[0].chatId);
   assert.equal(/ciphertext|apiSecret|credentialIv|authTag/i.test(JSON.stringify({ overview, detail })), false);
+});
+
+test("Trader readiness uses a verified linked account even when an old linked account is invalid", async () => {
+  const { repository } = memoryRepository();
+  const trader = await repository.saveTrader({ displayName: "Hemant", telegramUserId: "1436978671" });
+  const oldAccount = await saveExchangeAccount({
+    label: "Hemant old account",
+    apiKey: "same-api-key-1234",
+    apiSecret: "old-wrong-secret",
+    traderIds: [trader.id],
+  }, dependencies(repository));
+  await repository.saveAccount({
+    id: oldAccount.account.id,
+    label: oldAccount.account.label,
+    status: "invalid",
+    lastErrorCode: "YUBIT_API_ERROR:26200004",
+  });
+  const activeAccount = await saveExchangeAccount({
+    label: "Trader main account",
+    apiKey: "same-api-key-1234",
+    apiSecret: "correct-secret",
+    traderIds: [trader.id],
+  }, dependencies(repository));
+  await repository.saveAccount({
+    id: activeAccount.account.id,
+    label: activeAccount.account.label,
+    status: "verified",
+    lastVerifiedAt: "2026-07-16T08:00:00.000Z",
+    lastErrorCode: null,
+  });
+
+  const overview = await getTradingManagementOverview(dependencies(repository));
+  assert.equal(overview.metrics.orderReadyTraders, 1);
+  assert.equal(overview.metrics.publishReadyTraders, 0);
+  assert.equal(overview.traders[0].verifiedAccountCount, 1);
+  assert.deepEqual(overview.traders[0].verifiedAccountIds, [activeAccount.account.id]);
+  assert.equal(overview.traders[0].canVerifyOrders, true);
+  assert.equal(overview.traders[0].canPublish, false);
 });
 
 test("manual refresh and failed delivery retry remain idempotent", async () => {
