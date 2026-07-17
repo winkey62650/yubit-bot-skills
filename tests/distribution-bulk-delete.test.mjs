@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   deleteDistributionRules,
@@ -57,4 +58,10 @@ test("bulk delete reports full failure without losing item details", async () =>
   assert.equal(result.ok, false);
   assert.equal(result.deleted, 0);
   assert.equal(result.failed, 2);
+});
+
+test("distribution management route exposes one-request batch deletion", async () => {
+  const source = await readFile(new URL("../app/api/distribution/route.js", import.meta.url), "utf8");
+  assert.match(source, /body\.action === ["']delete-many["']/);
+  assert.match(source, /deleteDistributionRules\(repository, body\.ids\)/);
 });

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { deleteDistributionRules } from "../../../lib/distribution-bulk-delete.mjs";
 import { getDistributionRepository } from "../../../lib/distribution-repository.mjs";
 import {
   distributionOverview,
@@ -25,6 +26,9 @@ export async function POST(request) {
   const body = await request.json().catch(() => ({}));
   try {
     const repository = await getDistributionRepository();
+    if (body.action === "delete-many") {
+      return NextResponse.json(await deleteDistributionRules(repository, body.ids));
+    }
     if (body.action === "delete") return NextResponse.json({ ok: await repository.deleteRule(String(body.id || "")) });
     if (body.action === "toggle") {
       const rule = await repository.getRule(String(body.id || ""));
