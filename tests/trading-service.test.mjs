@@ -357,7 +357,7 @@ test("management errors map to safe operator HTTP statuses", () => {
 });
 
 async function configuredTradingDesk() {
-  const { repository } = memoryRepository();
+  const { repository, readState } = memoryRepository();
   const trader = await repository.saveTrader({ displayName: "Alice", telegramUserId: "1001" });
   const saved = await saveExchangeAccount({
     label: "Alice Desk",
@@ -372,7 +372,7 @@ async function configuredTradingDesk() {
   const destinationB = await repository.saveDestination({
     scopeType: "workspace", chatId: "-100200", threadId: 71, chatTitle: "CryptoGuy", topicTitle: "Trading Zone",
   });
-  return { repository, trader, accountId: saved.account.id, destinations: [destinationA, destinationB] };
+  return { repository, readState, trader, accountId: saved.account.id, destinations: [destinationA, destinationB] };
 }
 
 function privateUpdate(updateId, userId, text, messageId = updateId) {
@@ -510,6 +510,110 @@ test("a verified filled order creates one immutable signal and delivers to every
   assert.equal(publicMessages.length, 2);
   assert.ok(publicMessages.every((payload) => /Verified by YUBIT/.test(payload.text)));
   assert.ok(publicMessages.every((payload) => [70, 71].includes(payload.message_thread_id)));
+});
+
+test("SpeakerBot retries an unfiltered order-history lookup when YUBIT returns no exact-query rows", async () => {
+  const { repository } = await configuredTradingDesk();
+  const orderId = "f48f4cac-ffd7-4bf4-84b2-46655e9bb02c";
+  const orderQueries = [];
+  const result = await processSpeakerTelegramUpdate(
+    privateUpdate(21, 1001, `BTCUSDT ${orderId}`),
+    dependencies(repository, {
+      telegram: async () => ({ message_id: 9001 }),
+      yubitClientFactory: () => ({
+        async getOrderHistory(input) {
+          orderQueries.push(input);
+          if (input.orderId) return { list: [] };
+          return {
+            list: [{
+              orderId,
+              symbol: "BTCUSDT",
+              orderStatus: "Filled",
+              side: "Buy",
+              leverage: "200",
+              createdTime: 1_768_000_000_000,
+            }],
+          };
+        },
+        async getExecutions({ symbol, orderId: requestedOrderId }) {
+          return {
+            list: [{
+              execId: "exec-fallback-1",
+              orderId: requestedOrderId,
+              symbol,
+              execQty: "0.01",
+              execPrice: "62829.9",
+              execTime: 1_768_000_000_000,
+            }],
+          };
+        },
+      }),
+    }),
+  );
+
+  assert.equal(result.status, "published");
+  assert.deepEqual(orderQueries, [
+    { symbol: "BTCUSDT", orderId, limit: 20 },
+    { symbol: "BTCUSDT", limit: 100 },
+  ]);
+});
+
+test("SpeakerBot persists a safe YUBIT failure code when order verification fails", async () => {
+  const { repository, readState } = await configuredTradingDesk();
+  const result = await processSpeakerTelegramUpdate(
+    privateUpdate(22, 1001, "BTCUSDT failed_lookup_1234"),
+    dependencies(repository, {
+      telegram: async () => ({ message_id: 9002 }),
+      yubitClientFactory: () => ({
+        async getOrderHistory() {
+          throw new Error("YUBIT_API_ERROR:26200004");
+        },
+      }),
+    }),
+  );
+
+  assert.equal(result.status, "order_not_verified");
+  const webhookUpdate = readState().webhookUpdates.find((row) => row.updateId === "22");
+  assert.equal(webhookUpdate.safeErrorCode, "YUBIT_API_ERROR:26200004");
+});
+
+test("order diagnostics expose only safe lookup metadata for a linked account", async () => {
+  const service = await import("../lib/trading-service.mjs");
+  assert.equal(typeof service.diagnoseExchangeOrder, "function");
+
+  const { repository, accountId } = await configuredTradingDesk();
+  const orderId = "diagnostic_order_1234";
+  const result = await service.diagnoseExchangeOrder({
+    accountId,
+    symbol: "BTCUSDT",
+    orderId,
+  }, dependencies(repository, {
+    yubitClientFactory: () => ({
+      getOrderHistory: async ({ orderId: requestedOrderId }) => ({
+        list: requestedOrderId ? [] : [{
+          orderId,
+          symbol: "BTCUSDT",
+          orderStatus: "Filled",
+          side: "Buy",
+        }],
+      }),
+      getExecutions: async ({ orderId: requestedOrderId }) => ({
+        list: requestedOrderId ? [{
+          orderId,
+          symbol: "BTCUSDT",
+          execId: "diagnostic-exec",
+          execQty: "1",
+          execPrice: "100",
+        }] : [],
+      }),
+    }),
+  }));
+
+  assert.equal(result.orderMatched, true);
+  assert.equal(result.executionCount, 1);
+  assert.deepEqual(result.orderLookup, { exactCount: 0, fallbackCount: 1 });
+  assert.equal(JSON.stringify(result).includes("alice-secret"), false);
+  assert.equal(JSON.stringify(result).includes("credentialCiphertext"), false);
 });
 
 test("duplicate updates and shared-account duplicate orders never republish", async () => {

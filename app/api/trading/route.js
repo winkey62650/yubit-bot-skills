@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import {
   configureSpeakerWebhook,
+  diagnoseExchangeOrder,
   getTradingManagementOverview,
   sanitizeTradingResponse,
   saveExchangeAccount,
@@ -44,6 +45,9 @@ export async function POST(request) {
     }
     if (body.action === "verify-account") {
       return NextResponse.json({ ok: true, message: "YUBIT 查询权限验证成功", result: await verifyExchangeAccount(body) });
+    }
+    if (body.action === "diagnose-order") {
+      return NextResponse.json({ ok: true, message: "订单只读诊断完成", result: await diagnoseExchangeOrder(body) });
     }
     if (body.action === "save-destination") {
       return NextResponse.json({ ok: true, message: "发送目标保存成功", destination: await saveTradingDestination(body.destination ?? body) });
