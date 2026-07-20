@@ -42,6 +42,66 @@ test("keeps only current memberships and distinguishes Forum from supergroup", a
   assert.equal(result.groups.find((group) => group.chatId === forumId).canManageTopics, true);
 });
 
+test("discovers a private channel and records SpeakerBot publishing rights", async () => {
+  const channelId = "-1009001";
+  const updates = [{ channel_post: { chat: { id: Number(channelId), title: "Private Distribution Test", type: "channel" } } }];
+  const telegram = async (_token, method) => {
+    if (method === "getChat") return {
+      result: { id: Number(channelId), title: "Private Distribution Test", type: "channel" }
+    };
+    if (method === "getChatMember") return {
+      result: { status: "administrator", can_post_messages: true, can_edit_messages: true }
+    };
+    throw new Error("unexpected method");
+  };
+
+  const result = await discoverTelegramChats({ token: "test", botId: 1, updates, telegram });
+  assert.equal(result.groups.length, 1);
+  assert.equal(result.groups[0].type, "channel");
+  assert.equal(result.groups[0].isPrivateChannel, true);
+  assert.equal(result.groups[0].permissions.canPostMessages, true);
+  assert.equal(result.groups[0].permissions.canEditMessages, true);
+});
+
+test("discovers a private channel from a bot membership update before its first post", () => {
+  const channelId = "-1009002";
+  const result = collectTelegramChatCandidates([{
+    my_chat_member: {
+      chat: { id: Number(channelId), title: "Private Channel Acceptance", type: "channel" },
+      new_chat_member: { status: "administrator" }
+    }
+  }]);
+
+  assert.equal(result.active.length, 1);
+  assert.equal(result.active[0].chatId, channelId);
+  assert.equal(result.active[0].type, "channel");
+});
+
+test("treats a private channel as distribution-ready without requiring Topics", () => {
+  const channelId = "-1009003";
+  const channel = (name) => ({
+    chatId: channelId,
+    title: "Private Distribution Test",
+    type: "channel",
+    isPrivateChannel: true,
+    membership: "administrator",
+    permissions: {
+      canPostMessages: name === "SpeakerBot",
+      canEditMessages: name === "SpeakerBot"
+    }
+  });
+  const groups = mergeBotGroupDiscoveries([
+    { name: "AdminBot", status: "在线", groups: [channel("AdminBot")] },
+    { name: "SpeakerBot", status: "在线", groups: [channel("SpeakerBot")] },
+    { name: "ForwardBot", status: "在线", groups: [channel("ForwardBot")] }
+  ]);
+
+  assert.equal(groups[0].readyForInitialization, false);
+  assert.equal(groups[0].channelPublishingReady, true);
+  assert.equal(groups[0].distributionReady, true);
+  assert.match(groups[0].initializationBlockReason, /无需 Topic/);
+});
+
 test("merges the three current bots into one live group view", () => {
   const bot = (name, username, groups) => ({ name, username, status: "在线", groups });
   const adminGroup = (chatId, title, canUseTopics = false) => ({

@@ -64,6 +64,39 @@ test("distribution selectors exclude General Chat and follow the managed editori
   assert.equal(JSON.stringify(buildDistributionTargetOptions(groups)).includes("General Chat"), false);
 });
 
+test("private channels are selectable as whole destinations without a fake Topic", () => {
+  const groups = [{
+    chatId: "-1009001",
+    title: "Private Distribution Test",
+    type: "channel",
+    isPrivateChannel: true,
+    topics: []
+  }];
+
+  assert.deepEqual(buildDistributionTargetOptions(groups), [{
+    key: "-1009001:channel",
+    label: "Private Distribution Test / 整个频道",
+    target: {
+      chatId: "-1009001",
+      chatType: "channel",
+      threadId: null,
+      groupName: "Private Distribution Test",
+      topicName: "整个频道"
+    }
+  }]);
+  assert.deepEqual(buildDistributionSourceOptions(groups), [{
+    key: "-1009001:channel",
+    label: "Private Distribution Test / 整个频道",
+    source: {
+      chatId: "-1009001",
+      chatType: "channel",
+      threadId: null,
+      groupName: "Private Distribution Test",
+      topicName: "整个频道"
+    }
+  }]);
+});
+
 test("every SpeakerBot content type points to its semantic numbered Topic", () => {
   assert.deepEqual(Object.fromEntries([
     "news",

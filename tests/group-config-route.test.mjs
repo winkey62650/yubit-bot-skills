@@ -21,6 +21,15 @@ test("group config UI can verify and save a group by chat id without a local Tel
   assert.match(source, /无需在这台 Mac 登录/);
 });
 
+test("group config persistence keeps channel identity and publishing permissions", async () => {
+  const source = await readFile(new URL("../app/api/group-config/route.js", import.meta.url), "utf8");
+  assert.match(source, /isPrivateChannel/);
+  assert.match(source, /channelPublishingReady/);
+  assert.match(source, /distributionReady/);
+  assert.match(source, /canPostMessages/);
+  assert.match(source, /canEditMessages/);
+});
+
 test("a transient empty Telegram discovery never erases the last saved group configuration", () => {
   const existing = [{ chatId: "-1001", title: "CryptoGuy Academy" }];
 

@@ -191,6 +191,40 @@ test("an automatic job keeps every stable chat and thread target", () => {
   assert.deepEqual(validateDistributionRule(rule), []);
 });
 
+test("an automatic job keeps a channel destination without inventing a thread", () => {
+  const rule = normalizeDistributionRule({
+    id: "channel-events",
+    kind: "automation",
+    name: "Private channel events",
+    contentType: "daily-events",
+    schedulePreset: "daily-0800-utc",
+    targets: [{
+      chatId: "-1009001",
+      chatType: "channel",
+      threadId: null,
+      groupName: "Private Distribution Test",
+      topicName: "整个频道"
+    }]
+  });
+
+  assert.equal(rule.targets[0].chatType, "channel");
+  assert.equal(rule.targets[0].threadId, null);
+  assert.deepEqual(validateDistributionRule(rule), []);
+});
+
+test("a supergroup destination must still select a Topic", () => {
+  const rule = normalizeDistributionRule({
+    id: "invalid-group-target",
+    kind: "automation",
+    name: "Invalid group target",
+    contentType: "daily-events",
+    schedulePreset: "daily-0800-utc",
+    targets: [{ chatId: "-1001", chatType: "supergroup", threadId: null }]
+  });
+
+  assert.match(validateDistributionRule(rule).map((error) => error.message).join("\n"), /Topic/);
+});
+
 test("target identifiers are stable inside one rule and isolated between rules", () => {
   const input = {
     kind: "broadcast",
@@ -319,6 +353,7 @@ test("stable chat and thread IDs refresh stale group and topic display names", (
   const repaired = reconcileDistributionRouting(rule, groups);
   assert.deepEqual(repaired.source, {
     chatId: "-1003710405969",
+    chatType: "supergroup",
     threadId: 8,
     groupName: "DEMO Academy",
     topicName: "3. Market Events"

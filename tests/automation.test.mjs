@@ -53,6 +53,28 @@ test("legacy automation status resolves every database-backed distribution targe
   assert.deepEqual(target.targets.map((item) => item.chatId), ["-1001", "-1002"]);
 });
 
+test("automation target resolution keeps a whole-channel destination", () => {
+  const job = AUTOMATION_JOBS.find((item) => item.id === "daily-events");
+  const target = automation.distributionTargetsForJob(job, [{
+    id: "channel-events",
+    kind: "automation",
+    contentType: "daily-events",
+    enabled: true,
+    targets: [{
+      chatId: "-1009001",
+      chatType: "channel",
+      threadId: null,
+      groupName: "Private Distribution Test",
+      topicName: "整个频道"
+    }]
+  }]);
+
+  assert.equal(target.configured, true);
+  assert.equal(target.count, 1);
+  assert.equal(target.targets[0].chatType, "channel");
+  assert.equal(target.targets[0].threadId, null);
+});
+
 test("whale alert turns a material order-book snapshot into approved English copy", () => {
   assert.equal(typeof automation.buildWhaleAlert, "function");
   const alert = automation.buildWhaleAlert({
@@ -173,6 +195,16 @@ test("daily market brief delivery sends a standalone poster followed by the mark
   assert.equal(plan[1].payload.text, "1. First story\n\n2. Second story");
   assert.equal(plan[1].payload.parse_mode, "HTML");
   assert.equal(plan[1].payload.disable_web_page_preview, true);
+});
+
+test("channel delivery omits message_thread_id from every Telegram request", () => {
+  const target = { chatId: "-1009001", chatType: "channel", threadId: null };
+  const plan = automation.buildDailyMarketBriefTelegramPlan({
+    fullText: "1. Private channel acceptance"
+  }, target, "https://example.com/poster.png");
+
+  assert.equal(plan.every((item) => item.payload.chat_id === target.chatId), true);
+  assert.equal(plan.every((item) => !Object.hasOwn(item.payload, "message_thread_id")), true);
 });
 
 test("daily market brief keeps whole story blocks within Telegram photo caption limits", () => {

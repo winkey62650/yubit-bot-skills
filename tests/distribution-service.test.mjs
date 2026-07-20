@@ -79,6 +79,43 @@ test("production distribution allowlist opens only the approved CryptoGuy topics
   assert.equal(preview.targets.some((target) => target.id === "fight-analysis"), false);
 });
 
+test("production distribution allowlist can approve one whole private channel", async () => {
+  const privateChannel = {
+    id: "private-channel",
+    chatId: "-1009001",
+    chatType: "channel",
+    threadId: null,
+    groupName: "Private Distribution Test",
+    topicName: "整个频道"
+  };
+  const unapprovedChannel = {
+    id: "other-channel",
+    chatId: "-1009002",
+    chatType: "channel",
+    threadId: null,
+    groupName: "Other Channel",
+    topicName: "整个频道"
+  };
+  const rule = {
+    id: "broadcast-approved-channel",
+    kind: "broadcast",
+    source: { chatId: "-100source" },
+    targets: [privateChannel, unapprovedChannel]
+  };
+  const repository = {
+    async getRule() { return rule; },
+    async findEventBySource() { return null; }
+  };
+  const env = {
+    NODE_ENV: "production",
+    TELEGRAM_DEMO_ONLY: "true",
+    TELEGRAM_DISTRIBUTION_APPROVED_TARGETS: "-1009001:channel"
+  };
+
+  const preview = await backfillRule(rule.id, "492", { preview: true, repository, env });
+  assert.deepEqual(preview.targets, [privateChannel]);
+});
+
 test("production retry refuses a failed delivery outside the Demo group", async () => {
   const repository = {
     async getDelivery() {

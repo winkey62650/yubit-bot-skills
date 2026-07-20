@@ -53,7 +53,11 @@ export async function POST(request) {
     chatId,
     title: String(body.title || "").trim() || chatId,
     type: String(body.type || "supergroup"),
-    canUseTopics: body.canUseTopics !== false
+    username: String(body.username || ""),
+    isPrivateChannel: body.isPrivateChannel === true,
+    canUseTopics: body.type === "channel" ? false : body.canUseTopics !== false,
+    channelPublishingReady: body.channelPublishingReady === true,
+    distributionReady: body.distributionReady === true
   });
   const groups = [group, ...existingConfig.groups.filter((item) => item.chatId !== group.chatId)];
   const config = { schemaVersion: 2, groups, bindings: existingConfig.bindings, updatedAt: new Date().toISOString() };
@@ -97,7 +101,9 @@ function normalizeGroup(group) {
     permissions: bot?.permissions && typeof bot.permissions === "object" ? {
       canDeleteMessages: bot.permissions.canDeleteMessages === true,
       canPinMessages: bot.permissions.canPinMessages === true,
-      canChangeInfo: bot.permissions.canChangeInfo === true
+      canChangeInfo: bot.permissions.canChangeInfo === true,
+      canPostMessages: bot.permissions.canPostMessages === true,
+      canEditMessages: bot.permissions.canEditMessages === true
     } : null,
     warning: String(bot?.warning || "")
   })).filter((bot) => bot.name) : [];
@@ -118,6 +124,8 @@ function normalizeGroup(group) {
     chatId,
     title: String(group?.title || chatId).trim(),
     type: String(group?.type || "supergroup"),
+    username: String(group?.username || ""),
+    isPrivateChannel: group?.type === "channel" && (group?.isPrivateChannel === true || !group?.username),
     isForum: group?.isForum === true,
     canUseTopics,
     topics,
@@ -133,6 +141,8 @@ function normalizeGroup(group) {
     adminBotCount: Number(group?.adminBotCount ?? adminBotCount),
     allBotsAdmin: group?.allBotsAdmin === true,
     allBotIdentitiesVerified: group?.allBotIdentitiesVerified !== false,
+    channelPublishingReady: group?.channelPublishingReady === true,
+    distributionReady: group?.distributionReady === true,
     readyForInitialization: group?.readyForInitialization === true,
     initializationBlockReason: String(group?.initializationBlockReason || ""),
     source: String(group?.source || ""),
