@@ -27,6 +27,10 @@ test("refresh failures are converted to concise user-facing messages", () => {
     getFriendlyRefreshError("Vercel Blob: No blob credentials found. Pass a token option."),
     "服务端存储暂不可用"
   );
+  assert.equal(
+    getFriendlyRefreshError("Vercel Blob: Failed to fetch blob: 403 Forbidden"),
+    "服务端存储暂不可用"
+  );
   assert.equal(getFriendlyRefreshError("Failed to fetch"), "网络连接失败");
   assert.equal(
     getFriendlyRefreshError("A very long internal failure ".repeat(10)),

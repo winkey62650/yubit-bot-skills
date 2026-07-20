@@ -82,6 +82,18 @@ test("server deployment restarts both services after changing the current releas
   assert.doesNotMatch(deployScript, /enable --now yubit-academy-(?:web|worker)\.service/);
 });
 
+test("server deployment keeps mutable JSON state outside immutable releases", async () => {
+  const deployScript = await readFile(
+    fileURLToPath(new URL("../deploy/server/deploy.sh", import.meta.url)),
+    "utf8",
+  );
+
+  assert.match(deployScript, /STATE_ROOT="\$\{STATE_ROOT:-\/var\/lib\/yubit-academy\/runtime\}"/);
+  assert.match(deployScript, /JSON_STORE_BACKEND=local/);
+  assert.match(deployScript, /JSON_STORE_DIRECTORY=%s/);
+  assert.match(deployScript, /ln -s "\$STATE_ROOT" "\$release\/\.runtime"/);
+});
+
 test("production redirects use the public HTTPS origin instead of the private listener", async () => {
   const middleware = await readFile(
     fileURLToPath(new URL("../middleware.js", import.meta.url)),

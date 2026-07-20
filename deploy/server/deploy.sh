@@ -4,6 +4,7 @@ set -Eeuo pipefail
 REPO_URL="${REPO_URL:-https://github.com/winkey62650/yubit-bot-skills.git}"
 BRANCH="${BRANCH:-code/academy}"
 APP_ROOT="${APP_ROOT:-/opt/yubit-academy}"
+STATE_ROOT="${STATE_ROOT:-/var/lib/yubit-academy/runtime}"
 NODE_HOME="${NODE_HOME:-/opt/yubit-node}"
 SERVER_NAME="${SERVER_NAME:-152-32-161-174.sslip.io}"
 SERVER_IP="${SERVER_IP:-152.32.161.174}"
@@ -21,6 +22,7 @@ if [[ ! -x "$NODE_HOME/bin/node" ]]; then
 fi
 
 sudo install -d -m 0755 -o ubuntu -g ubuntu "$APP_ROOT/releases"
+sudo install -d -m 0750 -o ubuntu -g ubuntu "$STATE_ROOT"
 commit="$({ git ls-remote "$REPO_URL" "refs/heads/$BRANCH" || true; } | awk 'NR==1 {print $1}')"
 if [[ -z "$commit" ]]; then
   echo "Unable to resolve $REPO_URL branch $BRANCH" >&2
@@ -41,6 +43,21 @@ npm run check
 npm test
 npm run build
 
+if [[ -d "$APP_ROOT/current/.runtime" && ! -L "$APP_ROOT/current/.runtime" ]]; then
+  sudo cp -an "$APP_ROOT/current/.runtime/." "$STATE_ROOT/"
+fi
+if [[ -L "$release/.runtime" ]]; then
+  if [[ "$(readlink "$release/.runtime")" != "$STATE_ROOT" ]]; then
+    echo "Release runtime points to an unexpected directory: $release/.runtime" >&2
+    exit 1
+  fi
+elif [[ -e "$release/.runtime" ]]; then
+  echo "Release runtime path must be a persistent-state symlink: $release/.runtime" >&2
+  exit 1
+else
+  ln -s "$STATE_ROOT" "$release/.runtime"
+fi
+
 sudo install -m 0644 deploy/systemd/yubit-academy-web.service /etc/systemd/system/yubit-academy-web.service
 sudo install -m 0644 deploy/systemd/yubit-academy-worker.service /etc/systemd/system/yubit-academy-worker.service
 release_env="$(mktemp)"
@@ -49,6 +66,8 @@ release_env="$(mktemp)"
   printf 'APP_RELEASE_REF=%s\n' "$BRANCH"
   printf 'APP_ENVIRONMENT=production\n'
   printf 'APP_DEPLOYMENT_URL=https://%s\n' "$SERVER_NAME"
+  printf 'JSON_STORE_BACKEND=local\n'
+  printf 'JSON_STORE_DIRECTORY=%s\n' "$STATE_ROOT"
 } >"$release_env"
 sudo install -m 0644 "$release_env" /etc/yubit-academy/release.env
 rm -f "$release_env"
