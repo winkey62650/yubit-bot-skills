@@ -43,6 +43,36 @@ test("the server-local backend overrides stale Vercel Blob credentials", async (
   }
 });
 
+test("a dedicated server release ignores stale Vercel Blob credentials by default", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "yubit-server-json-store-"));
+  const original = {
+    backend: process.env.JSON_STORE_BACKEND,
+    directory: process.env.JSON_STORE_DIRECTORY,
+    releaseSha: process.env.APP_RELEASE_SHA,
+    vercel: process.env.VERCEL,
+    blobToken: process.env.BLOB_READ_WRITE_TOKEN
+  };
+
+  process.env.JSON_STORE_BACKEND = "blob";
+  delete process.env.VERCEL;
+  process.env.JSON_STORE_DIRECTORY = directory;
+  process.env.APP_RELEASE_SHA = "server-release-sha";
+  process.env.BLOB_READ_WRITE_TOKEN = "expired-production-token";
+
+  try {
+    const expected = { schemaVersion: 2, groups: [{ chatId: "-1002" }] };
+    await store.writeJson("group-config.json", expected);
+    assert.deepEqual(await store.readJson("group-config.json", {}), expected);
+  } finally {
+    restoreEnvironment("JSON_STORE_BACKEND", original.backend);
+    restoreEnvironment("JSON_STORE_DIRECTORY", original.directory);
+    restoreEnvironment("APP_RELEASE_SHA", original.releaseSha);
+    restoreEnvironment("VERCEL", original.vercel);
+    restoreEnvironment("BLOB_READ_WRITE_TOKEN", original.blobToken);
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 function restoreEnvironment(name, value) {
   if (value === undefined) delete process.env[name];
   else process.env[name] = value;

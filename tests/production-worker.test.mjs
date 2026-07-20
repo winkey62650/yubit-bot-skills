@@ -94,6 +94,18 @@ test("server deployment keeps mutable JSON state outside immutable releases", as
   assert.match(deployScript, /ln -s "\$STATE_ROOT" "\$release\/\.runtime"/);
 });
 
+test("server deployment removes conflicting JSON storage settings from the primary environment", async () => {
+  const deployScript = await readFile(
+    fileURLToPath(new URL("../deploy/server/deploy.sh", import.meta.url)),
+    "utf8",
+  );
+
+  assert.match(deployScript, /awk .*JSON_STORE_BACKEND\|JSON_STORE_DIRECTORY/);
+  assert.match(deployScript, /JSON_STORE_BACKEND=local/);
+  assert.match(deployScript, /JSON_STORE_DIRECTORY=%s/);
+  assert.match(deployScript, /install -m 0600 -o root -g root .*"\$ENV_FILE"/);
+});
+
 test("production redirects use the public HTTPS origin instead of the private listener", async () => {
   const middleware = await readFile(
     fileURLToPath(new URL("../middleware.js", import.meta.url)),

@@ -23,6 +23,15 @@ fi
 
 sudo install -d -m 0755 -o ubuntu -g ubuntu "$APP_ROOT/releases"
 sudo install -d -m 0750 -o ubuntu -g ubuntu "$STATE_ROOT"
+primary_env="$(mktemp)"
+sudo awk '!/^(JSON_STORE_BACKEND|JSON_STORE_DIRECTORY)=/' "$ENV_FILE" >"$primary_env"
+{
+  printf 'JSON_STORE_BACKEND=local\n'
+  printf 'JSON_STORE_DIRECTORY=%s\n' "$STATE_ROOT"
+} >>"$primary_env"
+sudo install -m 0600 -o root -g root "$primary_env" "$ENV_FILE"
+rm -f "$primary_env"
+
 commit="$({ git ls-remote "$REPO_URL" "refs/heads/$BRANCH" || true; } | awk 'NR==1 {print $1}')"
 if [[ -z "$commit" ]]; then
   echo "Unable to resolve $REPO_URL branch $BRANCH" >&2
