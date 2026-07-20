@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildBotRoles,
+  TELEGRAM_DISCOVERY_ALLOWED_UPDATES,
   shouldPollTelegramUpdates,
   verifyTelegramGroupByChatId
 } from "../lib/telegram-group-service.mjs";
@@ -29,6 +30,16 @@ test("a bot with an active webhook is not polled with getUpdates", () => {
   assert.equal(shouldPollTelegramUpdates({ url: "https://example.com/api/telegram/webhook" }), false);
   assert.equal(shouldPollTelegramUpdates({ url: "" }), true);
   assert.equal(shouldPollTelegramUpdates(null), true);
+});
+
+test("polling discovery explicitly requests channel posts and bot membership updates", () => {
+  assert.deepEqual(TELEGRAM_DISCOVERY_ALLOWED_UPDATES, [
+    "message",
+    "edited_message",
+    "channel_post",
+    "edited_channel_post",
+    "my_chat_member"
+  ]);
 });
 
 test("direct group verification checks all three bots without getUpdates or a local Telegram session", async () => {

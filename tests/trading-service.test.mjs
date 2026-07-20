@@ -925,6 +925,12 @@ test("SpeakerBot webhook configuration uses the dedicated public route and secre
   assert.equal(calls[0].method, "setWebhook");
   assert.equal(calls[0].payload.url, "https://academy.example/api/telegram/speaker-webhook");
   assert.equal(calls[0].payload.secret_token, "speaker-webhook-secret");
+  assert.deepEqual(calls[0].payload.allowed_updates, [
+    "message",
+    "channel_post",
+    "edited_channel_post",
+    "my_chat_member"
+  ]);
   assert.equal(JSON.stringify(result).includes("speaker-webhook-secret"), false);
 });
 

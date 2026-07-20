@@ -1,5 +1,7 @@
 import { after, NextResponse } from "next/server";
 
+import { registerWebhookChat } from "../../../../lib/distribution-service.mjs";
+
 import {
   getSpeakerWebhookSecret,
   processSpeakerTelegramUpdate,
@@ -29,6 +31,16 @@ export async function POST(request) {
 
   try {
     const result = await processSpeakerTelegramUpdate(update, { defer: after });
+    after(async () => {
+      try {
+        await registerWebhookChat(update);
+      } catch (error) {
+        console.error("SpeakerBot chat discovery failed", {
+          updateId: update?.update_id ?? null,
+          errorCode: String(error?.message || "SPEAKER_CHAT_DISCOVERY_FAILED").slice(0, 80),
+        });
+      }
+    });
     return NextResponse.json({ ok: true, result: sanitizeTradingResponse(result) });
   } catch (error) {
     console.error("SpeakerBot webhook processing failed", {
