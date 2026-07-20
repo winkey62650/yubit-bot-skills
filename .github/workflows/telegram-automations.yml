@@ -1,13 +1,8 @@
 name: Telegram automations
 
 on:
-  schedule:
-    # GitHub Actions is the external scheduler for the production API. Keep
-    # the five-minute distribution slot separate from the four-hour agent
-    # crawl so every automation has an explicit cadence and idempotency slot.
-    # Start at minute 2 to avoid the busiest start-of-hour scheduling window.
-    - cron: "2/5 * * * *"
-    - cron: "15 */4 * * *"
+  # The independent production server owns all recurring schedules. Keep
+  # these jobs only as an operator-triggered recovery path.
   workflow_dispatch:
     inputs:
       job:
@@ -20,23 +15,21 @@ on:
           - trading
 
 concurrency:
-  group: telegram-automation-${{ github.event.schedule || inputs.job }}
+  group: telegram-automation-${{ inputs.job }}
   cancel-in-progress: false
 
 jobs:
   distribution:
-    if: (github.event_name == 'schedule' && github.event.schedule == '2/5 * * * *') || inputs.job == 'distribution'
+    if: inputs.job == 'distribution'
     runs-on: ubuntu-latest
     steps:
       - name: Run content distribution scheduler
         run: |
           if [ -z "$YUBIT_CRON_SECRET" ]; then
-            echo "YUBIT_CRON_SECRET is missing; configure the same non-empty value as Vercel Production CRON_SECRET." >&2
+            echo "YUBIT_CRON_SECRET is missing; configure the same non-empty value as the production server CRON_SECRET." >&2
             exit 1
           fi
-          # Each server request deliberately claims only one job so it stays
-          # inside Vercel's request limit. Drain at most three due jobs in this
-          # workflow run, using a fresh request (and timeout) for each job.
+          # Drain at most three due jobs during an operator-triggered recovery.
           for attempt in 1 2 3; do
             response=$(curl --fail-with-body --max-time 55 \
               -H "Authorization: Bearer $YUBIT_CRON_SECRET" \
@@ -48,39 +41,39 @@ jobs:
             fi
           done
         env:
-          APP_BASE_URL: https://yubit-bot-skills-academy.vercel.app
+          APP_BASE_URL: https://152-32-161-174.sslip.io
           YUBIT_CRON_SECRET: ${{ secrets.YUBIT_CRON_SECRET }}
 
   trading:
-    if: (github.event_name == 'schedule' && github.event.schedule == '2/5 * * * *') || inputs.job == 'trading'
+    if: inputs.job == 'trading'
     runs-on: ubuntu-latest
     steps:
       - name: Reconcile verified YUBIT orders
         run: |
           if [ -z "$YUBIT_CRON_SECRET" ]; then
-            echo "YUBIT_CRON_SECRET is missing; configure the same non-empty value as Vercel Production CRON_SECRET." >&2
+            echo "YUBIT_CRON_SECRET is missing; configure the same non-empty value as the production server CRON_SECRET." >&2
             exit 1
           fi
           curl --fail-with-body --retry 2 --retry-all-errors --max-time 90 \
             -H "Authorization: Bearer $YUBIT_CRON_SECRET" \
             "$APP_BASE_URL/api/cron/trading-reconcile"
         env:
-          APP_BASE_URL: https://yubit-bot-skills-academy.vercel.app
+          APP_BASE_URL: https://152-32-161-174.sslip.io
           YUBIT_CRON_SECRET: ${{ secrets.YUBIT_CRON_SECRET }}
 
   agents:
-    if: (github.event_name == 'schedule' && github.event.schedule == '15 */4 * * *') || inputs.job == 'agents'
+    if: inputs.job == 'agents'
     runs-on: ubuntu-latest
     steps:
       - name: Run agent information crawl
         run: |
           if [ -z "$YUBIT_CRON_SECRET" ]; then
-            echo "YUBIT_CRON_SECRET is missing; configure the same non-empty value as Vercel Production CRON_SECRET." >&2
+            echo "YUBIT_CRON_SECRET is missing; configure the same non-empty value as the production server CRON_SECRET." >&2
             exit 1
           fi
           curl --fail-with-body --retry 2 --max-time 90 \
             -H "Authorization: Bearer $YUBIT_CRON_SECRET" \
             "$APP_BASE_URL/api/cron/agents"
         env:
-          APP_BASE_URL: https://yubit-bot-skills-academy.vercel.app
+          APP_BASE_URL: https://152-32-161-174.sslip.io
           YUBIT_CRON_SECRET: ${{ secrets.YUBIT_CRON_SECRET }}
