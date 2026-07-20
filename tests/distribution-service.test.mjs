@@ -559,6 +559,7 @@ test("production deployment applies an exact distribution allowlist while keepin
   const workflow = await readFile(new URL("../.github/workflows/deploy-production-server.yml", import.meta.url), "utf8");
 
   assert.match(workflow, /vars\.TELEGRAM_DISTRIBUTION_APPROVED_TARGETS/);
+  assert.match(workflow, /\(\[1-9\]\[0-9\]\*\|channel\)/);
   assert.match(workflow, /TELEGRAM_DEMO_ONLY=true/);
   assert.match(workflow, /TELEGRAM_DISTRIBUTION_APPROVED_TARGETS=%s/);
   assert.match(workflow, /TRADING_DEMO_ONLY=true/);
