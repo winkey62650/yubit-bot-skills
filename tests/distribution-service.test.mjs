@@ -475,6 +475,47 @@ test("desktop publishing queues generated content and completes only after a Dem
   assert.ok(completed.deliveredAt);
 });
 
+test("desktop publisher replaces stale generic Topic labels with the automation destination", async () => {
+  const delivery = {
+    id: "delivery-stale-topic",
+    eventId: "event-stale-topic",
+    ruleId: "rule-events",
+    status: "pending",
+    createdAt: "2026-07-21T12:00:00.000Z",
+    target: {
+      id: "demo-events",
+      chatId: "-1003710405969",
+      chatType: "supergroup",
+      threadId: 8,
+      groupName: "DEMO Academy",
+      topicName: "Topic 8"
+    }
+  };
+  const event = {
+    id: delivery.eventId,
+    payload: {
+      jobId: "daily-events",
+      deliveryPlans: [{
+        target: delivery.target,
+        steps: [{ method: "sendMessage", payload: { text: "Market brief" } }]
+      }]
+    }
+  };
+  const repository = {
+    async listDeliveries() { return [delivery]; },
+    async claimDelivery() { delivery.status = "sending"; return delivery; },
+    async getEvent() { return event; },
+    async updateDelivery(_id, patch) { return Object.assign(delivery, patch); }
+  };
+
+  const claimed = await claimDesktopPublisherDelivery({
+    repository,
+    env: { NODE_ENV: "production", DEMO_TELEGRAM_CHAT_ID: delivery.target.chatId }
+  });
+
+  assert.equal(claimed.topicName, "3. Market Events");
+});
+
 test("desktop publisher never claims a pending non-Demo delivery", async () => {
   const delivery = {
     id: "delivery-fight",
