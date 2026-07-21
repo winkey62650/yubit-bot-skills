@@ -5,8 +5,24 @@ import { createTelegramMtprotoTransport } from "../lib/telegram-mtproto.mjs";
 const GROUP_ID = "-1003710405969";
 const CHANNEL_ID = "-1003862539988";
 
-function fakeClientHarness({ authorized = true, username = "Serenity_Crypto" } = {}) {
+function fakeClientHarness({
+  authorized = true,
+  username = "Serenity_Crypto",
+  groupIdentityAvailable = true,
+  broadcastTargets = []
+} = {}) {
   const calls = [];
+  const inputEntity = (value) => {
+    if (value?.className === "InputPeerChannel") return value;
+    if (value?.className === "PeerChannel") {
+      return { className: "InputPeerChannel", channelId: value.channelId, accessHash: 22n };
+    }
+    return {
+      className: "InputPeerChannel",
+      channelId: BigInt(String(value).replace("-100", "")),
+      accessHash: 22n
+    };
+  };
   const client = {
     async connect() {
       calls.push({ kind: "connect" });
@@ -21,11 +37,34 @@ function fakeClientHarness({ authorized = true, username = "Serenity_Crypto" } =
     },
     async getInputEntity(value) {
       calls.push({ kind: "entity", value });
-      return { className: "InputPeerChannel", channelId: BigInt(String(value).replace("-100", "")), accessHash: 22n };
+      return inputEntity(value);
+    },
+    async getEntity(value) {
+      calls.push({ kind: "getEntity", value });
+      const targetId = `-100${value.channelId}`;
+      const broadcast = broadcastTargets.includes(targetId);
+      return { className: "Channel", id: value.channelId, megagroup: !broadcast, broadcast };
+    },
+    async invoke(request) {
+      calls.push({ kind: "invoke", request });
+      const target = request.peer;
+      return {
+        peers: groupIdentityAvailable
+          ? [{ className: "SendAsPeer", peer: { className: "PeerChannel", channelId: target.channelId } }]
+          : [{ className: "SendAsPeer", peer: { className: "PeerUser", userId: 42n } }]
+      };
     },
     async sendMessage(entity, options) {
       calls.push({ kind: "sendMessage", entity, options });
       return { id: 777 };
+    },
+    async sendFile(entity, options) {
+      calls.push({ kind: "sendFile", entity, options });
+      return { id: 778 };
+    },
+    async forwardMessages(entity, options) {
+      calls.push({ kind: "forwardMessages", entity, options });
+      return { id: 779 };
     }
   };
   return { calls, client };
@@ -50,7 +89,7 @@ function configuredOptions(harness, extra = {}) {
   };
 }
 
-test("MTProto publisher restores the Serenity user session instead of authenticating a Bot", async () => {
+test("MTProto publisher restores the Serenity user session and sends as the Demo group", async () => {
   const harness = fakeClientHarness();
   const transport = createTelegramMtprotoTransport(configuredOptions(harness));
 
@@ -70,21 +109,51 @@ test("MTProto publisher restores the Serenity user session instead of authentica
   assert.equal(send.options.message, "Signal");
   assert.equal(send.options.topMsgId, 14);
   assert.equal(send.options.replyTo, 14);
-  assert.equal(send.options.sendAs, undefined);
+  assert.equal(send.options.sendAs.className, "InputPeerChannel");
+  assert.equal(send.options.sendAs.channelId, 3710405969n);
+  assert.equal(
+    harness.calls.some((call) => call.kind === "invoke" && call.request.className === "channels.GetSendAs"),
+    true
+  );
 });
 
-test("native Telegram identity rules stay intact for channels and groups", async () => {
+test("all new group content uses the official group identity", async () => {
   const harness = fakeClientHarness();
   const transport = createTelegramMtprotoTransport(configuredOptions(harness));
 
-  await transport("first-bot", "sendMessage", { chat_id: GROUP_ID, text: "group" });
-  await transport("second-bot", "sendMessage", { chat_id: CHANNEL_ID, text: "channel" });
+  await transport("ignored", "sendMessage", { chat_id: GROUP_ID, text: "group" });
+  await transport("ignored", "sendPhoto", { chat_id: GROUP_ID, photo: "poster.jpg", caption: "brief" });
+  await transport("ignored", "copyMessage", { chat_id: GROUP_ID, from_chat_id: GROUP_ID, message_id: 88 });
 
-  const sends = harness.calls.filter((call) => call.kind === "sendMessage");
-  assert.equal(sends.length, 2);
-  assert.equal(sends[0].options.sendAs, undefined, "forum/group must display the user account");
-  assert.equal(sends[1].options.sendAs, undefined, "channel must use Telegram's native channel identity");
+  const outboundCalls = harness.calls.filter((call) => ["sendMessage", "sendFile", "forwardMessages"].includes(call.kind));
+  assert.equal(outboundCalls.length, 3);
+  for (const call of outboundCalls) {
+    assert.equal(call.options.sendAs.className, "InputPeerChannel", call.kind);
+    assert.equal(call.options.sendAs.channelId, 3710405969n, call.kind);
+  }
   assert.equal(harness.calls.filter((call) => call.kind === "createClient").length, 1);
+});
+
+test("official group publisher rejects Channels instead of exposing another sender identity", async () => {
+  const harness = fakeClientHarness({ broadcastTargets: [CHANNEL_ID] });
+  const transport = createTelegramMtprotoTransport(configuredOptions(harness));
+
+  await assert.rejects(
+    () => transport("ignored", "sendMessage", { chat_id: CHANNEL_ID, text: "must not publish" }),
+    (error) => error?.code === "TELEGRAM_GROUP_TARGET_REQUIRED"
+  );
+  assert.equal(harness.calls.some((call) => call.kind === "sendMessage"), false);
+});
+
+test("official group publisher fails closed when Telegram does not offer the group send-as identity", async () => {
+  const harness = fakeClientHarness({ groupIdentityAvailable: false });
+  const transport = createTelegramMtprotoTransport(configuredOptions(harness));
+
+  await assert.rejects(
+    () => transport("ignored", "sendMessage", { chat_id: GROUP_ID, text: "must not publish" }),
+    (error) => error?.code === "TELEGRAM_GROUP_IDENTITY_NOT_AVAILABLE"
+  );
+  assert.equal(harness.calls.some((call) => call.kind === "sendMessage"), false);
 });
 
 test("MTProto publisher refuses an unauthorized or wrong user session", async () => {
@@ -144,7 +213,7 @@ test("MTProto publisher can restore encrypted API credentials saved by the web a
     }
   });
 
-  await transport("ignored", "sendMessage", { chat_id: CHANNEL_ID, text: "Demo only" });
+  await transport("ignored", "sendMessage", { chat_id: GROUP_ID, text: "Demo only" });
 
   const created = harness.calls.find((call) => call.kind === "createClient");
   assert.equal(created.options.apiId, 54321);

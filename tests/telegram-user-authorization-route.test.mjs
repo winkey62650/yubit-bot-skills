@@ -30,7 +30,9 @@ test("authorization page keeps Telegram secrets in password fields and browser m
   assert.match(page, /autoComplete="new-password"/);
   assert.match(page, /autoComplete="one-time-code"/);
   assert.doesNotMatch(page, /localStorage|sessionStorage/);
-  assert.match(page, /-1003862539988/);
-  assert.match(page, /Demo Channel/);
+  assert.match(page, /-1003710405969/);
+  assert.match(page, /Demo Academy Forum/);
+  assert.match(page, /群名称和群头像/);
+  assert.doesNotMatch(page, /Demo Channel/);
   assert.match(navigation, /\/telegram-user-authorization/);
 });

@@ -202,14 +202,14 @@ export default function DistributionPage() {
   const automationRules = data.rules.filter((rule) => rule.kind === "automation");
   const broadcastRules = data.rules.filter((rule) => rule.kind === "broadcast");
   const socialReadiness = buildSocialSourceReadiness(socialPackages);
-  const publisherIsBot = (data.publisher?.mode || "bot") === "bot";
-  const publisherName = data.publisher?.username || "@Satoshi_geniustrader_bot";
+  const publisherIsBot = data.publisher?.mode === "bot";
+  const publisherName = data.publisher?.username || "@Serenity_Crypto";
   const publisherStatus = data.publisher?.ready
-    ? publisherIsBot ? "Bot API 就绪" : "用户账号已授权"
-    : "发布器未就绪";
+    ? publisherIsBot ? "旧 Bot 模式已禁用" : "群官方身份已授权"
+    : "群官方发布器未就绪";
   const publisherDetail = data.publisher?.ready
     ? `${publisherName} · ${data.publisher?.approvedTargetIds?.length || 0} 个白名单目标`
-    : publisherIsBot ? "请检查 SpeakerBot token 与目标权限" : "需完成加密用户会话授权";
+    : publisherIsBot ? "生产环境禁止回退到 Bot 发布" : "需完成加密用户会话授权与群 send_as 权限";
 
   useEffect(() => {
     setSelectedAutomationRules((current) => reconcileRuleSelection(current, data.rules.filter((rule) => rule.kind === "automation")));
@@ -220,13 +220,13 @@ export default function DistributionPage() {
     <ConsoleShell>
       <PageHeader
         title="内容分发中心"
-        desc={`自动内容与广播结果统一由 ${publisherName} 发布；ForwardBot 只负责接收入站新消息。群配置仅维护群、Channel、Topic 与 Bot 健康状态。`}
+        desc={`自动内容与广播结果由 ${publisherName} 完成签名授权，并以目标 Forum 群的名称和头像发布；ForwardBot 只负责接收入站新消息。`}
         action={<button className="min-h-11 rounded-lg border border-ops-accent px-5 text-sm font-black text-ops-accent disabled:opacity-50" disabled={Boolean(busy)} onClick={() => post({ action: "configure-webhook" }, "ForwardBot Webhook 已配置。")}>配置 ForwardBot Webhook</button>}
       />
 
       <div className="mb-5 rounded-lg border border-[#d9bd73] bg-[#fff9e8] px-4 py-3" role="status">
         <p className="text-sm font-black text-[#5f4513]">安全验收锁已开启</p>
-        <p className="mt-1 text-xs leading-5 text-[#7b642f]">当前生产白名单只允许私有 Demo Channel；发布由现有 SpeakerBot 的 Bot API 执行。其他群或 Channel 必须得到你再次批准后才可加入。</p>
+        <p className="mt-1 text-xs leading-5 text-[#7b642f]">当前生产白名单只允许 Demo Academy Forum；系统显式使用官方群身份发布。权限或授权异常时停止发送，不会退回显示 Bot / 个人身份。其他群必须得到你再次批准后才可加入。</p>
       </div>
 
       <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
@@ -242,7 +242,7 @@ export default function DistributionPage() {
       {validation ? <ValidationPanel result={validation} onClose={() => setValidation(null)} /> : null}
 
       {!loading && view === "automation" && !socialReadiness.ready && automationForm.contentType !== "agent-sync" ? <div className="mb-5 flex flex-col gap-3 rounded-lg border border-[#e7c883] bg-[#fff9e9] px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-        <div><p className="text-sm font-black text-[#5f4513]">代理的 X / YouTube 更新尚未接入</p><p className="mt-1 text-xs leading-5 text-[#7b642f]">添加并启用代理来源后，系统会按每 4 小时抓取、去重并发布到所选 Topic 或 Channel。</p></div>
+        <div><p className="text-sm font-black text-[#5f4513]">代理的 X / YouTube 更新尚未接入</p><p className="mt-1 text-xs leading-5 text-[#7b642f]">添加并启用代理来源后，系统会按每 4 小时抓取、去重并发布到所选 Forum 群 Topic。</p></div>
         <button className="min-h-10 shrink-0 rounded-lg bg-[#6f551d] px-4 text-sm font-black text-white" onClick={() => setAutomationForm((current) => ({ ...current, contentType: "agent-sync", schedulePreset: "every-4-hours" }))} type="button">配置代理来源</button>
       </div> : null}
 
@@ -291,7 +291,7 @@ function AutomationView({ form, setForm, rules, groups, socialPackages, publishe
   return <div className="grid gap-5">
     {form.contentType === "agent-sync" ? <SocialSourceManager packages={socialPackages} busy={busy} onPersist={onPersistSocial} onNotice={onNotice} /> : null}
     <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.08fr)_minmax(340px,.92fr)]">
-    <RuleForm title={form.id ? "编辑自动任务" : "新增自动任务"} eyebrow="按发送前确认流程配置" submitLabel="保存自动任务" submitDisabled={!canSave} submitHint={!form.name.trim() ? "请先填写任务名称" : !form.targets.length ? "请至少选择一个目标 Topic 或 Channel" : !sourcesReady ? "请先添加并启用至少一条代理来源" : !confirmed ? "请确认内容模板、频率和目标" : "已完成发送前确认"} busy={busy} onSubmit={onSave}>
+    <RuleForm title={form.id ? "编辑自动任务" : "新增自动任务"} eyebrow="按发送前确认流程配置" submitLabel="保存自动任务" submitDisabled={!canSave} submitHint={!form.name.trim() ? "请先填写任务名称" : !form.targets.length ? "请至少选择一个 Forum 群 Topic" : !sourcesReady ? "请先添加并启用至少一条代理来源" : !confirmed ? "请确认内容模板、频率和目标" : "已完成发送前确认"} busy={busy} onSubmit={onSave}>
       <FormStep number="1" title="选择内容模板" desc="模板决定 Telegram 文案结构、配图和数据来源。" />
       <Field label="任务名称"><input className={inputClass} required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="例如：每日市场事件" /></Field>
       <Field label="内容模板"><select className={inputClass} value={form.contentType} onChange={(event) => { const contentType = event.target.value; setForm({ ...form, contentType, schedulePreset: recommendedScheduleFor(contentType) }); setPreview(null); setPreviewState(""); }}>{contentTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
@@ -301,7 +301,7 @@ function AutomationView({ form, setForm, rules, groups, socialPackages, publishe
       </div>
       <FormStep number="2" title="确认频率" desc="日更任务按 UTC 运行；监控任务按时间窗口扫描并去重。" />
       <Field label="预设频率"><select className={inputClass} value={form.schedulePreset} disabled={form.contentType === "whale-signals"} onChange={(event) => setForm({ ...form, schedulePreset: event.target.value })}>{schedules.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>{form.contentType === "whale-signals" ? <p className="mt-1 text-xs text-ops-muted">系统每小时检查真实订单簿，仅在异动达到阈值时发布，相同信号冷却期内不重复。</p> : null}</Field>
-      <FormStep number="3" title="选择发布目标" desc={`建议发布到 ${template.destinationHint}，可同时选择多个 Topic 或 Channel。`} />
+      <FormStep number="3" title="选择发布目标" desc={`建议发布到 ${template.destinationHint}，可同时选择多个 Forum 群 Topic。`} />
       <TargetPicker groups={groups} selected={form.targets} onChange={(targets) => setForm({ ...form, targets })} />
       <Toggle checked={form.enabled} label="创建后立即启用" onChange={(enabled) => setForm({ ...form, enabled })} />
       <label className="flex items-start gap-3 rounded-lg border border-ops-line bg-[#fbfcfb] p-3 text-sm font-bold leading-6 text-[#33423b]"><input className="mt-1" checked={confirmed} onChange={(event) => setConfirmedFor(event.target.checked ? fingerprint : "")} type="checkbox" /><span>我已确认发送模板、频率和目标。动态数据会在实际执行时刷新。</span></label>
@@ -327,7 +327,7 @@ function BroadcastView({ form, setForm, rules, groups, publisherName, busy, sele
         <details className="rounded-lg border border-ops-line bg-[#fbfcfb] p-3"><summary className="cursor-pointer text-sm font-black text-[#41564d]">高级：手动输入 Telegram ID</summary><div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_150px_140px]"><Field label="来源 Chat ID"><input className={inputClass} value={form.source.chatId} onChange={(event) => setForm({ ...form, source: { ...form.source, chatId: event.target.value } })} /></Field><Field label="Chat 类型"><select className={inputClass} value={form.source.chatType || "supergroup"} onChange={(event) => { const chatType = event.target.value; setForm({ ...form, source: { ...form.source, chatType, threadId: chatType === "channel" ? "" : form.source.threadId } }); }}><option value="supergroup">群 / Topic</option><option value="channel">Channel</option></select></Field><Field label="Thread ID（可选）"><input className={inputClass} disabled={form.source.chatType === "channel"} inputMode="numeric" value={form.source.threadId || ""} onChange={(event) => setForm({ ...form, source: { ...form.source, threadId: event.target.value } })} /></Field></div><p className="mt-2 text-xs text-ops-muted">Channel 不使用 Thread ID；群留空表示监听整群。</p></details>
         <FormStep number="2" title="选择处理方式" desc="运营敏感内容建议先审核，日常同步可直接自动转发。" />
         <fieldset className="grid gap-2 sm:grid-cols-2"><legend className="sr-only">处理方式</legend>{[["automatic", "自动转发", "新消息通常 10 秒内到达目标"], ["review", "先审核", "批准前绝不发送，默认保留 7 天"]].map(([value, title, desc]) => <label className={`rounded-lg border p-4 ${form.mode === value ? "border-ops-accent bg-[#f2faf6]" : "border-ops-line bg-white"}`} key={value}><span className="flex items-center gap-2 text-sm font-black"><input checked={form.mode === value} name="broadcast-mode" onChange={() => setForm({ ...form, mode: value })} type="radio" />{title}</span><span className="mt-2 block text-xs leading-5 text-ops-muted">{desc}</span></label>)}</fieldset>
-        <FormStep number="3" title="选择转发目标" desc="一条来源可以同时转发到多个群 Topic 或 Channel。" />
+        <FormStep number="3" title="选择转发目标" desc="一条来源可以同时转发到多个 Forum 群 Topic。" />
         <TargetPicker groups={groups} selected={form.targets} onChange={(targets) => setForm({ ...form, targets })} />
         <Toggle checked={form.enabled} label="创建后立即启用" onChange={(enabled) => setForm({ ...form, enabled })} />
         <div className="rounded-lg bg-[#fff8e8] p-3 text-xs leading-5 text-[#79591e]">ForwardBot 固定负责接收入站广播；{publisherName} 负责向每个目标发布。Telegram 不会把其他机器人发出的消息交给 ForwardBot；机器人内容请使用「自动发布」直接选择全部目标。Bot API 也无法感知来源消息删除；可处理的文字与 Caption 编辑会同步。</div>
@@ -355,20 +355,20 @@ function TelegramTemplatePreview({ form, template, publisherName, preview, previ
     <div className="border-b border-ops-line p-5"><p className="text-xs font-black uppercase tracking-[.16em] text-ops-accent">发送前预览</p><div className="mt-1 flex flex-wrap items-center justify-between gap-2"><h2 className="text-xl font-black">Telegram 成品</h2><StatusPill tone={isLivePreview ? "green" : "amber"}>{isLivePreview ? "实时数据预览" : templatePreview ? "英文模板样稿" : "待生成"}</StatusPill></div></div>
     <div className="bg-[#e8f0ec] p-4 sm:p-5">
       <div className="mx-auto max-w-[520px] rounded-xl rounded-tl-sm bg-white p-3 shadow-sm">
-        <div className="flex items-center justify-between gap-3"><strong className="text-sm text-ops-accent">{publisherName}</strong><span className="text-[11px] text-ops-muted">{template.format}</span></div>
+        <div className="flex items-center justify-between gap-3"><strong className="text-sm text-ops-accent">目标群官方身份</strong><span className="text-[11px] text-ops-muted">{template.format}</span></div>
         {displayPreview?.imageUrl ? <img alt={`${template.label} Telegram 配图预览`} className="mt-3 aspect-video w-full rounded-lg object-cover" src={displayPreview.imageUrl} /> : null}
         <p className="mt-3 max-h-72 overflow-y-auto whitespace-pre-wrap break-words text-sm leading-6 text-[#24362f]">{caption}</p>
         <div className="mt-3 border-t border-[#edf1ef] pt-2 text-[11px] leading-5 text-ops-muted">{template.runtimeNote}</div>
       </div>
       {displayPreview?.items?.length ? <div className="mx-auto mt-2 max-w-[520px] rounded-xl rounded-tl-sm bg-white p-3 shadow-sm">
-        <div className="flex items-center justify-between gap-3"><strong className="text-sm text-ops-accent">{publisherName}</strong><span className="text-[11px] text-ops-muted">English brief · 2/2</span></div>
+        <div className="flex items-center justify-between gap-3"><strong className="text-sm text-ops-accent">目标群官方身份</strong><span className="text-[11px] text-ops-muted">English brief · 2/2</span></div>
         <ol className="mt-3 max-h-80 list-decimal space-y-3 overflow-y-auto pl-5 text-sm leading-6 text-[#24362f]">{displayPreview.items.map((item, index) => <li key={`${index}-${String(item).slice(0, 24)}`}>{typeof item === "string" ? item : item.title || item.name || JSON.stringify(item)}</li>)}</ol>
         <p className="mt-3 border-t border-[#edf1ef] pt-2 text-[11px] leading-5 text-[#9a5f31]">{displayPreview.disclaimer || templatePreview?.disclaimer}</p>
       </div> : null}
     </div>
     <div className="grid gap-3 p-5">
       {templatePreview?.sections?.length ? <div><p className="mb-2 text-xs font-black text-ops-muted">模板内容结构</p><div className="flex flex-wrap gap-2">{templatePreview.sections.map((section) => <span className="rounded-full bg-[#edf6f1] px-2.5 py-1 text-xs font-bold text-[#2d5a48]" key={section}>{section}</span>)}</div></div> : null}
-      <div className="grid gap-2 text-sm sm:grid-cols-2"><PreviewFact label="发送频率" value={labelFor(schedules, form.schedulePreset)} /><PreviewFact label="目标数量" value={`${form.targets.length} 个目标`} />{template.itemCountPolicy ? <PreviewFact label="内容条数" value={template.itemCountPolicy} /> : <PreviewFact label="建议位置" value={template.destinationHint} />}<PreviewFact label="发布身份" value={`${publisherName}（Channel 显示 Channel 名称与头像）`} /></div>
+      <div className="grid gap-2 text-sm sm:grid-cols-2"><PreviewFact label="发送频率" value={labelFor(schedules, form.schedulePreset)} /><PreviewFact label="目标数量" value={`${form.targets.length} 个目标`} />{template.itemCountPolicy ? <PreviewFact label="内容条数" value={template.itemCountPolicy} /> : <PreviewFact label="建议位置" value={template.destinationHint} />}<PreviewFact label="发布身份" value={`目标群名称和头像（由 ${publisherName} 匿名授权）`} /></div>
       {previewState && previewState !== "success" && previewState !== "loading" ? <p role="alert" className="rounded-lg bg-[#fff2ef] p-3 text-xs font-bold text-[#a04a3d]">{previewState}</p> : null}
       <button className="min-h-11 rounded-lg border border-ops-accent px-4 text-sm font-black text-ops-accent disabled:opacity-50" disabled={previewState === "loading" || !template.jobId} onClick={onGenerate} type="button">{previewState === "loading" ? "正在生成实时数据…" : preview ? "刷新实时数据预览" : "切换为本次实时数据预览"}</button>
       <p className="text-center text-xs leading-5 text-ops-muted">此操作只运行数据与模板，不会向 Telegram 发送消息。</p>
@@ -383,7 +383,7 @@ function BroadcastRoutePreview({ route, targets, mode, publisherName }) {
       <RouteNode label="消息来源" value={route.sourceLabel} />
       <div className="border-l-2 border-dashed border-[#b7c9c0] py-2 pl-5 text-xs font-black text-ops-muted">ForwardBot 接收新消息</div>
       <RouteNode label={mode === "review" ? "待审核队列" : "自动处理"} value={route.processingLabel} accent />
-      <div className="border-l-2 border-dashed border-[#b7c9c0] py-2 pl-5 text-xs font-black text-ops-muted">{publisherName} 逐目标独立发送与记录</div>
+      <div className="border-l-2 border-dashed border-[#b7c9c0] py-2 pl-5 text-xs font-black text-ops-muted">{publisherName} 匿名授权，以各目标群官方身份独立发送与记录</div>
       <div className="rounded-lg border border-ops-line p-4"><div className="flex items-center justify-between"><span className="text-xs font-black uppercase tracking-wide text-ops-muted">转发目标</span><span className="text-sm font-black text-ops-accent">{route.targetCount} 个</span></div>{targets.length ? <ul className="mt-3 grid gap-2">{targets.map((target) => <li className="rounded-md bg-[#f6f9f7] px-3 py-2 text-sm font-bold text-[#33423b]" key={targetKey(target)}>{target.groupName || target.chatId} / {destinationLabel(target)}</li>)}</ul> : <p className="mt-3 text-sm text-ops-muted">选择目标后会在这里显示完整路径。</p>}</div>
       {!route.ready ? <p className="rounded-lg bg-[#fff8e8] p-3 text-xs font-bold leading-5 text-[#79591e]">保存前还需要：{route.missing.join("、")}。</p> : null}
       <div className="grid gap-2 border-t border-ops-line pt-4 text-xs leading-5 text-ops-muted"><p>支持文字、图片、视频、文件、链接、媒体组和可处理的 Caption 编辑。</p><p>源消息删除无法由 Telegram Bot API 感知，不会自动删除目标消息。</p></div>
@@ -455,7 +455,7 @@ function RuleList({ rules, empty, busy, kindLabel, selected, setSelected, onDele
 
 function TargetPicker({ groups, selected, onChange }) {
   const options = targetOptions(groups);
-  return <fieldset className="grid gap-2"><legend className="mb-1 text-sm font-bold text-ops-muted">目标 Topic / Channel（可多选）</legend><div className="max-h-52 overflow-y-auto rounded-lg border border-ops-line p-2">{options.length ? options.map((option) => <label className="flex min-h-10 items-center gap-3 rounded-md px-2 text-sm hover:bg-ops-soft" key={option.key}><input checked={selected.includes(option.key)} onChange={() => onChange(selected.includes(option.key) ? selected.filter((key) => key !== option.key) : [...selected, option.key])} type="checkbox" /><span>{option.label}</span></label>) : <p className="p-2 text-sm text-ops-muted">暂未识别到可发布的 Topic 或 Channel，请先刷新群与 Bot。</p>}</div></fieldset>;
+  return <fieldset className="grid gap-2"><legend className="mb-1 text-sm font-bold text-ops-muted">目标 Forum 群 / Topic（可多选）</legend><div className="max-h-52 overflow-y-auto rounded-lg border border-ops-line p-2">{options.length ? options.map((option) => <label className="flex min-h-10 items-center gap-3 rounded-md px-2 text-sm hover:bg-ops-soft" key={option.key}><input checked={selected.includes(option.key)} onChange={() => onChange(selected.includes(option.key) ? selected.filter((key) => key !== option.key) : [...selected, option.key])} type="checkbox" /><span>{option.label}</span></label>) : <p className="p-2 text-sm text-ops-muted">暂未识别到可发布的 Forum 群 Topic，请先刷新群与 Bot。</p>}</div></fieldset>;
 }
 
 function BackfillPanel({ rules, value, setValue, busy, onRun }) {
@@ -476,7 +476,7 @@ function Toggle({ checked, label, onChange }) { return <label className="flex mi
 function SmallButton({ children, danger = false, disabled = false, onClick }) { return <button className={`min-h-9 rounded-lg border px-3 text-xs font-black disabled:opacity-40 ${danger ? "border-[#d85f5f] text-[#b94141]" : "border-ops-line text-[#33423b]"}`} disabled={disabled} onClick={onClick} type="button">{children}</button>; }
 
 function targetOptions(groups) {
-  return buildDistributionTargetOptions(groups);
+  return buildDistributionTargetOptions(groups).filter((option) => option.target?.chatType !== "channel");
 }
 function sourceOptions(groups) { return buildDistributionSourceOptions(groups); }
 function targetKey(value) { return value?.chatType === "channel" ? `${value.chatId}:channel` : `${value.chatId}:${Number(value.threadId || 0)}`; }

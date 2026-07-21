@@ -26,7 +26,7 @@ export default function TelegramUserAuthorizationPage() {
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error(data.error || "授权状态读取失败");
       setPublisher(data.publisher);
-      setNotice(data.publisher?.ready ? "@Serenity_Crypto 已授权，当前只允许发布到私有 Demo Channel。" : "请完成 Telegram 用户账号授权。");
+      setNotice(data.publisher?.ready ? "@Serenity_Crypto 已授权，当前只允许以 Demo Academy Forum 群身份发布。" : "请完成 Telegram 用户账号授权。");
     } catch (error) {
       setNotice(error.message);
     }
@@ -110,7 +110,7 @@ export default function TelegramUserAuthorizationPage() {
     <ConsoleShell>
       <PageHeader
         title="Telegram 发布账号授权"
-        desc="将 @Serenity_Crypto 作为统一出站发布账号。授权成功后，Channel 使用 Channel 名称和头像展示，Forum 群使用 @Serenity_Crypto 身份发布。"
+        desc="@Serenity_Crypto 只作为服务器发布凭证；在 Forum 群内显式使用官方群身份，成员看到的是群名称和群头像，不显示 Bot 或个人账号。"
         action={<Link className="grid min-h-11 place-items-center rounded-lg border border-ops-accent px-5 text-sm font-black text-ops-accent" href="/group-config">返回群配置</Link>}
       />
 
@@ -164,11 +164,11 @@ export default function TelegramUserAuthorizationPage() {
       <Card className="mt-5 p-6">
         <h2 className="text-xl font-black">本轮验收边界</h2>
         <div className="mt-4 grid gap-3 md:grid-cols-3">
-          <Scope title="唯一目标" value="私有 Demo Channel" />
-          <Scope title="Telegram Chat ID" value="-1003862539988" mono />
-          <Scope title="验收项" value="文字、图片、一次性定时发布" />
+          <Scope title="唯一目标" value="Demo Academy Forum" />
+          <Scope title="Telegram Chat ID" value="-1003710405969" mono />
+          <Scope title="验收项" value="群名称与群头像、Topic、文字、图片、定时发布" />
         </div>
-        <p className="mt-4 text-sm leading-6 text-ops-muted">Fight Club、CryptoGuy 和其他群 / Channel 全部不在本轮许可范围内。授权中断或服务重启时，需重新开始授权；系统不会静默回退到 Bot 发帖。</p>
+        <p className="mt-4 text-sm leading-6 text-ops-muted">Fight Club、CryptoGuy 和所有 Channel 均不在本轮许可范围内。@Serenity_Crypto 必须是 Demo 群的匿名管理员；权限、授权或官方群身份任一不满足时，系统停止发送且不会静默回退到 Bot / 个人发帖。</p>
       </Card>
     </ConsoleShell>
   );

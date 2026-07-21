@@ -8,13 +8,12 @@ import {
 } from "../lib/telegram-delivery.mjs";
 
 const DEMO_GROUP_ID = "-1003710405969";
-const DEMO_CHANNEL_ID = "-1003862539988";
 
 function publisherEnv(overrides = {}) {
   return {
     NODE_ENV: "production",
     TELEGRAM_USER_PUBLISHER_REQUIRED: "true",
-    TELEGRAM_USER_PUBLISHER_TARGETS: `${DEMO_GROUP_ID}, ${DEMO_CHANNEL_ID}`,
+    TELEGRAM_USER_PUBLISHER_TARGETS: DEMO_GROUP_ID,
     TELEGRAM_API_ID: "12345",
     TELEGRAM_API_HASH: "api-hash",
     TELEGRAM_USER_SESSION_ENCRYPTION_KEY: "session-key",
@@ -34,7 +33,7 @@ test("approved Demo outbound messages use the Telegram user publisher", async ()
   });
 
   const result = await delivery("speaker-token", "sendMessage", {
-    chat_id: DEMO_CHANNEL_ID,
+    chat_id: DEMO_GROUP_ID,
     text: "test"
   });
 
@@ -42,7 +41,7 @@ test("approved Demo outbound messages use the Telegram user publisher", async ()
   assert.equal(calls.length, 1);
   assert.equal(calls[0].transport, "user");
   assert.deepEqual(calls[0].args, ["speaker-token", "sendMessage", {
-    chat_id: DEMO_CHANNEL_ID,
+    chat_id: DEMO_GROUP_ID,
     text: "test"
   }]);
 });
@@ -56,7 +55,7 @@ test("required user publishing never falls back to a visible Bot identity", asyn
 
   await assert.rejects(
     () => delivery("speaker-token", "sendPhoto", {
-      chat_id: DEMO_CHANNEL_ID,
+      chat_id: DEMO_GROUP_ID,
       photo: "https://example.com/poster.jpg"
     }),
     (error) => error?.code === "TELEGRAM_USER_PUBLISHER_NOT_CONFIGURED"
@@ -68,7 +67,7 @@ test("production publishing fails closed when the user publisher flag is omitted
   let botCalls = 0;
   const env = publisherEnv({
     TELEGRAM_USER_PUBLISHER_REQUIRED: undefined,
-    TELEGRAM_USER_PUBLISHER_TARGETS: DEMO_CHANNEL_ID
+    TELEGRAM_USER_PUBLISHER_TARGETS: DEMO_GROUP_ID
   });
   const delivery = createTelegramDelivery({
     env,
@@ -77,7 +76,7 @@ test("production publishing fails closed when the user publisher flag is omitted
 
   await assert.rejects(
     () => delivery("speaker-token", "sendMessage", {
-      chat_id: DEMO_CHANNEL_ID,
+      chat_id: DEMO_GROUP_ID,
       text: "must not use Bot API"
     }),
     (error) => error?.code === "TELEGRAM_USER_PUBLISHER_NOT_CONFIGURED"
@@ -86,39 +85,37 @@ test("production publishing fails closed when the user publisher flag is omitted
   assert.equal(telegramUserPublisherStatus(env).required, true);
 });
 
-test("explicit Bot publisher mode uses the existing SpeakerBot in production", async () => {
-  const calls = [];
+test("production refuses an explicit Bot publisher mode so official group identity cannot regress", async () => {
+  let botCalls = 0;
   const env = publisherEnv({
     TELEGRAM_PUBLISHER_MODE: "bot",
     SPEAKER_BOT_TOKEN: "speaker-token",
     TELEGRAM_USER_PUBLISHER_REQUIRED: "true",
-    TELEGRAM_USER_PUBLISHER_TARGETS: DEMO_CHANNEL_ID
+    TELEGRAM_USER_PUBLISHER_TARGETS: DEMO_GROUP_ID
   });
   const delivery = createTelegramDelivery({
     env,
-    botApiCall: async (...args) => {
-      calls.push({ transport: "bot", args });
-      return { message_id: 902 };
-    },
-    userPublisherCall: async () => assert.fail("Bot mode must not call the user publisher")
+    botApiCall: async () => { botCalls += 1; }
   });
 
-  const result = await delivery("speaker-token", "sendMessage", {
-    chat_id: DEMO_CHANNEL_ID,
-    text: "Bot API publisher test"
-  });
+  await assert.rejects(
+    () => delivery("speaker-token", "sendMessage", {
+      chat_id: DEMO_GROUP_ID,
+      text: "must not expose the Bot identity"
+    }),
+    (error) => error?.code === "TELEGRAM_USER_PUBLISHER_NOT_CONFIGURED"
+  );
 
-  assert.deepEqual(result, { message_id: 902 });
-  assert.equal(calls.length, 1);
+  assert.equal(botCalls, 0);
   assert.deepEqual(telegramUserPublisherStatus(env), {
-    mode: "bot",
-    required: false,
+    mode: "user",
+    required: true,
     credentialsReady: true,
     encryptionReady: true,
     routingReady: true,
     ready: true,
-    username: "@Satoshi_geniustrader_bot",
-    approvedTargetIds: [DEMO_CHANNEL_ID]
+    username: "@Serenity_Crypto",
+    approvedTargetIds: [DEMO_GROUP_ID]
   });
 });
 
@@ -153,7 +150,7 @@ test("Telegram reads continue to use Bot API", async () => {
     userPublisherCall: async () => assert.fail("user publisher must not be used for reads")
   });
 
-  await delivery("speaker-token", "getChat", { chat_id: DEMO_CHANNEL_ID });
+  await delivery("speaker-token", "getChat", { chat_id: DEMO_GROUP_ID });
   assert.equal(calls.length, 1);
 });
 
@@ -174,17 +171,17 @@ test("user publisher routing recognizes all production send and copy methods", (
     "editMessageCaption",
     "editMessageMedia"
   ]) {
-    assert.equal(isUserPublisherDelivery(method, { chat_id: DEMO_CHANNEL_ID }, env), true, method);
+    assert.equal(isUserPublisherDelivery(method, { chat_id: DEMO_GROUP_ID }, env), true, method);
   }
-  assert.equal(isUserPublisherDelivery("getChat", { chat_id: DEMO_CHANNEL_ID }, env), false);
+  assert.equal(isUserPublisherDelivery("getChat", { chat_id: DEMO_GROUP_ID }, env), false);
 });
 
 test("publisher target parsing and status are safe for the admin UI", () => {
   const env = publisherEnv({
-    TELEGRAM_USER_PUBLISHER_TARGETS: `${DEMO_CHANNEL_ID}, ${DEMO_CHANNEL_ID}, ${DEMO_GROUP_ID}`
+    TELEGRAM_USER_PUBLISHER_TARGETS: `${DEMO_GROUP_ID}, ${DEMO_GROUP_ID}`
   });
 
-  assert.deepEqual(userPublisherTargetIds(env), [DEMO_CHANNEL_ID, DEMO_GROUP_ID]);
+  assert.deepEqual(userPublisherTargetIds(env), [DEMO_GROUP_ID]);
   assert.deepEqual(telegramUserPublisherStatus(env), {
     mode: "user",
     required: true,
@@ -193,6 +190,6 @@ test("publisher target parsing and status are safe for the admin UI", () => {
     routingReady: true,
     ready: true,
     username: "@Serenity_Crypto",
-    approvedTargetIds: [DEMO_CHANNEL_ID, DEMO_GROUP_ID]
+    approvedTargetIds: [DEMO_GROUP_ID]
   });
 });

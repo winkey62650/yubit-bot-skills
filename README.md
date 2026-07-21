@@ -239,18 +239,19 @@ TELEGRAM_CHAT_ID="-100..."
 TELEGRAM_BOT_TOKEN="123:abc"
 ```
 
-Production outbound publishing supports an explicit Bot or user-account mode. The current production workflow uses the existing SpeakerBot through the Bot API, so it does not require a Telegram app, `api_id`, `api_hash`, or a local Telegram login:
+Production Forum-group publishing uses an encrypted `@Serenity_Crypto` MTProto session and explicitly sends as the target group. The account must be an anonymous administrator of the target Forum group:
 
 ```bash
-TELEGRAM_PUBLISHER_MODE=bot
-SPEAKER_BOT_TOKEN="123:abc"
-TELEGRAM_BOT_PUBLISHER_USERNAME="Satoshi_geniustrader_bot"
-TELEGRAM_USER_PUBLISHER_TARGETS="-1003862539988"
+TELEGRAM_PUBLISHER_MODE=user
+TELEGRAM_USER_PUBLISHER_REQUIRED=true
+TELEGRAM_USER_PUBLISHER_USERNAME="Serenity_Crypto"
+TELEGRAM_USER_PUBLISHER_TARGETS="-1003710405969"
+TELEGRAM_USER_SESSION_ENCRYPTION_KEY="32-byte-secret"
 ```
 
-Telegram displays the Channel name and avatar for posts made by an administrator Bot in a Channel. Forum groups still display the Bot identity. During acceptance, keep the target allowlist limited to the private Demo Channel.
+During acceptance, keep the target allowlist limited to Demo Academy Forum. The transport verifies that the destination is a Forum supergroup and that Telegram permits the account to send as that group. If authorization or anonymous-admin identity is unavailable, delivery stops and never falls back to Bot or personal identity.
 
-User-account publishing remains optional. To enable it later, create a Telegram app, set `TELEGRAM_PUBLISHER_MODE=user` plus `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, and `TELEGRAM_USER_SESSION_ENCRYPTION_KEY`, then run `npm run telegram:authorize-user` once from an interactive server terminal.
+Create a Telegram app, set `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, and `TELEGRAM_USER_SESSION_ENCRYPTION_KEY`, then authorize once through the protected `/telegram-user-authorization` page (or run `npm run telegram:authorize-user` in an interactive server terminal). The encrypted session and app credentials are persisted server-side.
 
 The 15-minute cycle expects:
 
