@@ -39,3 +39,9 @@ test("automatic publishing explains the official identity workflow and exact top
   assert.match(pageSource, /发布检查点/);
   assert.match(pageSource, /已回写 \$\{row\.publisherProgress\.length\} 步/);
 });
+
+test("queued desktop publishing is reported as waiting instead of a false failure", () => {
+  assert.match(pageSource, /result\.result\?\.status === "queued"/);
+  assert.match(pageSource, /result\.result\?\.message \|\| "内容已生成并排队，等待本机发布桥发送。"/);
+  assert.doesNotMatch(pageSource, /result\.result\?\.status !== "success"/);
+});

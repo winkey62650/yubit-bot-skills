@@ -123,7 +123,12 @@ export default function DistributionPage() {
       const response = await fetch("/api/distribution", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
       const result = await response.json();
       if (!response.ok || !result.ok) throw new Error(result.error || "操作失败");
-      if (body.action === "run-now" && result.result?.status !== "success") {
+      if (body.action === "run-now" && result.result?.status === "queued") {
+        if (refresh) await loadAll();
+        setNotice(result.result?.message || "内容已生成并排队，等待本机发布桥发送。");
+        return result;
+      }
+      if (body.action === "run-now" && !["success", "queued"].includes(result.result?.status)) {
         if (refresh) await loadAll();
         const detail = result.result?.error || result.result?.run?.message || "请在运行记录中查看失败目标";
         throw new Error(result.result?.status === "partial" ? `部分目标发布失败：${detail}` : `自动发布失败：${detail}`);
