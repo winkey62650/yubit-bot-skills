@@ -157,11 +157,12 @@ test("daily events normalize a flexible daily market brief instead of a fixed ec
   assert.equal(brief.items.length, 3);
   assert.match(brief.contentHash, /^[a-f0-9]{64}$/);
   assert.match(brief.caption, /<b>🌅 MORNING MARKET BRIEF · JULY 15<\/b>/);
-  assert.match(brief.caption, /1\. Equities advanced: The Nasdaq led/);
+  assert.match(brief.caption, /01 · Equities advanced: The Nasdaq led/);
   assert.match(brief.caption, /Source: <a href="https:\/\/www\.reuters\.com\/markets\/">Reuters<\/a>/);
   assert.ok(brief.caption.length <= 1024);
   assert.doesNotMatch(brief.caption, /Executive read|Today's desk brief|full English brief follows|Story count/i);
-  assert.match(brief.fullText, /1\. Equities advanced: The Nasdaq led/);
+  assert.match(brief.fullText, /01 · Equities advanced: The Nasdaq led/);
+  assert.doesNotMatch(brief.fullText, /^\d+\.\s/gm);
   assert.match(brief.fullText, /Source: <a href="https:\/\/www\.reuters\.com\/markets\/">Reuters<\/a>/);
   assert.doesNotMatch(`${brief.subline}\n${brief.caption}`, /11 stories|08:00|hourly/i);
 });
@@ -251,7 +252,7 @@ test("daily market brief keeps whole story blocks within Telegram photo caption 
   }, new Date("2026-07-16T08:00:00.000Z"));
 
   assert.ok(brief.caption.length <= 1024);
-  assert.match(brief.caption, /1\. <b>CRYPTO<\/b>/);
+  assert.match(brief.caption, /01 · <b>CRYPTO<\/b>/);
   assert.match(brief.caption, /Source: <a href="https:\/\/example\.com\/markets\/1">Primary market source<\/a>/);
   assert.match(brief.caption, /<i>Market commentary only\.<\/i>$/);
   assert.equal((brief.caption.match(/<a href=/g) || []).length, (brief.caption.match(/<\/a>/g) || []).length);
@@ -269,7 +270,7 @@ test("daily market brief removes tracking parameters so three priority stories f
     }))
   }, new Date("2026-07-16T08:00:00.000Z"));
 
-  assert.match(brief.caption, /3\. <b>CRYPTO<\/b> · Priority event 3/);
+  assert.match(brief.caption, /03 · <b>CRYPTO<\/b> · Priority event 3/);
   assert.doesNotMatch(brief.caption, /utm_source|utm_medium|utm_campaign/);
   assert.doesNotMatch(brief.fullText, /utm_source|utm_medium|utm_campaign/);
   assert.ok(brief.caption.length <= 1024);
