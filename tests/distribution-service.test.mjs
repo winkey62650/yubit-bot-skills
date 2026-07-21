@@ -10,14 +10,85 @@ import {
   backfillRule,
   claimDesktopPublisherDelivery,
   completeDesktopPublisherDelivery,
+  desktopPublisherHealth,
   ensureAutomationSchedules,
   parseBackfillReferences,
   processTelegramWebhookUpdate,
+  repairAutomationTargetLabels,
   retryDistributionDelivery,
   runDueDistributionJobs,
   runDistributionAutomationRule,
   verifyTelegramWebhookSecret
 } from "../lib/distribution-service.mjs";
+
+test("desktop publisher health reflects a recent local bridge heartbeat", async () => {
+  const repository = {
+    async getMeta(key) {
+      assert.equal(key, "desktop-publisher-v1");
+      return {
+        lastSeenAt: "2026-07-21T13:05:00.000Z",
+        lastVerifiedAt: "2026-07-21T13:04:00.000Z",
+        lastDeliveryStatus: "success",
+        lastError: null
+      };
+    }
+  };
+  const env = {
+    NODE_ENV: "production",
+    DESKTOP_PUBLISHER_SECRET: "desktop-secret",
+    TELEGRAM_USER_PUBLISHER_TARGETS: "-1003710405969",
+    TELEGRAM_USER_PUBLISHER_USERNAME: "Serenity_Crypto"
+  };
+
+  const health = await desktopPublisherHealth({
+    repository,
+    env,
+    now: new Date("2026-07-21T13:10:00.000Z")
+  });
+
+  assert.equal(health.mode, "desktop");
+  assert.equal(health.ready, true);
+  assert.equal(health.authorized, true);
+  assert.equal(health.username, "@Serenity_Crypto");
+  assert.deepEqual(health.approvedTargetIds, ["-1003710405969"]);
+  assert.equal(health.lastSeenAt, "2026-07-21T13:05:00.000Z");
+});
+
+test("desktop publisher health becomes offline after the heartbeat expires", async () => {
+  const repository = {
+    async getMeta() { return { lastSeenAt: "2026-07-21T12:40:00.000Z" }; }
+  };
+  const health = await desktopPublisherHealth({
+    repository,
+    env: {
+      NODE_ENV: "production",
+      DESKTOP_PUBLISHER_SECRET: "desktop-secret",
+      TELEGRAM_USER_PUBLISHER_TARGETS: "-1003710405969"
+    },
+    now: new Date("2026-07-21T13:10:00.000Z")
+  });
+
+  assert.equal(health.ready, false);
+  assert.equal(health.authorized, false);
+});
+
+test("automation targets repair only stale generic Topic labels", () => {
+  const rule = {
+    id: "events",
+    kind: "automation",
+    contentType: "daily-events",
+    targets: [
+      { id: "generic", threadId: 8, topicName: "Topic 8" },
+      { id: "custom", threadId: 99, topicName: "Editorial Events" }
+    ]
+  };
+
+  const repaired = repairAutomationTargetLabels(rule);
+
+  assert.equal(repaired.targets[0].topicName, "3. Market Events");
+  assert.equal(repaired.targets[1].topicName, "Editorial Events");
+  assert.equal(rule.targets[0].topicName, "Topic 8");
+});
 
 test("manual backfill accepts IDs, ranges and Telegram links without exceeding 100 messages", () => {
   assert.deepEqual(parseBackfillReferences("77, 79-81\nhttps://t.me/c/12345/12/90"), [77, 79, 80, 81, 90]);
@@ -394,6 +465,7 @@ test("desktop publishing queues generated content and completes only after a Dem
   };
   const events = [];
   const deliveries = [];
+  const meta = new Map();
   const repository = {
     async getRule() { return rule; },
     async listRules() { return []; },
@@ -418,6 +490,8 @@ test("desktop publishing queues generated content and completes only after a Dem
       row.status = "sending";
       return row;
     },
+    async getMeta(key) { return meta.get(key) || null; },
+    async setMeta(key, value) { meta.set(key, value); return value; },
     async saveMapping() {}
   };
   const env = {
@@ -464,6 +538,7 @@ test("desktop publishing queues generated content and completes only after a Dem
     { kind: "text", text: "Morning brief & verified" }
   ]);
   assert.equal(deliveries[0].status, "sending");
+  assert.ok(meta.get("desktop-publisher-v1").lastSeenAt);
 
   const completed = await completeDesktopPublisherDelivery("delivery-desktop", {
     status: "success",
@@ -473,6 +548,8 @@ test("desktop publishing queues generated content and completes only after a Dem
   assert.equal(completed.attempts, 1);
   assert.deepEqual(completed.targetMessageIds, [901, 902]);
   assert.ok(completed.deliveredAt);
+  assert.equal(meta.get("desktop-publisher-v1").lastDeliveryStatus, "success");
+  assert.equal(meta.get("desktop-publisher-v1").lastError, null);
 });
 
 test("desktop publisher replaces stale generic Topic labels with the automation destination", async () => {

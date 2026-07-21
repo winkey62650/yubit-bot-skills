@@ -203,13 +203,14 @@ export default function DistributionPage() {
   const broadcastRules = data.rules.filter((rule) => rule.kind === "broadcast");
   const socialReadiness = buildSocialSourceReadiness(socialPackages);
   const publisherIsBot = data.publisher?.mode === "bot";
+  const publisherIsDesktop = data.publisher?.mode === "desktop";
   const publisherName = data.publisher?.username || "@Serenity_Crypto";
   const publisherStatus = data.publisher?.ready
-    ? publisherIsBot ? "旧 Bot 模式已禁用" : "群官方身份已授权"
-    : "群官方发布器未就绪";
+    ? publisherIsDesktop ? "本机官方群身份在线" : publisherIsBot ? "旧 Bot 模式已禁用" : "群官方身份已授权"
+    : publisherIsDesktop ? "本机发布桥接离线" : "群官方发布器未就绪";
   const publisherDetail = data.publisher?.ready
-    ? `${publisherName} · ${data.publisher?.approvedTargetIds?.length || 0} 个白名单目标`
-    : publisherIsBot ? "生产环境禁止回退到 Bot 发布" : "需完成加密用户会话授权与群 send_as 权限";
+    ? `${publisherName} · ${data.publisher?.approvedTargetIds?.length || 0} 个白名单目标${data.publisher?.lastSeenAt ? ` · 最近心跳 ${new Date(data.publisher.lastSeenAt).toLocaleString("zh-CN", { hour12: false })}` : ""}`
+    : publisherIsDesktop ? "需保持 Mac、Telegram 与 Codex 自动发布任务在线" : publisherIsBot ? "生产环境禁止回退到 Bot 发布" : "需完成加密用户会话授权与群 send_as 权限";
 
   useEffect(() => {
     setSelectedAutomationRules((current) => reconcileRuleSelection(current, data.rules.filter((rule) => rule.kind === "automation")));

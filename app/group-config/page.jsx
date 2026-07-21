@@ -137,10 +137,14 @@ export default function GroupConfigPage() {
   const freshness = getLiveFreshness(generatedAt);
   const liveIsFresh = freshness.state === "fresh";
   const publisherIsBot = publisher?.mode === "bot";
+  const publisherIsDesktop = publisher?.mode === "desktop";
   const publisherName = publisher?.username || "@Serenity_Crypto";
   const publisherStatus = publisher?.ready
-    ? publisherIsBot ? "旧 Bot 模式已禁用" : "群官方身份已授权"
-    : "群官方发布器未就绪";
+    ? publisherIsDesktop ? "本机官方群身份在线" : publisherIsBot ? "旧 Bot 模式已禁用" : "群官方身份已授权"
+    : publisherIsDesktop ? "本机发布桥接离线" : "群官方发布器未就绪";
+  const publisherDetail = publisherIsDesktop && publisher?.lastSeenAt
+    ? `${publisherName} · 最近心跳 ${new Date(publisher.lastSeenAt).toLocaleString("zh-CN", { hour12: false })}`
+    : `${publisherName} · ${publisher?.approvedTargetIds?.length || 0} 个白名单目标`;
 
   return (
     <ConsoleShell>
@@ -155,7 +159,7 @@ export default function GroupConfigPage() {
         <Metric label="Forum 群" value={groups.filter((group) => group.canUseTopics).length} detail={liveIsFresh ? "已实时核验 Topics 开关" : "状态已过期，等待刷新"} />
         <Metric label="历史 Channel" value={channels.length} detail="当前不作为出站目标" />
         <Metric label="Topic 总数" value={topicCount} detail={`${confirmedTopics} 个已确认 Thread ID`} />
-        <Metric label="发布器" value={publisherStatus} detail={`${publisherName} · ${publisher?.approvedTargetIds?.length || 0} 个白名单目标`} />
+        <Metric label="发布器" value={publisherStatus} detail={publisherDetail} />
       </section>
 
       <Card className="overflow-hidden">
