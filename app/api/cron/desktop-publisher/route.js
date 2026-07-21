@@ -35,6 +35,9 @@ export async function POST(request) {
     }
     const delivery = await completeDesktopPublisherDelivery(body.deliveryId, {
       status: body.status,
+      leaseId: body.leaseId,
+      stepId: body.stepId,
+      targetMessageId: body.targetMessageId,
       targetMessageIds: body.targetMessageIds,
       error: body.error
     });

@@ -40,10 +40,10 @@ const schedules = [
 ];
 
 const officialPublishingSteps = [
-  "服务器生成模板并排队",
-  "本机发布桥领取任务",
-  "Telegram Desktop 以 DEMO Academy 群身份发送",
-  "结果与消息编号回写后台"
+  "服务器生成带指纹的定稿模板并排队",
+  "本机发布桥取得唯一租约，单实例领取",
+  "Telegram Desktop 以 DEMO Academy 群身份逐步发送",
+  "每步回写检查点，完成后回写消息编号"
 ];
 
 const officialPublishingRoutes = [
@@ -285,6 +285,7 @@ function OfficialPublishingWorkflow({ status, detail, ready }) {
       <div>
         <p className="text-base font-black text-ops-ink">官方群身份自动发布工作流</p>
         <p className="mt-1 text-xs leading-5 text-ops-muted">后台生成的图片、正文与 Caption 必须逐字发送，禁止翻译、摘要、改写、增删或重新排版。图片带 Caption 的任务保持为一条 Telegram 消息；Daily Events 保持“独立海报 + 独立正文”。</p>
+        <p className="mt-1 text-xs leading-5 text-ops-muted">唯一租约保证单实例发布；图片、Caption 或正文每一步发送后立即回写检查点。中断时后台会保留已完成步骤，不得从头重复发送。</p>
       </div>
       <StatusPill ok={ready}>{status}</StatusPill>
     </div>
@@ -505,7 +506,7 @@ function ReviewView({ events, selected, setSelected, busy, onAction }) {
 }
 
 function LogsView({ deliveries, busy, onRetry }) {
-  return <Card className="overflow-hidden"><div className="border-b border-ops-line p-5"><h2 className="text-xl font-black">逐目标运行记录</h2><p className="mt-1 text-sm text-ops-muted">默认保留 30 天；单个目标失败不会影响其他目标，可精确重试。</p></div><div className="overflow-x-auto"><table className="w-full min-w-[880px] text-left text-sm"><thead className="bg-[#f9fbfa] text-xs uppercase text-ops-muted"><tr><th className="px-5 py-3">时间</th><th className="px-5 py-3">规则 / 目标</th><th className="px-5 py-3">状态</th><th className="px-5 py-3">重试</th><th className="px-5 py-3">Telegram 消息</th><th className="px-5 py-3">错误</th><th className="px-5 py-3">操作</th></tr></thead><tbody>{deliveries.length ? deliveries.map((row) => <tr className="border-t border-ops-line align-top" key={row.id}><td className="px-5 py-4 text-xs">{formatTime(row.createdAt)}</td><td className="px-5 py-4"><div className="font-mono text-xs">{row.ruleId}</div><div className="mt-1 text-xs text-ops-muted">{row.target?.groupName || row.target?.chatId} / {destinationLabel(row.target)}</div></td><td className="px-5 py-4"><StatusPill tone={row.status === "success" ? "green" : "amber"}>{statusLabel(row.status)}</StatusPill></td><td className="px-5 py-4">{row.attempts}</td><td className="px-5 py-4 font-mono text-xs">{row.targetMessageId || "—"}</td><td className="max-w-64 break-words px-5 py-4 text-xs text-[#a04a3d]">{row.error || "—"}</td><td className="px-5 py-4">{row.status === "failed" ? <SmallButton disabled={Boolean(busy)} onClick={() => onRetry(row.id)}>重试目标</SmallButton> : "—"}</td></tr>) : <tr><td className="px-5 py-8 text-center font-bold text-ops-muted" colSpan={7}>暂无运行记录。</td></tr>}</tbody></table></div></Card>;
+  return <Card className="overflow-hidden"><div className="border-b border-ops-line p-5"><h2 className="text-xl font-black">逐目标运行记录</h2><p className="mt-1 text-sm text-ops-muted">默认保留 30 天；单个目标失败不会影响其他目标，可精确重试。官方群发布会逐步回写检查点，中断后从未完成步骤继续。</p></div><div className="overflow-x-auto"><table className="w-full min-w-[940px] text-left text-sm"><thead className="bg-[#f9fbfa] text-xs uppercase text-ops-muted"><tr><th className="px-5 py-3">时间</th><th className="px-5 py-3">规则 / 目标</th><th className="px-5 py-3">状态</th><th className="px-5 py-3">重试</th><th className="px-5 py-3">发布检查点</th><th className="px-5 py-3">Telegram 消息</th><th className="px-5 py-3">错误</th><th className="px-5 py-3">操作</th></tr></thead><tbody>{deliveries.length ? deliveries.map((row) => <tr className="border-t border-ops-line align-top" key={row.id}><td className="px-5 py-4 text-xs">{formatTime(row.createdAt)}</td><td className="px-5 py-4"><div className="font-mono text-xs">{row.ruleId}</div><div className="mt-1 text-xs text-ops-muted">{row.target?.groupName || row.target?.chatId} / {destinationLabel(row.target)}</div></td><td className="px-5 py-4"><StatusPill tone={row.status === "success" ? "green" : "amber"}>{statusLabel(row.status)}</StatusPill></td><td className="px-5 py-4">{row.attempts}</td><td className="px-5 py-4 text-xs">{row.publisherProgress?.length ? `已回写 ${row.publisherProgress.length} 步` : "—"}</td><td className="px-5 py-4 font-mono text-xs">{row.targetMessageIds?.length ? row.targetMessageIds.join(", ") : row.targetMessageId || "—"}</td><td className="max-w-64 break-words px-5 py-4 text-xs text-[#a04a3d]">{row.error || "—"}</td><td className="px-5 py-4">{row.status === "failed" ? <SmallButton disabled={Boolean(busy)} onClick={() => onRetry(row.id)}>重试目标</SmallButton> : "—"}</td></tr>) : <tr><td className="px-5 py-8 text-center font-bold text-ops-muted" colSpan={8}>暂无运行记录。</td></tr>}</tbody></table></div></Card>;
 }
 
 function ValidationPanel({ result, onClose }) { return <Card className="mb-5 p-5"><div className="flex items-center justify-between"><h2 className="text-lg font-black">配置验证 · {result.ok ? "通过" : "存在问题"}</h2><SmallButton onClick={onClose}>关闭</SmallButton></div><div className="mt-3 grid gap-2 md:grid-cols-2">{result.checks?.map((check) => <div className="flex gap-2 rounded-lg bg-[#f7f9f8] p-3 text-sm" key={check.key}><span>{check.ok ? "✅" : "❌"}</span><div><strong>{check.key}</strong><p className="mt-1 text-ops-muted">{check.message}</p></div></div>)}</div></Card>; }

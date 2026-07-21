@@ -56,6 +56,7 @@ test("Postgres delivery records preserve every Telegram message id", async () =>
     attempts: 0,
     targetMessageId: null,
     targetMessageIds: [],
+    publisherProgress: [],
     error: null,
     deliveredAt: null
   });
@@ -72,8 +73,9 @@ test("Postgres delivery records preserve every Telegram message id", async () =>
         attempts: params[2],
         target_message_id: params[3],
         target_message_ids: JSON.parse(params[4]),
-        error: params[5],
-        delivered_at: params[6],
+        publisher_progress: JSON.parse(params[5]),
+        error: params[6],
+        delivered_at: params[7],
         created_at: "2026-07-15T00:00:00.000Z",
         updated_at: "2026-07-15T00:00:00.000Z"
       }];
@@ -85,10 +87,38 @@ test("Postgres delivery records preserve every Telegram message id", async () =>
     attempts: 1,
     targetMessageId: 521,
     targetMessageIds: [521, 522],
+    publisherProgress: [{ stepId: "1-photo-a1", checksum: "a1", targetMessageId: 521 }],
     deliveredAt: "2026-07-15T15:40:00.000Z"
   });
 
   assert.match(captured.sql, /target_message_ids/);
+  assert.match(captured.sql, /publisher_progress/);
   assert.equal(captured.params[4], "[521,522]");
+  assert.equal(captured.params[5], '[{"stepId":"1-photo-a1","checksum":"a1","targetMessageId":521}]');
   assert.deepEqual(delivery.targetMessageIds, [521, 522]);
+  assert.deepEqual(delivery.publisherProgress, [{ stepId: "1-photo-a1", checksum: "a1", targetMessageId: 521 }]);
+});
+
+test("Postgres desktop publisher lease is atomic and only its owner can release it", async () => {
+  const repository = Object.create(PostgresDistributionRepository.prototype);
+  const calls = [];
+  const lease = { leaseId: "lease-1", leaseUntil: "2026-07-21T12:30:00.000Z" };
+  repository.sql = {
+    async query(sql, params) {
+      calls.push({ sql, params });
+      if (/INSERT INTO distribution_meta/.test(sql)) return [{ value: lease }];
+      if (/DELETE FROM distribution_meta/.test(sql)) return [{ key: params[0] }];
+      return [];
+    }
+  };
+
+  const acquired = await repository.acquireMetaLease("desktop-publisher-lock-v1", lease, new Date("2026-07-21T12:00:00.000Z"));
+  assert.deepEqual(acquired, lease);
+  assert.match(calls[0].sql, /ON CONFLICT\(key\)/);
+  assert.match(calls[0].sql, /leaseUntil/);
+  assert.deepEqual(calls[0].params, ["desktop-publisher-lock-v1", JSON.stringify(lease), "2026-07-21T12:00:00.000Z"]);
+
+  assert.equal(await repository.releaseMetaLease("desktop-publisher-lock-v1", "lease-1"), true);
+  assert.match(calls[1].sql, /value->>'leaseId'=\$2/);
+  assert.deepEqual(calls[1].params, ["desktop-publisher-lock-v1", "lease-1"]);
 });

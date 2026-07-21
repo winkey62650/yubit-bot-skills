@@ -466,6 +466,7 @@ test("desktop publishing queues generated content and completes only after a Dem
   const events = [];
   const deliveries = [];
   const meta = new Map();
+  const leases = new Map();
   const repository = {
     async getRule() { return rule; },
     async listRules() { return []; },
@@ -492,6 +493,18 @@ test("desktop publishing queues generated content and completes only after a Dem
     },
     async getMeta(key) { return meta.get(key) || null; },
     async setMeta(key, value) { meta.set(key, value); return value; },
+    async acquireMetaLease(key, lease, now = new Date()) {
+      const current = leases.get(key);
+      if (current?.leaseUntil && Date.parse(current.leaseUntil) > new Date(now).getTime()) return null;
+      leases.set(key, lease);
+      return lease;
+    },
+    async getMetaLease(key) { return leases.get(key) || null; },
+    async releaseMetaLease(key, leaseId) {
+      if (leases.get(key)?.leaseId !== leaseId) return false;
+      leases.delete(key);
+      return true;
+    },
     async saveMapping() {}
   };
   const env = {
@@ -529,30 +542,70 @@ test("desktop publishing queues generated content and completes only after a Dem
   assert.equal(deliveries[0].status, "pending");
   assert.equal(deliveries[0].attempts, 0);
 
-  const claimed = await claimDesktopPublisherDelivery({ repository, env });
+  const claimedAt = "2026-07-21T12:05:00.000Z";
+  const claimed = await claimDesktopPublisherDelivery({ repository, env, now: claimedAt });
   assert.equal(claimed.deliveryId, "delivery-desktop");
   assert.equal(claimed.groupName, "DEMO Academy");
   assert.equal(claimed.topicName, "3. Market Events");
   assert.equal(claimed.contractVersion, "telegram-template-v1");
   assert.equal(claimed.contentPolicy, "verbatim");
   assert.equal(claimed.identityPolicy, "group-official");
-  assert.deepEqual(claimed.steps, [
-    { kind: "photo", imageUrl: "https://academy.example.com/api/media/events.png", caption: "" },
-    { kind: "text", text: "Morning brief & verified" }
+  assert.ok(claimed.leaseId);
+  assert.deepEqual(claimed.steps.map(({ kind, imageUrl, caption, text }) => ({ kind, imageUrl, caption, text })), [
+    { kind: "photo", imageUrl: "https://academy.example.com/api/media/events.png", caption: "", text: undefined },
+    { kind: "text", imageUrl: undefined, caption: undefined, text: "Morning brief & verified" }
   ]);
+  assert.ok(claimed.steps.every((step) => step.stepId && step.checksum));
   assert.equal(deliveries[0].status, "sending");
   assert.ok(meta.get("desktop-publisher-v1").lastSeenAt);
 
+  const busyClaim = await claimDesktopPublisherDelivery({ repository, env, now: "2026-07-21T12:06:00.000Z" });
+  assert.equal(busyClaim, null);
+
+  const firstProgress = await completeDesktopPublisherDelivery("delivery-desktop", {
+    status: "progress",
+    leaseId: claimed.leaseId,
+    stepId: claimed.steps[0].stepId,
+    targetMessageId: 901
+  }, { repository, env, now: "2026-07-21T12:07:00.000Z" });
+  assert.equal(firstProgress.status, "sending");
+  assert.deepEqual(firstProgress.publisherProgress.map((step) => step.stepId), [claimed.steps[0].stepId]);
+
+  await assert.rejects(() => completeDesktopPublisherDelivery("delivery-desktop", {
+    status: "success",
+    leaseId: claimed.leaseId
+  }, { repository, env, now: "2026-07-21T12:08:00.000Z" }), /all template steps/i);
+
+  await assert.rejects(() => completeDesktopPublisherDelivery("delivery-desktop", {
+    status: "progress",
+    leaseId: "wrong-lease",
+    stepId: claimed.steps[1].stepId,
+    targetMessageId: 902
+  }, { repository, env, now: "2026-07-21T12:09:00.000Z" }), /DESKTOP_PUBLISHER_LEASE_INVALID/);
+
+  const resumed = await claimDesktopPublisherDelivery({ repository, env, now: "2026-07-21T12:36:00.000Z" });
+  assert.equal(resumed.deliveryId, claimed.deliveryId);
+  assert.notEqual(resumed.leaseId, claimed.leaseId);
+  assert.deepEqual(resumed.completedSteps.map((step) => step.stepId), [claimed.steps[0].stepId]);
+
+  await completeDesktopPublisherDelivery("delivery-desktop", {
+    status: "progress",
+    leaseId: resumed.leaseId,
+    stepId: claimed.steps[1].stepId,
+    targetMessageId: 902
+  }, { repository, env, now: "2026-07-21T12:37:00.000Z" });
+
   const completed = await completeDesktopPublisherDelivery("delivery-desktop", {
     status: "success",
-    targetMessageIds: [901, 902]
-  }, { repository, env });
+    leaseId: resumed.leaseId
+  }, { repository, env, now: "2026-07-21T12:38:00.000Z" });
   assert.equal(completed.status, "success");
   assert.equal(completed.attempts, 1);
   assert.deepEqual(completed.targetMessageIds, [901, 902]);
   assert.ok(completed.deliveredAt);
   assert.equal(meta.get("desktop-publisher-v1").lastDeliveryStatus, "success");
   assert.equal(meta.get("desktop-publisher-v1").lastError, null);
+  assert.equal(leases.size, 0);
 });
 
 test("desktop publisher replaces stale generic Topic labels with the automation destination", async () => {
@@ -814,6 +867,9 @@ test("production deployment uses the official Demo Forum group identity and keep
   assert.match(workflow, /secrets\.DESKTOP_PUBLISHER_SECRET/);
   assert.match(workflow, /DESKTOP_PUBLISHER_SECRET=%s/);
   assert.match(desktopRoute, /process\.env\.DESKTOP_PUBLISHER_SECRET/);
+  assert.match(desktopRoute, /leaseId: body\.leaseId/);
+  assert.match(desktopRoute, /stepId: body\.stepId/);
+  assert.match(desktopRoute, /targetMessageId: body\.targetMessageId/);
   assert.doesNotMatch(desktopRoute, /cronSecretConfig/);
   assert.doesNotMatch(workflow, /TELEGRAM_PUBLISHER_MODE=bot/);
   assert.doesNotMatch(workflow, /TELEGRAM_USER_PUBLISHER_TARGETS=-1003862539988/);
