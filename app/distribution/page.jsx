@@ -52,6 +52,24 @@ const officialPublishingRoutes = [
   "Whale Signals → 6. Smart Money Tracker"
 ];
 
+const officialPublishingContracts = [
+  {
+    name: "Daily Events",
+    output: "2 条 · 独立海报 + 独立英文正文",
+    rule: "海报不得带 Caption；正文不得合并进图片消息。"
+  },
+  {
+    name: "Daily Analysis",
+    output: "1 条 · 海报与 Caption 同一条消息",
+    rule: "英文模板逐字发布；禁止出现 OKX fallback。"
+  },
+  {
+    name: "Whale Signals",
+    output: "1 条 · 海报与 Caption 同一条消息",
+    rule: "Caption 必须为英文；禁止出现 Data Source 和 Hashtag。"
+  }
+];
+
 const emptyAutomation = { id: "", kind: "automation", name: "", contentType: "daily-events", schedulePreset: "daily-0800-utc", enabled: true, targets: [] };
 const emptyBroadcast = { id: "", kind: "broadcast", name: "", mode: "automatic", enabled: true, source: { chatId: "", chatType: "supergroup", threadId: "", groupName: "", topicName: "" }, targets: [] };
 
@@ -223,12 +241,25 @@ export default function DistributionPage() {
   const publisherIsBot = data.publisher?.mode === "bot";
   const publisherIsDesktop = data.publisher?.mode === "desktop";
   const publisherName = data.publisher?.username || "@Serenity_Crypto";
-  const publisherStatus = data.publisher?.ready
-    ? publisherIsDesktop ? "本机官方群身份在线" : publisherIsBot ? "旧 Bot 模式已禁用" : "群官方身份已授权"
-    : publisherIsDesktop ? "本机发布桥接离线" : "群官方发布器未就绪";
-  const publisherDetail = data.publisher?.ready
-    ? `${publisherName} · ${data.publisher?.approvedTargetIds?.length || 0} 个白名单目标${data.publisher?.lastSeenAt ? ` · 最近心跳 ${new Date(data.publisher.lastSeenAt).toLocaleString("zh-CN", { hour12: false })}` : ""}`
-    : publisherIsDesktop ? "需保持 Mac、Telegram 与 Codex 自动发布任务在线" : publisherIsBot ? "生产环境禁止回退到 Bot 发布" : "需完成加密用户会话授权与群 send_as 权限";
+  const operationalStatus = data.publisher?.operationalStatus || (data.publisher?.ready ? "online" : "offline");
+  const publisherOperationalReady = data.publisher?.operationalReady ?? Boolean(data.publisher?.ready);
+  const publisherStatus = operationalStatus === "stalled"
+    ? "发布任务卡住"
+    : operationalStatus === "degraded"
+      ? "发布桥异常"
+      : operationalStatus === "publishing"
+        ? "官方群身份发布中"
+        : data.publisher?.ready
+          ? publisherIsDesktop ? "本机官方群身份在线" : publisherIsBot ? "旧 Bot 模式已禁用" : "群官方身份已授权"
+          : publisherIsDesktop ? "本机发布桥接离线" : "群官方发布器未就绪";
+  const activeDeliveryDetail = data.publisher?.activeDelivery
+    ? ` · 当前投递 ${data.publisher.activeDelivery.id} · 已回写 ${data.publisher.activeDelivery.completedSteps || 0} 步`
+    : "";
+  const publisherDetail = operationalStatus === "stalled" || operationalStatus === "degraded"
+    ? `${data.publisher?.operationalError || data.publisher?.lastError || "发布状态异常"}${activeDeliveryDetail}`
+    : data.publisher?.ready
+      ? `${publisherName} · ${data.publisher?.approvedTargetIds?.length || 0} 个白名单目标${activeDeliveryDetail}${data.publisher?.lastSeenAt ? ` · 最近心跳 ${new Date(data.publisher.lastSeenAt).toLocaleString("zh-CN", { hour12: false })}` : ""}`
+      : publisherIsDesktop ? "需保持 Mac、Telegram 与 Codex 自动发布任务在线" : publisherIsBot ? "生产环境禁止回退到 Bot 发布" : "需完成加密用户会话授权与群 send_as 权限";
 
   useEffect(() => {
     setSelectedAutomationRules((current) => reconcileRuleSelection(current, data.rules.filter((rule) => rule.kind === "automation")));
@@ -257,7 +288,7 @@ export default function DistributionPage() {
         <Summary label="待审核" value={data.review.length} detail="默认保留 7 天" />
       </div>
 
-      {view === "automation" ? <OfficialPublishingWorkflow status={publisherStatus} detail={publisherDetail} ready={Boolean(data.publisher?.ready)} /> : null}
+      {view === "automation" ? <OfficialPublishingWorkflow status={publisherStatus} detail={publisherDetail} ready={publisherOperationalReady} /> : null}
 
       {notice ? <div role="status" className="mb-5 rounded-lg border border-ops-line bg-white px-4 py-3 text-sm font-bold text-[#33423b]">{notice}</div> : null}
       {validation ? <ValidationPanel result={validation} onClose={() => setValidation(null)} /> : null}
@@ -303,6 +334,17 @@ function OfficialPublishingWorkflow({ status, detail, ready }) {
       <ul className="mt-2 grid gap-1 text-xs leading-5 text-[#7b642f] md:grid-cols-3">
         {officialPublishingRoutes.map((route) => <li key={route}>{route}</li>)}
       </ul>
+    </div>
+    <div className="mt-4">
+      <p className="text-xs font-black text-ops-ink">Telegram 成品契约</p>
+      <p className="mt-1 text-xs leading-5 text-ops-muted">实际发送必须与已定稿 payload 的 imageUrl、caption、text 逐字段一致；任何字段不一致都应停止并记录失败，不能发送近似版本。</p>
+      <div className="mt-3 grid gap-3 lg:grid-cols-3">
+        {officialPublishingContracts.map((contract) => <div className="rounded-lg border border-ops-line bg-[#f7faf8] p-3" key={contract.name}>
+          <p className="text-sm font-black text-ops-ink">{contract.name}</p>
+          <p className="mt-1 text-xs font-black text-ops-accent">{contract.output}</p>
+          <p className="mt-2 text-xs leading-5 text-ops-muted">{contract.rule}</p>
+        </div>)}
+      </div>
     </div>
   </Card>;
 }

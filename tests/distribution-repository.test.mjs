@@ -107,6 +107,7 @@ test("Postgres desktop publisher lease is atomic and only its owner can release 
     async query(sql, params) {
       calls.push({ sql, params });
       if (/INSERT INTO distribution_meta/.test(sql)) return [{ value: lease }];
+      if (/UPDATE distribution_meta/.test(sql)) return [{ value: { ...lease, leaseUntil: params[2] } }];
       if (/DELETE FROM distribution_meta/.test(sql)) return [{ key: params[0] }];
       return [];
     }
@@ -118,7 +119,13 @@ test("Postgres desktop publisher lease is atomic and only its owner can release 
   assert.match(calls[0].sql, /leaseUntil/);
   assert.deepEqual(calls[0].params, ["desktop-publisher-lock-v1", JSON.stringify(lease), "2026-07-21T12:00:00.000Z"]);
 
-  assert.equal(await repository.releaseMetaLease("desktop-publisher-lock-v1", "lease-1"), true);
+  const renewed = await repository.renewMetaLease("desktop-publisher-lock-v1", "lease-1", "2026-07-21T12:40:00.000Z");
+  assert.equal(renewed.leaseUntil, "2026-07-21T12:40:00.000Z");
+  assert.match(calls[1].sql, /UPDATE distribution_meta/);
   assert.match(calls[1].sql, /value->>'leaseId'=\$2/);
-  assert.deepEqual(calls[1].params, ["desktop-publisher-lock-v1", "lease-1"]);
+  assert.deepEqual(calls[1].params, ["desktop-publisher-lock-v1", "lease-1", "2026-07-21T12:40:00.000Z"]);
+
+  assert.equal(await repository.releaseMetaLease("desktop-publisher-lock-v1", "lease-1"), true);
+  assert.match(calls[2].sql, /value->>'leaseId'=\$2/);
+  assert.deepEqual(calls[2].params, ["desktop-publisher-lock-v1", "lease-1"]);
 });

@@ -72,6 +72,65 @@ test("desktop publisher health becomes offline after the heartbeat expires", asy
   assert.equal(health.authorized, false);
 });
 
+test("desktop publisher health reports stalled and degraded delivery state truthfully", async () => {
+  const stalledRepository = {
+    async getMeta() {
+      return {
+        lastSeenAt: "2026-07-21T13:09:00.000Z",
+        lastDeliveryStatus: "failed",
+        lastError: "previous delivery failed"
+      };
+    },
+    async listDeliveries({ status }) {
+      assert.equal(status, "sending");
+      return [{
+        id: "delivery-stalled",
+        ruleId: "rule-analysis",
+        status: "sending",
+        createdAt: "2026-07-21T12:40:00.000Z",
+        updatedAt: "2026-07-21T12:55:00.000Z",
+        publisherProgress: []
+      }];
+    }
+  };
+  const env = {
+    NODE_ENV: "production",
+    DESKTOP_PUBLISHER_SECRET: "desktop-secret",
+    TELEGRAM_USER_PUBLISHER_TARGETS: "-1003710405969"
+  };
+
+  const stalled = await desktopPublisherHealth({
+    repository: stalledRepository,
+    env,
+    now: new Date("2026-07-21T13:10:00.000Z")
+  });
+
+  assert.equal(stalled.ready, true);
+  assert.equal(stalled.operationalReady, false);
+  assert.equal(stalled.operationalStatus, "stalled");
+  assert.equal(stalled.activeDelivery.id, "delivery-stalled");
+  assert.match(stalled.operationalError, /卡住/);
+
+  const degraded = await desktopPublisherHealth({
+    repository: {
+      async getMeta() {
+        return {
+          lastSeenAt: "2026-07-21T13:09:00.000Z",
+          lastDeliveryStatus: "failed",
+          lastError: "previous delivery failed"
+        };
+      },
+      async listDeliveries() { return []; }
+    },
+    env,
+    now: new Date("2026-07-21T13:10:00.000Z")
+  });
+
+  assert.equal(degraded.operationalStatus, "degraded");
+  assert.equal(degraded.operationalReady, false);
+  assert.equal(degraded.operationalError, "previous delivery failed");
+});
+
 test("automation targets repair only stale generic Topic labels", () => {
   const rule = {
     id: "events",
@@ -500,6 +559,13 @@ test("desktop publishing queues generated content and completes only after a Dem
       return lease;
     },
     async getMetaLease(key) { return leases.get(key) || null; },
+    async renewMetaLease(key, leaseId, leaseUntil) {
+      const current = leases.get(key);
+      if (current?.leaseId !== leaseId) return null;
+      const renewed = { ...current, leaseUntil };
+      leases.set(key, renewed);
+      return renewed;
+    },
     async releaseMetaLease(key, leaseId) {
       if (leases.get(key)?.leaseId !== leaseId) return false;
       leases.delete(key);
@@ -570,6 +636,7 @@ test("desktop publishing queues generated content and completes only after a Dem
   }, { repository, env, now: "2026-07-21T12:07:00.000Z" });
   assert.equal(firstProgress.status, "sending");
   assert.deepEqual(firstProgress.publisherProgress.map((step) => step.stepId), [claimed.steps[0].stepId]);
+  assert.equal(leases.get("desktop-publisher-lock-v1").leaseUntil, "2026-07-21T12:17:00.000Z");
 
   await assert.rejects(() => completeDesktopPublisherDelivery("delivery-desktop", {
     status: "success",
@@ -583,7 +650,10 @@ test("desktop publishing queues generated content and completes only after a Dem
     targetMessageId: 902
   }, { repository, env, now: "2026-07-21T12:09:00.000Z" }), /DESKTOP_PUBLISHER_LEASE_INVALID/);
 
-  const resumed = await claimDesktopPublisherDelivery({ repository, env, now: "2026-07-21T12:36:00.000Z" });
+  const stillBusy = await claimDesktopPublisherDelivery({ repository, env, now: "2026-07-21T12:16:00.000Z" });
+  assert.equal(stillBusy, null);
+
+  const resumed = await claimDesktopPublisherDelivery({ repository, env, now: "2026-07-21T12:18:00.000Z" });
   assert.equal(resumed.deliveryId, claimed.deliveryId);
   assert.notEqual(resumed.leaseId, claimed.leaseId);
   assert.deepEqual(resumed.completedSteps.map((step) => step.stepId), [claimed.steps[0].stepId]);
@@ -593,12 +663,12 @@ test("desktop publishing queues generated content and completes only after a Dem
     leaseId: resumed.leaseId,
     stepId: claimed.steps[1].stepId,
     targetMessageId: 902
-  }, { repository, env, now: "2026-07-21T12:37:00.000Z" });
+  }, { repository, env, now: "2026-07-21T12:19:00.000Z" });
 
   const completed = await completeDesktopPublisherDelivery("delivery-desktop", {
     status: "success",
     leaseId: resumed.leaseId
-  }, { repository, env, now: "2026-07-21T12:38:00.000Z" });
+  }, { repository, env, now: "2026-07-21T12:20:00.000Z" });
   assert.equal(completed.status, "success");
   assert.equal(completed.attempts, 1);
   assert.deepEqual(completed.targetMessageIds, [901, 902]);

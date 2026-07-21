@@ -36,6 +36,11 @@ test("automatic publishing explains the official identity workflow and exact top
   assert.match(pageSource, /Daily Events → 3\. Market Events/);
   assert.match(pageSource, /Daily Analysis → 4\. Market Analysis - Crypto\/Stocks\/TradFi/);
   assert.match(pageSource, /Whale Signals → 6\. Smart Money Tracker/);
+  assert.match(pageSource, /2 条 · 独立海报 \+ 独立英文正文/);
+  assert.match(pageSource, /1 条 · 海报与 Caption 同一条消息/);
+  assert.match(pageSource, /禁止出现 OKX fallback/);
+  assert.match(pageSource, /英文；禁止出现 Data Source 和 Hashtag/);
+  assert.match(pageSource, /实际发送必须与已定稿 payload 的 imageUrl、caption、text 逐字段一致/);
   assert.match(pageSource, /发布检查点/);
   assert.match(pageSource, /已回写 \$\{row\.publisherProgress\.length\} 步/);
 });
@@ -44,4 +49,12 @@ test("queued desktop publishing is reported as waiting instead of a false failur
   assert.match(pageSource, /result\.result\?\.status === "queued"/);
   assert.match(pageSource, /result\.result\?\.message \|\| "内容已生成并排队，等待本机发布桥发送。"/);
   assert.doesNotMatch(pageSource, /result\.result\?\.status !== "success"/);
+});
+
+test("desktop publisher status distinguishes online, stalled, degraded and offline states", () => {
+  assert.match(pageSource, /operationalStatus === "stalled"/);
+  assert.match(pageSource, /发布任务卡住/);
+  assert.match(pageSource, /operationalStatus === "degraded"/);
+  assert.match(pageSource, /发布桥异常/);
+  assert.match(pageSource, /operationalReady/);
 });
