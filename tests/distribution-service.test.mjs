@@ -320,7 +320,7 @@ test("a failed one-time automation is requeued instead of being lost", async () 
   assert.equal(saved[0].leaseUntil, null);
 });
 
-test("an automatic publishing rule can be run immediately with real per-target delivery records", async () => {
+test("a confirmed manual automation run bypasses the scheduled slot dedupe and creates real delivery records", async () => {
   const target = { id: "target-market", chatId: "-100200", threadId: 8 };
   const rule = {
     id: "rule-events",
@@ -355,7 +355,7 @@ test("an automatic publishing rule can be run immediately with real per-target d
   const runner = async (jobId, options) => {
     assert.equal(jobId, "daily-events");
     assert.equal(options.dryRun, false);
-    assert.equal(options.force, false);
+    assert.equal(options.force, true);
     assert.deepEqual(options.targets, [target]);
     return {
       status: "success",
