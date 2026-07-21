@@ -8,6 +8,8 @@ import {
 } from "../lib/distribution-repository.mjs";
 import {
   backfillRule,
+  claimDesktopPublisherDelivery,
+  completeDesktopPublisherDelivery,
   ensureAutomationSchedules,
   parseBackfillReferences,
   processTelegramWebhookUpdate,
@@ -375,6 +377,124 @@ test("an automatic publishing rule can be run immediately with real per-target d
   assert.equal(deliveries[0].targetMessageId, 321);
 });
 
+test("desktop publishing queues generated content and completes only after a Demo administrator acknowledges it", async () => {
+  const target = {
+    id: "target-demo-events",
+    chatId: "-1003710405969",
+    threadId: 8,
+    groupName: "DEMO Academy",
+    topicName: "3. Market Events"
+  };
+  const rule = {
+    id: "rule-events-desktop",
+    kind: "automation",
+    name: "Daily Events",
+    contentType: "daily-events",
+    targets: [target]
+  };
+  const events = [];
+  const deliveries = [];
+  const repository = {
+    async getRule() { return rule; },
+    async listRules() { return []; },
+    async createEvent(event) {
+      const saved = { id: "event-desktop", createdAt: "2026-07-21T12:00:00.000Z", ...event };
+      events.push(saved);
+      return saved;
+    },
+    async updateEvent(id, patch) { Object.assign(events.find((event) => event.id === id), patch); },
+    async getEvent(id) { return events.find((event) => event.id === id) || null; },
+    async createDelivery(delivery) {
+      const saved = { id: "delivery-desktop", createdAt: "2026-07-21T12:00:01.000Z", ...delivery };
+      deliveries.push(saved);
+      return saved;
+    },
+    async updateDelivery(id, patch) { return Object.assign(deliveries.find((item) => item.id === id), patch, { updatedAt: "2026-07-21T12:00:02.000Z" }); },
+    async getDelivery(id) { return deliveries.find((item) => item.id === id) || null; },
+    async listDeliveries({ status } = {}) { return deliveries.filter((item) => !status || item.status === status); },
+    async claimDelivery(id) {
+      const row = deliveries.find((item) => item.id === id);
+      if (!row || row.status !== "pending") return null;
+      row.status = "sending";
+      return row;
+    },
+    async saveMapping() {}
+  };
+  const env = {
+    NODE_ENV: "production",
+    TELEGRAM_DESKTOP_PUBLISHER_REQUIRED: "true",
+    DEMO_TELEGRAM_CHAT_ID: target.chatId,
+    APP_BASE_URL: "https://academy.example.com"
+  };
+  let runnerOptions;
+
+  const run = await runDistributionAutomationRule(rule.id, {
+    repository,
+    env,
+    runner: async (_jobId, options) => {
+      runnerOptions = options;
+      return {
+        status: "queued",
+        preview: {
+          deliveryPlans: [{
+            target,
+            steps: [
+              { method: "sendPhoto", payload: { chat_id: target.chatId, message_thread_id: 8, photo: "https://academy.example.com/api/media/events.png" } },
+              { method: "sendMessage", payload: { chat_id: target.chatId, message_thread_id: 8, text: "<b>Morning brief</b> &amp; verified", parse_mode: "HTML" } }
+            ]
+          }],
+          targetResults: [{ target, status: "pending" }]
+        }
+      };
+    }
+  });
+
+  assert.equal(run.status, "queued");
+  assert.equal(runnerOptions.deferDelivery, true);
+  assert.equal(runnerOptions.publicBaseUrl, env.APP_BASE_URL);
+  assert.equal(deliveries[0].status, "pending");
+  assert.equal(deliveries[0].attempts, 0);
+
+  const claimed = await claimDesktopPublisherDelivery({ repository, env });
+  assert.equal(claimed.deliveryId, "delivery-desktop");
+  assert.equal(claimed.groupName, "DEMO Academy");
+  assert.equal(claimed.topicName, "3. Market Events");
+  assert.deepEqual(claimed.steps, [
+    { kind: "photo", imageUrl: "https://academy.example.com/api/media/events.png", caption: "" },
+    { kind: "text", text: "Morning brief & verified" }
+  ]);
+  assert.equal(deliveries[0].status, "sending");
+
+  const completed = await completeDesktopPublisherDelivery("delivery-desktop", {
+    status: "success",
+    targetMessageIds: [901, 902]
+  }, { repository, env });
+  assert.equal(completed.status, "success");
+  assert.equal(completed.attempts, 1);
+  assert.deepEqual(completed.targetMessageIds, [901, 902]);
+  assert.ok(completed.deliveredAt);
+});
+
+test("desktop publisher never claims a pending non-Demo delivery", async () => {
+  const delivery = {
+    id: "delivery-fight",
+    eventId: "event-fight",
+    status: "pending",
+    createdAt: "2026-07-21T12:00:00.000Z",
+    target: { id: "fight", chatId: "-1004309440933", threadId: 8, groupName: "Fight Club" }
+  };
+  const repository = {
+    async listDeliveries() { return [delivery]; },
+    async claimDelivery() { throw new Error("must not claim"); }
+  };
+
+  const result = await claimDesktopPublisherDelivery({
+    repository,
+    env: { NODE_ENV: "production", DEMO_TELEGRAM_CHAT_ID: "-1003710405969" }
+  });
+  assert.equal(result, null);
+});
+
 test("a deduplicated or suppressed automation run creates no failed delivery records", async () => {
   const rule = {
     id: "rule-whale-suppressed",
@@ -568,6 +688,7 @@ test("production deployment uses the official Demo Forum group identity and keep
   assert.match(workflow, /TELEGRAM_USER_PUBLISHER_REQUIRED=true/);
   assert.match(workflow, /TELEGRAM_USER_PUBLISHER_TARGETS=-1003710405969/);
   assert.match(workflow, /TELEGRAM_USER_SESSION_ENCRYPTION_KEY=%s/);
+  assert.match(workflow, /TELEGRAM_DESKTOP_PUBLISHER_REQUIRED=true/);
   assert.doesNotMatch(workflow, /TELEGRAM_PUBLISHER_MODE=bot/);
   assert.doesNotMatch(workflow, /TELEGRAM_USER_PUBLISHER_TARGETS=-1003862539988/);
   assert.match(workflow, /sudo install -m 0600/);

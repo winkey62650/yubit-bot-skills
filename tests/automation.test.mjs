@@ -197,6 +197,37 @@ test("daily market brief delivery sends a standalone poster followed by the mark
   assert.equal(plan[1].payload.disable_web_page_preview, true);
 });
 
+test("desktop publisher plans preserve one target and every Telegram step", () => {
+  assert.equal(typeof automation.buildAutomationTelegramPlans, "function");
+  const target = {
+    id: "demo-events",
+    chatId: "-1003710405969",
+    threadId: 8,
+    groupName: "DEMO Academy",
+    topicName: "3. Market Events"
+  };
+  const plans = automation.buildAutomationTelegramPlans("daily-events", {
+    fullText: "<b>MARKET EVENTS</b>\n\n1. Verified story"
+  }, [target], "https://example.com/events.png");
+
+  assert.equal(plans.length, 1);
+  assert.deepEqual(plans[0].target, target);
+  assert.deepEqual(plans[0].steps.map((step) => step.method), ["sendPhoto", "sendMessage"]);
+  assert.equal(plans[0].steps[0].payload.photo, "https://example.com/events.png");
+  assert.equal(plans[0].steps[1].payload.text, "<b>MARKET EVENTS</b>\n\n1. Verified story");
+});
+
+test("desktop publisher plans keep analysis and whale copy attached to the poster", () => {
+  const target = { id: "demo-analysis", chatId: "-1003710405969", threadId: 10 };
+  const [plan] = automation.buildAutomationTelegramPlans("daily-analysis", {
+    caption: "<b>DAILY MARKET ANALYSIS</b>\n\nRegime: constructive"
+  }, [target], "https://example.com/analysis.png");
+
+  assert.deepEqual(plan.steps.map((step) => step.method), ["sendPhoto"]);
+  assert.equal(plan.steps[0].payload.caption, "<b>DAILY MARKET ANALYSIS</b>\n\nRegime: constructive");
+  assert.equal(plan.steps[0].payload.message_thread_id, 10);
+});
+
 test("channel delivery omits message_thread_id from every Telegram request", () => {
   const target = { chatId: "-1009001", chatType: "channel", threadId: null };
   const plan = automation.buildDailyMarketBriefTelegramPlan({
