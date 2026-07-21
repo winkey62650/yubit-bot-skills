@@ -563,6 +563,11 @@ test("production deployment applies an exact distribution allowlist while keepin
   assert.match(workflow, /TELEGRAM_DEMO_ONLY=true/);
   assert.match(workflow, /TELEGRAM_DISTRIBUTION_APPROVED_TARGETS=%s/);
   assert.match(workflow, /TRADING_DEMO_ONLY=true/);
+  assert.match(workflow, /TELEGRAM_USER_PUBLISHER_REQUIRED=true/);
+  assert.match(workflow, /TELEGRAM_USER_PUBLISHER_TARGETS=-1003862539988/);
+  assert.match(workflow, /TELEGRAM_USER_PUBLISHER_USERNAME=Serenity_Crypto/);
+  assert.match(workflow, /TELEGRAM_USER_SESSION_ENCRYPTION_KEY=%s/);
+  assert.match(workflow, /will deploy fail-closed until authorization/);
   assert.match(workflow, /sudo install -m 0600/);
 });
 

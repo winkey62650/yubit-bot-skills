@@ -44,12 +44,10 @@ jobs:
           env_file=/etc/yubit-academy/production.env
           approved_targets="$(printf '%s' "$POLICY_B64" | base64 -d)"
           if ! sudo awk -F= '$1 == "TELEGRAM_API_ID" && length($2) > 0 { found = 1 } END { exit(found ? 0 : 1) }' "$env_file"; then
-            echo "TELEGRAM_API_ID is not configured on the production server." >&2
-            exit 1
+            echo "Notice: TELEGRAM_API_ID is not configured; production will deploy fail-closed until authorization." >&2
           fi
           if ! sudo awk -F= '$1 == "TELEGRAM_API_HASH" && length($2) > 0 { found = 1 } END { exit(found ? 0 : 1) }' "$env_file"; then
-            echo "TELEGRAM_API_HASH is not configured on the production server." >&2
-            exit 1
+            echo "Notice: TELEGRAM_API_HASH is not configured; production will deploy fail-closed until authorization." >&2
           fi
           session_key="$(sudo awk -F= '$1 == "TELEGRAM_USER_SESSION_ENCRYPTION_KEY" { sub(/^[^=]*=/, ""); print; exit }' "$env_file")"
           if [ -z "$session_key" ]; then
