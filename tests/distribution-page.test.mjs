@@ -24,3 +24,14 @@ test("bulk deletion confirms the count and sends one delete-many request", () =>
   assert.match(pageSource, /failedBulkDeleteIds\(result\)/);
   assert.match(pageSource, /bulkDeleteNotice\(result\)/);
 });
+
+test("automatic publishing explains the official identity workflow and exact topic routing", () => {
+  assert.match(pageSource, /服务器生成模板并排队/);
+  assert.match(pageSource, /本机发布桥领取任务/);
+  assert.match(pageSource, /Telegram Desktop 以 DEMO Academy 群身份发送/);
+  assert.match(pageSource, /结果与消息编号回写后台/);
+  assert.match(pageSource, /逐字发送，禁止翻译、摘要、改写、增删或重新排版/);
+  assert.match(pageSource, /Daily Events → 3\. Market Events/);
+  assert.match(pageSource, /Daily Analysis → 4\. Market Analysis - Crypto\/Stocks\/TradFi/);
+  assert.match(pageSource, /Whale Signals → 6\. Smart Money Tracker/);
+});

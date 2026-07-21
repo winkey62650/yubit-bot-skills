@@ -533,6 +533,9 @@ test("desktop publishing queues generated content and completes only after a Dem
   assert.equal(claimed.deliveryId, "delivery-desktop");
   assert.equal(claimed.groupName, "DEMO Academy");
   assert.equal(claimed.topicName, "3. Market Events");
+  assert.equal(claimed.contractVersion, "telegram-template-v1");
+  assert.equal(claimed.contentPolicy, "verbatim");
+  assert.equal(claimed.identityPolicy, "group-official");
   assert.deepEqual(claimed.steps, [
     { kind: "photo", imageUrl: "https://academy.example.com/api/media/events.png", caption: "" },
     { kind: "text", text: "Morning brief & verified" }

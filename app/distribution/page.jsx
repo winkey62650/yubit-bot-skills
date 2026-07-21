@@ -39,6 +39,19 @@ const schedules = [
   ["daily-0800-utc", "每日 08:00 UTC"]
 ];
 
+const officialPublishingSteps = [
+  "服务器生成模板并排队",
+  "本机发布桥领取任务",
+  "Telegram Desktop 以 DEMO Academy 群身份发送",
+  "结果与消息编号回写后台"
+];
+
+const officialPublishingRoutes = [
+  "Daily Events → 3. Market Events",
+  "Daily Analysis → 4. Market Analysis - Crypto/Stocks/TradFi",
+  "Whale Signals → 6. Smart Money Tracker"
+];
+
 const emptyAutomation = { id: "", kind: "automation", name: "", contentType: "daily-events", schedulePreset: "daily-0800-utc", enabled: true, targets: [] };
 const emptyBroadcast = { id: "", kind: "broadcast", name: "", mode: "automatic", enabled: true, source: { chatId: "", chatType: "supergroup", threadId: "", groupName: "", topicName: "" }, targets: [] };
 
@@ -239,6 +252,8 @@ export default function DistributionPage() {
         <Summary label="待审核" value={data.review.length} detail="默认保留 7 天" />
       </div>
 
+      {view === "automation" ? <OfficialPublishingWorkflow status={publisherStatus} detail={publisherDetail} ready={Boolean(data.publisher?.ready)} /> : null}
+
       {notice ? <div role="status" className="mb-5 rounded-lg border border-ops-line bg-white px-4 py-3 text-sm font-bold text-[#33423b]">{notice}</div> : null}
       {validation ? <ValidationPanel result={validation} onClose={() => setValidation(null)} /> : null}
 
@@ -262,6 +277,28 @@ export default function DistributionPage() {
   function resolveTargets(keys) {
     return (Array.isArray(keys) ? keys : []).map((key) => targetOptions(groups).find((option) => option.key === key)?.target).filter(Boolean);
   }
+}
+
+function OfficialPublishingWorkflow({ status, detail, ready }) {
+  return <Card className="mb-5 p-5">
+    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+      <div>
+        <p className="text-base font-black text-ops-ink">官方群身份自动发布工作流</p>
+        <p className="mt-1 text-xs leading-5 text-ops-muted">后台生成的图片、正文与 Caption 必须逐字发送，禁止翻译、摘要、改写、增删或重新排版。图片带 Caption 的任务保持为一条 Telegram 消息；Daily Events 保持“独立海报 + 独立正文”。</p>
+      </div>
+      <StatusPill ok={ready}>{status}</StatusPill>
+    </div>
+    <p className="mt-3 text-xs leading-5 text-ops-muted">{detail}</p>
+    <ol className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      {officialPublishingSteps.map((step, index) => <li className="rounded-lg border border-ops-line bg-[#f7faf8] p-3" key={step}><span className="mr-2 inline-flex size-6 items-center justify-center rounded-full bg-ops-accent text-xs font-black text-white">{index + 1}</span><span className="text-xs font-black text-ops-ink">{step}</span></li>)}
+    </ol>
+    <div className="mt-4 rounded-lg border border-[#d9bd73] bg-[#fff9e8] p-3">
+      <p className="text-xs font-black text-[#5f4513]">当前验收路由（仅 DEMO Academy）</p>
+      <ul className="mt-2 grid gap-1 text-xs leading-5 text-[#7b642f] md:grid-cols-3">
+        {officialPublishingRoutes.map((route) => <li key={route}>{route}</li>)}
+      </ul>
+    </div>
+  </Card>;
 }
 
 function AutomationView({ form, setForm, rules, groups, socialPackages, publisherName, busy, selected, setSelected, onDeleteMany, onSave, onEdit, onAction, onValidate, onPersistSocial, onNotice }) {
