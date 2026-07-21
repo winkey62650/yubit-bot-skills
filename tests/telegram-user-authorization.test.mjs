@@ -28,6 +28,7 @@ test("Telegram user authorization persists the resulting user session", async ()
   const status = await authorizeTelegramUser({
     client,
     store,
+    apiCredentials: { apiId: 12345, apiHash: "api-hash" },
     phoneNumber: async () => "+10000000000",
     phoneCode: async () => "12345",
     password: async () => "two-factor"
@@ -37,6 +38,7 @@ test("Telegram user authorization persists the resulting user session", async ()
   assert.equal(saved.length, 1);
   assert.equal(saved[0].session, "authorized-session");
   assert.equal(saved[0].user.username, "Serenity_Crypto");
+  assert.deepEqual(saved[0].apiCredentials, { apiId: 12345, apiHash: "api-hash" });
   assert.deepEqual(status, { authorized: true, username: "Serenity_Crypto" });
 });
 

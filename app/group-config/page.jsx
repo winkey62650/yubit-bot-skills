@@ -143,7 +143,7 @@ export default function GroupConfigPage() {
       <PageHeader
         title="群、Channel 与 Topic 配置"
         desc="这里只维护群、Channel、Topic 与三个 Bot 的发现和权限状态；实际出站发布统一由 @Serenity_Crypto 完成。"
-        action={<Link className="grid min-h-11 place-items-center rounded-lg bg-ops-accent px-5 text-sm font-black text-white" href="/distribution">进入内容分发中心</Link>}
+        action={<div className="flex flex-wrap gap-3"><Link className="grid min-h-11 place-items-center rounded-lg border border-ops-accent px-5 text-sm font-black text-ops-accent" href="/telegram-user-authorization">授权发布账号</Link><Link className="grid min-h-11 place-items-center rounded-lg bg-ops-accent px-5 text-sm font-black text-white" href="/distribution">进入内容分发中心</Link></div>}
       />
 
       <section className="mb-5 grid overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops sm:grid-cols-2 xl:grid-cols-5">

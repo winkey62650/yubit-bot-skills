@@ -70,6 +70,7 @@ try {
   const status = await authorizeTelegramUser({
     client,
     store,
+    apiCredentials: { apiId, apiHash },
     phoneNumber: () => hiddenPrompt("Telegram phone number (hidden)"),
     phoneCode: () => hiddenPrompt("Telegram login code (hidden)"),
     password: () => hiddenPrompt("Telegram 2FA password (hidden)"),

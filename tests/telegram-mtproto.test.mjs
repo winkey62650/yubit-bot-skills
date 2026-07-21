@@ -127,3 +127,26 @@ test("MTProto credentials and an encrypted persisted session are required before
   );
   assert.equal(created, 0);
 });
+
+test("MTProto publisher can restore encrypted API credentials saved by the web authorization flow", async () => {
+  const harness = fakeClientHarness();
+  const transport = createTelegramMtprotoTransport({
+    env: { TELEGRAM_USER_PUBLISHER_USERNAME: "Serenity_Crypto" },
+    loadSession: async () => ({
+      session: "persisted-user-session",
+      username: "Serenity_Crypto",
+      apiId: 54321,
+      apiHash: "persisted-api-hash"
+    }),
+    createClient: async (options) => {
+      harness.calls.push({ kind: "createClient", options });
+      return harness.client;
+    }
+  });
+
+  await transport("ignored", "sendMessage", { chat_id: CHANNEL_ID, text: "Demo only" });
+
+  const created = harness.calls.find((call) => call.kind === "createClient");
+  assert.equal(created.options.apiId, 54321);
+  assert.equal(created.options.apiHash, "persisted-api-hash");
+});

@@ -8,6 +8,7 @@ const navItems = [
   { href: "/group-config", label: "群配置" },
   { href: "/new-group", label: "新群初始化" },
   { href: "/distribution", label: "内容分发中心" },
+  { href: "/telegram-user-authorization", label: "发布账号授权" },
   { href: "/trading", label: "交易中心" },
   { href: "/bots", label: "机器人配置" },
   { href: "/groups", label: "群数据" },

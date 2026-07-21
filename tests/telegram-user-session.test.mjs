@@ -34,11 +34,15 @@ test("Telegram user session is encrypted at rest and restores only for the expec
 
   await store.save({
     session: "sensitive-mtproto-session",
-    user: { id: 901n, username: "Serenity_Crypto", firstName: "Serenity", bot: false }
+    user: { id: 901n, username: "Serenity_Crypto", firstName: "Serenity", bot: false },
+    apiCredentials: { apiId: 12345, apiHash: "sensitive-api-hash" }
   });
 
   const raw = values.get("telegram-user-publisher-v1");
   assert.equal(JSON.stringify(raw).includes("sensitive-mtproto-session"), false);
+  assert.equal(JSON.stringify(raw).includes("sensitive-api-hash"), false);
+  assert.equal(raw.apiId, 12345);
+  assert.ok(raw.encryptedApiHash.ciphertext);
   assert.equal(raw.username, "Serenity_Crypto");
   assert.equal(raw.userId, "901");
   assert.equal(raw.authorizedAt, "2026-07-21T08:00:00.000Z");
@@ -46,6 +50,8 @@ test("Telegram user session is encrypted at rest and restores only for the expec
 
   const restored = await store.load();
   assert.equal(restored.session, "sensitive-mtproto-session");
+  assert.equal(restored.apiId, 12345);
+  assert.equal(restored.apiHash, "sensitive-api-hash");
   assert.equal(restored.username, "Serenity_Crypto");
 });
 
@@ -88,12 +94,14 @@ test("Telegram publisher health never exposes the encrypted session", async () =
   });
   await store.save({
     session: "server-session",
-    user: { id: 901, username: "Serenity_Crypto", firstName: "Serenity", bot: false }
+    user: { id: 901, username: "Serenity_Crypto", firstName: "Serenity", bot: false },
+    apiCredentials: { apiId: 12345, apiHash: "api-hash" }
   });
 
   const health = await store.status();
   assert.deepEqual(health, {
     configured: true,
+    credentialsConfigured: true,
     authorized: true,
     expectedUsername: "Serenity_Crypto",
     username: "Serenity_Crypto",
@@ -123,12 +131,14 @@ test("publisher health combines safe persisted authorization with routing readin
   });
   await store.save({
     session: "never-return-this",
-    user: { id: 901, username: "Serenity_Crypto", firstName: "Serenity", bot: false }
+    user: { id: 901, username: "Serenity_Crypto", firstName: "Serenity", bot: false },
+    apiCredentials: { apiId: 12345, apiHash: "api-hash" }
   });
 
   const health = await telegramUserPublisherHealth({ repository, env });
   assert.equal(health.ready, true);
   assert.equal(health.authorized, true);
+  assert.equal(health.credentialsReady, true);
   assert.equal(health.username, "@Serenity_Crypto");
   assert.deepEqual(health.approvedTargetIds, ["-1003862539988"]);
   assert.equal(JSON.stringify(health).includes("never-return-this"), false);
