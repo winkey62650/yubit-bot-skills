@@ -23,10 +23,15 @@ jobs:
       - name: Deploy the latest code/academy release
         env:
           SSHPASS: ${{ secrets.YUBIT_SERVER_PASSWORD }}
+          DESKTOP_PUBLISHER_SECRET: ${{ secrets.DESKTOP_PUBLISHER_SECRET }}
           APPROVED_DISTRIBUTION_TARGETS: ${{ vars.TELEGRAM_DISTRIBUTION_APPROVED_TARGETS }}
         run: |
           if [ -z "$SSHPASS" ]; then
             echo "YUBIT_SERVER_PASSWORD is not configured." >&2
+            exit 1
+          fi
+          if [ -z "$DESKTOP_PUBLISHER_SECRET" ]; then
+            echo "DESKTOP_PUBLISHER_SECRET is not configured." >&2
             exit 1
           fi
           if ! [[ "$APPROVED_DISTRIBUTION_TARGETS" =~ ^-?[0-9]+:([1-9][0-9]*|channel)(,-?[0-9]+:([1-9][0-9]*|channel))*$ ]]; then
@@ -34,21 +39,23 @@ jobs:
             exit 1
           fi
           policy_b64="$(printf '%s' "$APPROVED_DISTRIBUTION_TARGETS" | base64 -w0)"
+          desktop_secret_b64="$(printf '%s' "$DESKTOP_PUBLISHER_SECRET" | base64 -w0)"
           sshpass -e ssh \
             -o ConnectTimeout=20 \
             -o ServerAliveInterval=10 \
             -o StrictHostKeyChecking=accept-new \
             ubuntu@152.32.161.174 \
-            "POLICY_B64='$policy_b64' bash -s" <<'REMOTE'
+            "POLICY_B64='$policy_b64' DESKTOP_SECRET_B64='$desktop_secret_b64' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           env_file=/etc/yubit-academy/production.env
           approved_targets="$(printf '%s' "$POLICY_B64" | base64 -d)"
+          desktop_publisher_secret="$(printf '%s' "$DESKTOP_SECRET_B64" | base64 -d)"
           session_key="$(sudo awk -F= '$1 == "TELEGRAM_USER_SESSION_ENCRYPTION_KEY" { sub(/^[^=]*=/, ""); print; exit }' "$env_file")"
           if [ -z "$session_key" ]; then
             session_key="$(openssl rand -hex 32)"
           fi
           env_tmp="$(mktemp)"
-          sudo awk '!/^(TELEGRAM_DEMO_ONLY|TELEGRAM_DISTRIBUTION_APPROVED_TARGETS|TRADING_DEMO_ONLY|TELEGRAM_PUBLISHER_MODE|TELEGRAM_BOT_PUBLISHER_USERNAME|TELEGRAM_USER_PUBLISHER_REQUIRED|TELEGRAM_USER_PUBLISHER_TARGETS|TELEGRAM_USER_PUBLISHER_USERNAME|TELEGRAM_USER_SESSION_ENCRYPTION_KEY|TELEGRAM_DESKTOP_PUBLISHER_REQUIRED)=/' "$env_file" >"$env_tmp"
+          sudo awk '!/^(TELEGRAM_DEMO_ONLY|TELEGRAM_DISTRIBUTION_APPROVED_TARGETS|TRADING_DEMO_ONLY|TELEGRAM_PUBLISHER_MODE|TELEGRAM_BOT_PUBLISHER_USERNAME|TELEGRAM_USER_PUBLISHER_REQUIRED|TELEGRAM_USER_PUBLISHER_TARGETS|TELEGRAM_USER_PUBLISHER_USERNAME|TELEGRAM_USER_SESSION_ENCRYPTION_KEY|TELEGRAM_DESKTOP_PUBLISHER_REQUIRED|DESKTOP_PUBLISHER_SECRET)=/' "$env_file" >"$env_tmp"
           {
             printf 'TELEGRAM_DEMO_ONLY=true\n'
             printf 'TELEGRAM_DISTRIBUTION_APPROVED_TARGETS=%s\n' "$approved_targets"
@@ -59,6 +66,7 @@ jobs:
             printf 'TELEGRAM_USER_PUBLISHER_USERNAME=Serenity_Crypto\n'
             printf 'TELEGRAM_USER_SESSION_ENCRYPTION_KEY=%s\n' "$session_key"
             printf 'TELEGRAM_DESKTOP_PUBLISHER_REQUIRED=true\n'
+            printf 'DESKTOP_PUBLISHER_SECRET=%s\n' "$desktop_publisher_secret"
           } >>"$env_tmp"
           sudo install -m 0600 -o root -g root "$env_tmp" "$env_file"
           rm -f "$env_tmp"

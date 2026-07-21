@@ -718,6 +718,7 @@ test("GitHub Actions keeps distribution as a manual server recovery path", async
 
 test("production deployment uses the official Demo Forum group identity and keeps Trader Demo-only", async () => {
   const workflow = await readFile(new URL("../.github/workflows/deploy-production-server.yml", import.meta.url), "utf8");
+  const desktopRoute = await readFile(new URL("../app/api/cron/desktop-publisher/route.js", import.meta.url), "utf8");
 
   assert.match(workflow, /vars\.TELEGRAM_DISTRIBUTION_APPROVED_TARGETS/);
   assert.match(workflow, /\(\[1-9\]\[0-9\]\*\|channel\)/);
@@ -730,6 +731,10 @@ test("production deployment uses the official Demo Forum group identity and keep
   assert.match(workflow, /TELEGRAM_USER_PUBLISHER_TARGETS=-1003710405969/);
   assert.match(workflow, /TELEGRAM_USER_SESSION_ENCRYPTION_KEY=%s/);
   assert.match(workflow, /TELEGRAM_DESKTOP_PUBLISHER_REQUIRED=true/);
+  assert.match(workflow, /secrets\.DESKTOP_PUBLISHER_SECRET/);
+  assert.match(workflow, /DESKTOP_PUBLISHER_SECRET=%s/);
+  assert.match(desktopRoute, /process\.env\.DESKTOP_PUBLISHER_SECRET/);
+  assert.doesNotMatch(desktopRoute, /cronSecretConfig/);
   assert.doesNotMatch(workflow, /TELEGRAM_PUBLISHER_MODE=bot/);
   assert.doesNotMatch(workflow, /TELEGRAM_USER_PUBLISHER_TARGETS=-1003862539988/);
   assert.match(workflow, /sudo install -m 0600/);

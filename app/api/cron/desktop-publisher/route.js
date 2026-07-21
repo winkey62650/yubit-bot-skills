@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { cronSecretConfig } from "../../../../lib/deployment-config.mjs";
 import {
   claimDesktopPublisherDelivery,
   completeDesktopPublisherDelivery
@@ -10,7 +9,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 function authorized(request) {
-  const secret = cronSecretConfig(process.env).secret;
+  const secret = String(process.env.DESKTOP_PUBLISHER_SECRET || "").trim();
   return Boolean(secret) && request.headers.get("authorization") === `Bearer ${secret}`;
 }
 
