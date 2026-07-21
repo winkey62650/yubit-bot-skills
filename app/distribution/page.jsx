@@ -338,6 +338,7 @@ function OfficialPublishingWorkflow({ status, detail, ready }) {
     <div className="mt-4">
       <p className="text-xs font-black text-ops-ink">Telegram 成品契约</p>
       <p className="mt-1 text-xs leading-5 text-ops-muted">实际发送必须与已定稿 payload 的 imageUrl、caption、text 逐字段一致；任何字段不一致都应停止并记录失败，不能发送近似版本。</p>
+      <p className="mt-1 text-xs leading-5 text-[#9a5f31]">多行 Caption / 正文必须通过系统剪贴板一次性粘贴，禁止逐字输入；发送前比对 emoji、标点、空行和服务端 payload，任何差异立即停止并回写失败。</p>
       <div className="mt-3 grid gap-3 lg:grid-cols-3">
         {officialPublishingContracts.map((contract) => <div className="rounded-lg border border-ops-line bg-[#f7faf8] p-3" key={contract.name}>
           <p className="text-sm font-black text-ops-ink">{contract.name}</p>

@@ -41,6 +41,9 @@ test("automatic publishing explains the official identity workflow and exact top
   assert.match(pageSource, /禁止出现 OKX fallback/);
   assert.match(pageSource, /英文；禁止出现 Data Source 和 Hashtag/);
   assert.match(pageSource, /实际发送必须与已定稿 payload 的 imageUrl、caption、text 逐字段一致/);
+  assert.match(pageSource, /系统剪贴板一次性粘贴/);
+  assert.match(pageSource, /禁止逐字输入/);
+  assert.match(pageSource, /emoji、标点、空行/);
   assert.match(pageSource, /发布检查点/);
   assert.match(pageSource, /已回写 \$\{row\.publisherProgress\.length\} 步/);
 });

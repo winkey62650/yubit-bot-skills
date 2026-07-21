@@ -616,6 +616,8 @@ test("desktop publishing queues generated content and completes only after a Dem
   assert.equal(claimed.contractVersion, "telegram-template-v1");
   assert.equal(claimed.contentPolicy, "verbatim");
   assert.equal(claimed.identityPolicy, "group-official");
+  assert.equal(claimed.inputPolicy, "clipboard-paste");
+  assert.equal(claimed.newlinePolicy, "preserve");
   assert.ok(claimed.leaseId);
   assert.deepEqual(claimed.steps.map(({ kind, imageUrl, caption, text }) => ({ kind, imageUrl, caption, text })), [
     { kind: "photo", imageUrl: "https://academy.example.com/api/media/events.png", caption: "", text: undefined },
