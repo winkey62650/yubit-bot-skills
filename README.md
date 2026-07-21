@@ -239,6 +239,19 @@ TELEGRAM_CHAT_ID="-100..."
 TELEGRAM_BOT_TOKEN="123:abc"
 ```
 
+Production outbound publishing uses the authorized Telegram user account and never silently falls back to a Bot identity. Configure these values only in the server environment:
+
+```bash
+TELEGRAM_API_ID="..."
+TELEGRAM_API_HASH="..."
+TELEGRAM_USER_PUBLISHER_REQUIRED=true
+TELEGRAM_USER_PUBLISHER_USERNAME="Serenity_Crypto"
+TELEGRAM_USER_PUBLISHER_TARGETS="-1003862539988"
+TELEGRAM_USER_SESSION_ENCRYPTION_KEY="64-character-hex-key"
+```
+
+Authorize once from an interactive server terminal with `npm run telegram:authorize-user`. The verification code and Telegram 2FA password are entered with terminal echo disabled and are never saved; only the encrypted MTProto session is persisted. During the initial acceptance phase, keep the target allowlist limited to the private Demo Channel.
+
 The 15-minute cycle expects:
 
 ```bash

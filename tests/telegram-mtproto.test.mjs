@@ -2,24 +2,26 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createTelegramMtprotoTransport } from "../lib/telegram-mtproto.mjs";
 
-const CHAT_ID = "-1003710405969";
+const GROUP_ID = "-1003710405969";
+const CHANNEL_ID = "-1003862539988";
 
-function fakeClientHarness() {
+function fakeClientHarness({ authorized = true, username = "Serenity_Crypto" } = {}) {
   const calls = [];
   const client = {
-    async start(options) {
-      calls.push({ kind: "start", options });
+    async connect() {
+      calls.push({ kind: "connect" });
+    },
+    async checkAuthorization() {
+      calls.push({ kind: "checkAuthorization" });
+      return authorized;
+    },
+    async getMe() {
+      calls.push({ kind: "getMe" });
+      return { id: 42n, username, bot: false };
     },
     async getInputEntity(value) {
       calls.push({ kind: "entity", value });
-      return { className: "InputPeerChannel", channelId: 3710405969n, accessHash: 22n };
-    },
-    async invoke(request) {
-      calls.push({ kind: "invoke", request });
-      if (request.className === "channels.GetSendAs") {
-        return { peers: [{ peer: { channelId: 3710405969n } }] };
-      }
-      return { updates: [] };
+      return { className: "InputPeerChannel", channelId: BigInt(String(value).replace("-100", "")), accessHash: 22n };
     },
     async sendMessage(entity, options) {
       calls.push({ kind: "sendMessage", entity, options });
@@ -29,63 +31,99 @@ function fakeClientHarness() {
   return { calls, client };
 }
 
-test("MTProto sendMessage sends as Demo Academy inside the selected topic", async () => {
-  const { calls, client } = fakeClientHarness();
-  const transport = createTelegramMtprotoTransport({
+function configuredOptions(harness, extra = {}) {
+  return {
     env: {
       TELEGRAM_API_ID: "12345",
       TELEGRAM_API_HASH: "hash",
-      DEMO_TELEGRAM_CHAT_ID: CHAT_ID
+      TELEGRAM_USER_PUBLISHER_USERNAME: "Serenity_Crypto"
     },
-    createClient: async () => client
-  });
+    loadSession: async () => ({
+      session: "persisted-user-session",
+      username: "Serenity_Crypto"
+    }),
+    createClient: async (options) => {
+      harness.calls.push({ kind: "createClient", options });
+      return harness.client;
+    },
+    ...extra
+  };
+}
 
-  const result = await transport("8951722203:token", "sendMessage", {
-    chat_id: CHAT_ID,
+test("MTProto publisher restores the Serenity user session instead of authenticating a Bot", async () => {
+  const harness = fakeClientHarness();
+  const transport = createTelegramMtprotoTransport(configuredOptions(harness));
+
+  const result = await transport("speaker-bot-token-is-ignored", "sendMessage", {
+    chat_id: GROUP_ID,
     message_thread_id: 14,
     text: "Signal"
   });
 
   assert.deepEqual(result, { message_id: 777 });
-  const send = calls.find((call) => call.kind === "sendMessage");
-  assert.ok(send);
+  const created = harness.calls.find((call) => call.kind === "createClient");
+  assert.equal(created.options.session, "persisted-user-session");
+  assert.equal(harness.calls.some((call) => call.kind === "start"), false);
+  assert.equal(harness.calls.some((call) => call.kind === "connect"), true);
+  assert.equal(harness.calls.some((call) => call.kind === "checkAuthorization"), true);
+  const send = harness.calls.find((call) => call.kind === "sendMessage");
   assert.equal(send.options.message, "Signal");
-  assert.equal(send.options.sendAs.channelId, 3710405969n);
   assert.equal(send.options.topMsgId, 14);
   assert.equal(send.options.replyTo, 14);
+  assert.equal(send.options.sendAs, undefined);
 });
 
-test("MTProto transport refuses a peer that Telegram does not permit as send-as", async () => {
-  const { client } = fakeClientHarness();
-  client.invoke = async (request) => {
-    if (request.className === "channels.GetSendAs") return { peers: [] };
-    return { updates: [] };
-  };
-  const transport = createTelegramMtprotoTransport({
-    env: {
-      TELEGRAM_API_ID: "12345",
-      TELEGRAM_API_HASH: "hash",
-      DEMO_TELEGRAM_CHAT_ID: CHAT_ID
-    },
-    createClient: async () => client
-  });
+test("native Telegram identity rules stay intact for channels and groups", async () => {
+  const harness = fakeClientHarness();
+  const transport = createTelegramMtprotoTransport(configuredOptions(harness));
 
+  await transport("first-bot", "sendMessage", { chat_id: GROUP_ID, text: "group" });
+  await transport("second-bot", "sendMessage", { chat_id: CHANNEL_ID, text: "channel" });
+
+  const sends = harness.calls.filter((call) => call.kind === "sendMessage");
+  assert.equal(sends.length, 2);
+  assert.equal(sends[0].options.sendAs, undefined, "forum/group must display the user account");
+  assert.equal(sends[1].options.sendAs, undefined, "channel must use Telegram's native channel identity");
+  assert.equal(harness.calls.filter((call) => call.kind === "createClient").length, 1);
+});
+
+test("MTProto publisher refuses an unauthorized or wrong user session", async () => {
+  const unauthorized = fakeClientHarness({ authorized: false });
+  const unauthorizedTransport = createTelegramMtprotoTransport(configuredOptions(unauthorized));
   await assert.rejects(
-    () => transport("8951722203:token", "sendMessage", { chat_id: CHAT_ID, text: "Signal" }),
-    (error) => error?.code === "TELEGRAM_GROUP_IDENTITY_NOT_ALLOWED"
+    () => unauthorizedTransport("ignored", "sendMessage", { chat_id: GROUP_ID, text: "Signal" }),
+    (error) => error?.code === "TELEGRAM_USER_SESSION_UNAUTHORIZED"
+  );
+
+  const wrongUser = fakeClientHarness({ username: "SomebodyElse" });
+  const wrongUserTransport = createTelegramMtprotoTransport(configuredOptions(wrongUser));
+  await assert.rejects(
+    () => wrongUserTransport("ignored", "sendMessage", { chat_id: GROUP_ID, text: "Signal" }),
+    (error) => error?.code === "TELEGRAM_USER_IDENTITY_MISMATCH"
   );
 });
 
-test("MTProto credentials are required before any connection is created", async () => {
+test("MTProto credentials and an encrypted persisted session are required before sending", async () => {
   let created = 0;
-  const transport = createTelegramMtprotoTransport({
-    env: { DEMO_TELEGRAM_CHAT_ID: CHAT_ID },
+  const withoutCredentials = createTelegramMtprotoTransport({
+    env: {},
+    loadSession: async () => ({ session: "session", username: "Serenity_Crypto" }),
     createClient: async () => { created += 1; }
   });
-
   await assert.rejects(
-    () => transport("8951722203:token", "sendMessage", { chat_id: CHAT_ID, text: "Signal" }),
-    (error) => error?.code === "TELEGRAM_GROUP_IDENTITY_NOT_CONFIGURED"
+    () => withoutCredentials("ignored", "sendMessage", { chat_id: GROUP_ID, text: "Signal" }),
+    (error) => error?.code === "TELEGRAM_USER_PUBLISHER_NOT_CONFIGURED"
+  );
+  assert.equal(created, 0);
+
+  const withoutSession = createTelegramMtprotoTransport({
+    env: { TELEGRAM_API_ID: "12345", TELEGRAM_API_HASH: "hash" },
+    loadSession: async () => { throw Object.assign(new Error("missing"), { code: "TELEGRAM_USER_SESSION_NOT_CONFIGURED" }); },
+    createClient: async () => { created += 1; }
+  });
+  await assert.rejects(
+    () => withoutSession("ignored", "sendMessage", { chat_id: GROUP_ID, text: "Signal" }),
+    (error) => error?.code === "TELEGRAM_USER_SESSION_NOT_CONFIGURED"
   );
   assert.equal(created, 0);
 });

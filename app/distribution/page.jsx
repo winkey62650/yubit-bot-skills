@@ -44,7 +44,7 @@ const emptyBroadcast = { id: "", kind: "broadcast", name: "", mode: "automatic",
 
 export default function DistributionPage() {
   const [view, setView] = useState("automation");
-  const [data, setData] = useState({ rules: [], review: [], deliveries: [], database: null, migration: null });
+  const [data, setData] = useState({ rules: [], review: [], deliveries: [], database: null, publisher: null, migration: null });
   const [groups, setGroups] = useState([]);
   const [socialPackages, setSocialPackages] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -202,6 +202,7 @@ export default function DistributionPage() {
   const automationRules = data.rules.filter((rule) => rule.kind === "automation");
   const broadcastRules = data.rules.filter((rule) => rule.kind === "broadcast");
   const socialReadiness = buildSocialSourceReadiness(socialPackages);
+  const publisherName = data.publisher?.username || "@Serenity_Crypto";
 
   useEffect(() => {
     setSelectedAutomationRules((current) => reconcileRuleSelection(current, data.rules.filter((rule) => rule.kind === "automation")));
@@ -212,17 +213,18 @@ export default function DistributionPage() {
     <ConsoleShell>
       <PageHeader
         title="内容分发中心"
-        desc="自动内容由 SpeakerBot 定时发布；Telegram 新消息广播固定由 ForwardBot 实时处理。群配置仅维护群、Channel、Topic 与 Bot 健康状态。"
+        desc={`自动内容与广播结果统一由 ${publisherName} 发布；ForwardBot 只负责接收入站新消息。群配置仅维护群、Channel、Topic 与 Bot 健康状态。`}
         action={<button className="min-h-11 rounded-lg border border-ops-accent px-5 text-sm font-black text-ops-accent disabled:opacity-50" disabled={Boolean(busy)} onClick={() => post({ action: "configure-webhook" }, "ForwardBot Webhook 已配置。")}>配置 ForwardBot Webhook</button>}
       />
 
       <div className="mb-5 rounded-lg border border-[#d9bd73] bg-[#fff9e8] px-4 py-3" role="status">
         <p className="text-sm font-black text-[#5f4513]">安全验收锁已开启</p>
-        <p className="mt-1 text-xs leading-5 text-[#7b642f]">默认只投递到 DEMO Academy；本次明确批准的私有测试 Channel 可单独加入生产白名单。其他群或 Channel 仍需你再次批准。</p>
+        <p className="mt-1 text-xs leading-5 text-[#7b642f]">当前生产白名单只允许私有 demo channel。其他群或 Channel 必须得到你再次批准后才可加入，系统不会回退到 Bot 发送。</p>
       </div>
 
-      <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+      <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
         <Summary label="数据库" value={data.database?.ok ? "正常" : "待配置"} detail={data.database?.driver || "未连接"} />
+        <Summary label="发布账号" value={data.publisher?.ready ? "已授权" : data.publisher?.authorized ? "配置不完整" : "待授权"} detail={data.publisher?.authorized ? `${publisherName} · ${data.publisher?.approvedTargetIds?.length || 0} 个白名单目标` : "需完成加密用户会话授权"} />
         <Summary label="自动任务" value={automationRules.length} detail={`${automationRules.filter((rule) => rule.enabled).length} 条启用`} />
         <Summary label="广播规则" value={broadcastRules.length} detail={`${broadcastRules.filter((rule) => rule.enabled).length} 条启用`} />
         <Summary label="代理来源" value={socialReadiness.enabledCount} detail={socialReadiness.ready ? `${socialReadiness.stableCount} 条稳定可用` : "需要添加 X / YouTube 来源"} />
@@ -242,8 +244,8 @@ export default function DistributionPage() {
       </div>
 
       {loading ? <Card className="p-8 text-center font-bold text-ops-muted">正在加载持久化配置…</Card> : null}
-      {!loading && view === "automation" ? <AutomationView form={automationForm} setForm={setAutomationForm} rules={automationRules} groups={groups} socialPackages={socialPackages} busy={busy} selected={selectedAutomationRules} setSelected={setSelectedAutomationRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedAutomationRules, "自动任务")} onSave={() => saveRule(automationForm, () => setAutomationForm(emptyAutomation))} onEdit={setAutomationForm} onAction={post} onValidate={validate} onPersistSocial={saveSocialPackages} onNotice={setNotice} /> : null}
-      {!loading && view === "broadcast" ? <BroadcastView form={broadcastForm} setForm={setBroadcastForm} rules={broadcastRules} groups={groups} busy={busy} selected={selectedBroadcastRules} setSelected={setSelectedBroadcastRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedBroadcastRules, "广播规则")} backfill={backfill} setBackfill={setBackfill} onBackfill={previewBackfill} onSave={() => saveRule(broadcastForm, () => setBroadcastForm(emptyBroadcast))} onEdit={setBroadcastForm} onAction={post} onValidate={validate} /> : null}
+      {!loading && view === "automation" ? <AutomationView form={automationForm} setForm={setAutomationForm} rules={automationRules} groups={groups} socialPackages={socialPackages} publisherName={publisherName} busy={busy} selected={selectedAutomationRules} setSelected={setSelectedAutomationRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedAutomationRules, "自动任务")} onSave={() => saveRule(automationForm, () => setAutomationForm(emptyAutomation))} onEdit={setAutomationForm} onAction={post} onValidate={validate} onPersistSocial={saveSocialPackages} onNotice={setNotice} /> : null}
+      {!loading && view === "broadcast" ? <BroadcastView form={broadcastForm} setForm={setBroadcastForm} rules={broadcastRules} groups={groups} publisherName={publisherName} busy={busy} selected={selectedBroadcastRules} setSelected={setSelectedBroadcastRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedBroadcastRules, "广播规则")} backfill={backfill} setBackfill={setBackfill} onBackfill={previewBackfill} onSave={() => saveRule(broadcastForm, () => setBroadcastForm(emptyBroadcast))} onEdit={setBroadcastForm} onAction={post} onValidate={validate} /> : null}
       {!loading && view === "review" ? <ReviewView events={data.review} selected={selectedReviews} setSelected={setSelectedReviews} busy={busy} onAction={reviewAction} /> : null}
       {!loading && view === "logs" ? <LogsView deliveries={data.deliveries} busy={busy} onRetry={async (id) => { setBusy("retry"); try { const response = await fetch("/api/distribution/logs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "retry", deliveryId: id }) }); const result = await response.json(); if (!response.ok || !result.ok) throw new Error(result.error); setNotice("失败目标已单独重试，不影响其他目标。"); await loadAll(); } catch (error) { setNotice(error.message); } finally { setBusy(""); } }} /> : null}
     </ConsoleShell>
@@ -254,7 +256,7 @@ export default function DistributionPage() {
   }
 }
 
-function AutomationView({ form, setForm, rules, groups, socialPackages, busy, selected, setSelected, onDeleteMany, onSave, onEdit, onAction, onValidate, onPersistSocial, onNotice }) {
+function AutomationView({ form, setForm, rules, groups, socialPackages, publisherName, busy, selected, setSelected, onDeleteMany, onSave, onEdit, onAction, onValidate, onPersistSocial, onNotice }) {
   const template = getContentTemplate(form.contentType);
   const [confirmedFor, setConfirmedFor] = useState("");
   const [preview, setPreview] = useState(null);
@@ -297,13 +299,13 @@ function AutomationView({ form, setForm, rules, groups, socialPackages, busy, se
       <Toggle checked={form.enabled} label="创建后立即启用" onChange={(enabled) => setForm({ ...form, enabled })} />
       <label className="flex items-start gap-3 rounded-lg border border-ops-line bg-[#fbfcfb] p-3 text-sm font-bold leading-6 text-[#33423b]"><input className="mt-1" checked={confirmed} onChange={(event) => setConfirmedFor(event.target.checked ? fingerprint : "")} type="checkbox" /><span>我已确认发送模板、频率和目标。动态数据会在实际执行时刷新。</span></label>
     </RuleForm>
-    <TelegramTemplatePreview form={form} template={template} preview={preview} previewState={previewState} onGenerate={generatePreview} />
+    <TelegramTemplatePreview form={form} template={template} publisherName={publisherName} preview={preview} previewState={previewState} onGenerate={generatePreview} />
     </div>
     <RuleList busy={busy} empty="暂无自动任务。" kindLabel="自动任务" rules={rules} selected={selected} setSelected={setSelected} onDeleteMany={onDeleteMany} onEdit={(rule) => onEdit({ ...rule, targets: rule.targets.map(targetKey) })} onAction={onAction} onValidate={onValidate} />
   </div>;
 }
 
-function BroadcastView({ form, setForm, rules, groups, busy, selected, setSelected, onDeleteMany, backfill, setBackfill, onBackfill, onSave, onEdit, onAction, onValidate }) {
+function BroadcastView({ form, setForm, rules, groups, publisherName, busy, selected, setSelected, onDeleteMany, backfill, setBackfill, onBackfill, onSave, onEdit, onAction, onValidate }) {
   const sources = sourceOptions(groups);
   const sourceValue = sourceKey(form.source);
   const resolvedTargets = form.targets.map((key) => targetOptions(groups).find((option) => option.key === key)?.target).filter(Boolean);
@@ -321,9 +323,9 @@ function BroadcastView({ form, setForm, rules, groups, busy, selected, setSelect
         <FormStep number="3" title="选择转发目标" desc="一条来源可以同时转发到多个群 Topic 或 Channel。" />
         <TargetPicker groups={groups} selected={form.targets} onChange={(targets) => setForm({ ...form, targets })} />
         <Toggle checked={form.enabled} label="创建后立即启用" onChange={(enabled) => setForm({ ...form, enabled })} />
-        <div className="rounded-lg bg-[#fff8e8] p-3 text-xs leading-5 text-[#79591e]">ForwardBot 固定负责广播。Telegram 不会把其他机器人发出的消息交给 ForwardBot；机器人内容请使用「自动发布」直接选择全部目标。Bot API 也无法感知来源消息删除；可处理的文字与 Caption 编辑会同步。</div>
+        <div className="rounded-lg bg-[#fff8e8] p-3 text-xs leading-5 text-[#79591e]">ForwardBot 固定负责接收入站广播；{publisherName} 负责向每个目标发布。Telegram 不会把其他机器人发出的消息交给 ForwardBot；机器人内容请使用「自动发布」直接选择全部目标。Bot API 也无法感知来源消息删除；可处理的文字与 Caption 编辑会同步。</div>
       </RuleForm>
-      <BroadcastRoutePreview route={route} targets={resolvedTargets} mode={form.mode} />
+      <BroadcastRoutePreview route={route} targets={resolvedTargets} mode={form.mode} publisherName={publisherName} />
     </div>
     <div className="grid items-start gap-5 xl:grid-cols-2"><BackfillPanel rules={rules} value={backfill} setValue={setBackfill} busy={busy} onRun={onBackfill} /><RuleList busy={busy} empty="暂无 Telegram 广播规则。" kindLabel="广播规则" rules={rules} selected={selected} setSelected={setSelected} onDeleteMany={onDeleteMany} onEdit={(rule) => onEdit({ ...rule, source: { ...rule.source, threadId: rule.source.threadId || "" }, targets: rule.targets.map(targetKey) })} onAction={onAction} onValidate={onValidate} /></div>
   </div>;
@@ -337,7 +339,7 @@ function FormStep({ number, title, desc }) {
   return <div className="mt-1 flex gap-3 border-t border-ops-line pt-4 first:mt-0 first:border-t-0 first:pt-0"><span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#e6f7ef] text-xs font-black text-ops-accent">{number}</span><div><h3 className="text-sm font-black text-[#21352d]">{title}</h3><p className="mt-1 text-xs leading-5 text-ops-muted">{desc}</p></div></div>;
 }
 
-function TelegramTemplatePreview({ form, template, preview, previewState, onGenerate }) {
+function TelegramTemplatePreview({ form, template, publisherName, preview, previewState, onGenerate }) {
   const templatePreview = template.preview || null;
   const displayPreview = preview || templatePreview;
   const caption = displayPreview?.caption ? stripTelegramHtml(displayPreview.caption) : "当前模板还没有样稿，请生成一次真实内容预览。";
@@ -346,20 +348,20 @@ function TelegramTemplatePreview({ form, template, preview, previewState, onGene
     <div className="border-b border-ops-line p-5"><p className="text-xs font-black uppercase tracking-[.16em] text-ops-accent">发送前预览</p><div className="mt-1 flex flex-wrap items-center justify-between gap-2"><h2 className="text-xl font-black">Telegram 成品</h2><StatusPill tone={isLivePreview ? "green" : "amber"}>{isLivePreview ? "实时数据预览" : templatePreview ? "英文模板样稿" : "待生成"}</StatusPill></div></div>
     <div className="bg-[#e8f0ec] p-4 sm:p-5">
       <div className="mx-auto max-w-[520px] rounded-xl rounded-tl-sm bg-white p-3 shadow-sm">
-        <div className="flex items-center justify-between gap-3"><strong className="text-sm text-ops-accent">SpeakerBot</strong><span className="text-[11px] text-ops-muted">{template.format}</span></div>
+        <div className="flex items-center justify-between gap-3"><strong className="text-sm text-ops-accent">{publisherName}</strong><span className="text-[11px] text-ops-muted">{template.format}</span></div>
         {displayPreview?.imageUrl ? <img alt={`${template.label} Telegram 配图预览`} className="mt-3 aspect-video w-full rounded-lg object-cover" src={displayPreview.imageUrl} /> : null}
         <p className="mt-3 max-h-72 overflow-y-auto whitespace-pre-wrap break-words text-sm leading-6 text-[#24362f]">{caption}</p>
         <div className="mt-3 border-t border-[#edf1ef] pt-2 text-[11px] leading-5 text-ops-muted">{template.runtimeNote}</div>
       </div>
       {displayPreview?.items?.length ? <div className="mx-auto mt-2 max-w-[520px] rounded-xl rounded-tl-sm bg-white p-3 shadow-sm">
-        <div className="flex items-center justify-between gap-3"><strong className="text-sm text-ops-accent">SpeakerBot</strong><span className="text-[11px] text-ops-muted">English brief · 2/2</span></div>
+        <div className="flex items-center justify-between gap-3"><strong className="text-sm text-ops-accent">{publisherName}</strong><span className="text-[11px] text-ops-muted">English brief · 2/2</span></div>
         <ol className="mt-3 max-h-80 list-decimal space-y-3 overflow-y-auto pl-5 text-sm leading-6 text-[#24362f]">{displayPreview.items.map((item, index) => <li key={`${index}-${String(item).slice(0, 24)}`}>{typeof item === "string" ? item : item.title || item.name || JSON.stringify(item)}</li>)}</ol>
         <p className="mt-3 border-t border-[#edf1ef] pt-2 text-[11px] leading-5 text-[#9a5f31]">{displayPreview.disclaimer || templatePreview?.disclaimer}</p>
       </div> : null}
     </div>
     <div className="grid gap-3 p-5">
       {templatePreview?.sections?.length ? <div><p className="mb-2 text-xs font-black text-ops-muted">模板内容结构</p><div className="flex flex-wrap gap-2">{templatePreview.sections.map((section) => <span className="rounded-full bg-[#edf6f1] px-2.5 py-1 text-xs font-bold text-[#2d5a48]" key={section}>{section}</span>)}</div></div> : null}
-      <div className="grid gap-2 text-sm sm:grid-cols-2"><PreviewFact label="发送频率" value={labelFor(schedules, form.schedulePreset)} /><PreviewFact label="目标数量" value={`${form.targets.length} 个目标`} />{template.itemCountPolicy ? <PreviewFact label="内容条数" value={template.itemCountPolicy} /> : <PreviewFact label="建议位置" value={template.destinationHint} />}<PreviewFact label="发布身份" value="SpeakerBot" /></div>
+      <div className="grid gap-2 text-sm sm:grid-cols-2"><PreviewFact label="发送频率" value={labelFor(schedules, form.schedulePreset)} /><PreviewFact label="目标数量" value={`${form.targets.length} 个目标`} />{template.itemCountPolicy ? <PreviewFact label="内容条数" value={template.itemCountPolicy} /> : <PreviewFact label="建议位置" value={template.destinationHint} />}<PreviewFact label="发布身份" value={`${publisherName}（Channel 显示 Channel 名称与头像）`} /></div>
       {previewState && previewState !== "success" && previewState !== "loading" ? <p role="alert" className="rounded-lg bg-[#fff2ef] p-3 text-xs font-bold text-[#a04a3d]">{previewState}</p> : null}
       <button className="min-h-11 rounded-lg border border-ops-accent px-4 text-sm font-black text-ops-accent disabled:opacity-50" disabled={previewState === "loading" || !template.jobId} onClick={onGenerate} type="button">{previewState === "loading" ? "正在生成实时数据…" : preview ? "刷新实时数据预览" : "切换为本次实时数据预览"}</button>
       <p className="text-center text-xs leading-5 text-ops-muted">此操作只运行数据与模板，不会向 Telegram 发送消息。</p>
@@ -367,14 +369,14 @@ function TelegramTemplatePreview({ form, template, preview, previewState, onGene
   </Card>;
 }
 
-function BroadcastRoutePreview({ route, targets, mode }) {
+function BroadcastRoutePreview({ route, targets, mode, publisherName }) {
   return <Card className="overflow-hidden xl:sticky xl:top-5">
     <div className="border-b border-ops-line p-5"><p className="text-xs font-black uppercase tracking-[.16em] text-ops-accent">转发路径预览</p><div className="mt-1 flex flex-wrap items-center justify-between gap-2"><h2 className="text-xl font-black">来源到目标</h2><StatusPill tone={route.ready ? "green" : "amber"}>{route.ready ? "路径完整" : "尚未完成"}</StatusPill></div></div>
     <div className="grid gap-3 p-5">
       <RouteNode label="消息来源" value={route.sourceLabel} />
       <div className="border-l-2 border-dashed border-[#b7c9c0] py-2 pl-5 text-xs font-black text-ops-muted">ForwardBot 接收新消息</div>
       <RouteNode label={mode === "review" ? "待审核队列" : "自动处理"} value={route.processingLabel} accent />
-      <div className="border-l-2 border-dashed border-[#b7c9c0] py-2 pl-5 text-xs font-black text-ops-muted">逐目标独立发送与记录</div>
+      <div className="border-l-2 border-dashed border-[#b7c9c0] py-2 pl-5 text-xs font-black text-ops-muted">{publisherName} 逐目标独立发送与记录</div>
       <div className="rounded-lg border border-ops-line p-4"><div className="flex items-center justify-between"><span className="text-xs font-black uppercase tracking-wide text-ops-muted">转发目标</span><span className="text-sm font-black text-ops-accent">{route.targetCount} 个</span></div>{targets.length ? <ul className="mt-3 grid gap-2">{targets.map((target) => <li className="rounded-md bg-[#f6f9f7] px-3 py-2 text-sm font-bold text-[#33423b]" key={targetKey(target)}>{target.groupName || target.chatId} / {destinationLabel(target)}</li>)}</ul> : <p className="mt-3 text-sm text-ops-muted">选择目标后会在这里显示完整路径。</p>}</div>
       {!route.ready ? <p className="rounded-lg bg-[#fff8e8] p-3 text-xs font-bold leading-5 text-[#79591e]">保存前还需要：{route.missing.join("、")}。</p> : null}
       <div className="grid gap-2 border-t border-ops-line pt-4 text-xs leading-5 text-ops-muted"><p>支持文字、图片、视频、文件、链接、媒体组和可处理的 Caption 编辑。</p><p>源消息删除无法由 Telegram Bot API 感知，不会自动删除目标消息。</p></div>
