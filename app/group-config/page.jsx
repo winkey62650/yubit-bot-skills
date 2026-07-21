@@ -47,7 +47,7 @@ export default function GroupConfigPage() {
       if (!response.ok || !data.ok) throw new Error(data.error || "发布账号状态读取失败");
       setPublisher(data.publisher || null);
     } catch (error) {
-      setPublisher({ ready: false, username: "@Serenity_Crypto", lastError: error.message });
+      setPublisher({ mode: "bot", ready: false, username: "@Satoshi_geniustrader_bot", lastError: error.message });
     }
   }
 
@@ -122,7 +122,7 @@ export default function GroupConfigPage() {
       setRefreshError("");
       setManualChatId("");
       const readiness = data.group.type === "channel"
-        ? data.group.channelPublishingReady ? "Bot API 备用发帖权限正常" : "Bot API 备用发帖权限待处理"
+        ? data.group.channelPublishingReady ? "SpeakerBot 发帖权限正常" : "SpeakerBot 发帖权限待处理"
         : data.group.canUseTopics ? "Topics 已开启" : "Topics 未开启";
       setStatus(`${data.group.title} 已检测并保存：三个 Bot 管理员 ${data.group.adminBotCount}/3，${readiness}。`);
     } catch (error) {
@@ -137,13 +137,18 @@ export default function GroupConfigPage() {
   const channels = groups.filter((group) => group.type === "channel");
   const freshness = getLiveFreshness(generatedAt);
   const liveIsFresh = freshness.state === "fresh";
+  const publisherIsBot = (publisher?.mode || "bot") === "bot";
+  const publisherName = publisher?.username || "@Satoshi_geniustrader_bot";
+  const publisherStatus = publisher?.ready
+    ? publisherIsBot ? "Bot API 就绪" : "用户账号已授权"
+    : "发布器未就绪";
 
   return (
     <ConsoleShell>
       <PageHeader
         title="群、Channel 与 Topic 配置"
-        desc="这里只维护群、Channel、Topic 与三个 Bot 的发现和权限状态；实际出站发布统一由 @Serenity_Crypto 完成。"
-        action={<div className="flex flex-wrap gap-3"><Link className="grid min-h-11 place-items-center rounded-lg border border-ops-accent px-5 text-sm font-black text-ops-accent" href="/telegram-user-authorization">授权发布账号</Link><Link className="grid min-h-11 place-items-center rounded-lg bg-ops-accent px-5 text-sm font-black text-white" href="/distribution">进入内容分发中心</Link></div>}
+        desc={`这里只维护群、Channel、Topic 与三个 Bot 的发现和权限状态；实际出站发布统一由 ${publisherName} 完成。`}
+        action={<div className="flex flex-wrap gap-3">{!publisherIsBot ? <Link className="grid min-h-11 place-items-center rounded-lg border border-ops-accent px-5 text-sm font-black text-ops-accent" href="/telegram-user-authorization">授权发布账号</Link> : null}<Link className="grid min-h-11 place-items-center rounded-lg bg-ops-accent px-5 text-sm font-black text-white" href="/distribution">进入内容分发中心</Link></div>}
       />
 
       <section className="mb-5 grid overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops sm:grid-cols-2 xl:grid-cols-5">
@@ -151,7 +156,7 @@ export default function GroupConfigPage() {
         <Metric label="Forum 群" value={groups.filter((group) => group.canUseTopics).length} detail={liveIsFresh ? "已实时核验 Topics 开关" : "状态已过期，等待刷新"} />
         <Metric label="Channel" value={channels.length} detail={liveIsFresh ? "已实时识别频道类型" : "状态已过期，等待刷新"} />
         <Metric label="Topic 总数" value={topicCount} detail={`${confirmedTopics} 个已确认 Thread ID`} />
-        <Metric label="发布账号" value={publisher?.ready ? "已授权" : publisher?.authorized ? "配置不完整" : "待授权"} detail={`${publisher?.username || "@Serenity_Crypto"} · ${publisher?.approvedTargetIds?.length || 0} 个白名单目标`} />
+        <Metric label="发布器" value={publisherStatus} detail={`${publisherName} · ${publisher?.approvedTargetIds?.length || 0} 个白名单目标`} />
       </section>
 
       <Card className="overflow-hidden">
@@ -162,7 +167,7 @@ export default function GroupConfigPage() {
             </Field>
             <button className="min-h-11 rounded-lg bg-ops-accent px-5 text-sm font-black text-white disabled:opacity-50" disabled={busy} onClick={probeAndSaveChat} type="button">{busy ? "正在检测…" : "按群 ID 检测并保存"}</button>
           </div>
-          <p className="mt-2 text-xs font-bold text-ops-muted">无需在这台 Mac 登录三个 Bot。后台使用服务器端 Bot API 检查群、Channel、Topics 和 Bot 管理员权限；实际发布使用服务器端加密保存的 @Serenity_Crypto 用户会话。首次登记请填写以 -100 开头的 Chat ID。</p>
+          <p className="mt-2 text-xs font-bold text-ops-muted">无需在这台 Mac 登录三个 Bot。后台使用服务器端 Bot API 检查群、Channel、Topics 和 Bot 管理员权限，并由 SpeakerBot 执行发布；不需要创建 Telegram App 或填写 api_id/api_hash。首次登记请填写以 -100 开头的 Chat ID。</p>
         </div>
         <div className="flex flex-col gap-4 border-b border-ops-line p-5 md:flex-row md:items-center md:justify-between">
           <div><h2 className="text-xl font-black">Telegram 群 / Channel 健康状态</h2><p className="mt-1 text-sm text-ops-muted">刷新用于复核已登记对象；ForwardBot 启用 Webhook 后不再与 getUpdates 并行轮询。</p></div>
@@ -197,14 +202,14 @@ function GroupCard({ group, isFresh, publisher }) {
             : !bot.isAdmin
               ? bot.membership === "member" ? "已加入，非管理员" : "未确认权限"
               : isChannel
-                ? bot.name === "SpeakerBot" ? canPublish ? "管理员 · Bot API 备用发帖权限" : "管理员 · 缺少备用发帖权限" : "管理员"
+                ? bot.name === "SpeakerBot" ? canPublish ? "管理员 · Bot API 发帖权限" : "管理员 · 缺少发帖权限" : "管理员"
                 : `管理员${bot.canManageTopics ? " · 可管理 Topic" : ""}`;
           return <div className="rounded-lg border border-ops-line p-3" key={bot.name}><div className="font-black">{bot.name}</div><div className={`mt-1 text-xs font-bold ${isFresh && (isChannel ? bot.name !== "SpeakerBot" || canPublish : bot.isAdmin) ? "text-ops-accent" : "text-[#a04a3d]"}`}>{permissionLabel}</div></div>;
         })}
       </div>
     </div>
     {isChannel
-      ? <div className="mt-4 rounded-lg bg-[#f7f9f8] p-4"><div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm">Channel 内容分发</strong><span className={`text-xs font-bold ${publisherReadyForTarget ? "text-ops-accent" : "text-[#a04a3d]"}`}>{publisherReadyForTarget ? "用户发布已授权并在白名单" : targetApproved ? "白名单已加入，用户授权待完成" : "尚未加入发布白名单"}</span></div><p className="mt-2 text-xs leading-5 text-ops-muted">Channel 不使用 Topic。自动发布和 Telegram 广播由 @Serenity_Crypto 的加密服务器会话执行，Channel 显示 Channel 名称和头像；三个 Bot 的发帖权限仅用于权限健康检查与备用能力，不会自动回退。{group.isPrivateChannel ? "这是私有 Channel。" : group.username ? `公开地址：@${group.username}` : "未公开 username。"}</p>{publisher?.lastError ? <p className="mt-2 text-xs font-bold text-[#6f551d]">发布账号：{publisher.lastError}</p> : null}</div>
+      ? <div className="mt-4 rounded-lg bg-[#f7f9f8] p-4"><div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm">Channel 内容分发</strong><span className={`text-xs font-bold ${publisherReadyForTarget ? "text-ops-accent" : "text-[#a04a3d]"}`}>{publisherReadyForTarget ? "SpeakerBot 发布已就绪并在白名单" : targetApproved ? "白名单已加入，SpeakerBot 待恢复" : "尚未加入发布白名单"}</span></div><p className="mt-2 text-xs leading-5 text-ops-muted">Channel 不使用 Topic。自动发布和 Telegram 广播由 SpeakerBot 的 Bot API 执行；Telegram 会显示 Channel 名称和头像，不显示 Bot 头像和名称，也不需要本机登录 Telegram。{group.isPrivateChannel ? "这是私有 Channel。" : group.username ? `公开地址：@${group.username}` : "未公开 username。"}</p>{publisher?.lastError ? <p className="mt-2 text-xs font-bold text-[#6f551d]">发布器：{publisher.lastError}</p> : null}</div>
       : <div className="mt-4 rounded-lg bg-[#f7f9f8] p-4"><div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm">Topics：{knownCount} 个已知 / {resolvedCount} 个已确认</strong><span className="text-xs text-ops-muted">{group.canUseTopics ? "Topics 已开启" : "Topics 未开启"}</span></div><div className="mt-3 flex flex-wrap gap-2">{(group.topics || []).map((topic) => <span className={`rounded-full px-3 py-1 text-xs font-bold ${topic.threadId ? "bg-[#e6f7ef] text-ops-accent" : "bg-[#fff1df] text-[#8a5d1a]"}`} key={`${topic.name}-${topic.threadId || "template"}`}>{topic.name}{topic.threadId ? ` · ${topic.threadId}` : " · 待识别"}</span>)}</div></div>}
   </article>;
 }

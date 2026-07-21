@@ -144,3 +144,24 @@ test("publisher health combines safe persisted authorization with routing readin
   assert.equal(JSON.stringify(health).includes("never-return-this"), false);
   assert.equal(/encryptedSession|ciphertext|authTag/i.test(JSON.stringify(health)), false);
 });
+
+test("Bot publisher health is ready without Telegram app credentials or an MTProto session", async () => {
+  const { repository } = repositoryHarness();
+  const health = await telegramUserPublisherHealth({
+    repository,
+    env: {
+      TELEGRAM_PUBLISHER_MODE: "bot",
+      SPEAKER_BOT_TOKEN: "existing-speaker-token",
+      TELEGRAM_USER_PUBLISHER_TARGETS: "-1003862539988",
+      TELEGRAM_BOT_PUBLISHER_USERNAME: "Satoshi_geniustrader_bot"
+    }
+  });
+
+  assert.equal(health.mode, "bot");
+  assert.equal(health.required, false);
+  assert.equal(health.ready, true);
+  assert.equal(health.authorized, true);
+  assert.equal(health.username, "@Satoshi_geniustrader_bot");
+  assert.deepEqual(health.approvedTargetIds, ["-1003862539988"]);
+  assert.equal(health.userId, null);
+});

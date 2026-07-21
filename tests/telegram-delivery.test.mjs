@@ -86,6 +86,42 @@ test("production publishing fails closed when the user publisher flag is omitted
   assert.equal(telegramUserPublisherStatus(env).required, true);
 });
 
+test("explicit Bot publisher mode uses the existing SpeakerBot in production", async () => {
+  const calls = [];
+  const env = publisherEnv({
+    TELEGRAM_PUBLISHER_MODE: "bot",
+    SPEAKER_BOT_TOKEN: "speaker-token",
+    TELEGRAM_USER_PUBLISHER_REQUIRED: "true",
+    TELEGRAM_USER_PUBLISHER_TARGETS: DEMO_CHANNEL_ID
+  });
+  const delivery = createTelegramDelivery({
+    env,
+    botApiCall: async (...args) => {
+      calls.push({ transport: "bot", args });
+      return { message_id: 902 };
+    },
+    userPublisherCall: async () => assert.fail("Bot mode must not call the user publisher")
+  });
+
+  const result = await delivery("speaker-token", "sendMessage", {
+    chat_id: DEMO_CHANNEL_ID,
+    text: "Bot API publisher test"
+  });
+
+  assert.deepEqual(result, { message_id: 902 });
+  assert.equal(calls.length, 1);
+  assert.deepEqual(telegramUserPublisherStatus(env), {
+    mode: "bot",
+    required: false,
+    credentialsReady: true,
+    encryptionReady: true,
+    routingReady: true,
+    ready: true,
+    username: "@Satoshi_geniustrader_bot",
+    approvedTargetIds: [DEMO_CHANNEL_ID]
+  });
+});
+
 test("required user publishing blocks an outbound destination outside the Demo allowlist", async () => {
   let botCalls = 0;
   let userCalls = 0;
@@ -150,6 +186,7 @@ test("publisher target parsing and status are safe for the admin UI", () => {
 
   assert.deepEqual(userPublisherTargetIds(env), [DEMO_CHANNEL_ID, DEMO_GROUP_ID]);
   assert.deepEqual(telegramUserPublisherStatus(env), {
+    mode: "user",
     required: true,
     credentialsReady: true,
     encryptionReady: true,

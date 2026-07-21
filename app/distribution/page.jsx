@@ -202,7 +202,14 @@ export default function DistributionPage() {
   const automationRules = data.rules.filter((rule) => rule.kind === "automation");
   const broadcastRules = data.rules.filter((rule) => rule.kind === "broadcast");
   const socialReadiness = buildSocialSourceReadiness(socialPackages);
-  const publisherName = data.publisher?.username || "@Serenity_Crypto";
+  const publisherIsBot = (data.publisher?.mode || "bot") === "bot";
+  const publisherName = data.publisher?.username || "@Satoshi_geniustrader_bot";
+  const publisherStatus = data.publisher?.ready
+    ? publisherIsBot ? "Bot API 就绪" : "用户账号已授权"
+    : "发布器未就绪";
+  const publisherDetail = data.publisher?.ready
+    ? `${publisherName} · ${data.publisher?.approvedTargetIds?.length || 0} 个白名单目标`
+    : publisherIsBot ? "请检查 SpeakerBot token 与目标权限" : "需完成加密用户会话授权";
 
   useEffect(() => {
     setSelectedAutomationRules((current) => reconcileRuleSelection(current, data.rules.filter((rule) => rule.kind === "automation")));
@@ -219,12 +226,12 @@ export default function DistributionPage() {
 
       <div className="mb-5 rounded-lg border border-[#d9bd73] bg-[#fff9e8] px-4 py-3" role="status">
         <p className="text-sm font-black text-[#5f4513]">安全验收锁已开启</p>
-        <p className="mt-1 text-xs leading-5 text-[#7b642f]">当前生产白名单只允许私有 demo channel。其他群或 Channel 必须得到你再次批准后才可加入，系统不会回退到 Bot 发送。</p>
+        <p className="mt-1 text-xs leading-5 text-[#7b642f]">当前生产白名单只允许私有 Demo Channel；发布由现有 SpeakerBot 的 Bot API 执行。其他群或 Channel 必须得到你再次批准后才可加入。</p>
       </div>
 
       <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
         <Summary label="数据库" value={data.database?.ok ? "正常" : "待配置"} detail={data.database?.driver || "未连接"} />
-        <Summary label="发布账号" value={data.publisher?.ready ? "已授权" : data.publisher?.authorized ? "配置不完整" : "待授权"} detail={data.publisher?.authorized ? `${publisherName} · ${data.publisher?.approvedTargetIds?.length || 0} 个白名单目标` : "需完成加密用户会话授权"} />
+        <Summary label="发布器" value={publisherStatus} detail={publisherDetail} />
         <Summary label="自动任务" value={automationRules.length} detail={`${automationRules.filter((rule) => rule.enabled).length} 条启用`} />
         <Summary label="广播规则" value={broadcastRules.length} detail={`${broadcastRules.filter((rule) => rule.enabled).length} 条启用`} />
         <Summary label="代理来源" value={socialReadiness.enabledCount} detail={socialReadiness.ready ? `${socialReadiness.stableCount} 条稳定可用` : "需要添加 X / YouTube 来源"} />

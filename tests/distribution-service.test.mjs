@@ -555,7 +555,7 @@ test("GitHub Actions keeps distribution as a manual server recovery path", async
   assert.match(distributionJob, /if \[ "\$claimed" = "0" \]/);
 });
 
-test("production deployment applies an exact distribution allowlist while keeping Trader Demo-only", async () => {
+test("production deployment uses SpeakerBot with an exact Demo allowlist while keeping Trader Demo-only", async () => {
   const workflow = await readFile(new URL("../.github/workflows/deploy-production-server.yml", import.meta.url), "utf8");
 
   assert.match(workflow, /vars\.TELEGRAM_DISTRIBUTION_APPROVED_TARGETS/);
@@ -563,11 +563,12 @@ test("production deployment applies an exact distribution allowlist while keepin
   assert.match(workflow, /TELEGRAM_DEMO_ONLY=true/);
   assert.match(workflow, /TELEGRAM_DISTRIBUTION_APPROVED_TARGETS=%s/);
   assert.match(workflow, /TRADING_DEMO_ONLY=true/);
-  assert.match(workflow, /TELEGRAM_USER_PUBLISHER_REQUIRED=true/);
+  assert.match(workflow, /TELEGRAM_PUBLISHER_MODE=bot/);
+  assert.match(workflow, /TELEGRAM_BOT_PUBLISHER_USERNAME=Satoshi_geniustrader_bot/);
+  assert.match(workflow, /TELEGRAM_USER_PUBLISHER_REQUIRED=false/);
   assert.match(workflow, /TELEGRAM_USER_PUBLISHER_TARGETS=-1003862539988/);
-  assert.match(workflow, /TELEGRAM_USER_PUBLISHER_USERNAME=Serenity_Crypto/);
   assert.match(workflow, /TELEGRAM_USER_SESSION_ENCRYPTION_KEY=%s/);
-  assert.match(workflow, /will deploy fail-closed until authorization/);
+  assert.doesNotMatch(workflow, /will deploy fail-closed until authorization/);
   assert.match(workflow, /sudo install -m 0600/);
 });
 
