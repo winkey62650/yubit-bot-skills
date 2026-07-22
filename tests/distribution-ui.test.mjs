@@ -58,6 +58,21 @@ test("publisher status checks expose identity, bridge, session, routing and late
   });
   assert.equal(separated.find((check) => check.key === "session").ok, false);
   assert.equal(separated.find((check) => check.key === "routing").ok, true);
+
+  const recoveredBridge = buildPublisherStatusChecks({
+    username: "@Serenity_Crypto",
+    operationalStatus: "online",
+    credentialsReady: true,
+    bridgeActive: true,
+    lastSeenAt: "2026-07-22T04:48:23.270Z",
+    targetAuthorizationReady: true,
+    approvedTargetIds: ["-1003710405969"],
+    lastDeliveryStatus: "failed",
+    lastError: "Telegram Desktop window title was misread as the username"
+  });
+  assert.equal(recoveredBridge.find((check) => check.key === "bridge").ok, true);
+  assert.equal(recoveredBridge.find((check) => check.key === "delivery").ok, false);
+  assert.match(recoveredBridge.find((check) => check.key === "identity").detail, /窗口标题不作为用户名依据/);
 });
 
 test("rule selection keeps only unique rules that still exist", () => {

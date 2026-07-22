@@ -76,7 +76,7 @@ test("desktop publisher health becomes offline after the heartbeat expires", asy
   assert.equal(health.targetAuthorizationReady, true);
 });
 
-test("desktop publisher health reports stalled and degraded delivery state truthfully", async () => {
+test("desktop publisher health keeps bridge availability separate from the latest delivery result", async () => {
   const stalledRepository = {
     async getMeta() {
       return {
@@ -130,9 +130,11 @@ test("desktop publisher health reports stalled and degraded delivery state truth
     now: new Date("2026-07-21T13:10:00.000Z")
   });
 
-  assert.equal(degraded.operationalStatus, "degraded");
-  assert.equal(degraded.operationalReady, false);
-  assert.equal(degraded.operationalError, "previous delivery failed");
+  assert.equal(degraded.operationalStatus, "online");
+  assert.equal(degraded.operationalReady, true);
+  assert.equal(degraded.operationalError, null);
+  assert.equal(degraded.lastDeliveryStatus, "failed");
+  assert.equal(degraded.lastError, "previous delivery failed");
 });
 
 test("automation targets repair only stale generic Topic labels", () => {

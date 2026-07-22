@@ -70,9 +70,9 @@ export default function TelegramUserAuthorizationPage() {
         <Metric label="安全回退" value="禁止 Bot / 个人身份" ok />
       </section>
 
-      {(error || publisher?.operationalError || publisher?.lastError) ? (
+      {(error || publisher?.operationalError) ? (
         <div className="mb-5 rounded-lg border border-[#e4c88b] bg-[#fff7e6] px-4 py-3 text-sm font-bold text-[#80591c]" role="alert">
-          {error || publisher.operationalError || publisher.lastError}
+          {error || publisher.operationalError}
         </div>
       ) : null}
 
