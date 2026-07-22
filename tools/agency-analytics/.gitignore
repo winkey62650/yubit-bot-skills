@@ -1,0 +1,7 @@
+.next
+node_modules
+data/*
+!data/.gitkeep
+screenshots/
+.env
+*.log

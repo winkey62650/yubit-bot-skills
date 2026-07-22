@@ -1,0 +1,27 @@
+[Unit]
+Description=Site Nerve agency analytics service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/agency-analytics/current
+EnvironmentFile=/etc/agency-analytics/production.env
+Environment=NODE_ENV=production
+Environment=PORT=4180
+Environment=PATH=/opt/yubit-node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/opt/yubit-node/bin/node /opt/agency-analytics/current/node_modules/next/dist/bin/next start -H 127.0.0.1 -p 4180
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/agency-analytics
+
+[Install]
+WantedBy=multi-user.target
