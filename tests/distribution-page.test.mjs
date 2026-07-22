@@ -10,6 +10,17 @@ test("automatic publishing and Telegram broadcast keep separate rule selections"
   assert.match(pageSource, /reconcileRuleSelection/);
 });
 
+test("content sync clearly configures where Serenity copies messages from and to", () => {
+  assert.match(pageSource, /\["broadcast", "内容同步"\]/);
+  assert.match(pageSource, /新增内容同步规则/);
+  assert.match(pageSource, /从哪里同步到哪里/);
+  assert.match(pageSource, /ForwardBot 监听/);
+  assert.match(pageSource, /@Serenity_Crypto/);
+  assert.match(pageSource, /来源群 \/ 频道 \/ Topic/);
+  assert.match(pageSource, /目标 Forum 群 \/ Topic（可多选）/);
+  assert.match(pageSource, /暂无内容同步规则/);
+});
+
 test("rule lists expose accessible selection and select-all controls", () => {
   assert.match(pageSource, /aria-label={`选择规则：\$\{rule\.name\}`}/);
   assert.match(pageSource, /aria-label="选择当前列表全部规则"/);

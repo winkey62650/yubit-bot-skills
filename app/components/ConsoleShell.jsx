@@ -9,7 +9,7 @@ const navItems = [
   { href: "/group-config", label: "群与 Topic" },
   { href: "/new-group", label: "新群初始化" },
   { href: "/trading", label: "交易中心" },
-  { href: "/telegram-user-authorization", label: "主发布账号" },
+  { href: "/telegram-user-authorization", label: "发布账号状态检测" },
   { href: "/bots", label: "后台能力" },
   { href: "/settings", label: "系统设置" }
 ];

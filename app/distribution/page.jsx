@@ -18,7 +18,7 @@ import {
 
 const tabs = [
   ["automation", "自动发布"],
-  ["broadcast", "Telegram 广播"],
+  ["broadcast", "内容同步"],
   ["review", "待审核"],
   ["logs", "运行记录"]
 ];
@@ -270,7 +270,7 @@ export default function DistributionPage() {
     <ConsoleShell>
       <PageHeader
         title="内容分发中心"
-        desc={`自动内容与广播结果由 ${publisherName} 完成签名授权，并以目标 Forum 群的名称和头像发布；ForwardBot 只负责接收入站新消息。`}
+        desc={`自动发布与内容同步均由 ${publisherName} 完成签名授权，并以目标 Forum 群的名称和头像发布；ForwardBot 只负责监听来源新消息。`}
         action={<button className="min-h-11 rounded-lg border border-ops-accent px-5 text-sm font-black text-ops-accent disabled:opacity-50" disabled={Boolean(busy)} onClick={() => post({ action: "configure-webhook" }, "ForwardBot Webhook 已配置。")}>配置 ForwardBot Webhook</button>}
       />
 
@@ -283,7 +283,7 @@ export default function DistributionPage() {
         <Summary label="数据库" value={data.database?.ok ? "正常" : "待配置"} detail={data.database?.driver || "未连接"} />
         <Summary label="发布器" value={publisherStatus} detail={publisherDetail} />
         <Summary label="自动任务" value={automationRules.length} detail={`${automationRules.filter((rule) => rule.enabled).length} 条启用`} />
-        <Summary label="广播规则" value={broadcastRules.length} detail={`${broadcastRules.filter((rule) => rule.enabled).length} 条启用`} />
+        <Summary label="同步规则" value={broadcastRules.length} detail={`${broadcastRules.filter((rule) => rule.enabled).length} 条启用`} />
         <Summary label="代理来源" value={socialReadiness.enabledCount} detail={socialReadiness.ready ? `${socialReadiness.stableCount} 条稳定可用` : "需要添加 X / YouTube 来源"} />
         <Summary label="待审核" value={data.review.length} detail="默认保留 7 天" />
       </div>
@@ -304,7 +304,7 @@ export default function DistributionPage() {
 
       {loading ? <Card className="p-8 text-center font-bold text-ops-muted">正在加载持久化配置…</Card> : null}
       {!loading && view === "automation" ? <AutomationView form={automationForm} setForm={setAutomationForm} rules={automationRules} groups={groups} socialPackages={socialPackages} publisherName={publisherName} busy={busy} selected={selectedAutomationRules} setSelected={setSelectedAutomationRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedAutomationRules, "自动任务")} onSave={() => saveRule(automationForm, () => setAutomationForm(emptyAutomation))} onEdit={setAutomationForm} onAction={post} onValidate={validate} onPersistSocial={saveSocialPackages} onNotice={setNotice} /> : null}
-      {!loading && view === "broadcast" ? <BroadcastView form={broadcastForm} setForm={setBroadcastForm} rules={broadcastRules} groups={groups} publisherName={publisherName} busy={busy} selected={selectedBroadcastRules} setSelected={setSelectedBroadcastRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedBroadcastRules, "广播规则")} backfill={backfill} setBackfill={setBackfill} onBackfill={previewBackfill} onSave={() => saveRule(broadcastForm, () => setBroadcastForm(emptyBroadcast))} onEdit={setBroadcastForm} onAction={post} onValidate={validate} /> : null}
+      {!loading && view === "broadcast" ? <BroadcastView form={broadcastForm} setForm={setBroadcastForm} rules={broadcastRules} groups={groups} publisherName={publisherName} busy={busy} selected={selectedBroadcastRules} setSelected={setSelectedBroadcastRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedBroadcastRules, "内容同步规则")} backfill={backfill} setBackfill={setBackfill} onBackfill={previewBackfill} onSave={() => saveRule(broadcastForm, () => setBroadcastForm(emptyBroadcast))} onEdit={setBroadcastForm} onAction={post} onValidate={validate} /> : null}
       {!loading && view === "review" ? <ReviewView events={data.review} selected={selectedReviews} setSelected={setSelectedReviews} busy={busy} onAction={reviewAction} /> : null}
       {!loading && view === "logs" ? <LogsView deliveries={data.deliveries} busy={busy} onRetry={async (id) => { setBusy("retry"); try { const response = await fetch("/api/distribution/logs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "retry", deliveryId: id }) }); const result = await response.json(); if (!response.ok || !result.ok) throw new Error(result.error); setNotice("失败目标已单独重试，不影响其他目标。"); await loadAll(); } catch (error) { setNotice(error.message); } finally { setBusy(""); } }} /> : null}
     </ConsoleShell>
@@ -407,21 +407,22 @@ function BroadcastView({ form, setForm, rules, groups, publisherName, busy, sele
   const canSave = Boolean(form.name.trim() && route.ready);
   return <div className="grid gap-5">
     <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.08fr)_minmax(340px,.92fr)]">
-      <RuleForm title={form.id ? "编辑广播规则" : "新增广播规则"} eyebrow="ForwardBot 新消息转发路径" submitLabel="保存广播规则" submitDisabled={!canSave} submitHint={!form.name.trim() ? "请先填写规则名称" : route.missing.length ? `还需要：${route.missing.join("、")}` : "转发路径已完整"} busy={busy} onSubmit={onSave}>
+      <RuleForm title={form.id ? "编辑内容同步规则" : "新增内容同步规则"} eyebrow="ForwardBot 监听 · @Serenity_Crypto 发布" submitLabel="保存内容同步规则" submitDisabled={!canSave} submitHint={!form.name.trim() ? "请先填写规则名称" : route.missing.length ? `还需要：${route.missing.join("、")}` : "同步路径已完整"} busy={busy} onSubmit={onSave}>
+        <div className="rounded-lg border border-[#cae5da] bg-[#f2faf6] p-4"><p className="text-sm font-black text-[#173f31]">从哪里同步到哪里</p><p className="mt-1 text-xs leading-5 text-[#41564d]">ForwardBot 监听指定来源群、频道或 Topic；通过审核或自动处理后，由 @Serenity_Crypto 以各目标群官方身份发布。</p></div>
         <Field label="规则名称"><input className={inputClass} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="例如：Demo 群同步到新群" /></Field>
         <FormStep number="1" title="选择消息来源" desc="可监听整个群 / 频道，也可以只监听一个 Topic。" />
         <Field label="来源群 / 频道 / Topic"><select className={inputClass} value={sourceValue} onChange={(event) => setForm({ ...form, source: sources.find((item) => item.key === event.target.value)?.source || emptyBroadcast.source })}><option value="">请选择来源</option>{sources.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></Field>
         <details className="rounded-lg border border-ops-line bg-[#fbfcfb] p-3"><summary className="cursor-pointer text-sm font-black text-[#41564d]">高级：手动输入 Telegram ID</summary><div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_150px_140px]"><Field label="来源 Chat ID"><input className={inputClass} value={form.source.chatId} onChange={(event) => setForm({ ...form, source: { ...form.source, chatId: event.target.value } })} /></Field><Field label="Chat 类型"><select className={inputClass} value={form.source.chatType || "supergroup"} onChange={(event) => { const chatType = event.target.value; setForm({ ...form, source: { ...form.source, chatType, threadId: chatType === "channel" ? "" : form.source.threadId } }); }}><option value="supergroup">群 / Topic</option><option value="channel">Channel</option></select></Field><Field label="Thread ID（可选）"><input className={inputClass} disabled={form.source.chatType === "channel"} inputMode="numeric" value={form.source.threadId || ""} onChange={(event) => setForm({ ...form, source: { ...form.source, threadId: event.target.value } })} /></Field></div><p className="mt-2 text-xs text-ops-muted">Channel 不使用 Thread ID；群留空表示监听整群。</p></details>
         <FormStep number="2" title="选择处理方式" desc="运营敏感内容建议先审核，日常同步可直接自动转发。" />
         <fieldset className="grid gap-2 sm:grid-cols-2"><legend className="sr-only">处理方式</legend>{[["automatic", "自动转发", "新消息通常 10 秒内到达目标"], ["review", "先审核", "批准前绝不发送，默认保留 7 天"]].map(([value, title, desc]) => <label className={`rounded-lg border p-4 ${form.mode === value ? "border-ops-accent bg-[#f2faf6]" : "border-ops-line bg-white"}`} key={value}><span className="flex items-center gap-2 text-sm font-black"><input checked={form.mode === value} name="broadcast-mode" onChange={() => setForm({ ...form, mode: value })} type="radio" />{title}</span><span className="mt-2 block text-xs leading-5 text-ops-muted">{desc}</span></label>)}</fieldset>
-        <FormStep number="3" title="选择转发目标" desc="一条来源可以同时转发到多个 Forum 群 Topic。" />
+        <FormStep number="3" title="选择同步目标" desc="一条来源可以同时同步到多个 Forum 群 Topic。" />
         <TargetPicker groups={groups} selected={form.targets} onChange={(targets) => setForm({ ...form, targets })} />
         <Toggle checked={form.enabled} label="创建后立即启用" onChange={(enabled) => setForm({ ...form, enabled })} />
-        <div className="rounded-lg bg-[#fff8e8] p-3 text-xs leading-5 text-[#79591e]">ForwardBot 固定负责接收入站广播；{publisherName} 负责向每个目标发布。Telegram 不会把其他机器人发出的消息交给 ForwardBot；机器人内容请使用「自动发布」直接选择全部目标。Bot API 也无法感知来源消息删除；可处理的文字与 Caption 编辑会同步。</div>
+        <div className="rounded-lg bg-[#fff8e8] p-3 text-xs leading-5 text-[#79591e]">ForwardBot 固定负责监听和接收入站消息；{publisherName} 固定负责向每个目标发布。Telegram 不会把其他机器人发出的消息交给 ForwardBot；机器人内容请使用「自动发布」直接选择全部目标。Bot API 也无法感知来源消息删除；可处理的文字与 Caption 编辑会同步。</div>
       </RuleForm>
       <BroadcastRoutePreview route={route} targets={resolvedTargets} mode={form.mode} publisherName={publisherName} />
     </div>
-    <div className="grid items-start gap-5 xl:grid-cols-2"><BackfillPanel rules={rules} value={backfill} setValue={setBackfill} busy={busy} onRun={onBackfill} /><RuleList busy={busy} empty="暂无 Telegram 广播规则。" kindLabel="广播规则" rules={rules} selected={selected} setSelected={setSelected} onDeleteMany={onDeleteMany} onEdit={(rule) => onEdit({ ...rule, source: { ...rule.source, threadId: rule.source.threadId || "" }, targets: rule.targets.map(targetKey) })} onAction={onAction} onValidate={onValidate} /></div>
+    <div className="grid items-start gap-5 xl:grid-cols-2"><BackfillPanel rules={rules} value={backfill} setValue={setBackfill} busy={busy} onRun={onBackfill} /><RuleList busy={busy} empty="暂无内容同步规则。" kindLabel="内容同步规则" rules={rules} selected={selected} setSelected={setSelected} onDeleteMany={onDeleteMany} onEdit={(rule) => onEdit({ ...rule, source: { ...rule.source, threadId: rule.source.threadId || "" }, targets: rule.targets.map(targetKey) })} onAction={onAction} onValidate={onValidate} /></div>
   </div>;
 }
 
@@ -465,13 +466,13 @@ function TelegramTemplatePreview({ form, template, publisherName, preview, previ
 
 function BroadcastRoutePreview({ route, targets, mode, publisherName }) {
   return <Card className="overflow-hidden xl:sticky xl:top-5">
-    <div className="border-b border-ops-line p-5"><p className="text-xs font-black uppercase tracking-[.16em] text-ops-accent">转发路径预览</p><div className="mt-1 flex flex-wrap items-center justify-between gap-2"><h2 className="text-xl font-black">来源到目标</h2><StatusPill tone={route.ready ? "green" : "amber"}>{route.ready ? "路径完整" : "尚未完成"}</StatusPill></div></div>
+    <div className="border-b border-ops-line p-5"><p className="text-xs font-black uppercase tracking-[.16em] text-ops-accent">同步路径预览</p><div className="mt-1 flex flex-wrap items-center justify-between gap-2"><h2 className="text-xl font-black">从哪里同步到哪里</h2><StatusPill tone={route.ready ? "green" : "amber"}>{route.ready ? "路径完整" : "尚未完成"}</StatusPill></div></div>
     <div className="grid gap-3 p-5">
       <RouteNode label="消息来源" value={route.sourceLabel} />
-      <div className="border-l-2 border-dashed border-[#b7c9c0] py-2 pl-5 text-xs font-black text-ops-muted">ForwardBot 接收新消息</div>
+      <div className="border-l-2 border-dashed border-[#b7c9c0] py-2 pl-5 text-xs font-black text-ops-muted">ForwardBot 监听并接收新消息</div>
       <RouteNode label={mode === "review" ? "待审核队列" : "自动处理"} value={route.processingLabel} accent />
       <div className="border-l-2 border-dashed border-[#b7c9c0] py-2 pl-5 text-xs font-black text-ops-muted">{publisherName} 匿名授权，以各目标群官方身份独立发送与记录</div>
-      <div className="rounded-lg border border-ops-line p-4"><div className="flex items-center justify-between"><span className="text-xs font-black uppercase tracking-wide text-ops-muted">转发目标</span><span className="text-sm font-black text-ops-accent">{route.targetCount} 个</span></div>{targets.length ? <ul className="mt-3 grid gap-2">{targets.map((target) => <li className="rounded-md bg-[#f6f9f7] px-3 py-2 text-sm font-bold text-[#33423b]" key={targetKey(target)}>{target.groupName || target.chatId} / {destinationLabel(target)}</li>)}</ul> : <p className="mt-3 text-sm text-ops-muted">选择目标后会在这里显示完整路径。</p>}</div>
+      <div className="rounded-lg border border-ops-line p-4"><div className="flex items-center justify-between"><span className="text-xs font-black uppercase tracking-wide text-ops-muted">同步目标</span><span className="text-sm font-black text-ops-accent">{route.targetCount} 个</span></div>{targets.length ? <ul className="mt-3 grid gap-2">{targets.map((target) => <li className="rounded-md bg-[#f6f9f7] px-3 py-2 text-sm font-bold text-[#33423b]" key={targetKey(target)}>{target.groupName || target.chatId} / {destinationLabel(target)}</li>)}</ul> : <p className="mt-3 text-sm text-ops-muted">选择目标后会在这里显示完整路径。</p>}</div>
       {!route.ready ? <p className="rounded-lg bg-[#fff8e8] p-3 text-xs font-bold leading-5 text-[#79591e]">保存前还需要：{route.missing.join("、")}。</p> : null}
       <div className="grid gap-2 border-t border-ops-line pt-4 text-xs leading-5 text-ops-muted"><p>支持文字、图片、视频、文件、链接、媒体组和可处理的 Caption 编辑。</p><p>源消息删除无法由 Telegram Bot API 感知，不会自动删除目标消息。</p></div>
     </div>
@@ -546,7 +547,7 @@ function TargetPicker({ groups, selected, onChange }) {
 }
 
 function BackfillPanel({ rules, value, setValue, busy, onRun }) {
-  return <Card className="p-5"><h2 className="text-lg font-black">人工回填历史消息</h2><p className="mt-1 text-sm leading-6 text-ops-muted">输入 Telegram 消息链接、编号或范围，单次最多 100 条。未被 Webhook 捕获过的历史正文无法由 Bot API 预读，但可先核对编号与目标再复制。</p><div className="mt-4 grid gap-3"><Field label="广播规则"><select className={inputClass} value={value.ruleId} onChange={(event) => setValue({ ...value, ruleId: event.target.value, preview: null })}><option value="">请选择规则</option>{rules.map((rule) => <option key={rule.id} value={rule.id}>{rule.name}</option>)}</select></Field><Field label="消息链接 / 编号"><textarea className={`${inputClass} min-h-24 py-3`} value={value.references} onChange={(event) => setValue({ ...value, references: event.target.value, preview: null })} placeholder="77, 79-81 或 https://t.me/c/.../90" /></Field><div className="flex gap-2"><SmallButton disabled={Boolean(busy)} onClick={() => onRun(false)}>预览</SmallButton><button className="min-h-10 rounded-lg bg-ops-accent px-4 text-sm font-black text-white disabled:opacity-50" disabled={!value.preview?.preview || Boolean(busy)} onClick={() => window.confirm("确认向所有目标补发这些历史消息？") && onRun(true)} type="button">确认补发</button></div>{value.preview ? <pre className="max-h-52 overflow-auto whitespace-pre-wrap rounded-lg bg-[#f5f7f6] p-3 text-xs">{JSON.stringify(value.preview, null, 2)}</pre> : null}</div></Card>;
+  return <Card className="p-5"><h2 className="text-lg font-black">人工回填历史消息</h2><p className="mt-1 text-sm leading-6 text-ops-muted">输入 Telegram 消息链接、编号或范围，单次最多 100 条。未被 Webhook 捕获过的历史正文无法由 Bot API 预读，但可先核对编号与目标再复制。</p><div className="mt-4 grid gap-3"><Field label="内容同步规则"><select className={inputClass} value={value.ruleId} onChange={(event) => setValue({ ...value, ruleId: event.target.value, preview: null })}><option value="">请选择规则</option>{rules.map((rule) => <option key={rule.id} value={rule.id}>{rule.name}</option>)}</select></Field><Field label="消息链接 / 编号"><textarea className={`${inputClass} min-h-24 py-3`} value={value.references} onChange={(event) => setValue({ ...value, references: event.target.value, preview: null })} placeholder="77, 79-81 或 https://t.me/c/.../90" /></Field><div className="flex gap-2"><SmallButton disabled={Boolean(busy)} onClick={() => onRun(false)}>预览</SmallButton><button className="min-h-10 rounded-lg bg-ops-accent px-4 text-sm font-black text-white disabled:opacity-50" disabled={!value.preview?.preview || Boolean(busy)} onClick={() => window.confirm("确认向所有目标补发这些历史消息？") && onRun(true)} type="button">确认补发</button></div>{value.preview ? <pre className="max-h-52 overflow-auto whitespace-pre-wrap rounded-lg bg-[#f5f7f6] p-3 text-xs">{JSON.stringify(value.preview, null, 2)}</pre> : null}</div></Card>;
 }
 
 function ReviewView({ events, selected, setSelected, busy, onAction }) {

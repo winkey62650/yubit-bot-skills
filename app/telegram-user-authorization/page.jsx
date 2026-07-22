@@ -6,6 +6,7 @@ import ConsoleShell from "../components/ConsoleShell";
 import LiveStatusStamp from "../components/LiveStatusStamp";
 import { useLiveAutoRefresh } from "../hooks/useLiveAutoRefresh";
 import { Card, PageHeader, StatusPill } from "../components/ui";
+import { buildPublisherStatusChecks } from "../../lib/distribution-ui.mjs";
 
 const DEMO_CHAT_ID = "-1003710405969";
 
@@ -19,11 +20,11 @@ export default function TelegramUserAuthorizationPage() {
     try {
       const response = await fetch("/api/distribution", { cache: "no-store" });
       const data = await response.json();
-      if (!response.ok || !data.ok) throw new Error(data.error || "主发布账号状态读取失败");
+      if (!response.ok || !data.ok) throw new Error(data.error || "发布账号状态检测失败");
       setPublisher(data.publisher || null);
       setError("");
     } catch (nextError) {
-      setError(nextError.message || "主发布账号状态读取失败");
+      setError(nextError.message || "发布账号状态检测失败");
     } finally {
       if (!silent) setLoading(false);
     }
@@ -45,12 +46,13 @@ export default function TelegramUserAuthorizationPage() {
           : "离线";
   const approvedTargets = publisher?.approvedTargetIds || [];
   const lastSeenAt = publisher?.lastSeenAt || publisher?.lastVerifiedAt || null;
+  const checks = buildPublisherStatusChecks(publisher || {});
 
   return (
     <ConsoleShell>
       <PageHeader
-        title="主发布账号"
-        desc="@Serenity_Crypto 是唯一主发布账号。本机发布桥操作已登录的 Telegram，对外始终显示目标群名称和群头像。"
+        title="发布账号状态检测"
+        desc="实时核验 @Serenity_Crypto、Telegram 会话、本机发布桥、目标白名单和最近一次投递；这里不保存账号密码或开发凭证。"
         action={<Link className="grid min-h-11 place-items-center rounded-lg bg-ops-accent px-5 text-sm font-black text-white" href="/distribution">进入内容分发中心</Link>}
       />
 
@@ -74,10 +76,25 @@ export default function TelegramUserAuthorizationPage() {
         </div>
       ) : null}
 
+      <Card className="mb-5 overflow-hidden">
+        <div className="border-b border-ops-line p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-black">实时检测项</h2>
+              <p className="mt-1 text-sm text-ops-muted">账号身份、本机发布桥、Telegram 会话、目标白名单和最近一次投递分别检测，不再用单一“在线”状态掩盖局部故障。</p>
+            </div>
+            <StatusPill tone={checks.every((check) => check.ok !== false) ? "green" : "amber"}>{checks.every((check) => check.ok !== false) ? "检测通过" : "需要处理"}</StatusPill>
+          </div>
+        </div>
+        <div className="grid divide-y divide-ops-line md:grid-cols-2 md:divide-x md:divide-y-0 xl:grid-cols-5">
+          {checks.map((check) => <StatusCheck check={check} key={check.key} />)}
+        </div>
+      </Card>
+
       <Card className="p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-xl font-black">当前发布闭环</h2>
+            <h2 className="text-xl font-black">检测通过后的发布闭环</h2>
             <p className="mt-1 text-sm text-ops-muted">运营只需要维护内容规则、目标群和 Topic，不再处理账号开发凭证或选择 Bot 发送人。</p>
           </div>
           <StatusPill tone={ready ? "green" : "amber"}>{ready ? "闭环在线" : "等待发布桥"}</StatusPill>
@@ -115,6 +132,11 @@ export default function TelegramUserAuthorizationPage() {
 
 function Metric({ label, value, ok }) {
   return <div className="border-b border-ops-line p-5 last:border-0 sm:border-r xl:border-b-0"><div className="text-sm font-bold text-ops-muted">{label}</div><div className={`mt-1 text-xl font-black ${ok ? "text-ops-accent" : "text-[#8a5d1a]"}`}>{value}</div></div>;
+}
+
+function StatusCheck({ check }) {
+  const stateClass = check.ok === true ? "text-ops-accent" : check.ok === false ? "text-[#9a5f31]" : "text-ops-muted";
+  return <div className="min-w-0 p-5"><div className="text-xs font-black uppercase tracking-wide text-ops-muted">{check.label}</div><div className={`mt-2 text-lg font-black ${stateClass}`}>{check.status}</div><p className="mt-2 break-words text-xs leading-5 text-ops-muted">{check.detail}</p></div>;
 }
 
 function Step({ number, title, text }) {

@@ -4,6 +4,7 @@ import {
   buildDistributionSourceOptions,
   buildDistributionTargetOptions,
   buildBroadcastRouteSummary,
+  buildPublisherStatusChecks,
   buildSocialSourceReadiness,
   bulkDeleteNotice,
   failedBulkDeleteIds,
@@ -12,6 +13,38 @@ import {
   reconcileRuleSelection,
   recommendedScheduleFor
 } from "../lib/distribution-ui.mjs";
+
+test("publisher status checks expose identity, bridge, session, routing and latest delivery independently", () => {
+  const checks = buildPublisherStatusChecks({
+    username: "@Serenity_Crypto",
+    operationalStatus: "online",
+    credentialsReady: true,
+    authorized: true,
+    lastSeenAt: "2026-07-22T08:00:00.000Z",
+    routingReady: true,
+    approvedTargetIds: ["-1003710405969"],
+    lastDeliveryStatus: "success",
+    lastDeliveryAt: "2026-07-22T07:55:00.000Z"
+  });
+
+  assert.deepEqual(checks.map((check) => check.key), ["identity", "bridge", "session", "routing", "delivery"]);
+  assert.equal(checks.every((check) => check.ok === true), true);
+  assert.equal(checks.find((check) => check.key === "routing").status, "1 个目标");
+
+  const offline = buildPublisherStatusChecks({
+    username: "@SomeoneElse",
+    operationalStatus: "offline",
+    credentialsReady: false,
+    authorized: false,
+    routingReady: false,
+    approvedTargetIds: [],
+    lastDeliveryStatus: "failed",
+    lastError: "Telegram session unavailable"
+  });
+  assert.equal(offline.find((check) => check.key === "identity").ok, false);
+  assert.equal(offline.find((check) => check.key === "bridge").ok, false);
+  assert.equal(offline.find((check) => check.key === "delivery").status, "失败");
+});
 
 test("rule selection keeps only unique rules that still exist", () => {
   assert.deepEqual(

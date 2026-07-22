@@ -28,6 +28,13 @@ test("publisher page reflects the desktop Serenity workflow without obsolete API
   assert.match(page, /\/api\/distribution/);
   assert.match(page, /@Serenity_Crypto/);
   assert.match(page, /本机发布桥/);
+  assert.match(page, /title="发布账号状态检测"/);
+  assert.match(page, /buildPublisherStatusChecks/);
+  assert.match(page, /实时检测项/);
+  assert.match(page, /账号身份/);
+  assert.match(page, /Telegram 会话/);
+  assert.match(page, /目标白名单/);
+  assert.match(page, /最近一次投递/);
   assert.match(page, /后台能力组件/);
   assert.doesNotMatch(page, /\/api\/telegram\/user-authorization/);
   assert.doesNotMatch(page, /Telegram API ID|Telegram API Hash|验证码|2FA/);
@@ -38,4 +45,5 @@ test("publisher page reflects the desktop Serenity workflow without obsolete API
   assert.match(page, /群名称和群头像/);
   assert.doesNotMatch(page, /Demo Channel/);
   assert.match(navigation, /\/telegram-user-authorization/);
+  assert.match(navigation, /发布账号状态检测/);
 });
