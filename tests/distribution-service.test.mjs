@@ -655,6 +655,7 @@ test("desktop publishing queues generated content and completes only after a Dem
   assert.equal(claimed.groupName, "DEMO Academy");
   assert.equal(claimed.topicName, "3. Market Events");
   assert.equal(claimed.contractVersion, "telegram-template-v1");
+  assert.equal(claimed.templateVersion, "editorial-template-v1");
   assert.equal(claimed.contentPolicy, "verbatim");
   assert.equal(claimed.identityPolicy, "group-official");
   assert.equal(claimed.inputPolicy, "clipboard-paste");
@@ -934,7 +935,7 @@ test("a desktop broadcast webhook queues the exact approved target Topic for the
       date: 1784700000,
       chat: { id: Number(source.chatId), title: "DEMO Academy", type: "supergroup" },
       sender_chat: { id: Number(source.chatId), title: "DEMO Academy", type: "supergroup" },
-      text: "SYNC ACCEPTANCE TEST"
+      text: "  SYNC ACCEPTANCE TEST\n\nSecond line  "
     }
   });
   const [delivery] = await repository.listDeliveries();
@@ -949,9 +950,52 @@ test("a desktop broadcast webhook queues the exact approved target Topic for the
     payload: {
       chat_id: target.chatId,
       message_thread_id: target.threadId,
-      text: "SYNC ACCEPTANCE TEST"
+      text: "  SYNC ACCEPTANCE TEST\n\nSecond line  "
     }
   }]);
+});
+
+test("a desktop photo broadcast preserves the source caption byte for byte", async () => {
+  const source = { chatId: "-1003710405969", chatType: "supergroup", threadId: 16 };
+  const target = {
+    id: "crypto-whale",
+    chatId: "-1004378187866",
+    chatType: "supergroup",
+    threadId: 19,
+    groupName: "CryptoGuy Academy",
+    topicName: "6. Smart Money Tracker"
+  };
+  const repository = new MemoryDistributionRepository({
+    rules: [{ id: "rule-whale", kind: "broadcast", enabled: true, mode: "automatic", source, targets: [target] }]
+  });
+  const engine = await createDistributionEngine({
+    repository,
+    env: {
+      NODE_ENV: "production",
+      TELEGRAM_DESKTOP_PUBLISHER_REQUIRED: "true",
+      TELEGRAM_USER_PUBLISHER_TARGETS: `${source.chatId},${target.chatId}`,
+      DEMO_TELEGRAM_CHAT_ID: source.chatId,
+      APP_BASE_URL: "https://academy.example.com",
+      TELEGRAM_WEBHOOK_SECRET: "webhook-secret"
+    },
+    telegram: async () => { throw new Error("desktop delivery must not call Bot API"); }
+  });
+  const caption = "  WHALE ALERT\n\n▪️ Visible size: 12 BTC  ";
+
+  await engine.receiveUpdate({
+    update_id: 2202,
+    message: {
+      message_id: 502,
+      message_thread_id: source.threadId,
+      date: 1784700001,
+      chat: { id: Number(source.chatId), title: "DEMO Academy", type: "supergroup" },
+      photo: [{ file_id: "small" }, { file_id: "large" }],
+      caption
+    }
+  });
+  const [event] = repository.events;
+
+  assert.equal(event.payload.deliveryPlans[0].steps[0].payload.caption, caption);
 });
 
 test("a deduplicated or suppressed automation run creates no failed delivery records", async () => {

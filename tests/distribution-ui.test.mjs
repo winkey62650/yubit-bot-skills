@@ -244,11 +244,13 @@ test("broadcast route is ready only after source and at least one target are set
 test("market events sample preserves the supplied July 7 briefing without imposing a fixed daily count", () => {
   const template = getContentTemplate("daily-events");
   const preview = template.preview;
+  assert.equal(preview.templateVersion, "editorial-template-v1");
   assert.equal(preview.language, "English");
   assert.ok(preview.items.length > 0);
   assert.match(template.itemCountPolicy, /动态/);
   assert.match(preview.caption, /^🌅 MORNING MARKET BRIEF · JULY 7/);
-  assert.match(preview.caption, /1\. US equities rebounded/);
+  assert.match(preview.caption, /01 · US equities rebounded/);
+  assert.match(preview.caption, /Market commentary only\.$/);
   assert.ok(preview.caption.length <= 1024);
   assert.doesNotMatch(preview.caption, /Executive read|full English brief follows|Story count|full 11-story/i);
   assert.match(preview.headline, /MORNING MARKET BRIEF/i);
@@ -266,6 +268,7 @@ test("market events sample preserves the supplied July 7 briefing without imposi
 test("events, analysis and whale templates are previewable before live data is requested", () => {
   for (const contentType of ["daily-events", "daily-analysis", "whale-signals"]) {
     const preview = getContentTemplate(contentType).preview;
+    assert.equal(preview.templateVersion, "editorial-template-v1");
     assert.equal(preview.branding, "neutral");
     assert.match(preview.imageUrl, /^\/(api\/media\/card\?kind=|templates\/)/);
     assert.ok(preview.caption.length > 80);
@@ -289,6 +292,7 @@ test("whale preview exposes the approved poster and operating copy before publis
   assert.match(preview.caption, /Key action/);
   assert.match(preview.caption, /Key level/);
   assert.match(preview.caption, /Current read/);
+  assert.match(preview.caption, /top-100 depth imbalance/);
   assert.match(preview.caption, /What to watch next/);
   assert.doesNotMatch(preview.caption, /Data source|SOURCE URL/i);
   assert.doesNotMatch(preview.caption, /#\[ASSET\]|#\[VENUE\]|#WhaleAlert|#SmartMoney/i);

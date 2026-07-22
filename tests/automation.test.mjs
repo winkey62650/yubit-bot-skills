@@ -212,6 +212,8 @@ test("desktop publisher plans preserve one target and every Telegram step", () =
   }, [target], "https://example.com/events.png");
 
   assert.equal(plans.length, 1);
+  assert.equal(plans[0].templateVersion, "editorial-template-v1");
+  assert.equal(plans[0].contentPolicy, "fixed-template");
   assert.deepEqual(plans[0].target, target);
   assert.deepEqual(plans[0].steps.map((step) => step.method), ["sendPhoto", "sendMessage"]);
   assert.equal(plans[0].steps[0].payload.photo, "https://example.com/events.png");
@@ -225,6 +227,7 @@ test("desktop publisher plans keep analysis and whale copy attached to the poste
   }, [target], "https://example.com/analysis.png");
 
   assert.deepEqual(plan.steps.map((step) => step.method), ["sendPhoto"]);
+  assert.equal(plan.templateVersion, "editorial-template-v1");
   assert.equal(plan.steps[0].payload.caption, "<b>DAILY MARKET ANALYSIS</b>\n\nRegime: constructive");
   assert.equal(plan.steps[0].payload.message_thread_id, 10);
 });
