@@ -19,6 +19,7 @@ import {
   retryDistributionDelivery,
   runDueDistributionJobs,
   runDistributionAutomationRule,
+  validateRuleRuntime,
   verifyTelegramWebhookSecret
 } from "../lib/distribution-service.mjs";
 import { MemoryDistributionRepository } from "../lib/distribution-engine.mjs";
@@ -825,6 +826,72 @@ test("desktop publisher claims an explicitly approved CryptoGuy Topic delivery",
   assert.equal(claimed.groupName, "CryptoGuy Academy");
   assert.equal(claimed.topicName, "3. Market Events");
   assert.equal(claimed.steps[0].text, "Topic sync acceptance");
+});
+
+test("broadcast validation checks ForwardBot on the source and the desktop publisher on the target", async () => {
+  const source = {
+    chatId: "-1003710405969",
+    chatType: "supergroup",
+    threadId: 8,
+    topicName: "3. Market Events"
+  };
+  const target = {
+    id: "crypto-events",
+    chatId: "-1004378187866",
+    chatType: "supergroup",
+    threadId: 8,
+    groupName: "CryptoGuy Academy",
+    topicName: "3. Market Events"
+  };
+  const repository = new MemoryDistributionRepository({
+    rules: [{
+      id: "rule-demo-to-crypto-events",
+      kind: "broadcast",
+      enabled: true,
+      mode: "automatic",
+      source,
+      targets: [target]
+    }]
+  });
+  repository.health = async () => ({ ok: true });
+  const env = {
+    NODE_ENV: "production",
+    FORWARD_BOT_TOKEN: "123:forward-token",
+    TELEGRAM_DESKTOP_PUBLISHER_REQUIRED: "true",
+    TELEGRAM_USER_PUBLISHER_USERNAME: "Serenity_Crypto",
+    TELEGRAM_USER_PUBLISHER_TARGETS: "-1003710405969,-1004378187866"
+  };
+  const calls = [];
+  const telegram = async (_token, method, payload) => {
+    calls.push({ method, payload });
+    if (method === "getMe") return { id: 123, username: "Biupa_geniustrader_bot" };
+    if (method === "getChat") return { id: Number(source.chatId), title: "DEMO Academy", type: "supergroup" };
+    if (method === "getChatMember") return { status: "administrator" };
+    if (method === "getWebhookInfo") return { url: "https://example.test/api/telegram/webhook" };
+    throw new Error(`unexpected Telegram method: ${method}`);
+  };
+
+  const result = await validateRuleRuntime("rule-demo-to-crypto-events", {
+    repository,
+    env,
+    telegram,
+    publisherHealth: {
+      operationalReady: true,
+      operationalStatus: "online",
+      username: "@Serenity_Crypto"
+    },
+    groupConfig: {
+      groups: [
+        { chatId: source.chatId, topics: [{ threadId: source.threadId, name: source.topicName }] },
+        { chatId: target.chatId, topics: [{ threadId: target.threadId, name: target.topicName }] }
+      ]
+    }
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(calls.filter((call) => call.method === "getChatMember").length, 1);
+  assert.equal(calls.find((call) => call.method === "getChatMember").payload.chat_id, source.chatId);
+  assert.match(result.checks.find((check) => check.key === `target:${target.id}`).message, /本机发布桥在线/);
 });
 
 test("a desktop broadcast webhook queues the exact approved target Topic for the local bridge", async () => {
