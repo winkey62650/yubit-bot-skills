@@ -959,7 +959,7 @@ test("GitHub Actions keeps distribution as a manual server recovery path", async
   assert.match(distributionJob, /if \[ "\$claimed" = "0" \]/);
 });
 
-test("production deployment uses the official Demo Forum group identity and keeps Trader Demo-only", async () => {
+test("production deployment authorizes the official Demo and CryptoGuy Forum identities and keeps Trader Demo-only", async () => {
   const workflow = await readFile(new URL("../.github/workflows/deploy-production-server.yml", import.meta.url), "utf8");
   const desktopRoute = await readFile(new URL("../app/api/cron/desktop-publisher/route.js", import.meta.url), "utf8");
 
@@ -971,7 +971,7 @@ test("production deployment uses the official Demo Forum group identity and keep
   assert.match(workflow, /TELEGRAM_PUBLISHER_MODE=user/);
   assert.match(workflow, /TELEGRAM_USER_PUBLISHER_USERNAME=Serenity_Crypto/);
   assert.match(workflow, /TELEGRAM_USER_PUBLISHER_REQUIRED=true/);
-  assert.match(workflow, /TELEGRAM_USER_PUBLISHER_TARGETS=-1003710405969/);
+  assert.match(workflow, /TELEGRAM_USER_PUBLISHER_TARGETS=-1003710405969,-1004378187866/);
   assert.match(workflow, /TELEGRAM_USER_SESSION_ENCRYPTION_KEY=%s/);
   assert.match(workflow, /TELEGRAM_DESKTOP_PUBLISHER_REQUIRED=true/);
   assert.match(workflow, /secrets\.DESKTOP_PUBLISHER_SECRET/);
