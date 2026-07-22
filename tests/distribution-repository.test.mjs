@@ -99,6 +99,67 @@ test("Postgres delivery records preserve every Telegram message id", async () =>
   assert.deepEqual(delivery.publisherProgress, [{ stepId: "1-photo-a1", checksum: "a1", targetMessageId: 521 }]);
 });
 
+test("Postgres delivery records hide legacy zero Telegram message ids", async () => {
+  const repository = Object.create(PostgresDistributionRepository.prototype);
+  repository.sql = {
+    async query() {
+      return [{
+        id: "delivery-legacy-zero",
+        event_id: "event-legacy-zero",
+        rule_id: "rule-legacy-zero",
+        target_id: "target-legacy-zero",
+        target: { chatId: "-1001", threadId: 8 },
+        status: "success",
+        attempts: 1,
+        target_message_id: 0,
+        target_message_ids: [0],
+        publisher_progress: [],
+        error: null,
+        delivered_at: "2026-07-22T07:29:04.813Z",
+        created_at: "2026-07-22T07:15:08.000Z",
+        updated_at: "2026-07-22T07:29:04.813Z"
+      }];
+    }
+  };
+
+  const [delivery] = await repository.listDeliveries({ limit: 1 });
+
+  assert.equal(delivery.targetMessageId, null);
+  assert.deepEqual(delivery.targetMessageIds, []);
+});
+
+test("Postgres delivery updates keep a standalone Telegram message id", async () => {
+  const repository = Object.create(PostgresDistributionRepository.prototype);
+  let capturedParams = null;
+  repository.getDelivery = async () => ({
+    id: "delivery-standalone",
+    status: "sending",
+    attempts: 0,
+    targetMessageId: null,
+    targetMessageIds: [],
+    publisherProgress: []
+  });
+  repository.sql = {
+    async query(_sql, params) {
+      capturedParams = params;
+      return [{
+        id: "delivery-standalone",
+        status: params[1],
+        attempts: params[2],
+        target_message_id: params[3],
+        target_message_ids: JSON.parse(params[4]),
+        publisher_progress: [],
+        error: null
+      }];
+    }
+  };
+
+  await repository.updateDelivery("delivery-standalone", { targetMessageId: 777 });
+
+  assert.equal(capturedParams[3], 777);
+  assert.equal(capturedParams[4], "[777]");
+});
+
 test("Postgres desktop publisher lease is atomic and only its owner can release it", async () => {
   const repository = Object.create(PostgresDistributionRepository.prototype);
   const calls = [];
