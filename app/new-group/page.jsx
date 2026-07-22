@@ -11,6 +11,7 @@ import { selectPreferredInitializationGroup } from "../../lib/telegram-discovery
 import { loadWorkspaceState, saveWorkspaceState } from "../../lib/workspace-client";
 
 const defaultTopics = defaultTopicTemplate.map((topic) => [topic.id, topic.emoji, topicNameWithSequence(topic), topic.attribute, topic.announcement || "", topic.imageUrl || ""]);
+const defaultTopicIds = defaultTopics.map((topic) => String(topic[0]));
 const currentBotFallback = [
   { name: "AdminBot", roleKey: "admin", username: "Bonnie_geniustrader_bot", role: "目标群发现 / Topic 初始化 / 权限复核" },
   { name: "SpeakerBot", roleKey: "speaker", username: "Satoshi_geniustrader_bot", role: "Trader 私聊接收 / 订单核验" },
@@ -20,6 +21,7 @@ const currentBotFallback = [
 export default function NewGroupPage() {
   const [log, setLog] = useState("准备初始化新群。");
   const [topics, setTopics] = useState(defaultTopics);
+  const [selectedTopicIds, setSelectedTopicIds] = useState(defaultTopicIds);
   const [groupName, setGroupName] = useState("");
   const [groupDescription, setGroupDescription] = useState("");
   const [chatId, setChatId] = useState("");
@@ -37,7 +39,8 @@ export default function NewGroupPage() {
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState({ active: false, value: 0, label: "等待执行" });
   const selectedGroup = groups.find((group) => String(group.chatId) === String(chatId)) || null;
-  const checklist = buildInitializationChecklist({ groupName, topics, group: selectedGroup, generatedAt });
+  const selectedTopics = topics.filter((topic) => selectedTopicIds.includes(String(topic[0])));
+  const checklist = buildInitializationChecklist({ groupName, topics: selectedTopics, group: selectedGroup, generatedAt });
 
   useEffect(() => {
     initialize();
@@ -52,7 +55,7 @@ export default function NewGroupPage() {
         .catch((error) => setSaveStatus(`保存失败：${error.message}`));
     }, 600);
     return () => window.clearTimeout(timer);
-  }, [draftLoaded, groupName, groupDescription, chatId, botRole, dryRun, topics]);
+  }, [draftLoaded, groupName, groupDescription, chatId, botRole, dryRun, topics, selectedTopicIds]);
 
   useLiveAutoRefresh(
     () => refreshGroups(chatId, { silent: true }),
@@ -67,11 +70,17 @@ export default function NewGroupPage() {
       if (savedDraft) {
         setGroupDescription(savedDraft.groupDescription || "");
         setBotRole("admin");
-        if (savedDraft.topics?.length) {
-          setTopics(migrateTopicTemplateList(savedDraft.topics).map((topic) => {
+        const restoredTopics = savedDraft.topics?.length
+          ? migrateTopicTemplateList(savedDraft.topics).map((topic) => {
             return [topic.id, topic.emoji, topic.name, topic.attribute, topic.announcement || "", topic.imageUrl || ""];
-          }));
-        }
+          })
+          : defaultTopics;
+        setTopics(restoredTopics);
+        const availableIds = restoredTopics.map((topic) => String(topic[0]));
+        const restoredSelection = Array.isArray(savedDraft.selectedTopicIds)
+          ? savedDraft.selectedTopicIds.map(String).filter((id) => availableIds.includes(id))
+          : availableIds;
+        setSelectedTopicIds(restoredSelection);
         setSaveStatus(saved.updatedAt ? `已恢复云端草稿 · ${new Date(saved.updatedAt).toLocaleString()}` : "已恢复云端草稿");
       } else {
         setSaveStatus("尚无云端草稿，修改后将自动保存");
@@ -90,7 +99,8 @@ export default function NewGroupPage() {
       chatId,
       botRole,
       dryRun: true,
-      topics: topics.map(([id, emoji, name, attribute, announcement, imageUrl]) => ({ id, emoji, name, attribute, announcement, imageUrl }))
+      topics: topics.map(([id, emoji, name, attribute, announcement, imageUrl]) => ({ id, emoji, name, attribute, announcement, imageUrl })),
+      selectedTopicIds
     });
   }
 
@@ -191,8 +201,19 @@ export default function NewGroupPage() {
     }));
   }
 
+  function toggleTopic(topicId) {
+    const normalizedId = String(topicId);
+    setSelectedTopicIds((current) => current.includes(normalizedId)
+      ? current.filter((id) => id !== normalizedId)
+      : topics.map((topic) => String(topic[0])).filter((id) => current.includes(id) || id === normalizedId));
+  }
+
   async function run() {
     if (running) return;
+    if (!selectedTopicIds.length) {
+      setLog("至少选择一个需要搭建的 Topic。");
+      return;
+    }
     if (!/^-100\d+$/.test(chatId.trim())) {
       setLog("请填写有效的 Telegram 超级群 ID（以 -100 开头）。");
       return;
@@ -240,7 +261,8 @@ export default function NewGroupPage() {
             groupDescription,
             chatId,
             botRole: "admin",
-            topics: topics.map(([id, emoji, name, attribute, announcement, imageUrl]) => ({ id, emoji, name, attribute, announcement, imageUrl }))
+            topics: topics.map(([id, emoji, name, attribute, announcement, imageUrl]) => ({ id, emoji, name, attribute, announcement, imageUrl })),
+            selectedTopicIds,
           }
         })
       });
@@ -285,7 +307,7 @@ export default function NewGroupPage() {
           </label>
           <button
             className="mt-5 rounded-lg bg-ops-accent px-5 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={running}
+            disabled={running || !selectedTopicIds.length}
             onClick={run}
           >
             {running ? "正在设置..." : dryRun ? "安全测试新群" : "批量设置新群"}
@@ -323,32 +345,36 @@ export default function NewGroupPage() {
             </div>
           </div>
           <div className="mt-5 border-t border-ops-line pt-5">
-            <h3 className="font-black">建群默认关闭话题</h3>
+            <h3 className="font-black">本次搭建 Topic</h3>
             <div className="mt-3 grid gap-2 text-sm">
-              {topics.filter((topic) => topic[3] === "关闭话题").map((topic) => (
-                <label className="flex items-center justify-between rounded-lg bg-[#fbfcfb] px-3 py-2" key={topic}>
-                  <span>{topic[1]} {topic[2]}</span>
-                  <input type="checkbox" defaultChecked />
-                </label>
-              ))}
+              {selectedTopics.map((topic) => <div className="rounded-lg bg-[#fbfcfb] px-3 py-2" key={topic[0]}>{topic[1]} {topic[2]}</div>)}
+              {!selectedTopics.length && <div className="rounded-lg bg-amber-50 px-3 py-2 font-bold text-amber-800">尚未选择 Topic</div>}
             </div>
           </div>
           <pre className="mt-5 max-h-48 overflow-auto rounded-lg bg-[#101815] p-3 text-xs leading-5 text-[#d8f9e7]">{log}</pre>
         </Card>
       </div>
       <Card className="mt-5 overflow-hidden">
-        <div className="border-b border-ops-line p-5">
-          <h2 className="text-xl font-black">分区模板预览</h2>
-          <p className="mt-1 text-sm text-ops-muted">图标会设置为 Telegram Topic 的官方自定义图标，不会重复写入名称；关闭话题表示创建后默认关闭该 Topic。</p>
+        <div className="flex flex-col gap-3 border-b border-ops-line p-5 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-xl font-black">分区模板预览</h2>
+            <p className="mt-1 text-sm text-ops-muted">勾选本次需要搭建的 Topic；图标、名称和属性仍可逐项调整。General Chat 为 Telegram 系统话题，不计入 1–7。</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <StatusPill tone={selectedTopicIds.length ? "green" : "amber"}>已选 {selectedTopicIds.length}/{topics.length}</StatusPill>
+            <button className="rounded-lg border border-ops-line px-3 py-2 text-xs font-black" onClick={() => setSelectedTopicIds(topics.map((topic) => String(topic[0])))} type="button">全选</button>
+            <button className="rounded-lg border border-ops-line px-3 py-2 text-xs font-black" onClick={() => setSelectedTopicIds([])} type="button">清空</button>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[820px] text-sm">
             <thead className="bg-[#f9fbfa] text-left text-xs uppercase text-ops-muted">
-              <tr><th className="px-5 py-3">序号</th><th className="px-5 py-3">Topic 图标</th><th className="px-5 py-3">Topic 名称</th><th className="px-5 py-3">属性</th></tr>
+              <tr><th className="px-5 py-3">搭建</th><th className="px-5 py-3">序号</th><th className="px-5 py-3">Topic 图标</th><th className="px-5 py-3">Topic 名称</th><th className="px-5 py-3">属性</th></tr>
             </thead>
             <tbody>
               {topics.map((topic, index) => (
-                <tr className="border-t border-ops-line" key={topic[0]}>
+                <tr className={`border-t border-ops-line ${selectedTopicIds.includes(String(topic[0])) ? "" : "opacity-55"}`} key={topic[0]}>
+                  <td className="px-5 py-3"><input aria-label={`搭建 ${topic[2]}`} checked={selectedTopicIds.includes(String(topic[0]))} onChange={() => toggleTopic(topic[0])} type="checkbox" /></td>
                   <td className="px-5 py-3 font-bold">{topic[0]}</td>
                   <td className="px-5 py-3"><input className={`${inputClass} w-20`} value={topic[1]} onChange={(event) => updateTopic(index, 1, event.target.value)} /></td>
                   <td className="px-5 py-3"><input className={inputClass} value={topic[2]} onChange={(event) => updateTopic(index, 2, event.target.value)} /></td>

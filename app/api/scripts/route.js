@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { NextResponse } from "next/server";
+import { buildSelectedTopicTemplateJson } from "../../../lib/new-group-topics.mjs";
+import { defaultTopicTemplate } from "../../../templates.mjs";
 
 export const maxDuration = 300;
 
@@ -60,7 +62,12 @@ export async function POST(request) {
   }
 
   const payload = body.payload || {};
-  const env = buildEnv(payload);
+  let env;
+  try {
+    env = buildEnv(payload, body.scriptId);
+  } catch (error) {
+    return NextResponse.json({ ok: false, label: script.label, error: error.message }, { status: 400 });
+  }
 
   try {
     const result = await runNode(script.command, env);
@@ -85,8 +92,14 @@ export async function POST(request) {
   }
 }
 
-function buildEnv(payload) {
+function buildEnv(payload, scriptId = "") {
   const dryRun = payload.mode !== "production";
+  const selectedTopicTemplateJson = scriptId === "newGroup"
+    ? buildSelectedTopicTemplateJson(
+        Array.isArray(payload.topics) && payload.topics.length ? payload.topics : defaultTopicTemplate,
+        payload.selectedTopicIds
+      )
+    : null;
   const tokens = readTokenEnv(payload.tokenFile || ".env.telegram-tokens.local");
   const normalizedRole = String(payload.botRole || "admin").toLowerCase();
   const roleToken = normalizedRole === "speaker" || normalizedRole === "speakerbot" || normalizedRole === "trader1"
@@ -117,7 +130,11 @@ function buildEnv(payload) {
     BOT_ROLE: payload.botRole || "admin",
     GROUP_NAME: payload.groupName || "",
     GROUP_DESCRIPTION: payload.groupDescription || "",
-    TOPIC_TEMPLATE_JSON: payload.topics ? JSON.stringify(payload.topics) : "",
+    TOPIC_TEMPLATE_JSON: selectedTopicTemplateJson
+      ? selectedTopicTemplateJson
+      : payload.topics
+        ? JSON.stringify(payload.topics)
+        : "",
     DELETE_DUPLICATE_TOPICS: payload.deleteTopics === false ? "false" : "true",
     TOKEN_FILE: payload.tokenFile || ".env.telegram-tokens.local"
   };
