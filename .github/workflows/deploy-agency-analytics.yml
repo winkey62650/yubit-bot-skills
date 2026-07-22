@@ -1,0 +1,79 @@
+name: Deploy agency analytics
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: agency-analytics-production-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@v4
+
+      - name: Install SSH password helper
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq sshpass
+
+      - name: Upload and deploy Site Nerve
+        env:
+          SSHPASS: ${{ secrets.YUBIT_SERVER_PASSWORD }}
+          SITE_NERVE_ADMIN_PASSWORD: ${{ secrets.SITE_NERVE_ADMIN_PASSWORD }}
+        run: |
+          set -Eeuo pipefail
+          if [ -z "$SSHPASS" ]; then
+            echo "YUBIT_SERVER_PASSWORD is not configured." >&2
+            exit 1
+          fi
+          if [ -z "$SITE_NERVE_ADMIN_PASSWORD" ]; then
+            echo "SITE_NERVE_ADMIN_PASSWORD is not configured." >&2
+            exit 1
+          fi
+
+          remote_source="/tmp/agency-analytics-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ssh_options=(
+            -o ConnectTimeout=20
+            -o ServerAliveInterval=10
+            -o StrictHostKeyChecking=accept-new
+          )
+
+          sshpass -e ssh "${ssh_options[@]}" ubuntu@152.32.161.174 "mkdir -p '$remote_source' && chmod 700 '$remote_source'"
+          sshpass -e rsync -az --delete \
+            -e "ssh ${ssh_options[*]}" \
+            tools/agency-analytics/ \
+            "ubuntu@152.32.161.174:$remote_source/"
+
+          password_file="$RUNNER_TEMP/site-nerve-admin-password"
+          printf '%s' "$SITE_NERVE_ADMIN_PASSWORD" >"$password_file"
+          chmod 600 "$password_file"
+          sshpass -e scp "${ssh_options[@]}" "$password_file" "ubuntu@152.32.161.174:$remote_source/.admin-password"
+          rm -f "$password_file"
+
+          sshpass -e ssh "${ssh_options[@]}" ubuntu@152.32.161.174 "REMOTE_SOURCE='$remote_source' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          trap 'rm -rf "$REMOTE_SOURCE"' EXIT
+          admin_password="$(cat "$REMOTE_SOURCE/.admin-password")"
+          rm -f "$REMOTE_SOURCE/.admin-password"
+          cd "$REMOTE_SOURCE"
+          ADMIN_PASSWORD="$admin_password" bash deploy/server/deploy-from-source.sh
+          REMOTE
+
+      - name: Verify public and protected routes
+        env:
+          SITE_NERVE_ADMIN_PASSWORD: ${{ secrets.SITE_NERVE_ADMIN_PASSWORD }}
+        run: |
+          set -Eeuo pipefail
+          base_url="https://analytics.152-32-161-174.sslip.io"
+          curl --fail --silent --show-error --max-time 20 "$base_url/api/health" >/dev/null
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 20 "$base_url/")" = "401"
+          curl --fail --silent --show-error --max-time 20 \
+            --user "admin:$SITE_NERVE_ADMIN_PASSWORD" \
+            "$base_url/api/ready" >/dev/null
