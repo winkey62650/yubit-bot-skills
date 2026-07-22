@@ -19,6 +19,9 @@ test("group config UI can verify and save a group by chat id without a local Tel
   assert.match(source, /按群 ID 检测并保存/);
   assert.match(source, /method:\s*["']POST["']/);
   assert.match(source, /无需在这台 Mac 登录/);
+  assert.match(source, /@Serenity_Crypto → 已授权群组 → Topic → 自动发布/);
+  assert.match(source, /AdminBot/);
+  assert.doesNotMatch(source, /三个 Bot 管理员|请确认三个 Bot 已加入|服务器上的三个 Bot/);
 });
 
 test("group config shows the user publisher and official Forum group identity", async () => {

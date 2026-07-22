@@ -55,7 +55,7 @@ export default function SocialSourceManager({ packages, busy, onPersist, onNotic
 
   return <Card className="overflow-hidden">
     <div className="flex flex-col gap-3 border-b border-ops-line p-5 lg:flex-row lg:items-start lg:justify-between">
-      <div><p className="text-xs font-black uppercase tracking-[.16em] text-ops-accent">代理内容来源</p><h2 className="mt-1 text-xl font-black">X / YouTube 自动抓取</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-ops-muted">SpeakerBot 每 4 小时检查一次，只在识别到新内容时共享。一个代理可以分别添加 X 和 YouTube 两条来源。</p></div>
+      <div><p className="text-xs font-black uppercase tracking-[.16em] text-ops-accent">代理内容来源</p><h2 className="mt-1 text-xl font-black">X / YouTube 自动抓取</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-ops-muted">后台抓取任务每 4 小时检查一次，只在识别到新内容时共享。一个代理可以分别添加 X 和 YouTube 两条来源。</p></div>
       <div className="flex flex-wrap gap-2"><StatusPill tone={readiness.ready ? "green" : "amber"}>{readiness.enabled} 条启用</StatusPill><StatusPill tone={readiness.limited ? "amber" : "green"}>{readiness.stable} 条稳定 · {readiness.limited} 条有限</StatusPill></div>
     </div>
     <div className="grid gap-5 p-5 xl:grid-cols-[minmax(320px,.82fr)_minmax(0,1.18fr)]">

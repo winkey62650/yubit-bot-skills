@@ -141,6 +141,8 @@ function normalizeGroup(group) {
     adminBotCount: Number(group?.adminBotCount ?? adminBotCount),
     allBotsAdmin: group?.allBotsAdmin === true,
     allBotIdentitiesVerified: group?.allBotIdentitiesVerified !== false,
+    adminBotIdentityVerified: group?.adminBotIdentityVerified === true,
+    adminBotReady: group?.adminBotReady === true,
     channelPublishingReady: group?.channelPublishingReady === true,
     distributionReady: group?.distributionReady === true,
     readyForInitialization: group?.readyForInitialization === true,

@@ -542,7 +542,7 @@ function RuleList({ rules, empty, busy, kindLabel, selected, setSelected, onDele
 
 function TargetPicker({ groups, selected, onChange }) {
   const options = targetOptions(groups);
-  return <fieldset className="grid gap-2"><legend className="mb-1 text-sm font-bold text-ops-muted">目标 Forum 群 / Topic（可多选）</legend><div className="max-h-52 overflow-y-auto rounded-lg border border-ops-line p-2">{options.length ? options.map((option) => <label className="flex min-h-10 items-center gap-3 rounded-md px-2 text-sm hover:bg-ops-soft" key={option.key}><input checked={selected.includes(option.key)} onChange={() => onChange(selected.includes(option.key) ? selected.filter((key) => key !== option.key) : [...selected, option.key])} type="checkbox" /><span>{option.label}</span></label>) : <p className="p-2 text-sm text-ops-muted">暂未识别到可发布的 Forum 群 Topic，请先刷新群与 Bot。</p>}</div></fieldset>;
+  return <fieldset className="grid gap-2"><legend className="mb-1 text-sm font-bold text-ops-muted">目标 Forum 群 / Topic（可多选）</legend><div className="max-h-52 overflow-y-auto rounded-lg border border-ops-line p-2">{options.length ? options.map((option) => <label className="flex min-h-10 items-center gap-3 rounded-md px-2 text-sm hover:bg-ops-soft" key={option.key}><input checked={selected.includes(option.key)} onChange={() => onChange(selected.includes(option.key) ? selected.filter((key) => key !== option.key) : [...selected, option.key])} type="checkbox" /><span>{option.label}</span></label>) : <p className="p-2 text-sm text-ops-muted">暂未识别到可发布的 Forum 群 Topic，请先刷新群与 Topic。</p>}</div></fieldset>;
 }
 
 function BackfillPanel({ rules, value, setValue, busy, onRun }) {

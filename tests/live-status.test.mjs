@@ -91,7 +91,7 @@ test("new-group checklist labels form preparation separately from live permissio
 });
 
 test("status pages auto-refresh and render freshness instead of permanent green snapshots", () => {
-  for (const path of ["app/bots/page.jsx", "app/group-config/page.jsx", "app/groups/page.jsx"]) {
+  for (const path of ["app/bots/page.jsx", "app/group-config/page.jsx"]) {
     const source = readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
     assert.match(source, /useLiveAutoRefresh/, `${path} must auto-refresh visible status data`);
     assert.match(source, /LiveStatusStamp/, `${path} must show when its live data was checked`);
@@ -104,4 +104,10 @@ test("status pages auto-refresh and render freshness instead of permanent green 
   const groupConfigSource = readFileSync(new URL("../app/group-config/page.jsx", import.meta.url), "utf8");
   assert.match(groupConfigSource, /getLiveFreshness/);
   assert.match(groupConfigSource, /状态已过期/);
+});
+
+test("the obsolete group metrics page redirects to the live group and Topic workflow", () => {
+  const source = readFileSync(new URL("../app/groups/page.jsx", import.meta.url), "utf8");
+  assert.match(source, /redirect\(["']\/group-config["']\)/);
+  assert.doesNotMatch(source, /群用户人数|历史消息|7 天活跃/);
 });

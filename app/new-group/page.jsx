@@ -12,9 +12,9 @@ import { loadWorkspaceState, saveWorkspaceState } from "../../lib/workspace-clie
 
 const defaultTopics = defaultTopicTemplate.map((topic) => [topic.id, topic.emoji, topicNameWithSequence(topic), topic.attribute, topic.announcement || "", topic.imageUrl || ""]);
 const currentBotFallback = [
-  { name: "AdminBot", roleKey: "admin", username: "Bonnie_geniustrader_bot", role: "群管理 / 建群 / 公告" },
-  { name: "SpeakerBot", roleKey: "speaker", username: "Satoshi_geniustrader_bot", role: "新闻 / 分析 / 信号发布" },
-  { name: "ForwardBot", roleKey: "forward", username: "Biupa_geniustrader_bot", role: "广播 / 代理社媒转发" }
+  { name: "AdminBot", roleKey: "admin", username: "Bonnie_geniustrader_bot", role: "目标群发现 / Topic 初始化 / 权限复核" },
+  { name: "SpeakerBot", roleKey: "speaker", username: "Satoshi_geniustrader_bot", role: "Trader 私聊接收 / 订单核验" },
+  { name: "ForwardBot", roleKey: "forward", username: "Biupa_geniustrader_bot", role: "Telegram 来源监听 / 广播入站" }
 ];
 
 export default function NewGroupPage() {
@@ -105,7 +105,7 @@ export default function NewGroupPage() {
       const response = await fetch(`/api/chats?refresh=${Date.now()}`, { cache: "no-store" });
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error(data.error || "群发现失败");
-      const liveGroups = data.chats || [];
+      const liveGroups = (data.chats || []).filter((group) => group.type !== "channel");
       setGroups(liveGroups);
       setBots(data.bots?.length ? data.bots : currentBotFallback);
       setGeneratedAt(data.generatedAt || new Date().toISOString());
@@ -122,7 +122,7 @@ export default function NewGroupPage() {
       if (liveGroups.length && preferredChatId && !preferred) {
         setDiscoveryStatus(`已识别 ${liveGroups.length} 个群，但上次保存的群已不在实时列表；请重新选择群`);
       } else {
-        setDiscoveryStatus(liveGroups.length ? `已识别 ${liveGroups.length} 个群；${readyCount} 个群已开启 Topics 且三个 Bot 均为管理员` : "未识别到群，请确认 Bot 已加入并重新刷新");
+        setDiscoveryStatus(liveGroups.length ? `已识别 ${liveGroups.length} 个群；${readyCount} 个群已满足 AdminBot 初始化权限` : "未识别到群，请确认 AdminBot 已加入并重新刷新");
       }
     } catch (error) {
       setRefreshError(error.message);
@@ -139,7 +139,7 @@ export default function NewGroupPage() {
       throw new Error("请输入有效的 Telegram 超级群 ID（以 -100 开头）");
     }
     setRefreshing(true);
-    if (announce) setDiscoveryStatus("正在由服务器上的三个 Bot 直接检查群与管理员权限...");
+    if (announce) setDiscoveryStatus("正在由 AdminBot 直接检查群、Topics 与初始化权限...");
     try {
       const response = await fetch("/api/chats", {
         method: "POST",
@@ -163,7 +163,7 @@ export default function NewGroupPage() {
       setRefreshError("");
       setChatId(String(verifiedGroup.chatId));
       setGroupName(verifiedGroup.title);
-      setDiscoveryStatus(`${verifiedGroup.title} 已直接核验：三个 Bot 管理员 ${verifiedGroup.adminBotCount}/3，${verifiedGroup.canUseTopics ? "Topics 已开启" : "Topics 未开启"}`);
+      setDiscoveryStatus(`${verifiedGroup.title} 已直接核验：${verifiedGroup.adminBotReady ? "AdminBot 初始化权限已通过" : verifiedGroup.initializationBlockReason || "AdminBot 初始化权限待处理"}`);
       return verifiedGroup;
     } finally {
       setRefreshing(false);
@@ -198,7 +198,7 @@ export default function NewGroupPage() {
       return;
     }
     setRunning(true);
-    setLog("正在通过三个服务器端 Bot 直接核验群与管理员权限...");
+    setLog("正在通过 AdminBot 直接核验群、Topics 与初始化权限...");
     let verifiedGroup;
     try {
       verifiedGroup = await verifyEnteredGroup({ announce: false });
@@ -212,7 +212,7 @@ export default function NewGroupPage() {
       setLog([
         "初始化已阻止，尚未向 Telegram 执行任何修改。",
         verifiedGroup.initializationBlockReason || "这个群尚未满足初始化条件。",
-        "请由群主在 Telegram 打开：群资料 → 编辑 → Topics（话题），开启后回到后台点击“刷新群与 Bot”。"
+        "请由群主在 Telegram 检查：群资料 → 编辑 → Topics（话题），以及 AdminBot 管理员权限；完成后回到后台点击“刷新目标群”。"
       ].join("\n\n"));
       setRunning(false);
       setDryRun(true);
@@ -258,16 +258,16 @@ export default function NewGroupPage() {
   }
   return (
     <ConsoleShell>
-      <PageHeader title="新群初始化" desc="先识别已开启 Topics、且三个现用 Bot 都是管理员的超级群，再一键完成群资料、分区、公告和置顶配置。" />
+      <PageHeader title="新群初始化" desc="目标群只需将 @Serenity_Crypto 与 AdminBot 设为管理员：@Serenity_Crypto 负责官方身份发布，AdminBot 负责群发现、Topic 初始化和权限复核；SpeakerBot / ForwardBot 无需加入目标群。" />
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
         <Card className="p-6">
           <div className="mb-5 rounded-lg border border-ops-line bg-[#fbfcfb] p-4">
             <div className="flex flex-col gap-3 md:flex-row md:items-end">
               <div className="flex-1"><Field label="已识别群"><select className={`${inputClass} w-full`} disabled={!groupsLoaded || refreshing} value={chatId} onChange={(event) => selectGroup(event.target.value)}>{!groupsLoaded ? <option value="">正在读取 Telegram 群...</option> : groups.length ? <><option value="">请选择已识别群</option>{groups.map((group) => <option disabled={!group.readyForInitialization} key={group.chatId} value={group.chatId}>{group.title} · {group.readyForInitialization ? "可初始化" : group.initializationBlockReason || "不可初始化"}</option>)}</> : <option value="">暂未识别到群</option>}</select></Field></div>
-              <button className="min-h-11 rounded-lg border border-ops-accent px-5 text-sm font-black text-ops-accent disabled:opacity-60" disabled={refreshing} onClick={() => refreshGroups(chatId)} type="button">{refreshing ? "刷新中..." : "刷新群与 Bot"}</button>
+              <button className="min-h-11 rounded-lg border border-ops-accent px-5 text-sm font-black text-ops-accent disabled:opacity-60" disabled={refreshing} onClick={() => refreshGroups(chatId)} type="button">{refreshing ? "刷新中..." : "刷新目标群"}</button>
             </div>
             <p className="mt-2 text-sm font-bold text-ops-muted">{discoveryStatus}</p>
-            <p className="mt-1 text-xs font-bold text-ops-muted">无需在这台 Mac 登录三个 Bot；这里始终通过服务器端 Bot API 复核。</p>
+            <p className="mt-1 text-xs font-bold text-ops-muted">无需在这台 Mac 登录 Bot；AdminBot 始终通过服务器端 Bot API 复核目标群与 Topic。发布前还会检查 @Serenity_Crypto 的目标白名单。</p>
             <div className="mt-3"><LiveStatusStamp generatedAt={generatedAt} error={refreshError} refreshing={refreshing} /></div>
             {selectedGroup && !selectedGroup.readyForInitialization && <p className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-sm font-bold text-amber-800">{selectedGroup.initializationBlockReason}。Topics 必须由群主在 Telegram 客户端开启。</p>}
             <p className="mt-1 text-xs font-bold text-ops-accent">{saveStatus}</p>
@@ -312,11 +312,13 @@ export default function NewGroupPage() {
             })}
           </div>
           <div className="mt-5 border-t border-ops-line pt-5">
-            <h3 className="font-black">当前三个 Bot</h3>
+            <h3 className="font-black">发布与后台能力</h3>
             <div className="mt-3 grid gap-2 text-sm">
+              <div className="rounded-lg bg-[#fbfcfb] px-3 py-2"><div className="flex items-center justify-between gap-2"><strong>@Serenity_Crypto</strong><StatusPill tone="green">主发布账号</StatusPill></div><div className="mt-1 text-xs text-ops-muted">需加入目标群并设为管理员；自动发布时显示目标群名称和群头像。</div></div>
               {bots.map((bot) => {
-                const botStatus = getBotOperationalStatus({ bot, group: selectedGroup, generatedAt });
-                return <div className="rounded-lg bg-[#fbfcfb] px-3 py-2" key={bot.name}><div className="flex items-center justify-between gap-2"><strong>{bot.name}</strong><StatusPill tone={botStatus.tone}>{botStatus.label}</StatusPill></div><div className="mt-1 break-all text-xs text-ops-muted">@{bot.username || bot.expectedUsername}</div><div className="mt-1 text-xs text-ops-muted">{botStatus.detail}</div></div>;
+                const targetGroupRequired = bot.name === "AdminBot";
+                const botStatus = getBotOperationalStatus({ bot, group: targetGroupRequired ? selectedGroup : null, generatedAt });
+                return <div className="rounded-lg bg-[#fbfcfb] px-3 py-2" key={bot.name}><div className="flex items-center justify-between gap-2"><strong>{bot.name}</strong><StatusPill tone={botStatus.tone}>{botStatus.label}</StatusPill></div><div className="mt-1 break-all text-xs text-ops-muted">@{bot.username || bot.expectedUsername}</div><div className="mt-1 text-xs text-ops-muted">{bot.role}</div><div className="mt-1 text-xs font-bold text-ops-muted">{targetGroupRequired ? "需加入目标群并设为管理员" : "无需加入目标群"}</div><div className="mt-1 text-xs text-ops-muted">{botStatus.detail}</div></div>;
               })}
             </div>
           </div>

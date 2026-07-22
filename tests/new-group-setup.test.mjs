@@ -54,13 +54,19 @@ test("new-group UI never restores or persists production mode from a cloud draft
   assert.match(source, /finally \{[\s\S]*?setDryRun\(true\);/);
 });
 
-test("new-group UI verifies the entered chat id through all three server-side bots before setup", () => {
+test("new-group UI uses AdminBot for setup and keeps service bots outside target-group prerequisites", () => {
   const source = readFileSync(new URL("../app/new-group/page.jsx", import.meta.url), "utf8");
 
   assert.match(source, /verifyEnteredGroup/);
   assert.match(source, /fetch\("\/api\/chats"/);
   assert.match(source, /verifiedGroup\.readyForInitialization/);
   assert.match(source, /无需在这台 Mac 登录/);
+  assert.match(source, /@Serenity_Crypto/);
+  assert.match(source, /AdminBot/);
+  assert.match(source, /SpeakerBot/);
+  assert.match(source, /ForwardBot/);
+  assert.match(source, /无需加入目标群/);
+  assert.doesNotMatch(source, /三个现用 Bot 都是管理员|当前三个 Bot|三个 Bot 管理员|服务器上的三个 Bot/);
 });
 
 test("new-group UI never presents stale draft identity as an already recognized group", () => {

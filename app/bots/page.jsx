@@ -8,9 +8,9 @@ import { useLiveAutoRefresh } from "../hooks/useLiveAutoRefresh";
 import { getBotOperationalStatus } from "../../lib/live-status.mjs";
 
 const fallbackBots = [
-  { name: "AdminBot", role: "群管理 / 建群 / 公告", username: "Bonnie_geniustrader_bot", status: "读取中", groups: [] },
-  { name: "SpeakerBot", role: "新闻 / 分析 / 信号发布", username: "Satoshi_geniustrader_bot", status: "读取中", groups: [] },
-  { name: "ForwardBot", role: "广播 / 代理社媒转发", username: "Biupa_geniustrader_bot", status: "读取中", groups: [] }
+  { name: "AdminBot", role: "目标群发现 / Topic 初始化 / 权限复核", username: "Bonnie_geniustrader_bot", status: "读取中", groups: [] },
+  { name: "SpeakerBot", role: "Trader 私聊接收 / 订单核验", username: "Satoshi_geniustrader_bot", status: "读取中", groups: [] },
+  { name: "ForwardBot", role: "Telegram 来源监听 / 广播入站", username: "Biupa_geniustrader_bot", status: "读取中", groups: [] }
 ];
 
 export default function BotsPage() {
@@ -50,25 +50,25 @@ export default function BotsPage() {
   return (
     <ConsoleShell>
       <PageHeader
-        title="机器人配置"
-        desc="按 Telegram 当前成员身份核验三个 Bot 所在群；已退出群和升级前的旧群会自动隐藏。"
-        action={<button className="min-h-10 rounded-lg border border-ops-accent px-5 text-sm font-black text-ops-accent" disabled={running} onClick={() => refresh()}>{running ? "刷新中..." : "刷新机器人群"}</button>}
+        title="后台能力"
+        desc="@Serenity_Crypto 是唯一主发布账号，对外显示目标群身份；三个 Bot 继续作为后台能力组件运行，不再作为目标群的共同准入条件。"
+        action={<button className="min-h-10 rounded-lg border border-ops-accent px-5 text-sm font-black text-ops-accent" disabled={running} onClick={() => refresh()}>{running ? "刷新中..." : "刷新能力状态"}</button>}
       />
       <div className="mb-4"><LiveStatusStamp generatedAt={generatedAt} error={refreshError} refreshing={running} /></div>
       <section className="mb-5 grid gap-0 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops md:grid-cols-4">
-        <MetricBox label="机器人" value={String(bots.length)} sub="已配置角色" />
+        <MetricBox label="能力组件" value={String(bots.length)} sub="保留全部原有功能" />
         <MetricBox label="API 可用" value={String(availableCount)} sub="仅表示 Bot API 与身份核验通过" />
         <MetricBox label="有效群" value={String(coveredGroupCount)} sub="已去重并核验成员身份" />
         <MetricBox label="状态" value={status} sub={generatedAt ? new Date(generatedAt).toLocaleString("zh-CN") : "不显示 Token"} />
       </section>
       <Card className="overflow-hidden">
         <div className="border-b border-ops-line p-5">
-          <h2 className="text-xl font-black">机器人所在群</h2>
+          <h2 className="text-xl font-black">后台能力运行状态</h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[980px] text-sm">
             <thead className="bg-[#f9fbfa] text-left text-xs uppercase text-ops-muted">
-              <tr><th className="px-5 py-3">机器人</th><th className="px-5 py-3">职责</th><th className="px-5 py-3">当前有效群</th><th className="px-5 py-3">状态</th></tr>
+              <tr><th className="px-5 py-3">组件</th><th className="px-5 py-3">职责</th><th className="px-5 py-3">当前可访问范围</th><th className="px-5 py-3">状态</th></tr>
             </thead>
             <tbody>
               {bots.map((bot) => {
@@ -91,7 +91,7 @@ export default function BotsPage() {
           </table>
         </div>
       </Card>
-      <div className="mt-4 rounded-lg border border-ops-line bg-white px-5 py-4 text-sm leading-6 text-ops-muted">说明：“API 可用”不等于 Bot 已在某个群拥有管理员权限。群卡片会分别显示成员身份和 Topic 权限；Telegram 不提供“列出全部群”的接口，因此后台基于群事件与已保存群逐一实时复核。</div>
+      <div className="mt-4 rounded-lg border border-ops-line bg-white px-5 py-4 text-sm leading-6 text-ops-muted">AdminBot 需在目标群拥有管理员与 Topic 权限；SpeakerBot 只接收 Trader 私聊，ForwardBot 只监听已配置来源，两者无需加入每个目标群。所有出站内容统一进入 @Serenity_Crypto 发布队列。</div>
     </ConsoleShell>
   );
 }

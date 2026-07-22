@@ -6,9 +6,10 @@ test("console navigation exposes the trading center after content distribution",
   const shell = await readFile(new URL("../app/components/ConsoleShell.jsx", import.meta.url), "utf8");
   const distribution = shell.indexOf('label: "内容分发中心"');
   const trading = shell.indexOf('label: "交易中心"');
-  const bots = shell.indexOf('label: "机器人配置"');
+  const bots = shell.indexOf('label: "后台能力"');
   assert.ok(distribution >= 0 && trading > distribution && bots > trading);
   assert.match(shell, /href: ["']\/trading["']/);
+  assert.doesNotMatch(shell, /label: ["']群数据["']/);
 });
 
 test("trading center provides accessible operator flows and durable refresh states", async () => {

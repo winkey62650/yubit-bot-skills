@@ -161,29 +161,32 @@ http://localhost:4173/admin-group-config.html
 
 Main console pages:
 
-- `群配置`: the primary binding layer. Select a group, select a topic, then bind a package. The sender bot is filtered to bots that are actually in the selected group.
-- `新群初始化`: creates or repairs the YUBIT topic template for a Telegram supergroup.
-- `新闻配置`: manages crypto news source packages and tests one article into the demo `test` topic.
-- `信号配置`: manages trading signal packages and tests signal delivery.
-- `广播转发`: defines source demo topic broadcast rules.
-- `代理社媒转发`: defines packages for agent Twitter/X or YouTube forwarding.
-- `机器人配置`: shows bot roles and the groups each bot can access.
-- `群数据`: shows discovered group and topic data.
-- `系统设置`: stores health check and Lark monitoring settings.
+- `内容分发中心`: manages automatic publishing, Telegram broadcast rules, review queues, and delivery logs.
+- `群与 Topic`: discovers eligible Forum groups and maintains stable group/topic targets.
+- `新群初始化`: creates or repairs the numbered topic template through AdminBot.
+- `交易中心`: links Trader identities, read-only YUBIT credentials, order verification, and profitable PNL publishing.
+- `主发布账号`: shows the live `@Serenity_Crypto` desktop publisher bridge and approved targets.
+- `后台能力`: shows the retained AdminBot, SpeakerBot, and ForwardBot service capabilities.
+- `系统设置`: stores health checks, publishing safety boundaries, and Lark monitoring settings.
 
 Runtime state is stored under `.runtime/` and is intentionally ignored by git.
 
 ## Current Product Model
 
-The console separates configuration into packages and bindings:
+The primary outbound workflow is:
 
-- News configuration packages define which RSS/API sources are healthy and how news should be formatted.
-- Signal configuration packages define which market signal scripts are healthy and how often they should run.
-- Broadcast packages define which demo group topic should be listened to.
-- Social forwarding packages define which agent social links should be monitored.
-- Group bindings decide which group topic receives which package.
+1. Automatic tasks, Telegram broadcasts, or verified Trader signals create a server-side delivery job.
+2. The authenticated desktop bridge claims the job exactly once.
+3. `@Serenity_Crypto` publishes with the group identity into the configured Forum group and Topic.
+4. The delivery result and Telegram message identifiers are written back to the console.
 
-This keeps the workflow clean: first build/test packages, then bind packages to production group topics.
+The three bots remain available as background capabilities without becoming the visible sender:
+
+- AdminBot discovers target groups, initializes Topics, and verifies permissions.
+- SpeakerBot receives Trader private messages and starts order verification.
+- ForwardBot listens to configured Telegram sources and creates broadcast jobs.
+
+Target Forum groups therefore require `@Serenity_Crypto` and AdminBot as administrators. SpeakerBot and ForwardBot only need access to the private-message or source-listening contexts used by their own capability.
 
 ## Telegram Topic Template
 

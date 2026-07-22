@@ -100,7 +100,7 @@ export default function GroupConfigPage() {
       return;
     }
     setBusy(true);
-    setStatus("正在由服务器上的三个 Bot 检查群、Topics 与管理员权限…");
+    setStatus("正在由 AdminBot 检查群、Topics 与初始化权限…");
     try {
       const response = await fetch("/api/chats", {
         method: "POST",
@@ -122,8 +122,10 @@ export default function GroupConfigPage() {
       setGeneratedAt(data.generatedAt || new Date().toISOString());
       setRefreshError("");
       setManualChatId("");
-      const readiness = data.group.canUseTopics ? "Topics 已开启" : "Topics 未开启";
-      setStatus(`${data.group.title} 已检测并保存：三个 Bot 管理员 ${data.group.adminBotCount}/3，${readiness}。`);
+      const readiness = data.group.adminBotReady
+        ? "AdminBot 初始化权限已通过"
+        : data.group.initializationBlockReason || "AdminBot 初始化权限待处理";
+      setStatus(`${data.group.title} 已检测并保存：${readiness}。`);
     } catch (error) {
       setStatus(`检测失败：${error.message}`);
     } finally {
@@ -131,8 +133,9 @@ export default function GroupConfigPage() {
     }
   }
 
-  const topicCount = groups.reduce((total, group) => total + (group.topics?.length || 0), 0);
-  const confirmedTopics = groups.reduce((total, group) => total + (group.topics?.filter((topic) => topic.threadId).length || 0), 0);
+  const forumGroups = groups.filter((group) => group.type !== "channel");
+  const topicCount = forumGroups.reduce((total, group) => total + (group.topics?.length || 0), 0);
+  const confirmedTopics = forumGroups.reduce((total, group) => total + (group.topics?.filter((topic) => topic.threadId).length || 0), 0);
   const channels = groups.filter((group) => group.type === "channel");
   const freshness = getLiveFreshness(generatedAt);
   const liveIsFresh = freshness.state === "fresh";
@@ -150,16 +153,15 @@ export default function GroupConfigPage() {
     <ConsoleShell>
       <PageHeader
         title="群与 Topic 配置"
-        desc={`这里只维护 Forum 群、Topic 与三个 Bot 的发现和权限状态；${publisherName} 仅作签名授权，消息必须显示目标群名称和群头像。`}
+        desc={`主工作流：@Serenity_Crypto → 已授权群组 → Topic → 自动发布。${publisherName} 是唯一主发布账号，对外显示目标群身份；AdminBot 只负责群发现、Topic 初始化和权限复核，SpeakerBot / ForwardBot 的后台能力保持不变。`}
         action={<div className="flex flex-wrap gap-3"><Link className="grid min-h-11 place-items-center rounded-lg border border-ops-accent px-5 text-sm font-black text-ops-accent" href="/telegram-user-authorization">授权群官方发布</Link><Link className="grid min-h-11 place-items-center rounded-lg bg-ops-accent px-5 text-sm font-black text-white" href="/distribution">进入内容分发中心</Link></div>}
       />
 
-      <section className="mb-5 grid overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops sm:grid-cols-2 xl:grid-cols-5">
-        <Metric label="已识别对象" value={groups.length} detail="跨设备持久保存" />
-        <Metric label="Forum 群" value={groups.filter((group) => group.canUseTopics).length} detail={liveIsFresh ? "已实时核验 Topics 开关" : "状态已过期，等待刷新"} />
-        <Metric label="历史 Channel" value={channels.length} detail="当前不作为出站目标" />
+      <section className="mb-5 grid overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops sm:grid-cols-2 xl:grid-cols-4">
+        <Metric label="已识别群" value={forumGroups.length} detail="跨设备持久保存" />
+        <Metric label="初始化就绪" value={forumGroups.filter((group) => group.adminBotReady).length} detail={liveIsFresh ? "已实时核验 AdminBot" : "状态已过期，等待刷新"} />
         <Metric label="Topic 总数" value={topicCount} detail={`${confirmedTopics} 个已确认 Thread ID`} />
-        <Metric label="发布器" value={publisherStatus} detail={publisherDetail} />
+        <Metric label="主发布账号" value={publisherStatus} detail={publisherDetail} />
       </section>
 
       <Card className="overflow-hidden">
@@ -170,16 +172,16 @@ export default function GroupConfigPage() {
             </Field>
             <button className="min-h-11 rounded-lg bg-ops-accent px-5 text-sm font-black text-white disabled:opacity-50" disabled={busy} onClick={probeAndSaveChat} type="button">{busy ? "正在检测…" : "按群 ID 检测并保存"}</button>
           </div>
-          <p className="mt-2 text-xs font-bold text-ops-muted">无需在这台 Mac 登录三个 Bot。服务器通过 Bot API 检查群、Topics 与 Bot 管理员权限；实际出站由已授权的 @Serenity_Crypto 以匿名管理员身份签名，并强制使用目标群官方身份。首次登记请填写以 -100 开头的群 ID。</p>
+          <p className="mt-2 text-xs font-bold text-ops-muted">无需在这台 Mac 登录 Bot。AdminBot 通过 Bot API 检查群、Topics 与初始化权限；@Serenity_Crypto 必须是目标群管理员并进入发布白名单。实际出站使用匿名管理员 / Send As 能力，强制显示目标群名称和群头像。首次登记请填写以 -100 开头的群 ID。</p>
         </div>
         <div className="flex flex-col gap-4 border-b border-ops-line p-5 md:flex-row md:items-center md:justify-between">
-          <div><h2 className="text-xl font-black">Telegram 群与 Topic 健康状态</h2><p className="mt-1 text-sm text-ops-muted">刷新用于复核已登记对象；ForwardBot 启用 Webhook 后不再与 getUpdates 并行轮询。</p></div>
+          <div><h2 className="text-xl font-black">目标群与 Topic 健康状态</h2><p className="mt-1 text-sm text-ops-muted">刷新用于复核 AdminBot 初始化权限、Topic Thread ID 和主发布账号白名单。{channels.length ? `已隐藏 ${channels.length} 条历史 Channel 记录，当前不作为出站目标。` : ""}</p></div>
           <button className="min-h-11 rounded-lg border border-ops-accent px-5 text-sm font-black text-ops-accent disabled:opacity-50" disabled={busy} onClick={discoverChats} type="button">{busy ? "正在刷新…" : "刷新群、Topic 与权限"}</button>
         </div>
         <div aria-live="polite" className="border-b border-ops-line bg-[#fbfcfb] px-5 py-3 text-sm font-bold text-ops-muted">{status}</div>
         <div className="border-b border-ops-line px-5 py-3"><LiveStatusStamp generatedAt={generatedAt} error={refreshError} refreshing={busy} /></div>
         <div className="divide-y divide-ops-line">
-          {groups.length ? groups.map((group) => <GroupCard group={group} isFresh={liveIsFresh} key={group.chatId} publisher={publisher} />) : <div className="p-8 text-center font-bold text-ops-muted">尚未发现 Forum 群。请确认三个 Bot 已加入并获得对应管理员权限。</div>}
+          {forumGroups.length ? forumGroups.map((group) => <GroupCard group={group} isFresh={liveIsFresh} key={group.chatId} publisher={publisher} />) : <div className="p-8 text-center font-bold text-ops-muted">尚未发现 Forum 群。请确认 @Serenity_Crypto 与 AdminBot 已加入目标群并设为管理员。</div>}
         </div>
       </Card>
     </ConsoleShell>
@@ -188,31 +190,21 @@ export default function GroupConfigPage() {
 
 function GroupCard({ group, isFresh, publisher }) {
   const bots = group.bots || [];
+  const adminBot = bots.find((bot) => bot.name === "AdminBot") || {};
   const knownCount = group.topicCoverage?.knownCount ?? group.topics?.length ?? 0;
   const resolvedCount = group.topicCoverage?.resolvedCount ?? group.topics?.filter((topic) => topic.threadId).length ?? 0;
-  const isChannel = group.type === "channel";
-  const healthy = isChannel ? false : group.readyForInitialization === true;
+  const healthy = group.adminBotReady === true || group.readyForInitialization === true;
   const targetApproved = publisher?.approvedTargetIds?.map(String).includes(String(group.chatId)) === true;
   const publisherReadyForTarget = publisher?.ready === true && targetApproved;
   return <article className="p-5">
     <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-      <div><div className="flex flex-wrap items-center gap-2"><h3 className="text-lg font-black">{group.title}</h3><StatusPill tone={isFresh && healthy ? "green" : "amber"}>{!isFresh ? "状态已过期" : healthy ? "Bot 权限正常" : "Bot 权限需处理"}</StatusPill></div><p className="mt-1 font-mono text-xs text-ops-muted">{group.chatId} · {isChannel ? group.isPrivateChannel ? "private channel" : "public channel" : group.type}</p></div>
-      <div className="grid gap-2 text-sm sm:grid-cols-2 xl:min-w-[520px] xl:grid-cols-3">
-        {(bots.length ? bots : [{ name: "AdminBot" }, { name: "SpeakerBot" }, { name: "ForwardBot" }]).map((bot) => {
-          const permissionLabel = !isFresh
-            ? "等待重新核验"
-            : !bot.isAdmin
-              ? bot.membership === "member" ? "已加入，非管理员" : "未确认权限"
-              : isChannel
-                ? "管理员 · 仅保留识别"
-                : `管理员${bot.canManageTopics ? " · 可管理 Topic" : ""}`;
-          return <div className="rounded-lg border border-ops-line p-3" key={bot.name}><div className="font-black">{bot.name}</div><div className={`mt-1 text-xs font-bold ${isFresh && bot.isAdmin ? "text-ops-accent" : "text-[#a04a3d]"}`}>{permissionLabel}</div></div>;
-        })}
+      <div><div className="flex flex-wrap items-center gap-2"><h3 className="text-lg font-black">{group.title}</h3><StatusPill tone={isFresh && healthy ? "green" : "amber"}>{!isFresh ? "状态已过期" : healthy ? "初始化能力正常" : "初始化权限需处理"}</StatusPill></div><p className="mt-1 font-mono text-xs text-ops-muted">{group.chatId} · {group.type}</p></div>
+      <div className="grid gap-2 text-sm sm:grid-cols-2 xl:min-w-[520px]">
+        <div className="rounded-lg border border-ops-line p-3"><div className="font-black">主发布账号</div><div className={`mt-1 text-xs font-bold ${publisherReadyForTarget ? "text-ops-accent" : "text-[#a04a3d]"}`}>{publisher?.username || "@Serenity_Crypto"} · {publisherReadyForTarget ? "本群可发布" : "待复核本群白名单"}</div></div>
+        <div className="rounded-lg border border-ops-line p-3"><div className="font-black">初始化执行器</div><div className={`mt-1 text-xs font-bold ${isFresh && healthy ? "text-ops-accent" : "text-[#a04a3d]"}`}>AdminBot · {!isFresh ? "等待重新核验" : healthy ? "权限完整" : adminBot.membership === "member" ? "已加入，非管理员" : group.initializationBlockReason || "权限待处理"}</div></div>
       </div>
     </div>
-    {isChannel
-      ? <div className="mt-4 rounded-lg bg-[#fff8e8] p-4"><div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm">历史 Channel 记录</strong><span className="text-xs font-bold text-[#a04a3d]">当前不作为出站目标</span></div><p className="mt-2 text-xs leading-5 text-ops-muted">当前工作流已收敛到 Forum Group + Topic。该 Channel 仅保留为历史识别数据，不会被自动发布或广播规则选为目标。</p></div>
-      : <div className="mt-4 rounded-lg bg-[#f7f9f8] p-4"><div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm">Topics：{knownCount} 个已知 / {resolvedCount} 个已确认</strong><span className={`text-xs font-bold ${publisherReadyForTarget ? "text-ops-accent" : "text-[#a04a3d]"}`}>{publisherReadyForTarget ? "群官方身份可用" : targetApproved ? "群已在白名单，发布授权待恢复" : "群尚未加入发布白名单"}</span></div><p className="mt-2 text-xs leading-5 text-ops-muted">出站消息由 {publisher?.username || "@Serenity_Crypto"} 作为匿名管理员授权，但 Telegram 客户端必须显示本群名称和群头像；若无法取得本群的 send_as 权限，系统会拒绝发送且不会回退到 Bot 或个人身份。</p><div className="mt-3 flex flex-wrap gap-2">{(group.topics || []).map((topic) => <span className={`rounded-full px-3 py-1 text-xs font-bold ${topic.threadId ? "bg-[#e6f7ef] text-ops-accent" : "bg-[#fff1df] text-[#8a5d1a]"}`} key={`${topic.name}-${topic.threadId || "template"}`}>{topic.name}{topic.threadId ? ` · ${topic.threadId}` : " · 待识别"}</span>)}</div>{publisher?.lastError ? <p className="mt-2 text-xs font-bold text-[#6f551d]">群官方发布器：{publisher.lastError}</p> : null}</div>}
+    <div className="mt-4 rounded-lg bg-[#f7f9f8] p-4"><div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm">Topics：{knownCount} 个已知 / {resolvedCount} 个已确认</strong><span className={`text-xs font-bold ${publisherReadyForTarget ? "text-ops-accent" : "text-[#a04a3d]"}`}>{publisherReadyForTarget ? "群官方身份可用" : targetApproved ? "群已在白名单，发布授权待恢复" : "群尚未加入发布白名单"}</span></div><p className="mt-2 text-xs leading-5 text-ops-muted">出站消息由 {publisher?.username || "@Serenity_Crypto"} 通过本群的匿名管理员 / Send As 能力发布，Telegram 客户端必须显示本群名称和群头像；若无法取得权限，系统会拒绝发送且不会回退到 Bot 或个人身份。</p><div className="mt-3 flex flex-wrap gap-2">{(group.topics || []).map((topic) => <span className={`rounded-full px-3 py-1 text-xs font-bold ${topic.threadId ? "bg-[#e6f7ef] text-ops-accent" : "bg-[#fff1df] text-[#8a5d1a]"}`} key={`${topic.name}-${topic.threadId || "template"}`}>{topic.name}{topic.threadId ? ` · ${topic.threadId}` : " · 待识别"}</span>)}</div>{publisher?.lastError ? <p className="mt-2 text-xs font-bold text-[#6f551d]">群官方发布器：{publisher.lastError}</p> : null}</div>
   </article>;
 }
 

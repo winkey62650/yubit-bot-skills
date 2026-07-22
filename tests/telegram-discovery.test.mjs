@@ -131,16 +131,49 @@ test("merges the three current bots into one live group view", () => {
   assert.equal(groups.find((group) => group.chatId === forumId).initializationBlockReason, "");
 });
 
-test("does not mark a group ready when any current bot is missing or not an administrator", () => {
+test("marks a Forum group ready when AdminBot is ready even if service bots are not members", () => {
   const groups = mergeBotGroupDiscoveries([
-    { name: "AdminBot", status: "在线", groups: [{ chatId: activeId, title: "CryptoGuy Academy", membership: "administrator" }] },
-    { name: "SpeakerBot", status: "在线", groups: [{ chatId: activeId, title: "CryptoGuy Academy", membership: "member" }] },
+    { name: "AdminBot", status: "在线", groups: [{
+      chatId: forumId,
+      title: "DEMO Academy",
+      type: "supergroup",
+      membership: "administrator",
+      isForum: true,
+      canUseTopics: true,
+      canManageTopics: true,
+      permissions: { canPinMessages: true, canChangeInfo: true }
+    }] },
+    { name: "SpeakerBot", status: "在线", groups: [{ chatId: forumId, title: "DEMO Academy", membership: "member" }] },
     { name: "ForwardBot", status: "需检查", groups: [] }
   ]);
 
   assert.equal(groups[0].adminBotCount, 1);
   assert.equal(groups[0].allBotsAdmin, false);
+  assert.equal(groups[0].adminBotReady, true);
+  assert.equal(groups[0].readyForInitialization, true);
+  assert.equal(groups[0].initializationBlockReason, "");
+});
+
+test("does not mark a Forum group ready when AdminBot is not an administrator", () => {
+  const group = (membership) => ({
+    chatId: forumId,
+    title: "DEMO Academy",
+    type: "supergroup",
+    membership,
+    isForum: true,
+    canUseTopics: true,
+    canManageTopics: membership === "administrator",
+    permissions: { canPinMessages: membership === "administrator", canChangeInfo: membership === "administrator" }
+  });
+  const groups = mergeBotGroupDiscoveries([
+    { name: "AdminBot", status: "在线", groups: [group("member")] },
+    { name: "SpeakerBot", status: "在线", groups: [group("administrator")] },
+    { name: "ForwardBot", status: "在线", groups: [group("administrator")] }
+  ]);
+
+  assert.equal(groups[0].adminBotReady, false);
   assert.equal(groups[0].readyForInitialization, false);
+  assert.match(groups[0].initializationBlockReason, /AdminBot.*管理员/);
 });
 
 test("does not mark a forum ready when AdminBot cannot manage topics", () => {

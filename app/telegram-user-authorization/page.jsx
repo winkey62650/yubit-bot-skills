@@ -1,174 +1,113 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import ConsoleShell from "../components/ConsoleShell";
-import { Card, Field, PageHeader, StatusPill, inputClass } from "../components/ui";
+import LiveStatusStamp from "../components/LiveStatusStamp";
+import { useLiveAutoRefresh } from "../hooks/useLiveAutoRefresh";
+import { Card, PageHeader, StatusPill } from "../components/ui";
 
-const endpoint = "/api/telegram/user-authorization";
+const DEMO_CHAT_ID = "-1003710405969";
 
 export default function TelegramUserAuthorizationPage() {
   const [publisher, setPublisher] = useState(null);
-  const [flowId, setFlowId] = useState("");
-  const [apiId, setApiId] = useState("");
-  const [apiHash, setApiHash] = useState("");
-  const [phoneNumber, setPhoneNumber] = useState("");
-  const [phoneCode, setPhoneCode] = useState("");
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState("正在读取授权状态…");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  useEffect(() => { refreshStatus(); }, []);
-
-  async function refreshStatus() {
+  const refresh = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     try {
-      const response = await fetch(endpoint, { cache: "no-store" });
+      const response = await fetch("/api/distribution", { cache: "no-store" });
       const data = await response.json();
-      if (!response.ok || !data.ok) throw new Error(data.error || "授权状态读取失败");
-      setPublisher(data.publisher);
-      setNotice(data.publisher?.ready ? "@Serenity_Crypto 已授权，当前只允许以 Demo Academy Forum 群身份发布。" : "请完成 Telegram 用户账号授权。");
-    } catch (error) {
-      setNotice(error.message);
-    }
-  }
-
-  async function begin(event) {
-    event.preventDefault();
-    if (busy) return;
-    setBusy(true);
-    setNotice("正在请求 Telegram 发送验证码…");
-    try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "begin", apiId, apiHash, phoneNumber })
-      });
-      const data = await response.json();
-      if (!response.ok || !data.ok) throw new Error(data.error || "授权启动失败");
-      setFlowId(data.authorization.flowId);
-      setApiId("");
-      setApiHash("");
-      setPhoneNumber("");
-      setNotice(data.authorization.codeViaApp ? "验证码已发到本机 Telegram App。" : "请输入 Telegram 发送的验证码。");
-    } catch (error) {
-      setApiHash("");
-      setNotice(error.message);
+      if (!response.ok || !data.ok) throw new Error(data.error || "主发布账号状态读取失败");
+      setPublisher(data.publisher || null);
+      setError("");
+    } catch (nextError) {
+      setError(nextError.message || "主发布账号状态读取失败");
     } finally {
-      setBusy(false);
+      if (!silent) setLoading(false);
     }
-  }
+  }, []);
 
-  async function complete(event) {
-    event.preventDefault();
-    if (busy || !flowId) return;
-    setBusy(true);
-    setNotice("正在完成授权并加密保存会话…");
-    try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "complete", flowId, phoneCode, password })
-      });
-      const data = await response.json();
-      setPhoneCode("");
-      setPassword("");
-      if (!response.ok || !data.ok) throw new Error(data.error || "授权失败");
-      setFlowId("");
-      setPublisher(data.publisher);
-      setNotice("授权成功。会话与 API Hash 已在服务器加密保存，页面不保留验证码或密码。");
-    } catch (error) {
-      setPhoneCode("");
-      setPassword("");
-      setFlowId("");
-      setNotice(`${error.message}请重新开始授权。`);
-      await refreshStatus();
-    } finally {
-      setBusy(false);
-    }
-  }
+  useEffect(() => { refresh(); }, [refresh]);
+  useLiveAutoRefresh(() => refresh({ silent: true }), { enabled: !loading });
 
-  async function cancel() {
-    if (busy || !flowId) return;
-    setBusy(true);
-    try {
-      await fetch(endpoint, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "cancel", flowId })
-      });
-    } finally {
-      setFlowId("");
-      setPhoneCode("");
-      setPassword("");
-      setBusy(false);
-      setNotice("已取消本次授权。");
-    }
-  }
+  const operationalStatus = publisher?.operationalStatus || "offline";
+  const ready = publisher?.operationalReady === true;
+  const statusLabel = operationalStatus === "publishing"
+    ? "正在发布"
+    : operationalStatus === "stalled"
+      ? "任务卡住"
+      : operationalStatus === "degraded"
+        ? "最近发布失败"
+        : ready
+          ? "在线"
+          : "离线";
+  const approvedTargets = publisher?.approvedTargetIds || [];
+  const lastSeenAt = publisher?.lastSeenAt || publisher?.lastVerifiedAt || null;
 
-  const ready = publisher?.ready === true;
   return (
     <ConsoleShell>
       <PageHeader
-        title="Telegram 发布账号授权"
-        desc="@Serenity_Crypto 只作为服务器发布凭证；在 Forum 群内显式使用官方群身份，成员看到的是群名称和群头像，不显示 Bot 或个人账号。"
-        action={<Link className="grid min-h-11 place-items-center rounded-lg border border-ops-accent px-5 text-sm font-black text-ops-accent" href="/group-config">返回群配置</Link>}
+        title="主发布账号"
+        desc="@Serenity_Crypto 是唯一主发布账号。本机发布桥操作已登录的 Telegram，对外始终显示目标群名称和群头像。"
+        action={<Link className="grid min-h-11 place-items-center rounded-lg bg-ops-accent px-5 text-sm font-black text-white" href="/distribution">进入内容分发中心</Link>}
       />
 
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <LiveStatusStamp generatedAt={lastSeenAt} error={error} refreshing={loading} />
+        <button className="min-h-11 rounded-lg border border-ops-accent bg-white px-5 text-sm font-black text-ops-accent disabled:opacity-50" disabled={loading} onClick={() => refresh()} type="button">
+          {loading ? "正在核验" : "刷新运行状态"}
+        </button>
+      </div>
+
       <section className="mb-5 grid overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="账号" value={publisher?.username || "@Serenity_Crypto"} ok={publisher?.authorized} />
-        <Metric label="会话授权" value={publisher?.authorized ? "已授权" : "待授权"} ok={publisher?.authorized} />
-        <Metric label="加密存储" value={publisher?.encryptionReady && publisher?.configured ? "已就绪" : "未就绪"} ok={publisher?.encryptionReady && publisher?.configured} />
-        <Metric label="出站发布" value={ready ? "可用" : "停用"} ok={ready} />
+        <Metric label="主发布账号" value={publisher?.username || "@Serenity_Crypto"} ok />
+        <Metric label="本机发布桥" value={statusLabel} ok={ready || operationalStatus === "publishing"} />
+        <Metric label="已授权目标" value={`${approvedTargets.length} 个`} ok={approvedTargets.length > 0} />
+        <Metric label="安全回退" value="禁止 Bot / 个人身份" ok />
       </section>
+
+      {(error || publisher?.operationalError || publisher?.lastError) ? (
+        <div className="mb-5 rounded-lg border border-[#e4c88b] bg-[#fff7e6] px-4 py-3 text-sm font-bold text-[#80591c]" role="alert">
+          {error || publisher.operationalError || publisher.lastError}
+        </div>
+      ) : null}
 
       <Card className="p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div><h2 className="text-xl font-black">安全授权向导</h2><p className="mt-1 text-sm text-ops-muted">API Hash、验证码和 2FA 密码不会写入浏览器存储或运行日志。</p></div>
-          <StatusPill tone={ready ? "green" : "amber"}>{ready ? "已可发布" : flowId ? "等待验证码" : "待授权"}</StatusPill>
+          <div>
+            <h2 className="text-xl font-black">当前发布闭环</h2>
+            <p className="mt-1 text-sm text-ops-muted">运营只需要维护内容规则、目标群和 Topic，不再处理账号开发凭证或选择 Bot 发送人。</p>
+          </div>
+          <StatusPill tone={ready ? "green" : "amber"}>{ready ? "闭环在线" : "等待发布桥"}</StatusPill>
         </div>
-
-        {!flowId ? (
-          <form className="mt-6 grid gap-4 md:grid-cols-3" onSubmit={begin}>
-            <Field label="Telegram API ID">
-              <input className={inputClass} inputMode="numeric" autoComplete="off" value={apiId} onChange={(event) => setApiId(event.target.value)} required />
-            </Field>
-            <Field label="Telegram API Hash">
-              <input className={inputClass} type="password" autoComplete="new-password" value={apiHash} onChange={(event) => setApiHash(event.target.value)} required />
-            </Field>
-            <Field label="@Serenity_Crypto 国际格式手机号">
-              <input className={inputClass} type="tel" autoComplete="off" placeholder="+8613800000000" value={phoneNumber} onChange={(event) => setPhoneNumber(event.target.value)} required />
-            </Field>
-            <div className="md:col-span-3 flex flex-wrap items-center gap-3">
-              <button className="min-h-11 rounded-lg bg-ops-accent px-5 text-sm font-black text-white disabled:opacity-50" disabled={busy} type="submit">{busy ? "请求中…" : "发送 Telegram 验证码"}</button>
-              <a className="text-sm font-bold text-ops-accent underline" href="https://my.telegram.org/apps" rel="noreferrer" target="_blank">在 my.telegram.org/apps 获取 API ID / Hash</a>
-            </div>
-          </form>
-        ) : (
-          <form className="mt-6 grid gap-4 md:grid-cols-2" onSubmit={complete}>
-            <Field label="Telegram 验证码">
-              <input className={inputClass} type="password" inputMode="numeric" autoComplete="one-time-code" value={phoneCode} onChange={(event) => setPhoneCode(event.target.value)} required />
-            </Field>
-            <Field label="Telegram 2FA 密码（未开启可留空）">
-              <input className={inputClass} type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} />
-            </Field>
-            <div className="md:col-span-2 flex flex-wrap gap-3">
-              <button className="min-h-11 rounded-lg bg-ops-accent px-5 text-sm font-black text-white disabled:opacity-50" disabled={busy} type="submit">{busy ? "验证中…" : "完成授权"}</button>
-              <button className="min-h-11 rounded-lg border border-ops-line px-5 text-sm font-black disabled:opacity-50" disabled={busy} onClick={cancel} type="button">取消</button>
-            </div>
-          </form>
-        )}
-
-        <p aria-live="polite" className={`mt-5 rounded-lg px-4 py-3 text-sm font-bold ${ready ? "bg-[#e6f7ef] text-ops-accent" : "bg-[#fff4df] text-[#8a5d1a]"}`}>{notice}</p>
+        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <Step number="1" title="生成内容" text="自动任务、广播或 Trader 信号进入服务端发布队列。" />
+          <Step number="2" title="安全领取" text="本机发布桥单实例领取任务，防止重复发布。" />
+          <Step number="3" title="官方群身份发布" text="@Serenity_Crypto 选择目标群身份与正确 Topic，严格按模板发送。" />
+          <Step number="4" title="结果回写" text="逐步回写消息编号、成功状态或可重试错误。" />
+        </div>
       </Card>
 
       <Card className="mt-5 p-6">
-        <h2 className="text-xl font-black">本轮验收边界</h2>
+        <h2 className="text-xl font-black">发布边界</h2>
         <div className="mt-4 grid gap-3 md:grid-cols-3">
-          <Scope title="唯一目标" value="Demo Academy Forum" />
-          <Scope title="Telegram Chat ID" value="-1003710405969" mono />
-          <Scope title="验收项" value="群名称与群头像、Topic、文字、图片、定时发布" />
+          <Scope title="当前验收群" value="Demo Academy Forum" />
+          <Scope title="Telegram Chat ID" value={DEMO_CHAT_ID} mono />
+          <Scope title="显示效果" value="群名称和群头像，不显示 Bot 或个人账号" />
         </div>
-        <p className="mt-4 text-sm leading-6 text-ops-muted">Fight Club、CryptoGuy 和所有 Channel 均不在本轮许可范围内。@Serenity_Crypto 必须是 Demo 群的匿名管理员；权限、授权或官方群身份任一不满足时，系统停止发送且不会静默回退到 Bot / 个人发帖。</p>
+        <p className="mt-4 text-sm leading-6 text-ops-muted">只有白名单内、且 @Serenity_Crypto 已设为匿名管理员 / Send As 群身份的 Forum 群可以发布。新增正式群必须先在“群与 Topic”完成权限核验，再明确批准加入白名单。</p>
+      </Card>
+
+      <Card className="mt-5 p-6">
+        <h2 className="text-xl font-black">后台能力组件仍然保留</h2>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <Scope title="AdminBot" value="群发现、Topic 初始化、权限复核" />
+          <Scope title="SpeakerBot" value="Trader 私聊接收、订单核验" />
+          <Scope title="ForwardBot" value="来源群 / Channel 新消息监听" />
+        </div>
+        <p className="mt-4 text-sm leading-6 text-ops-muted">三个 Bot 是后台能力组件，不是可见发言人。它们保留原功能，但所有获准的出站内容都统一进入 @Serenity_Crypto 发布队列。</p>
       </Card>
     </ConsoleShell>
   );
@@ -176,6 +115,10 @@ export default function TelegramUserAuthorizationPage() {
 
 function Metric({ label, value, ok }) {
   return <div className="border-b border-ops-line p-5 last:border-0 sm:border-r xl:border-b-0"><div className="text-sm font-bold text-ops-muted">{label}</div><div className={`mt-1 text-xl font-black ${ok ? "text-ops-accent" : "text-[#8a5d1a]"}`}>{value}</div></div>;
+}
+
+function Step({ number, title, text }) {
+  return <div className="rounded-lg bg-[#f7f9f8] p-4"><span className="grid h-7 w-7 place-items-center rounded-full bg-ops-accent text-xs font-black text-white">{number}</span><h3 className="mt-3 font-black">{title}</h3><p className="mt-1 text-sm leading-6 text-ops-muted">{text}</p></div>;
 }
 
 function Scope({ title, value, mono = false }) {

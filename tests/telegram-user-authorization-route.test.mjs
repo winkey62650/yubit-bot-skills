@@ -19,16 +19,19 @@ test("Telegram user authorization API is protected, node-only, and never returns
   assert.doesNotMatch(middleware, /publicPaths[^;]*telegram\/user-authorization/);
 });
 
-test("authorization page keeps Telegram secrets in password fields and browser memory only", async () => {
+test("publisher page reflects the desktop Serenity workflow without obsolete API credential forms", async () => {
   const [page, navigation] = await Promise.all([
     readFile(new URL("app/telegram-user-authorization/page.jsx", root), "utf8"),
     readFile(new URL("app/components/ConsoleShell.jsx", root), "utf8")
   ]);
 
-  assert.match(page, /\/api\/telegram\/user-authorization/);
-  assert.match(page, /type="password"/);
-  assert.match(page, /autoComplete="new-password"/);
-  assert.match(page, /autoComplete="one-time-code"/);
+  assert.match(page, /\/api\/distribution/);
+  assert.match(page, /@Serenity_Crypto/);
+  assert.match(page, /本机发布桥/);
+  assert.match(page, /后台能力组件/);
+  assert.doesNotMatch(page, /\/api\/telegram\/user-authorization/);
+  assert.doesNotMatch(page, /Telegram API ID|Telegram API Hash|验证码|2FA/);
+  assert.doesNotMatch(page, /type="password"/);
   assert.doesNotMatch(page, /localStorage|sessionStorage/);
   assert.match(page, /-1003710405969/);
   assert.match(page, /Demo Academy Forum/);
