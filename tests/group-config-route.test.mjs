@@ -62,3 +62,27 @@ test("a transient empty Telegram discovery never erases the last saved group con
     preservedExisting: false
   });
 });
+
+test("a membership refresh cannot erase previously verified Topic thread IDs", () => {
+  const existing = [{
+    chatId: "-1001",
+    title: "Old title",
+    topics: [{ name: "3. Market Events", threadId: 8, verified: true }]
+  }];
+  const discovered = [{
+    chatId: "-1001",
+    title: "DEMO Academy",
+    botCount: 3,
+    topics: [{ name: "3. Market Events", threadId: null, verified: false }]
+  }];
+
+  assert.deepEqual(resolveDiscoveredGroups(existing, discovered), {
+    groups: [{
+      chatId: "-1001",
+      title: "DEMO Academy",
+      botCount: 3,
+      topics: [{ name: "3. Market Events", threadId: 8, verified: true }]
+    }],
+    preservedExisting: false
+  });
+});

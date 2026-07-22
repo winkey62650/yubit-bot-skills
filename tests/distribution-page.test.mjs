@@ -18,6 +18,10 @@ test("content sync clearly configures where Serenity copies messages from and to
   assert.match(pageSource, /@Serenity_Crypto/);
   assert.match(pageSource, /来源群 \/ 频道 \/ Topic/);
   assert.match(pageSource, /目标 Forum 群 \/ Topic（可多选）/);
+  assert.match(pageSource, /Forum 群必须选择具体来源 Topic/);
+  assert.match(pageSource, /群必须填写 Thread ID/);
+  assert.doesNotMatch(pageSource, /可监听整个群 \/ 频道/);
+  assert.doesNotMatch(pageSource, /群留空表示监听整群/);
   assert.match(pageSource, /暂无内容同步规则/);
 });
 

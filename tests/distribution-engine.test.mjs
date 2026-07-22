@@ -197,7 +197,7 @@ test("concurrent retries claim a failed target only once", async () => {
   assert.equal((await repository.getDelivery(failed.id)).status, "success");
 });
 
-test("whole-group rules accept any topic while service messages and bot loops are ignored", async () => {
+test("legacy forum whole-group rules fail closed while service messages and bot loops are ignored", async () => {
   const repository = new MemoryDistributionRepository({
     rules: [broadcastRule({ source: { chatId: "-1001", threadId: null }, targets: [{ id: "target-a", chatId: "-2001", threadId: 21 }] })]
   });
@@ -208,10 +208,31 @@ test("whole-group rules accept any topic while service messages and bot loops ar
   const system = await engine.receiveUpdate({ ...messageUpdate({ message_id: 78, text: undefined, new_chat_members: [{ id: 7 }] }), update_id: 9002 });
   const loop = await engine.receiveUpdate({ ...messageUpdate({ message_id: 79, from: { id: 999, is_bot: true } }), update_id: 9003 });
 
-  assert.equal(wholeGroup.status, "processed");
+  assert.deepEqual(wholeGroup, { status: "ignored", reason: "no-matching-rule" });
   assert.deepEqual(system, { status: "ignored", reason: "unsupported-message" });
   assert.deepEqual(loop, { status: "ignored", reason: "forward-loop" });
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 0);
+});
+
+test("channel rules still accept the whole channel because channels have no topics", async () => {
+  const repository = new MemoryDistributionRepository({
+    rules: [broadcastRule({ source: { chatId: "-1009", chatType: "channel", threadId: null } })]
+  });
+  const calls = [];
+  const engine = new DistributionEngine({ repository, telegram: async (...args) => calls.push(args) });
+
+  const result = await engine.receiveUpdate({
+    update_id: 9010,
+    channel_post: {
+      message_id: 88,
+      date: 1784016000,
+      chat: { id: -1009, title: "Official", type: "channel" },
+      text: "channel post"
+    }
+  });
+
+  assert.equal(result.status, "processed");
+  assert.equal(calls.length, 2);
 });
 
 test("reply and edit updates use per-target message mappings", async () => {

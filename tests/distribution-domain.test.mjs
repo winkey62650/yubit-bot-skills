@@ -397,6 +397,29 @@ test("rejects a broadcast target that points back to its own source topic", () =
   }]);
 });
 
+test("a Forum group broadcast source must select an exact Topic", () => {
+  const errors = validateDistributionRule({
+    kind: "broadcast",
+    name: "Unsafe whole-group sync",
+    source: { chatId: "-1001", chatType: "supergroup" },
+    targets: [{ chatId: "-1002", threadId: 8 }]
+  });
+
+  assert.deepEqual(errors, [{
+    field: "source.threadId",
+    message: "来源群必须选择 Topic"
+  }]);
+});
+
+test("a Channel broadcast source does not invent a Topic", () => {
+  assert.deepEqual(validateDistributionRule({
+    kind: "broadcast",
+    name: "Channel sync",
+    source: { chatId: "-1009", chatType: "channel" },
+    targets: [{ chatId: "-1002", threadId: 8 }]
+  }), []);
+});
+
 test("preset schedules calculate the next UTC execution boundary", () => {
   const now = new Date("2026-07-14T08:03:00.000Z");
   assert.equal(computeNextRunAt("daily-0800-utc", now).toISOString(), "2026-07-15T08:00:00.000Z");

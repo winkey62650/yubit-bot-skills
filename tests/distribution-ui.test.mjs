@@ -121,8 +121,8 @@ test("distribution selectors exclude General Chat and follow the managed editori
 
   assert.deepEqual(orderedDistributionTopics(topics).map((topic) => topic.name), expectedNames);
   assert.deepEqual(buildDistributionTargetOptions(groups).map((option) => option.target.topicName), expectedNames);
-  assert.deepEqual(buildDistributionSourceOptions(groups).slice(1).map((option) => option.source.topicName), expectedNames);
-  assert.equal(buildDistributionSourceOptions(groups)[0].source.topicName, "整群");
+  assert.deepEqual(buildDistributionSourceOptions(groups).map((option) => option.source.topicName), expectedNames);
+  assert.equal(JSON.stringify(buildDistributionSourceOptions(groups)).includes("整群"), false);
   assert.equal(JSON.stringify(buildDistributionTargetOptions(groups)).includes("General Chat"), false);
 });
 
@@ -216,7 +216,7 @@ test("broadcast route is ready only after source and at least one target are set
   assert.deepEqual(incomplete.missing, ["来源", "至少一个目标"]);
 
   const ready = buildBroadcastRouteSummary({
-    source: { chatId: "-1001", groupName: "Demo", topicName: "News" },
+    source: { chatId: "-1001", threadId: 7, groupName: "Demo", topicName: "News" },
     mode: "review",
     targets: [{ chatId: "-1002", threadId: 8 }]
   });
@@ -224,6 +224,21 @@ test("broadcast route is ready only after source and at least one target are set
   assert.equal(ready.targetCount, 1);
   assert.equal(ready.sourceLabel, "Demo / News");
   assert.match(ready.processingLabel, /待审核/);
+
+  const missingSourceTopic = buildBroadcastRouteSummary({
+    source: { chatId: "-1001", chatType: "supergroup", groupName: "Demo" },
+    mode: "automatic",
+    targets: [{ chatId: "-1002", threadId: 8 }]
+  });
+  assert.equal(missingSourceTopic.ready, false);
+  assert.deepEqual(missingSourceTopic.missing, ["来源 Topic"]);
+
+  const channelSource = buildBroadcastRouteSummary({
+    source: { chatId: "-1009", chatType: "channel", groupName: "Official", topicName: "整个频道" },
+    mode: "automatic",
+    targets: [{ chatId: "-1002", threadId: 8 }]
+  });
+  assert.equal(channelSource.ready, true);
 });
 
 test("market events sample preserves the supplied July 7 briefing without imposing a fixed daily count", () => {
