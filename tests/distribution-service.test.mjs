@@ -704,8 +704,7 @@ test("desktop publishing queues generated content and completes only after a Dem
   await completeDesktopPublisherDelivery("delivery-desktop", {
     status: "progress",
     leaseId: resumed.leaseId,
-    stepId: claimed.steps[1].stepId,
-    targetMessageId: 902
+    stepId: claimed.steps[1].stepId
   }, { repository, env, now: "2026-07-21T12:19:00.000Z" });
 
   const completed = await completeDesktopPublisherDelivery("delivery-desktop", {
@@ -714,7 +713,7 @@ test("desktop publishing queues generated content and completes only after a Dem
   }, { repository, env, now: "2026-07-21T12:20:00.000Z" });
   assert.equal(completed.status, "success");
   assert.equal(completed.attempts, 1);
-  assert.deepEqual(completed.targetMessageIds, [901, 902]);
+  assert.deepEqual(completed.targetMessageIds, [901]);
   assert.ok(completed.deliveredAt);
   assert.equal(meta.get("desktop-publisher-v1").lastDeliveryStatus, "success");
   assert.equal(meta.get("desktop-publisher-v1").lastError, null);
