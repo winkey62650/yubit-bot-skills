@@ -73,7 +73,8 @@ jobs:
           set -Eeuo pipefail
           base_url="https://analytics.152-32-161-174.sslip.io"
           curl --fail --silent --show-error --max-time 20 "$base_url/api/health" >/dev/null
-          test "$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 20 "$base_url/")" = "401"
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 20 "$base_url/")" = "302"
+          test "$(curl --silent --output /dev/null --write-out '%{redirect_url}' --max-time 20 "$base_url/")" = "https://152-32-161-174.sslip.io/distribution?view=site-analytics"
           curl --fail --silent --show-error --max-time 20 \
             --user "admin:$SITE_NERVE_ADMIN_PASSWORD" \
             "$base_url/api/ready" >/dev/null

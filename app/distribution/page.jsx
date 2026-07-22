@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import ConsoleShell from "../components/ConsoleShell";
 import { Card, Field, PageHeader, StatusPill, inputClass } from "../components/ui";
 import SocialSourceManager from "./SocialSourceManager";
+import SiteAnalyticsPanel from "./SiteAnalyticsPanel";
 import {
   bulkDeleteNotice,
   buildBroadcastRouteSummary,
@@ -17,6 +18,7 @@ import {
 } from "../../lib/distribution-ui.mjs";
 
 const tabs = [
+  ["site-analytics", "网站数据"],
   ["automation", "自动发布"],
   ["broadcast", "内容同步"],
   ["review", "待审核"],
@@ -260,6 +262,7 @@ export default function DistributionPage() {
     : data.publisher?.ready
       ? `${publisherName} · ${data.publisher?.approvedTargetIds?.length || 0} 个白名单目标${activeDeliveryDetail}${data.publisher?.lastSeenAt ? ` · 最近心跳 ${new Date(data.publisher.lastSeenAt).toLocaleString("zh-CN", { hour12: false })}` : ""}`
       : publisherIsDesktop ? "需保持 Mac、Telegram 与 Codex 自动发布任务在线" : publisherIsBot ? "生产环境禁止回退到 Bot 发布" : "需完成加密用户会话授权与群 send_as 权限";
+  const analyticsView = view === "site-analytics";
 
   useEffect(() => {
     setSelectedAutomationRules((current) => reconcileRuleSelection(current, data.rules.filter((rule) => rule.kind === "automation")));
@@ -269,29 +272,29 @@ export default function DistributionPage() {
   return (
     <ConsoleShell>
       <PageHeader
-        title="内容分发中心"
-        desc={`自动发布与内容同步均由 ${publisherName} 完成签名授权，并以目标 Forum 群的名称和头像发布；ForwardBot 只负责监听来源新消息。`}
-        action={<button className="min-h-11 rounded-lg border border-ops-accent px-5 text-sm font-black text-ops-accent disabled:opacity-50" disabled={Boolean(busy)} onClick={() => post({ action: "configure-webhook" }, "ForwardBot Webhook 已配置。")}>配置 ForwardBot Webhook</button>}
+        title={analyticsView ? "网站数据中心" : "内容分发中心"}
+        desc={analyticsView ? "在现有后台统一管理代理网站，并观察从访问、视频播放到 Telegram 转化的完整表现。" : `自动发布与内容同步均由 ${publisherName} 完成签名授权，并以目标 Forum 群的名称和头像发布；ForwardBot 只负责监听来源新消息。`}
+        action={analyticsView ? null : <button className="min-h-11 rounded-lg border border-ops-accent px-5 text-sm font-black text-ops-accent disabled:opacity-50" disabled={Boolean(busy)} onClick={() => post({ action: "configure-webhook" }, "ForwardBot Webhook 已配置。")}>配置 ForwardBot Webhook</button>}
       />
 
-      <div className="mb-5 rounded-lg border border-[#d9bd73] bg-[#fff9e8] px-4 py-3" role="status">
+      {!analyticsView ? <div className="mb-5 rounded-lg border border-[#d9bd73] bg-[#fff9e8] px-4 py-3" role="status">
         <p className="text-sm font-black text-[#5f4513]">安全验收锁已开启</p>
         <p className="mt-1 text-xs leading-5 text-[#7b642f]">当前生产白名单只允许 Demo Academy Forum；系统显式使用官方群身份发布。权限或授权异常时停止发送，不会退回显示 Bot / 个人身份。其他群必须得到你再次批准后才可加入。</p>
-      </div>
+      </div> : null}
 
-      <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+      {!analyticsView ? <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
         <Summary label="数据库" value={data.database?.ok ? "正常" : "待配置"} detail={data.database?.driver || "未连接"} />
         <Summary label="发布器" value={publisherStatus} detail={publisherDetail} />
         <Summary label="自动任务" value={automationRules.length} detail={`${automationRules.filter((rule) => rule.enabled).length} 条启用`} />
         <Summary label="同步规则" value={broadcastRules.length} detail={`${broadcastRules.filter((rule) => rule.enabled).length} 条启用`} />
         <Summary label="代理来源" value={socialReadiness.enabledCount} detail={socialReadiness.ready ? `${socialReadiness.stableCount} 条稳定可用` : "需要添加 X / YouTube 来源"} />
         <Summary label="待审核" value={data.review.length} detail="默认保留 7 天" />
-      </div>
+      </div> : null}
 
       {view === "automation" ? <OfficialPublishingWorkflow status={publisherStatus} detail={publisherDetail} ready={publisherOperationalReady} /> : null}
 
-      {notice ? <div role="status" className="mb-5 rounded-lg border border-ops-line bg-white px-4 py-3 text-sm font-bold text-[#33423b]">{notice}</div> : null}
-      {validation ? <ValidationPanel result={validation} onClose={() => setValidation(null)} /> : null}
+      {!analyticsView && notice ? <div role="status" className="mb-5 rounded-lg border border-ops-line bg-white px-4 py-3 text-sm font-bold text-[#33423b]">{notice}</div> : null}
+      {!analyticsView && validation ? <ValidationPanel result={validation} onClose={() => setValidation(null)} /> : null}
 
       {!loading && view === "automation" && !socialReadiness.ready && automationForm.contentType !== "agent-sync" ? <div className="mb-5 flex flex-col gap-3 rounded-lg border border-[#e7c883] bg-[#fff9e9] px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div><p className="text-sm font-black text-[#5f4513]">代理的 X / YouTube 更新尚未接入</p><p className="mt-1 text-xs leading-5 text-[#7b642f]">添加并启用代理来源后，系统会按每 4 小时抓取、去重并发布到所选 Forum 群 Topic。</p></div>
@@ -302,7 +305,8 @@ export default function DistributionPage() {
         {tabs.map(([key, label]) => <button aria-selected={view === key} className={`min-h-12 whitespace-nowrap border-b-2 px-4 text-sm font-black ${view === key ? "border-ops-accent text-ops-accent" : "border-transparent text-ops-muted"}`} key={key} onClick={() => changeView(key)} role="tab" type="button">{label}</button>)}
       </div>
 
-      {loading ? <Card className="p-8 text-center font-bold text-ops-muted">正在加载持久化配置…</Card> : null}
+      {analyticsView ? <SiteAnalyticsPanel /> : null}
+      {loading && !analyticsView ? <Card className="p-8 text-center font-bold text-ops-muted">正在加载持久化配置…</Card> : null}
       {!loading && view === "automation" ? <AutomationView form={automationForm} setForm={setAutomationForm} rules={automationRules} groups={groups} socialPackages={socialPackages} publisherName={publisherName} busy={busy} selected={selectedAutomationRules} setSelected={setSelectedAutomationRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedAutomationRules, "自动任务")} onSave={() => saveRule(automationForm, () => setAutomationForm(emptyAutomation))} onEdit={setAutomationForm} onAction={post} onValidate={validate} onPersistSocial={saveSocialPackages} onNotice={setNotice} /> : null}
       {!loading && view === "broadcast" ? <BroadcastView form={broadcastForm} setForm={setBroadcastForm} rules={broadcastRules} groups={groups} publisherName={publisherName} busy={busy} selected={selectedBroadcastRules} setSelected={setSelectedBroadcastRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedBroadcastRules, "内容同步规则")} backfill={backfill} setBackfill={setBackfill} onBackfill={previewBackfill} onSave={() => saveRule(broadcastForm, () => setBroadcastForm(emptyBroadcast))} onEdit={setBroadcastForm} onAction={post} onValidate={validate} /> : null}
       {!loading && view === "review" ? <ReviewView events={data.review} selected={selectedReviews} setSelected={setSelectedReviews} busy={busy} onAction={reviewAction} /> : null}
