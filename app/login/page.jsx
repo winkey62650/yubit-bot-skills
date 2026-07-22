@@ -38,7 +38,7 @@ export default function LoginPage() {
           <span className="grid h-11 w-11 place-items-center rounded-xl bg-ops-accent text-xl font-black text-white">Y</span>
           <div>
             <h1 className="text-2xl font-black tracking-tight">YUBIT 后台</h1>
-            <p className="mt-1 text-sm text-ops-muted">登录后管理机器人与群配置</p>
+            <p className="mt-1 text-sm text-ops-muted">登录后管理内容发布与群运营</p>
           </div>
         </div>
         <form className="grid gap-5" onSubmit={submit}>

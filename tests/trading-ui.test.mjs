@@ -12,6 +12,12 @@ test("console navigation exposes the trading center after content distribution",
   assert.doesNotMatch(shell, /label: ["']群数据["']/);
 });
 
+test("login page describes the content operations workflow instead of the legacy bot console", async () => {
+  const page = await readFile(new URL("../app/login/page.jsx", import.meta.url), "utf8");
+  assert.match(page, /管理内容发布与群运营/);
+  assert.doesNotMatch(page, /管理机器人与群配置/);
+});
+
 test("trading center provides accessible operator flows and durable refresh states", async () => {
   const page = await readFile(new URL("../app/trading/page.jsx", import.meta.url), "utf8");
 
