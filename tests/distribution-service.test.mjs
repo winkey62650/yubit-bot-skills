@@ -49,6 +49,8 @@ test("desktop publisher health reflects a recent local bridge heartbeat", async 
   assert.equal(health.mode, "desktop");
   assert.equal(health.ready, true);
   assert.equal(health.authorized, true);
+  assert.equal(health.bridgeActive, true);
+  assert.equal(health.targetAuthorizationReady, true);
   assert.equal(health.username, "@Serenity_Crypto");
   assert.deepEqual(health.approvedTargetIds, ["-1003710405969"]);
   assert.equal(health.lastSeenAt, "2026-07-21T13:05:00.000Z");
@@ -70,6 +72,8 @@ test("desktop publisher health becomes offline after the heartbeat expires", asy
 
   assert.equal(health.ready, false);
   assert.equal(health.authorized, false);
+  assert.equal(health.bridgeActive, false);
+  assert.equal(health.targetAuthorizationReady, true);
 });
 
 test("desktop publisher health reports stalled and degraded delivery state truthfully", async () => {

@@ -31,6 +31,10 @@ test("group config shows the user publisher and official Forum group identity", 
   assert.match(source, /@Serenity_Crypto/);
   assert.match(source, /群名称和群头像/);
   assert.match(source, /匿名管理员/);
+  assert.match(source, /Demo Academy 已授权/);
+  assert.match(source, /本机发布桥离线/);
+  assert.doesNotMatch(source, /待复核本群白名单/);
+  assert.doesNotMatch(source, /群已在白名单，发布授权待恢复/);
   assert.match(source, /当前不作为出站目标/);
   assert.doesNotMatch(source, /并由 SpeakerBot 执行发布/);
   assert.doesNotMatch(source, /Channel 内容分发/);

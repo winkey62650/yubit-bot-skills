@@ -44,6 +44,20 @@ test("publisher status checks expose identity, bridge, session, routing and late
   assert.equal(offline.find((check) => check.key === "identity").ok, false);
   assert.equal(offline.find((check) => check.key === "bridge").ok, false);
   assert.equal(offline.find((check) => check.key === "delivery").status, "失败");
+
+  const separated = buildPublisherStatusChecks({
+    username: "@Serenity_Crypto",
+    operationalStatus: "offline",
+    credentialsReady: true,
+    authorized: true,
+    bridgeActive: false,
+    lastSeenAt: "2026-07-22T02:44:51.676Z",
+    targetAuthorizationReady: true,
+    routingReady: true,
+    approvedTargetIds: ["-1003710405969"]
+  });
+  assert.equal(separated.find((check) => check.key === "session").ok, false);
+  assert.equal(separated.find((check) => check.key === "routing").ok, true);
 });
 
 test("rule selection keeps only unique rules that still exist", () => {
