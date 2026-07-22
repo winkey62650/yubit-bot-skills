@@ -10,6 +10,7 @@ import {
   backfillRule,
   claimDesktopPublisherDelivery,
   completeDesktopPublisherDelivery,
+  createDistributionEngine,
   desktopPublisherHealth,
   ensureAutomationSchedules,
   parseBackfillReferences,
@@ -20,6 +21,7 @@ import {
   runDistributionAutomationRule,
   verifyTelegramWebhookSecret
 } from "../lib/distribution-service.mjs";
+import { MemoryDistributionRepository } from "../lib/distribution-engine.mjs";
 
 test("desktop publisher health reflects a recent local bridge heartbeat", async () => {
   const repository = {
@@ -777,6 +779,113 @@ test("desktop publisher never claims a pending non-Demo delivery", async () => {
     env: { NODE_ENV: "production", DEMO_TELEGRAM_CHAT_ID: "-1003710405969" }
   });
   assert.equal(result, null);
+});
+
+test("desktop publisher claims an explicitly approved CryptoGuy Topic delivery", async () => {
+  const delivery = {
+    id: "delivery-crypto-events",
+    eventId: "event-crypto-events",
+    ruleId: "rule-demo-to-crypto-events",
+    status: "pending",
+    createdAt: "2026-07-22T06:00:00.000Z",
+    target: {
+      id: "crypto-events",
+      chatId: "-1004378187866",
+      chatType: "supergroup",
+      threadId: 8,
+      groupName: "CryptoGuy Academy",
+      topicName: "3. Market Events"
+    }
+  };
+  const event = {
+    id: delivery.eventId,
+    payload: {
+      deliveryPlans: [{
+        target: delivery.target,
+        steps: [{ method: "sendMessage", payload: { text: "Topic sync acceptance" } }]
+      }]
+    }
+  };
+  const repository = {
+    async listDeliveries({ status } = {}) { return status === delivery.status ? [delivery] : []; },
+    async claimDelivery() { delivery.status = "sending"; return delivery; },
+    async getEvent() { return event; },
+    async updateDelivery(_id, patch) { return Object.assign(delivery, patch); }
+  };
+  const env = {
+    NODE_ENV: "production",
+    DEMO_TELEGRAM_CHAT_ID: "-1003710405969",
+    TELEGRAM_USER_PUBLISHER_TARGETS: "-1003710405969,-1004378187866"
+  };
+
+  const claimed = await claimDesktopPublisherDelivery({ repository, env });
+
+  assert.equal(claimed.chatId, "-1004378187866");
+  assert.equal(claimed.threadId, 8);
+  assert.equal(claimed.groupName, "CryptoGuy Academy");
+  assert.equal(claimed.topicName, "3. Market Events");
+  assert.equal(claimed.steps[0].text, "Topic sync acceptance");
+});
+
+test("a desktop broadcast webhook queues the exact approved target Topic for the local bridge", async () => {
+  const source = { chatId: "-1003710405969", chatType: "supergroup", threadId: 8 };
+  const target = {
+    id: "crypto-events",
+    chatId: "-1004378187866",
+    chatType: "supergroup",
+    threadId: 8,
+    groupName: "CryptoGuy Academy",
+    topicName: "3. Market Events"
+  };
+  const repository = new MemoryDistributionRepository({
+    rules: [{
+      id: "rule-demo-to-crypto-events",
+      kind: "broadcast",
+      enabled: true,
+      mode: "automatic",
+      source,
+      targets: [target]
+    }]
+  });
+  const telegramCalls = [];
+  const env = {
+    NODE_ENV: "production",
+    TELEGRAM_DESKTOP_PUBLISHER_REQUIRED: "true",
+    TELEGRAM_USER_PUBLISHER_TARGETS: "-1003710405969,-1004378187866",
+    DEMO_TELEGRAM_CHAT_ID: source.chatId
+  };
+  const engine = await createDistributionEngine({
+    repository,
+    env,
+    telegram: async (...args) => telegramCalls.push(args)
+  });
+
+  const result = await engine.receiveUpdate({
+    update_id: 2201,
+    message: {
+      message_id: 501,
+      message_thread_id: source.threadId,
+      date: 1784700000,
+      chat: { id: Number(source.chatId), title: "DEMO Academy", type: "supergroup" },
+      sender_chat: { id: Number(source.chatId), title: "DEMO Academy", type: "supergroup" },
+      text: "SYNC ACCEPTANCE TEST"
+    }
+  });
+  const [delivery] = await repository.listDeliveries();
+  const [event] = repository.events;
+
+  assert.equal(result.status, "processed");
+  assert.equal(telegramCalls.length, 0);
+  assert.equal(delivery.status, "pending");
+  assert.deepEqual(event.payload.deliveryPlans[0].target, target);
+  assert.deepEqual(event.payload.deliveryPlans[0].steps, [{
+    method: "sendMessage",
+    payload: {
+      chat_id: target.chatId,
+      message_thread_id: target.threadId,
+      text: "SYNC ACCEPTANCE TEST"
+    }
+  }]);
 });
 
 test("a deduplicated or suppressed automation run creates no failed delivery records", async () => {

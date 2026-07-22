@@ -70,6 +70,43 @@ test("a delivery target filter keeps broadcast tests inside the approved DEMO gr
   assert.deepEqual((await repository.listDeliveries()).map((item) => item.target.chatId), ["-2001"]);
 });
 
+test("desktop delivery mode persists one exact plan per target without calling Telegram", async () => {
+  const repository = new MemoryDistributionRepository({ rules: [broadcastRule()] });
+  const calls = [];
+  const engine = new DistributionEngine({
+    repository,
+    telegram: async (...args) => calls.push(args),
+    deferDelivery: true,
+    deliveryPlanBuilder: (event, target) => ({
+      target,
+      steps: [{
+        method: "sendMessage",
+        payload: {
+          chat_id: String(target.chatId),
+          message_thread_id: Number(target.threadId),
+          text: event.payload.text
+        }
+      }]
+    })
+  });
+
+  const result = await engine.receiveUpdate(messageUpdate());
+  const deliveries = await repository.listDeliveries();
+  const [event] = repository.events;
+
+  assert.equal(result.status, "processed");
+  assert.equal(calls.length, 0);
+  assert.deepEqual(deliveries.map((item) => item.status), ["pending", "pending"]);
+  assert.deepEqual(event.payload.deliveryPlans.map((item) => ({
+    chatId: item.target.chatId,
+    threadId: item.target.threadId,
+    text: item.steps[0].payload.text
+  })), [
+    { chatId: "-2001", threadId: 21, text: "hello" },
+    { chatId: "-2002", threadId: 22, text: "hello" }
+  ]);
+});
+
 test("a broadcast webhook reuses an existing automatic-publishing mapping instead of sending a duplicate", async () => {
   const rule = broadcastRule({ targets: [{ id: "target-a", chatId: "-2001", threadId: 21 }] });
   const repository = new MemoryDistributionRepository({
