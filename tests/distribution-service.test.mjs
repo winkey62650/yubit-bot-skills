@@ -137,6 +137,38 @@ test("desktop publisher health keeps bridge availability separate from the lates
   assert.equal(degraded.lastError, "previous delivery failed");
 });
 
+test("desktop publisher health suppresses the obsolete Telegram window-title identity false positive", async () => {
+  const repository = {
+    async getMeta() {
+      return {
+        lastSeenAt: "2026-07-22T04:55:00.000Z",
+        lastDeliveryAt: "2026-07-22T04:37:00.000Z",
+        lastDeliveryStatus: "failed",
+        lastError: "Telegram Desktop 当前显示 @Melody，无法可靠确认 @Serenity_Crypto 正以 DEMO Academy 群身份发送；未粘贴、未选图、未发送。"
+      };
+    },
+    async listDeliveries() {
+      return [];
+    }
+  };
+
+  const health = await desktopPublisherHealth({
+    repository,
+    env: {
+      NODE_ENV: "production",
+      DESKTOP_PUBLISHER_SECRET: "desktop-secret",
+      TELEGRAM_USER_PUBLISHER_TARGETS: "-1003710405969",
+      TELEGRAM_USER_PUBLISHER_USERNAME: "Serenity_Crypto"
+    },
+    now: new Date("2026-07-22T04:56:00.000Z")
+  });
+
+  assert.equal(health.operationalStatus, "online");
+  assert.equal(health.lastDeliveryAt, null);
+  assert.equal(health.lastDeliveryStatus, null);
+  assert.equal(health.lastError, null);
+});
+
 test("automation targets repair only stale generic Topic labels", () => {
   const rule = {
     id: "events",
