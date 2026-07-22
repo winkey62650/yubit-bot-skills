@@ -45,10 +45,13 @@ const tracker = String.raw`(() => {
   });
 
   document.addEventListener("click", (event) => {
-    const target = event.target instanceof Element ? event.target.closest("[data-track],a,button") : null;
+    const target = event.target instanceof Element
+      ? event.target.closest("[data-track],[data-track-event],a[href^='https://t.me/'],a[href^='tg:']")
+      : null;
     if (!target) return;
     const label = target.getAttribute("data-track") || target.id || target.getAttribute("aria-label") || target.textContent || "unnamed-cta";
-    emit("cta_click", { elementId: label.trim().replace(/\s+/g, " ").slice(0, 160) });
+    const eventType = target.getAttribute("data-track-event") === "video_play" ? "video_play" : "cta_click";
+    emit(eventType, { elementId: label.trim().replace(/\s+/g, " ").slice(0, 160) });
   }, true);
 
   document.addEventListener("play", (event) => {
