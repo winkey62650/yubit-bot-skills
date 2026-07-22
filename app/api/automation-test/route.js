@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { runAutomationJob } from "../../../lib/automation-jobs.mjs";
+import { resolveAutomationPreviewBaseUrl, runAutomationJob } from "../../../lib/automation-jobs.mjs";
 
 export const maxDuration = 30;
 
@@ -9,7 +9,7 @@ export async function POST(request) {
     const result = await runAutomationJob(String(body.jobId || ""), {
       dryRun: true,
       force: true,
-      publicBaseUrl: new URL(request.url).origin
+      publicBaseUrl: resolveAutomationPreviewBaseUrl(request.url)
     });
     return NextResponse.json({ ok: true, result });
   } catch (error) {

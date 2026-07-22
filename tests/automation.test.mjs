@@ -347,6 +347,30 @@ test("automation preview card URL stays on the immutable deployment origin", () 
   assert.equal(url.searchParams.get("date"), "JULY 16");
 });
 
+test("live automation previews expose the fixed editorial contract", () => {
+  assert.deepEqual(automation.automationTemplateMetadata("daily-events"), {
+    templateVersion: "editorial-template-v1",
+    contentPolicy: "fixed-template"
+  });
+  assert.deepEqual(automation.automationTemplateMetadata("daily-analysis"), {
+    templateVersion: "editorial-template-v1",
+    contentPolicy: "fixed-template"
+  });
+  assert.deepEqual(automation.automationTemplateMetadata("whale-hourly"), {
+    templateVersion: "editorial-template-v1",
+    contentPolicy: "fixed-template"
+  });
+});
+
+test("automation preview prefers the public deployment URL over an internal proxy origin", () => {
+  assert.equal(
+    automation.resolveAutomationPreviewBaseUrl("http://localhost:4174/api/automation-test", {
+      APP_BASE_URL: "https://152-32-161-174.sslip.io"
+    }),
+    "https://152-32-161-174.sslip.io"
+  );
+});
+
 test("daily analysis Telegram copy matches the complete approved preview structure", () => {
   assert.equal(typeof automation.buildDailyAnalysisSnapshot, "function");
   const snapshot = automation.buildDailyAnalysisSnapshot([
