@@ -87,6 +87,7 @@ test("new group discovery hides groups that every bot has left", () => {
 test("publisher closure is gated by every live health check", () => {
   const page = source("app/telegram-user-authorization/page.jsx");
   assert.match(page, /allChecksHealthy/);
+  assert.match(page, /check\.blocking === false \|\| check\.ok !== false/);
   assert.match(page, /闭环待恢复/);
   assert.doesNotMatch(page, /tone=\{ready\s*\?\s*"green"\s*:\s*"amber"\}/);
 });

@@ -61,7 +61,11 @@ test("bot operational status distinguishes API reachability from target-group pe
   const generatedAt = "2026-07-17T05:29:40.000Z";
   const bot = { name: "AdminBot", status: "在线", identityVerified: true };
 
-  assert.equal(getBotOperationalStatus({ bot, generatedAt, now }).label, "API 可用");
+  assert.deepEqual(getBotOperationalStatus({ bot, generatedAt, now }), {
+    label: "API 可用",
+    tone: "green",
+    detail: "后台身份已核验；群权限请查看当前可访问范围"
+  });
   assert.deepEqual(getBotOperationalStatus({
     bot,
     generatedAt,
@@ -129,4 +133,10 @@ test("the obsolete group metrics page redirects to the live group and Topic work
   const source = readFileSync(new URL("../app/groups/page.jsx", import.meta.url), "utf8");
   assert.match(source, /redirect\(["']\/group-config["']\)/);
   assert.doesNotMatch(source, /群用户人数|历史消息|7 天活跃/);
+});
+
+test("the obsolete dispatch page redirects directly to automatic publishing", () => {
+  const source = readFileSync(new URL("../app/dispatch/page.jsx", import.meta.url), "utf8");
+  assert.match(source, /redirect\(["']\/distribution\?view=automation["']\)/);
+  assert.doesNotMatch(source, /redirect\(["']\/news["']\)/);
 });

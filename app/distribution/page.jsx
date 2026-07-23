@@ -404,7 +404,7 @@ function AutomationView({ form, setForm, rules, groups, socialPackages, publishe
       </div>
       <FormStep number="2" title="确认频率" desc="日更任务按 UTC 运行；监控任务按时间窗口扫描并去重。" />
       <Field label="预设频率"><select className={inputClass} value={form.schedulePreset} disabled={form.contentType === "whale-signals"} onChange={(event) => setForm({ ...form, schedulePreset: event.target.value })}>{schedules.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>{form.contentType === "whale-signals" ? <p className="mt-1 text-xs text-ops-muted">系统每小时检查真实订单簿，仅在异动达到阈值时发布，相同信号冷却期内不重复。</p> : null}</Field>
-      <FormStep number="3" title="选择发布目标" desc={`建议发布到 ${template.destinationHint}，可同时选择多个 Forum 群 Topic。`} />
+      <FormStep number="3" title="选择发布目标" desc={`自动发布固定先进入 Demo Academy；建议发布到 ${template.destinationHint}，可在 Demo 内选择多个 Topic。`} />
       <TargetPicker options={automationTargets} selected={form.targets} onChange={(targets) => setForm({ ...form, targets })} />
       <Toggle checked={form.enabled} label="创建后立即启用" onChange={(enabled) => setForm({ ...form, enabled })} />
       <label className="flex items-start gap-3 rounded-lg border border-ops-line bg-[#fbfcfb] p-3 text-sm font-bold leading-6 text-[#33423b]"><input className="mt-1" checked={confirmed} onChange={(event) => setConfirmedFor(event.target.checked ? fingerprint : "")} type="checkbox" /><span>我已确认发送模板、频率和目标。动态数据会在实际执行时刷新。</span></label>

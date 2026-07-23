@@ -77,6 +77,7 @@ test("publisher status checks expose identity, bridge, session, routing and late
   });
   assert.equal(recoveredBridge.find((check) => check.key === "bridge").ok, true);
   assert.equal(recoveredBridge.find((check) => check.key === "delivery").ok, false);
+  assert.equal(recoveredBridge.find((check) => check.key === "delivery").blocking, false);
   assert.equal(recoveredBridge.find((check) => check.key === "delivery").status, "历史失败");
   assert.match(recoveredBridge.find((check) => check.key === "identity").detail, /窗口标题不作为用户名依据/);
 });

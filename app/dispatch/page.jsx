@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function DispatchRedirectPage() {
-  redirect("/news");
+  redirect("/distribution?view=automation");
 }

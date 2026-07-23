@@ -49,7 +49,7 @@ export default function TelegramUserAuthorizationPage() {
   const approvedTargets = publisher?.approvedTargetIds || [];
   const lastSeenAt = publisher?.lastSeenAt || publisher?.lastVerifiedAt || null;
   const checks = buildPublisherStatusChecks(publisher || {});
-  const allChecksHealthy = !loading && checks.every((check) => check.ok !== false);
+  const allChecksHealthy = !loading && checks.every((check) => check.blocking === false || check.ok !== false);
 
   return (
     <ConsoleShell>
