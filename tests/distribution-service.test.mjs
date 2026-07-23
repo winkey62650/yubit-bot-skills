@@ -817,6 +817,48 @@ test("desktop publisher replaces stale generic Topic labels with the automation 
   assert.equal(claimed.topicName, "3. Market Events");
 });
 
+test("desktop publisher replaces a stale generic Topic label for a standard broadcast", async () => {
+  const delivery = {
+    id: "delivery-stale-broadcast-topic",
+    eventId: "event-stale-broadcast-topic",
+    ruleId: "production-broadcast-topic-5",
+    status: "pending",
+    createdAt: "2026-07-23T10:34:07.962Z",
+    target: {
+      id: "crypto-signal",
+      chatId: "-1004378187866",
+      chatType: "supergroup",
+      threadId: 17,
+      groupName: "CryptoGuy Academy",
+      topicName: "Topic 17"
+    }
+  };
+  const event = {
+    id: delivery.eventId,
+    payload: {
+      deliveryPlans: [{
+        target: delivery.target,
+        steps: [{ method: "sendMessage", payload: { text: "Realtime community signal" } }]
+      }]
+    }
+  };
+  const repository = {
+    async listDeliveries({ status } = {}) { return status === delivery.status ? [delivery] : []; },
+    async claimDelivery() { delivery.status = "sending"; return delivery; },
+    async getEvent() { return event; },
+    async updateDelivery(_id, patch) { return Object.assign(delivery, patch); }
+  };
+  const env = {
+    NODE_ENV: "production",
+    DEMO_TELEGRAM_CHAT_ID: "-1003710405969",
+    TELEGRAM_USER_PUBLISHER_TARGETS: "-1003710405969,-1004378187866"
+  };
+
+  const claimed = await claimDesktopPublisherDelivery({ repository, env });
+
+  assert.equal(claimed.topicName, "5. Community Signal");
+});
+
 test("desktop publisher never claims a pending non-Demo delivery", async () => {
   const delivery = {
     id: "delivery-fight",
