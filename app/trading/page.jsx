@@ -385,7 +385,7 @@ function SystemHealth({ data, busy, onPost }) {
   </div>;
 }
 
-function HealthCard({ title, ok, value, detail }) { return <Card className="p-5"><div className="flex items-center justify-between gap-3"><strong>{title}</strong><StatusPill tone={ok ? "green" : "amber"}>{ok ? "正常" : "检查"}</StatusPill></div><p className="mt-4 text-xl font-black">{value}</p><p className="mt-2 break-all text-xs leading-5 text-ops-muted">{detail}</p></Card>; }
+function HealthCard({ title, ok, value, detail }) { return <Card className="min-w-0 p-5"><div className="flex items-center justify-between gap-3"><strong>{title}</strong><StatusPill tone={ok ? "green" : "amber"}>{ok ? "正常" : "检查"}</StatusPill></div><p className="mt-4 break-all text-xl font-black leading-tight">{value}</p><p className="mt-2 break-all text-xs leading-5 text-ops-muted">{detail}</p></Card>; }
 function SectionHead({ title, desc }) { return <div><h2 className="text-lg font-black">{title}</h2><p className="mt-1 text-sm leading-6 text-ops-muted">{desc}</p></div>; }
 function Empty({ text }) { return <div className="py-10 text-center text-sm font-bold text-ops-muted">{text}</div>; }
 function Fact({ label, value }) { return <div className="rounded-lg border border-ops-line bg-[#fbfcfb] p-3"><p className="text-xs font-bold text-ops-muted">{label}</p><p className="mt-1 break-all font-black">{value}</p></div>; }

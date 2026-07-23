@@ -60,6 +60,7 @@ test("trading destinations use semantic topics and block incomplete saves", () =
   assert.match(page, /disabled=\{busy\s*\|\|\s*disabled\}/);
   assert.match(page, /data\.logs\.slice\(0,\s*20\)/);
   assert.match(page, /显示全部/);
+  assert.match(page, /className="mt-4 break-all text-xl font-black leading-tight"/);
 });
 
 test("paused monitoring is reported as historical instead of current", () => {
