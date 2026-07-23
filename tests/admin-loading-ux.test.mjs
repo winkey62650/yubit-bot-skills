@@ -12,6 +12,10 @@ test("distribution summaries stay neutral while live data is loading", () => {
   assert.match(page, /socialReadiness\.enabled/);
   assert.match(page, /socialReadiness\.stable/);
   assert.doesNotMatch(page, /socialReadiness\.enabledCount|socialReadiness\.stableCount/);
+  assert.match(page, /approvedTargetCount/);
+  assert.match(page, /自动发布固定先进入 Demo Academy/);
+  assert.doesNotMatch(page, /当前生产白名单只允许 Demo Academy Forum/);
+  assert.match(page, /自动发布验收路由（先发 DEMO Academy）/);
 });
 
 test("group status waits for saved groups and publisher state before enabling actions", () => {
@@ -19,6 +23,7 @@ test("group status waits for saved groups and publisher state before enabling ac
   assert.match(page, /groupsLoaded/);
   assert.match(page, /publisherLoaded/);
   assert.match(page, /!groupsLoaded\s*\|\|\s*busy/);
+  assert.match(page, /normalizeDistributionGroupTopics/);
 
   const globalWarning = page.indexOf("发布桥最近一次投递失败");
   const groupCard = page.indexOf("function GroupCard");

@@ -7,6 +7,7 @@ import LiveStatusStamp from "../components/LiveStatusStamp";
 import { Card, Field, PageHeader, StatusPill, inputClass } from "../components/ui";
 import { useLiveAutoRefresh } from "../hooks/useLiveAutoRefresh";
 import { getLiveFreshness } from "../../lib/live-status.mjs";
+import { normalizeDistributionGroupTopics } from "../../lib/distribution-ui.mjs";
 
 export default function GroupConfigPage() {
   const [groups, setGroups] = useState([]);
@@ -146,8 +147,12 @@ export default function GroupConfigPage() {
   }
 
   const forumGroups = groups.filter((group) => group.type !== "channel");
-  const topicCount = forumGroups.reduce((total, group) => total + (group.topics?.length || 0), 0);
-  const confirmedTopics = forumGroups.reduce((total, group) => total + (group.topics?.filter((topic) => topic.threadId).length || 0), 0);
+  const normalizedForumTopics = forumGroups.map((group) => normalizeDistributionGroupTopics(group));
+  const topicCount = normalizedForumTopics.reduce((total, topics) => total + topics.length, 0);
+  const confirmedTopics = normalizedForumTopics.reduce(
+    (total, topics) => total + topics.filter((topic) => Number(topic.threadId || topic.topicId) > 0).length,
+    0
+  );
   const channels = groups.filter((group) => group.type === "channel");
   const freshness = getLiveFreshness(generatedAt);
   const liveIsFresh = freshness.state === "fresh";
@@ -209,8 +214,9 @@ export default function GroupConfigPage() {
 function GroupCard({ group, isFresh, publisher }) {
   const bots = group.bots || [];
   const adminBot = bots.find((bot) => bot.name === "AdminBot") || {};
-  const knownCount = group.topicCoverage?.knownCount ?? group.topics?.length ?? 0;
-  const resolvedCount = group.topicCoverage?.resolvedCount ?? group.topics?.filter((topic) => topic.threadId).length ?? 0;
+  const topics = normalizeDistributionGroupTopics(group);
+  const knownCount = topics.length;
+  const resolvedCount = topics.filter((topic) => Number(topic.threadId || topic.topicId) > 0).length;
   const healthy = group.adminBotReady === true || group.readyForInitialization === true;
   const targetApproved = publisher?.approvedTargetIds?.map(String).includes(String(group.chatId)) === true;
   const bridgeActive = publisher?.bridgeActive == null
@@ -227,7 +233,7 @@ function GroupCard({ group, isFresh, publisher }) {
         <div className="rounded-lg border border-ops-line p-3"><div className="font-black">初始化执行器</div><div className={`mt-1 text-xs font-bold ${isFresh && healthy ? "text-ops-accent" : "text-[#a04a3d]"}`}>AdminBot · {!isFresh ? "等待重新核验" : healthy ? "权限完整" : adminBot.membership === "member" ? "已加入，非管理员" : group.initializationBlockReason || "权限待处理"}</div></div>
       </div>
     </div>
-    <div className="mt-4 rounded-lg bg-[#f7f9f8] p-4"><div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm">Topics：{knownCount} 个已知 / {resolvedCount} 个已确认</strong><div className="flex flex-wrap gap-3"><span className={`text-xs font-bold ${targetApproved ? "text-ops-accent" : "text-[#a04a3d]"}`}>{authorizationLabel}</span><span className={`text-xs font-bold ${bridgeActive ? "text-ops-accent" : "text-[#a04a3d]"}`}>{bridgeLabel}</span></div></div><p className="mt-2 text-xs leading-5 text-ops-muted">出站消息由 {publisher?.username || "@Serenity_Crypto"} 通过本群的匿名管理员 / Send As 能力发布，Telegram 客户端必须显示本群名称和群头像；若无法取得权限，系统会拒绝发送且不会回退到 Bot 或个人身份。</p><div className="mt-3 flex flex-wrap gap-2">{(group.topics || []).map((topic) => <span className={`rounded-full px-3 py-1 text-xs font-bold ${topic.threadId ? "bg-[#e6f7ef] text-ops-accent" : "bg-[#fff1df] text-[#8a5d1a]"}`} key={`${topic.name}-${topic.threadId || "template"}`}>{topic.name}{topic.threadId ? ` · ${topic.threadId}` : " · 待识别"}</span>)}</div></div>
+    <div className="mt-4 rounded-lg bg-[#f7f9f8] p-4"><div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm">Topics：{knownCount} 个已知 / {resolvedCount} 个已确认</strong><div className="flex flex-wrap gap-3"><span className={`text-xs font-bold ${targetApproved ? "text-ops-accent" : "text-[#a04a3d]"}`}>{authorizationLabel}</span><span className={`text-xs font-bold ${bridgeActive ? "text-ops-accent" : "text-[#a04a3d]"}`}>{bridgeLabel}</span></div></div><p className="mt-2 text-xs leading-5 text-ops-muted">出站消息由 {publisher?.username || "@Serenity_Crypto"} 通过本群的匿名管理员 / Send As 能力发布，Telegram 客户端必须显示本群名称和群头像；若无法取得权限，系统会拒绝发送且不会回退到 Bot 或个人身份。</p><div className="mt-3 flex flex-wrap gap-2">{topics.map((topic) => { const threadId = Number(topic.threadId || topic.topicId); return <span className={`rounded-full px-3 py-1 text-xs font-bold ${threadId > 0 ? "bg-[#e6f7ef] text-ops-accent" : "bg-[#fff1df] text-[#8a5d1a]"}`} key={`${topic.name}-${threadId || "template"}`}>{topic.name}{threadId > 0 ? ` · ${threadId}` : " · 待识别"}</span>; })}</div></div>
   </article>;
 }
 

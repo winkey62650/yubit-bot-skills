@@ -9,9 +9,11 @@ import {
   bulkDeleteNotice,
   failedBulkDeleteIds,
   getContentTemplate,
+  normalizeDistributionGroupTopics,
   orderedDistributionTopics,
   reconcileRuleSelection,
-  recommendedScheduleFor
+  recommendedScheduleFor,
+  distributionDestinationLabel
 } from "../lib/distribution-ui.mjs";
 
 test("publisher status checks expose identity, bridge, session, routing and latest delivery independently", () => {
@@ -157,6 +159,55 @@ test("generic Demo Topic names are resolved to the managed editorial names", () 
     buildDistributionTargetOptions(groups).map((option) => option.label),
     expectedNames.map((name) => `DEMO Academy / ${name}`)
   );
+});
+
+test("Demo template placeholders and discovered threads collapse into one truthful 1-7 topic list", () => {
+  const topics = [
+    { name: "7. YUBIT Updates" },
+    { name: "6. Smart Money Tracker" },
+    { name: "5. Community Signal" },
+    { name: "4. Market Analysis - Crypto/Stocks/TradFi" },
+    { name: "3. Market Events" },
+    { name: "2. CryptoGuy Trading Zone" },
+    { name: "1. READ FIRST - DISCLAIMER" },
+    { name: "Topic 8", threadId: 8 },
+    { name: "Topic 10", threadId: 10 },
+    { name: "Topic 14", threadId: 14 },
+    { name: "Topic 16", threadId: 16 },
+    { name: "General Chat", threadId: 1 }
+  ];
+  const normalized = normalizeDistributionGroupTopics({
+    chatId: "-1003710405969",
+    title: "DEMO Academy",
+    topics
+  });
+
+  assert.deepEqual(normalized.map((topic) => topic.name), [
+    "1. READ FIRST - DISCLAIMER",
+    "2. CryptoGuy Trading Zone",
+    "3. Market Events",
+    "4. Market Analysis - Crypto/Stocks/TradFi",
+    "5. Community Signal",
+    "6. Smart Money Tracker",
+    "7. YUBIT Updates"
+  ]);
+  assert.equal(normalized.length, 7);
+  assert.equal(normalized.filter((topic) => topic.threadId).length, 4);
+  assert.equal(normalized.find((topic) => topic.name === "3. Market Events").threadId, 8);
+});
+
+test("saved rule destinations display the semantic Demo topic instead of a generic thread label", () => {
+  assert.equal(distributionDestinationLabel({
+    chatId: "-1003710405969",
+    threadId: 10,
+    topicName: "Topic 10"
+  }), "4. Market Analysis - Crypto/Stocks/TradFi");
+  assert.equal(distributionDestinationLabel({
+    chatId: "-100999",
+    threadId: 10,
+    topicName: "Signals"
+  }), "Signals");
+  assert.equal(distributionDestinationLabel({ chatType: "channel" }), "整个频道");
 });
 
 test("private channels are selectable as whole destinations without a fake Topic", () => {

@@ -11,6 +11,7 @@ import {
   buildDistributionSourceOptions,
   buildDistributionTargetOptions,
   buildSocialSourceReadiness,
+  distributionDestinationLabel,
   failedBulkDeleteIds,
   getContentTemplate,
   reconcileRuleSelection,
@@ -262,6 +263,9 @@ export default function DistributionPage() {
     : data.publisher?.ready
       ? `${publisherName} · ${data.publisher?.approvedTargetIds?.length || 0} 个白名单目标${activeDeliveryDetail}${data.publisher?.lastSeenAt ? ` · 最近心跳 ${new Date(data.publisher.lastSeenAt).toLocaleString("zh-CN", { hour12: false })}` : ""}`
       : publisherIsDesktop ? "需保持 Mac、Telegram 与 Codex 自动发布任务在线" : publisherIsBot ? "生产环境禁止回退到 Bot 发布" : "需完成加密用户会话授权与群 send_as 权限";
+  const approvedTargetCount = Array.isArray(data.publisher?.approvedTargetIds)
+    ? data.publisher.approvedTargetIds.length
+    : 0;
   const analyticsView = view === "site-analytics";
 
   useEffect(() => {
@@ -278,8 +282,8 @@ export default function DistributionPage() {
       />
 
       {!analyticsView ? <div className="mb-5 rounded-lg border border-[#d9bd73] bg-[#fff9e8] px-4 py-3" role="status">
-        <p className="text-sm font-black text-[#5f4513]">安全验收锁已开启</p>
-        <p className="mt-1 text-xs leading-5 text-[#7b642f]">当前生产白名单只允许 Demo Academy Forum；系统显式使用官方群身份发布。权限或授权异常时停止发送，不会退回显示 Bot / 个人身份。其他群必须得到你再次批准后才可加入。</p>
+        <p className="text-sm font-black text-[#5f4513]">发布边界保护已开启</p>
+        <p className="mt-1 text-xs leading-5 text-[#7b642f]">{loading ? "正在读取发布白名单与同步边界…" : `自动发布固定先进入 Demo Academy；内容同步只会按已启用规则投递到 ${approvedTargetCount} 个已批准目标。权限或授权异常时停止发送，不会退回显示 Bot / 个人身份。`}</p>
       </div> : null}
 
       {!analyticsView ? <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
@@ -336,7 +340,7 @@ function OfficialPublishingWorkflow({ status, detail, ready }) {
       {officialPublishingSteps.map((step, index) => <li className="rounded-lg border border-ops-line bg-[#f7faf8] p-3" key={step}><span className="mr-2 inline-flex size-6 items-center justify-center rounded-full bg-ops-accent text-xs font-black text-white">{index + 1}</span><span className="text-xs font-black text-ops-ink">{step}</span></li>)}
     </ol>
     <div className="mt-4 rounded-lg border border-[#d9bd73] bg-[#fff9e8] p-3">
-      <p className="text-xs font-black text-[#5f4513]">当前验收路由（仅 DEMO Academy）</p>
+      <p className="text-xs font-black text-[#5f4513]">自动发布验收路由（先发 DEMO Academy）</p>
       <ul className="mt-2 grid gap-1 text-xs leading-5 text-[#7b642f] md:grid-cols-3">
         {officialPublishingRoutes.map((route) => <li key={route}>{route}</li>)}
       </ul>
@@ -575,7 +579,7 @@ function targetOptions(groups) {
 function sourceOptions(groups) { return buildDistributionSourceOptions(groups); }
 function targetKey(value) { return value?.chatType === "channel" ? `${value.chatId}:channel` : `${value.chatId}:${Number(value.threadId || 0)}`; }
 function sourceKey(value) { return !value?.chatId ? "" : value.chatType === "channel" ? `${value.chatId}:channel` : `${value.chatId}:${Number(value.threadId || 0)}`; }
-function destinationLabel(value) { return value?.chatType === "channel" ? "整个频道" : value?.topicName || value?.threadId || "未选择 Topic"; }
+function destinationLabel(value) { return distributionDestinationLabel(value); }
 function labelFor(options, value) { return options.find(([key]) => key === value)?.[1] || value || "未配置"; }
 function messageType(payload = {}, mediaGroupId) { if (mediaGroupId) return "相册"; if (payload.photo) return "图片"; if (payload.video) return "视频"; if (payload.document) return "文件"; if (payload.audio || payload.voice) return "音频"; if (payload.animation) return "动图"; return "文字"; }
 function statusLabel(value) { return ({ success: "成功", failed: "失败", pending: "待执行", sending: "发送中", partial: "部分成功", skipped: "已跳过", duplicate: "已去重" })[value] || value; }
