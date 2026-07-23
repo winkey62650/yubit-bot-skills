@@ -14,13 +14,13 @@ test("health and readiness endpoints report healthy", async () => {
   assert.equal(ready.data.checks.database, "ok");
 });
 
-test("dashboard API exposes complete metric contract and labels demo data", async () => {
+test("dashboard API exposes complete metric contract without seeded business metrics", async () => {
   const response = await fetch(`${baseUrl}/api/analytics?range=30d&site=all`);
   assert.equal(response.status, 200);
   const payload = await response.json();
   assert.equal(payload.ok, true);
   assert.equal(payload.data.rangeDays, 30);
-  assert.match(payload.data.dataMode, /^(demo|mixed|live)$/);
+  assert.match(payload.data.dataMode, /^(empty|live)$/);
   assert.equal(payload.data.trend.length, 30);
   for (const field of ["pv", "uv", "ctaRate", "videoPlayRate", "avgDwellSeconds"]) {
     assert.equal(typeof payload.data.kpis[field], "number", `${field} should be numeric`);
@@ -56,4 +56,27 @@ test("event ingestion rejects an invalid site key", async () => {
   const payload = await response.json();
   assert.equal(payload.ok, false);
   assert.equal(payload.error.code, "FORBIDDEN");
+});
+
+test("a valid production event is reflected as live data without demo traffic", async () => {
+  const suffix = Date.now().toString(36);
+  const response = await fetch(`${baseUrl}/api/events`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: "https://crypto-guy.vercel.app" },
+    body: JSON.stringify({
+      siteId: "crypto-guy",
+      key: "cg_local_7c2f4e91",
+      eventType: "page_view",
+      anonymousId: `visitor-${suffix}`,
+      sessionId: `session-${suffix}`,
+      path: "/acceptance-test",
+    }),
+  });
+  assert.equal(response.status, 202);
+
+  const payload = await fetch(`${baseUrl}/api/analytics?range=7d&site=crypto-guy`)
+    .then((dashboardResponse) => dashboardResponse.json());
+  assert.equal(payload.ok, true);
+  assert.equal(payload.data.dataMode, "live");
+  assert.ok(payload.data.kpis.pv >= 1);
 });

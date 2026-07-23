@@ -57,7 +57,7 @@ export type RecentEvent = {
 export type AnalyticsResponse = {
   generatedAt: string;
   rangeDays: number;
-  dataMode: "demo" | "mixed" | "live";
+  dataMode: "empty" | "live";
   kpis: AnalyticsKpis;
   trend: TrendPoint[];
   sites: SitePerformance[];

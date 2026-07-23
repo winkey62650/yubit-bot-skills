@@ -73,6 +73,10 @@ export default function SiteAnalyticsPanel() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const selectSite = (nextSite) => {
+    setSite(nextSite);
+    document.getElementById("site-analytics-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   const load = useCallback(async (soft = false) => {
     soft ? setRefreshing(true) : setLoading(true);
@@ -107,14 +111,14 @@ export default function SiteAnalyticsPanel() {
     ];
   }, [kpis]);
 
-  return <section aria-label="代理网站数据" className="grid gap-5">
+  return <section aria-label="代理网站数据" className="grid gap-5" id="site-analytics-panel">
     <div className="flex flex-col gap-3 rounded-lg border border-ops-line bg-white p-4 shadow-ops lg:flex-row lg:items-center lg:justify-between">
       <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2"><h2 className="text-xl font-black">代理网站经营数据</h2><StatusPill tone={data?.dataMode === "live" ? "green" : "amber"}>{data?.dataMode === "live" ? "真实数据" : data?.dataMode === "mixed" ? "混合数据" : "演示数据"}</StatusPill></div>
+        <div className="flex flex-wrap items-center gap-2"><h2 className="text-xl font-black">代理网站经营数据</h2><StatusPill tone={data?.dataMode === "live" ? "green" : "amber"}>{data?.dataMode === "live" ? "真实数据" : "等待真实数据"}</StatusPill></div>
         <p className="mt-1 text-sm leading-6 text-ops-muted">统一查看 PV、UV、Telegram 按钮转化、视频播放和有效停留；每 30 秒自动刷新。</p>
       </div>
       <div className="grid shrink-0 gap-2 sm:grid-cols-[minmax(150px,1fr)_120px_auto]">
-        <select aria-label="筛选网站" className={inputClass} onChange={(event) => setSite(event.target.value)} value={site}><option value="all">全部网站</option>{siteOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+        <select aria-label="筛选网站" autoComplete="off" className={inputClass} onChange={(event) => setSite(event.target.value)} value={site}><option value="all">全部网站</option>{siteOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
         <select aria-label="统计周期" className={inputClass} onChange={(event) => setRange(event.target.value)} value={range}><option value="7d">近 7 天</option><option value="30d">近 30 天</option><option value="90d">近 90 天</option></select>
         <button className="min-h-10 rounded-lg border border-ops-accent px-4 text-sm font-black text-ops-accent disabled:opacity-50" disabled={refreshing} onClick={() => load(true)} type="button">{refreshing ? "刷新中…" : "刷新"}</button>
       </div>
@@ -124,7 +128,7 @@ export default function SiteAnalyticsPanel() {
     {loading ? <Card className="p-8 text-center font-bold text-ops-muted">正在读取站点数据…</Card> : null}
 
     {!loading && data ? <>
-      {data.dataMode !== "live" ? <div className="rounded-lg border border-[#d9bd73] bg-[#fff9e8] px-4 py-3 text-xs leading-5 text-[#7b642f]"><strong>{data.dataMode === "demo" ? "当前仍为演示数据。" : "当前同时包含演示和真实数据。"}</strong> 新访问会自动写入本机数据库，正式观察决策时请以“真实数据”状态为准。</div> : null}
+      {data.dataMode !== "live" ? <div className="rounded-lg border border-[#d9bd73] bg-[#fff9e8] px-4 py-3 text-xs leading-5 text-[#7b642f]"><strong>当前还没有符合筛选条件的真实访问。</strong> 页面不再用演示数据填充指标；接入站点产生访问后，会自动显示真实 PV、UV、点击、播放和停留数据。</div> : null}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <MetricCard label="页面浏览量 PV" value={number(kpis.pv)} detail={`近 ${data.rangeDays} 天累计页面访问`} />
@@ -141,8 +145,8 @@ export default function SiteAnalyticsPanel() {
 
       <Card className="overflow-hidden">
         <div className="border-b border-ops-line p-5"><h3 className="text-lg font-black">网站表现</h3><p className="mt-1 text-xs text-ops-muted">所有代理站点统一收录，桌面端表格与手机端卡片均不会遮挡文字。</p></div>
-        <div className="hidden overflow-x-auto md:block"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-[#f9fbfa] text-xs text-ops-muted"><tr><th className="px-5 py-3">网站</th><th className="px-5 py-3">PV / UV</th><th className="px-5 py-3">CTA 点击率</th><th className="px-5 py-3">视频播放率</th><th className="px-5 py-3">平均停留</th><th className="px-5 py-3">最后事件</th></tr></thead><tbody>{data.sites.map((item) => <tr className="border-t border-ops-line" key={item.id}><td className="max-w-64 px-5 py-4"><p className="font-black">{item.name}</p><p className="mt-1 break-all text-xs text-ops-muted">{item.domain}</p></td><td className="px-5 py-4 font-black">{number(item.pv)} / {number(item.uv)}</td><td className="px-5 py-4 font-black text-ops-accent">{item.ctaRate}%</td><td className="px-5 py-4 font-black">{item.videoPlayRate}%</td><td className="px-5 py-4">{duration(item.avgDwellSeconds)}</td><td className="px-5 py-4 text-xs text-ops-muted">{time(item.lastEventAt)}</td></tr>)}</tbody></table></div>
-        <div className="divide-y divide-ops-line md:hidden">{data.sites.map((item) => <article className="p-4" key={item.id}><h4 className="font-black">{item.name}</h4><p className="mt-1 break-all text-xs text-ops-muted">{item.domain}</p><dl className="mt-4 grid grid-cols-2 gap-3 text-sm"><div><dt className="text-xs text-ops-muted">PV / UV</dt><dd className="mt-1 font-black">{number(item.pv)} / {number(item.uv)}</dd></div><div><dt className="text-xs text-ops-muted">CTA / 播放率</dt><dd className="mt-1 font-black text-ops-accent">{item.ctaRate}% / {item.videoPlayRate}%</dd></div><div><dt className="text-xs text-ops-muted">平均停留</dt><dd className="mt-1 font-black">{duration(item.avgDwellSeconds)}</dd></div><div><dt className="text-xs text-ops-muted">最后事件</dt><dd className="mt-1 text-xs font-bold">{time(item.lastEventAt)}</dd></div></dl></article>)}</div>
+        <div className="hidden overflow-x-auto md:block"><table className="w-full min-w-[860px] text-left text-sm"><thead className="bg-[#f9fbfa] text-xs text-ops-muted"><tr><th className="px-5 py-3">网站</th><th className="px-5 py-3">PV / UV</th><th className="px-5 py-3">CTA 点击率</th><th className="px-5 py-3">视频播放率</th><th className="px-5 py-3">平均停留</th><th className="px-5 py-3">最后事件</th><th className="px-5 py-3">操作</th></tr></thead><tbody>{data.sites.map((item) => <tr className="border-t border-ops-line" key={item.id}><td className="max-w-64 px-5 py-4"><p className="font-black">{item.name}</p><p className="mt-1 break-all text-xs text-ops-muted">{item.domain}</p></td><td className="px-5 py-4 font-black">{number(item.pv)} / {number(item.uv)}</td><td className="px-5 py-4 font-black text-ops-accent">{item.ctaRate}%</td><td className="px-5 py-4 font-black">{item.videoPlayRate}%</td><td className="px-5 py-4">{duration(item.avgDwellSeconds)}</td><td className="px-5 py-4 text-xs text-ops-muted">{time(item.lastEventAt)}</td><td className="px-5 py-4"><div className="flex flex-wrap gap-2"><button className="rounded-md border border-ops-accent px-2 py-1 text-xs font-black text-ops-accent" onClick={() => selectSite(item.id)} type="button">只看此站</button><a className="rounded-md bg-ops-accent px-2 py-1 text-xs font-black text-white" href={item.domain} rel="noopener noreferrer" target="_blank">打开网站</a></div></td></tr>)}</tbody></table></div>
+        <div className="divide-y divide-ops-line md:hidden">{data.sites.map((item) => <article className="p-4" key={item.id}><h4 className="font-black">{item.name}</h4><p className="mt-1 break-all text-xs text-ops-muted">{item.domain}</p><dl className="mt-4 grid grid-cols-2 gap-3 text-sm"><div><dt className="text-xs text-ops-muted">PV / UV</dt><dd className="mt-1 font-black">{number(item.pv)} / {number(item.uv)}</dd></div><div><dt className="text-xs text-ops-muted">CTA / 播放率</dt><dd className="mt-1 font-black text-ops-accent">{item.ctaRate}% / {item.videoPlayRate}%</dd></div><div><dt className="text-xs text-ops-muted">平均停留</dt><dd className="mt-1 font-black">{duration(item.avgDwellSeconds)}</dd></div><div><dt className="text-xs text-ops-muted">最后事件</dt><dd className="mt-1 text-xs font-bold">{time(item.lastEventAt)}</dd></div></dl><div className="mt-4 grid grid-cols-2 gap-2"><button className="min-h-10 rounded-md border border-ops-accent px-3 text-xs font-black text-ops-accent" onClick={() => selectSite(item.id)} type="button">只看此站</button><a className="flex min-h-10 items-center justify-center rounded-md bg-ops-accent px-3 text-xs font-black text-white" href={item.domain} rel="noopener noreferrer" target="_blank">打开网站</a></div></article>)}</div>
       </Card>
 
       <div className="grid gap-5 lg:grid-cols-2">

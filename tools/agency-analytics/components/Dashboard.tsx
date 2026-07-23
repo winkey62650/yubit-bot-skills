@@ -255,7 +255,7 @@ export default function Dashboard() {
           {data && data.dataMode !== "live" && (
             <div className="demo-banner">
               <Sparkles size={17} />
-              <span><strong>{data.dataMode === "demo" ? "当前为演示数据" : "当前混合展示演示与真实数据"}</strong> · 接入追踪代码后，新事件会自动进入本地数据库。</span>
+              <span><strong>等待真实访问</strong> · 指标不再使用演示数据填充；接入追踪代码后，新事件会自动进入本地数据库。</span>
               <button onClick={() => setView("setup")}>查看接入方式 <ArrowUpRight size={14} /></button>
             </div>
           )}

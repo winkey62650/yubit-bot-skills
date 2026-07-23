@@ -68,9 +68,7 @@ export const analyticsService = {
     return {
       generatedAt: new Date().toISOString(),
       rangeDays: days,
-      dataMode: Number(aggregate.real_events || 0) > 0
-        ? (Number(aggregate.demo_events || 0) > 0 ? "mixed" : "live")
-        : "demo",
+      dataMode: Number(aggregate.real_events || 0) > 0 ? "live" : "empty",
       kpis: toKpis(aggregate),
       trend: fillTrend(analyticsRepository.trend(start.toISOString(), parsed.site), days),
       sites,
