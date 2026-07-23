@@ -9,6 +9,7 @@ import {
   buildSocialSourceReadiness,
   bulkDeleteNotice,
   failedBulkDeleteIds,
+  filterBroadcastTargetOptions,
   getContentTemplate,
   isRetiredTelegramGroup,
   normalizeDistributionGroupTopics,
@@ -76,7 +77,26 @@ test("publisher status checks expose identity, bridge, session, routing and late
   });
   assert.equal(recoveredBridge.find((check) => check.key === "bridge").ok, true);
   assert.equal(recoveredBridge.find((check) => check.key === "delivery").ok, false);
+  assert.equal(recoveredBridge.find((check) => check.key === "delivery").status, "历史失败");
   assert.match(recoveredBridge.find((check) => check.key === "identity").detail, /窗口标题不作为用户名依据/);
+});
+
+test("broadcast target options exclude every topic from the selected source group", () => {
+  const options = [
+    { key: "demo:8", target: { chatId: "-1001", threadId: 8 } },
+    { key: "demo:10", target: { chatId: "-1001", threadId: 10 } },
+    { key: "crypto:8", target: { chatId: "-1002", threadId: 8 } }
+  ];
+
+  assert.deepEqual(
+    filterBroadcastTargetOptions(options, { chatId: "-1001", threadId: 8 }).map((option) => option.key),
+    ["crypto:8"]
+  );
+  assert.deepEqual(filterBroadcastTargetOptions(options, {}).map((option) => option.key), [
+    "demo:8",
+    "demo:10",
+    "crypto:8"
+  ]);
 });
 
 test("rule selection keeps only unique rules that still exist", () => {
@@ -292,6 +312,63 @@ test("saved groups reconcile exact topic names and thread IDs from active distri
   assert.equal(topics.find((topic) => topic.name === "3. Market Events").threadId, 8);
   assert.equal(topics.find((topic) => topic.name === "4. Market Analysis - Crypto/Stocks/TradFi").threadId, 10);
   assert.equal(topics.find((topic) => topic.name === "5. Community Signal").threadId, 14);
+});
+
+test("distribution rules restore complete 1-7 selectors for every configured group", () => {
+  const groups = [
+    {
+      chatId: "-1003710405969",
+      title: "DEMO Academy",
+      topics: [
+        { name: "1. READ FIRST - DISCLAIMER" },
+        { name: "2. CryptoGuy Trading Zone" },
+        { name: "3. Market Events" },
+        { name: "4. Market Analysis - Crypto/Stocks/TradFi" },
+        { name: "5. Community Signal" },
+        { name: "6. Smart Money Tracker" },
+        { name: "7. YUBIT Updates" }
+      ]
+    },
+    {
+      chatId: "-1004378187866",
+      title: "CryptoGuy Academy",
+      topics: [
+        { name: "1. READ FIRST - DISCLAIMER" },
+        { name: "2. CryptoGuy Trading Zone" },
+        { name: "3. Market Events" },
+        { name: "4. Market Analysis - Crypto/Stocks/TradFi" },
+        { name: "5. Community Signal" },
+        { name: "6. Smart Money Tracker" },
+        { name: "7. YUBIT Updates" }
+      ]
+    }
+  ];
+  const topicNames = groups[0].topics.map((topic) => topic.name);
+  const rules = topicNames.map((topicName, index) => ({
+    source: {
+      chatId: "-1003710405969",
+      threadId: 6 + index * 2,
+      topicName
+    },
+    targets: [{
+      chatId: "-1004378187866",
+      threadId: 11 + index * 2,
+      topicName
+    }]
+  }));
+
+  const mapped = applyDistributionTopicMappings(groups, rules);
+  const sources = buildDistributionSourceOptions(mapped);
+  const targets = buildDistributionTargetOptions(mapped);
+
+  assert.equal(sources.filter((option) => option.source.chatId === "-1003710405969").length, 7);
+  assert.equal(sources.filter((option) => option.source.chatId === "-1004378187866").length, 7);
+  assert.equal(targets.filter((option) => option.target.chatId === "-1003710405969").length, 7);
+  assert.equal(targets.filter((option) => option.target.chatId === "-1004378187866").length, 7);
+  assert.deepEqual(
+    targets.filter((option) => option.target.chatId === "-1004378187866").map((option) => option.target.topicName),
+    topicNames
+  );
 });
 
 test("saved rule destinations display the semantic Demo topic instead of a generic thread label", () => {

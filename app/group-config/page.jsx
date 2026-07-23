@@ -185,6 +185,9 @@ export default function GroupConfigPage() {
   const publisherDetail = publisherBridgeActive
     ? `本机发布桥在线${publisherIsDesktop && publisher?.lastSeenAt ? ` · 最近心跳 ${new Date(publisher.lastSeenAt).toLocaleString("zh-CN", { hour12: false })}` : ""}`
     : "本机发布桥离线";
+  const publisherCurrentError = ["stalled", "degraded"].includes(publisher?.operationalStatus)
+    ? publisher?.operationalError || publisher?.lastError || "发布桥当前状态异常"
+    : "";
 
   return (
     <ConsoleShell>
@@ -217,7 +220,7 @@ export default function GroupConfigPage() {
         </div>
         <div aria-live="polite" className="border-b border-ops-line bg-[#fbfcfb] px-5 py-3 text-sm font-bold text-ops-muted">{status}</div>
         <div className="border-b border-ops-line px-5 py-3"><LiveStatusStamp generatedAt={generatedAt} error={refreshError} refreshing={busy} /></div>
-        {publisherLoaded && publisher?.lastError ? <div className="border-b border-[#f0d99f] bg-[#fff7e7] px-5 py-3 text-sm font-bold text-[#6f551d]">发布桥最近一次投递失败：{publisher.lastError}</div> : null}
+        {publisherLoaded && publisherCurrentError ? <div className="border-b border-[#f0d99f] bg-[#fff7e7] px-5 py-3 text-sm font-bold text-[#6f551d]">发布桥当前异常：{publisherCurrentError}</div> : null}
         <div className="divide-y divide-ops-line">
           {!groupsLoaded || !publisherLoaded
             ? <div className="p-8 text-center font-bold text-ops-muted">正在读取群、Topic 与发布账号状态…</div>

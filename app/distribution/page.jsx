@@ -6,6 +6,7 @@ import { Card, Field, PageHeader, StatusPill, inputClass } from "../components/u
 import SocialSourceManager from "./SocialSourceManager";
 import SiteAnalyticsPanel from "./SiteAnalyticsPanel";
 import {
+  applyDistributionTopicMappings,
   bulkDeleteNotice,
   buildBroadcastRouteSummary,
   buildDistributionSourceOptions,
@@ -13,6 +14,7 @@ import {
   buildSocialSourceReadiness,
   distributionDestinationLabel,
   failedBulkDeleteIds,
+  filterBroadcastTargetOptions,
   getContentTemplate,
   reconcileRuleSelection,
   recommendedScheduleFor
@@ -41,6 +43,8 @@ const schedules = [
   ["every-4-hours", "每 4 小时"],
   ["daily-0800-utc", "每日 08:00 UTC"]
 ];
+
+const DEMO_ACADEMY_CHAT_ID = "-1003710405969";
 
 const officialPublishingSteps = [
   "服务器生成带指纹的定稿模板并排队",
@@ -106,9 +110,10 @@ export default function DistributionPage() {
       const [overviewResponse, groupsResponse, socialResponse] = await Promise.all([fetch("/api/distribution", { cache: "no-store" }), fetch("/api/group-config", { cache: "no-store" }), fetch("/api/social-packages", { cache: "no-store" })]);
       const [overview, groupConfig, socialConfig] = await Promise.all([overviewResponse.json(), groupsResponse.json(), socialResponse.json()]);
       if (!overviewResponse.ok || !overview.ok) throw new Error(overview.error || "内容分发数据读取失败");
+      if (!groupsResponse.ok || !groupConfig.ok) throw new Error(groupConfig.error || "群与 Topic 数据读取失败");
       if (!socialResponse.ok || !socialConfig.ok) throw new Error(socialConfig.error || "代理来源读取失败");
       setData(overview);
-      setGroups(Array.isArray(groupConfig.groups) ? groupConfig.groups : []);
+      setGroups(applyDistributionTopicMappings(groupConfig.groups, overview.rules));
       setSocialPackages(Array.isArray(socialConfig.packages) ? socialConfig.packages : []);
       const firstBroadcast = overview.rules?.find((rule) => rule.kind === "broadcast");
       setBackfill((current) => ({ ...current, ruleId: current.ruleId || firstBroadcast?.id || "" }));
@@ -314,7 +319,7 @@ export default function DistributionPage() {
       {analyticsView ? <SiteAnalyticsPanel /> : null}
       {loading && !analyticsView ? <Card className="p-8 text-center font-bold text-ops-muted">正在加载持久化配置…</Card> : null}
       {!loading && view === "automation" ? <AutomationView form={automationForm} setForm={setAutomationForm} rules={automationRules} groups={groups} socialPackages={socialPackages} publisherName={publisherName} busy={busy} selected={selectedAutomationRules} setSelected={setSelectedAutomationRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedAutomationRules, "自动任务")} onSave={() => saveRule(automationForm, () => setAutomationForm(emptyAutomation))} onEdit={setAutomationForm} onAction={post} onValidate={validate} onPersistSocial={saveSocialPackages} onNotice={setNotice} /> : null}
-      {!loading && view === "broadcast" ? <BroadcastView form={broadcastForm} setForm={setBroadcastForm} rules={broadcastRules} groups={groups} publisherName={publisherName} busy={busy} selected={selectedBroadcastRules} setSelected={setSelectedBroadcastRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedBroadcastRules, "内容同步规则")} backfill={backfill} setBackfill={setBackfill} onBackfill={previewBackfill} onSave={() => saveRule(broadcastForm, () => setBroadcastForm(emptyBroadcast))} onEdit={setBroadcastForm} onAction={post} onValidate={validate} /> : null}
+      {!loading && view === "broadcast" ? <BroadcastView form={broadcastForm} setForm={setBroadcastForm} rules={broadcastRules} groups={groups} approvedTargetIds={data.publisher?.approvedTargetIds} publisherName={publisherName} busy={busy} selected={selectedBroadcastRules} setSelected={setSelectedBroadcastRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedBroadcastRules, "内容同步规则")} backfill={backfill} setBackfill={setBackfill} onBackfill={previewBackfill} onSave={() => saveRule(broadcastForm, () => setBroadcastForm(emptyBroadcast))} onEdit={setBroadcastForm} onAction={post} onValidate={validate} /> : null}
       {!loading && view === "review" ? <ReviewView events={data.review} selected={selectedReviews} setSelected={setSelectedReviews} busy={busy} onAction={reviewAction} /> : null}
       {!loading && view === "logs" ? <LogsView deliveries={data.deliveries} busy={busy} onRetry={async (id) => { setBusy("retry"); try { const response = await fetch("/api/distribution/logs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "retry", deliveryId: id }) }); const result = await response.json(); if (!response.ok || !result.ok) throw new Error(result.error); setNotice("失败目标已单独重试，不影响其他目标。"); await loadAll(); } catch (error) { setNotice(error.message); } finally { setBusy(""); } }} /> : null}
     </ConsoleShell>
@@ -370,6 +375,7 @@ function AutomationView({ form, setForm, rules, groups, socialPackages, publishe
   const confirmed = confirmedFor === fingerprint;
   const sourcesReady = form.contentType !== "agent-sync" || sourceReadiness.ready;
   const canSave = Boolean(form.name.trim() && form.targets.length && sourcesReady && confirmed);
+  const automationTargets = targetOptions(groups).filter((option) => option.target.chatId === DEMO_ACADEMY_CHAT_ID);
 
   async function generatePreview() {
     setPreviewState("loading");
@@ -399,7 +405,7 @@ function AutomationView({ form, setForm, rules, groups, socialPackages, publishe
       <FormStep number="2" title="确认频率" desc="日更任务按 UTC 运行；监控任务按时间窗口扫描并去重。" />
       <Field label="预设频率"><select className={inputClass} value={form.schedulePreset} disabled={form.contentType === "whale-signals"} onChange={(event) => setForm({ ...form, schedulePreset: event.target.value })}>{schedules.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>{form.contentType === "whale-signals" ? <p className="mt-1 text-xs text-ops-muted">系统每小时检查真实订单簿，仅在异动达到阈值时发布，相同信号冷却期内不重复。</p> : null}</Field>
       <FormStep number="3" title="选择发布目标" desc={`建议发布到 ${template.destinationHint}，可同时选择多个 Forum 群 Topic。`} />
-      <TargetPicker groups={groups} selected={form.targets} onChange={(targets) => setForm({ ...form, targets })} />
+      <TargetPicker options={automationTargets} selected={form.targets} onChange={(targets) => setForm({ ...form, targets })} />
       <Toggle checked={form.enabled} label="创建后立即启用" onChange={(enabled) => setForm({ ...form, enabled })} />
       <label className="flex items-start gap-3 rounded-lg border border-ops-line bg-[#fbfcfb] p-3 text-sm font-bold leading-6 text-[#33423b]"><input className="mt-1" checked={confirmed} onChange={(event) => setConfirmedFor(event.target.checked ? fingerprint : "")} type="checkbox" /><span>我已确认发送模板、频率和目标。动态数据会在实际执行时刷新。</span></label>
     </RuleForm>
@@ -409,24 +415,36 @@ function AutomationView({ form, setForm, rules, groups, socialPackages, publishe
   </div>;
 }
 
-function BroadcastView({ form, setForm, rules, groups, publisherName, busy, selected, setSelected, onDeleteMany, backfill, setBackfill, onBackfill, onSave, onEdit, onAction, onValidate }) {
+function BroadcastView({ form, setForm, rules, groups, approvedTargetIds, publisherName, busy, selected, setSelected, onDeleteMany, backfill, setBackfill, onBackfill, onSave, onEdit, onAction, onValidate }) {
   const sources = sourceOptions(groups);
   const sourceValue = sourceKey(form.source);
-  const resolvedTargets = form.targets.map((key) => targetOptions(groups).find((option) => option.key === key)?.target).filter(Boolean);
+  const approvedIds = new Set((Array.isArray(approvedTargetIds) ? approvedTargetIds : []).map(String));
+  const approvedTargets = targetOptions(groups)
+    .filter((option) => approvedIds.has(String(option.target.chatId)));
+  const broadcastTargets = filterBroadcastTargetOptions(approvedTargets, form.source);
+  const resolvedTargets = form.targets.map((key) => broadcastTargets.find((option) => option.key === key)?.target).filter(Boolean);
   const route = buildBroadcastRouteSummary({ source: form.source, mode: form.mode, targets: resolvedTargets });
   const canSave = Boolean(form.name.trim() && route.ready);
+  function setBroadcastSource(source) {
+    const allowedKeys = new Set(filterBroadcastTargetOptions(approvedTargets, source).map((option) => option.key));
+    setForm({
+      ...form,
+      source,
+      targets: form.targets.filter((key) => allowedKeys.has(key))
+    });
+  }
   return <div className="grid gap-5">
     <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.08fr)_minmax(340px,.92fr)]">
       <RuleForm title={form.id ? "编辑内容同步规则" : "新增内容同步规则"} eyebrow="ForwardBot 监听 · @Serenity_Crypto 发布" submitLabel="保存内容同步规则" submitDisabled={!canSave} submitHint={!form.name.trim() ? "请先填写规则名称" : route.missing.length ? `还需要：${route.missing.join("、")}` : "同步路径已完整"} busy={busy} onSubmit={onSave}>
         <div className="rounded-lg border border-[#cae5da] bg-[#f2faf6] p-4"><p className="text-sm font-black text-[#173f31]">从哪里同步到哪里</p><p className="mt-1 text-xs leading-5 text-[#41564d]">ForwardBot 监听指定来源群、频道或 Topic；通过审核或自动处理后，由 @Serenity_Crypto 以各目标群官方身份发布。</p></div>
         <Field label="规则名称"><input className={inputClass} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="例如：Demo 群同步到新群" /></Field>
         <FormStep number="1" title="选择消息来源" desc="Forum 群必须选择具体来源 Topic；Channel 选择整个频道。" />
-        <Field label="来源群 / 频道 / Topic"><select className={inputClass} value={sourceValue} onChange={(event) => setForm({ ...form, source: sources.find((item) => item.key === event.target.value)?.source || emptyBroadcast.source })}><option value="">请选择来源</option>{sources.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></Field>
+        <Field label="来源群 / 频道 / Topic"><select className={inputClass} value={sourceValue} onChange={(event) => setBroadcastSource(sources.find((item) => item.key === event.target.value)?.source || emptyBroadcast.source)}><option value="">请选择来源</option>{sources.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></Field>
         <details className="rounded-lg border border-ops-line bg-[#fbfcfb] p-3"><summary className="cursor-pointer text-sm font-black text-[#41564d]">高级：手动输入 Telegram ID</summary><div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_150px_140px]"><Field label="来源 Chat ID"><input className={inputClass} value={form.source.chatId} onChange={(event) => setForm({ ...form, source: { ...form.source, chatId: event.target.value } })} /></Field><Field label="Chat 类型"><select className={inputClass} value={form.source.chatType || "supergroup"} onChange={(event) => { const chatType = event.target.value; setForm({ ...form, source: { ...form.source, chatType, threadId: chatType === "channel" ? "" : form.source.threadId } }); }}><option value="supergroup">群 / Topic</option><option value="channel">Channel</option></select></Field><Field label="Thread ID（群必填）"><input className={inputClass} disabled={form.source.chatType === "channel"} inputMode="numeric" value={form.source.threadId || ""} onChange={(event) => setForm({ ...form, source: { ...form.source, threadId: event.target.value } })} /></Field></div><p className="mt-2 text-xs text-ops-muted">Channel 不使用 Thread ID；Forum 群必须填写 Thread ID，确保只同步指定 Topic。</p></details>
         <FormStep number="2" title="选择处理方式" desc="运营敏感内容建议先审核，日常同步可直接自动转发。" />
         <fieldset className="grid gap-2 sm:grid-cols-2"><legend className="sr-only">处理方式</legend>{[["automatic", "自动转发", "新消息通常 10 秒内到达目标"], ["review", "先审核", "批准前绝不发送，默认保留 7 天"]].map(([value, title, desc]) => <label className={`rounded-lg border p-4 ${form.mode === value ? "border-ops-accent bg-[#f2faf6]" : "border-ops-line bg-white"}`} key={value}><span className="flex items-center gap-2 text-sm font-black"><input checked={form.mode === value} name="broadcast-mode" onChange={() => setForm({ ...form, mode: value })} type="radio" />{title}</span><span className="mt-2 block text-xs leading-5 text-ops-muted">{desc}</span></label>)}</fieldset>
-        <FormStep number="3" title="选择同步目标" desc="一条来源可以同时同步到多个 Forum 群 Topic。" />
-        <TargetPicker groups={groups} selected={form.targets} onChange={(targets) => setForm({ ...form, targets })} />
+        <FormStep number="3" title="选择同步目标" desc="一条来源可以同步到其他已授权群的多个 Topic；来源群不会出现在目标列表，避免群内回环。" />
+        <TargetPicker options={broadcastTargets} selected={form.targets.filter((key) => broadcastTargets.some((option) => option.key === key))} onChange={(targets) => setForm({ ...form, targets })} />
         <Toggle checked={form.enabled} label="创建后立即启用" onChange={(enabled) => setForm({ ...form, enabled })} />
         <div className="rounded-lg bg-[#fff8e8] p-3 text-xs leading-5 text-[#79591e]">ForwardBot 固定负责监听和接收入站消息；{publisherName} 固定负责向每个目标发布。Telegram 不会把其他机器人发出的消息交给 ForwardBot；机器人内容请使用「自动发布」直接选择全部目标。Bot API 也无法感知来源消息删除；可处理的文字与 Caption 编辑会同步。</div>
       </RuleForm>
@@ -551,8 +569,7 @@ function RuleList({ rules, empty, busy, kindLabel, selected, setSelected, onDele
   </Card>;
 }
 
-function TargetPicker({ groups, selected, onChange }) {
-  const options = targetOptions(groups);
+function TargetPicker({ options, selected, onChange }) {
   return <fieldset className="grid gap-2"><legend className="mb-1 text-sm font-bold text-ops-muted">目标 Forum 群 / Topic（可多选）</legend><div className="max-h-52 overflow-y-auto rounded-lg border border-ops-line p-2">{options.length ? options.map((option) => <label className="flex min-h-10 items-center gap-3 rounded-md px-2 text-sm hover:bg-ops-soft" key={option.key}><input checked={selected.includes(option.key)} onChange={() => onChange(selected.includes(option.key) ? selected.filter((key) => key !== option.key) : [...selected, option.key])} type="checkbox" /><span>{option.label}</span></label>) : <p className="p-2 text-sm text-ops-muted">暂未识别到可发布的 Forum 群 Topic，请先刷新群与 Topic。</p>}</div></fieldset>;
 }
 

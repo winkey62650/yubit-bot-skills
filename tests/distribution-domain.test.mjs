@@ -383,7 +383,7 @@ test("numbered topic identity survives an editable topic name change", () => {
   assert.equal(reconcileDistributionRouting(rule, groups).source.threadId, 18);
 });
 
-test("rejects a broadcast target that points back to its own source topic", () => {
+test("rejects a broadcast target that points back to its own source group", () => {
   const errors = validateDistributionRule({
     kind: "broadcast",
     name: "Demo sync",
@@ -393,7 +393,21 @@ test("rejects a broadcast target that points back to its own source topic", () =
 
   assert.deepEqual(errors, [{
     field: "targets",
-    message: "来源 Topic 不能同时作为目标，请检查群和 Topic 绑定"
+    message: "来源群不能同时作为目标群，请选择其他群的 Topic"
+  }]);
+});
+
+test("rejects cross-topic routing inside the source group to prevent broadcast loops", () => {
+  const errors = validateDistributionRule({
+    kind: "broadcast",
+    name: "Unsafe Demo cross-topic sync",
+    source: { chatId: "-1001", threadId: 8 },
+    targets: [{ chatId: "-1001", threadId: 10 }]
+  });
+
+  assert.deepEqual(errors, [{
+    field: "targets",
+    message: "来源群不能同时作为目标群，请选择其他群的 Topic"
   }]);
 });
 

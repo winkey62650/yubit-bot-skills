@@ -26,9 +26,13 @@ test("group status waits for saved groups and publisher state before enabling ac
   assert.match(page, /normalizeDistributionGroupTopics/);
   assert.match(page, /isRetiredTelegramGroup/);
 
-  const globalWarning = page.indexOf("发布桥最近一次投递失败");
+  assert.match(page, /publisherCurrentError/);
+  assert.match(page, /\["stalled",\s*"degraded"\]\.includes\(publisher\?\.operationalStatus\)/);
+  assert.doesNotMatch(page, /发布桥最近一次投递失败/);
+
+  const globalWarning = page.indexOf("发布桥当前异常");
   const groupCard = page.indexOf("function GroupCard");
-  assert.ok(globalWarning >= 0 && globalWarning < groupCard, "publisher warning must be global, not repeated per group");
+  assert.ok(globalWarning >= 0 && globalWarning < groupCard, "current publisher warning must be global, not repeated per group");
 });
 
 test("settings cannot overwrite cloud configuration before the initial load completes", () => {
