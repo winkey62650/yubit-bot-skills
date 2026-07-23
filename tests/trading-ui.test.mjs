@@ -24,9 +24,11 @@ test("login page describes the content operations workflow instead of the legacy
 test("trading center provides accessible operator flows and durable refresh states", async () => {
   const page = await readFile(new URL("../app/trading/page.jsx", import.meta.url), "utf8");
 
-  for (const label of ["交易日志", "Trader 管理", "发布目标", "系统状态"]) {
+  for (const label of ["交易日志", "Trader 管理", "发布目标"]) {
     assert.match(page, new RegExp(label));
   }
+  assert.doesNotMatch(page, /\["health",\s*"系统状态"\]/);
+  assert.doesNotMatch(page, /function SystemHealth/);
   assert.match(page, /role=["']tablist["']/);
   assert.match(page, /aria-label=["']交易中心功能["']/);
   for (const label of ["Trader 名称", "Telegram 数字 ID", "账户名称", "API Key", "API Secret", "发布范围", "目标群 \/ Topic"]) {
@@ -53,8 +55,6 @@ test("trading center provides accessible operator flows and durable refresh stat
   assert.match(page, /apiKeyMasked/);
   assert.match(page, /navigator\.clipboard\.writeText/);
   assert.match(page, /window\.confirm/);
-  assert.match(page, /预览环境必须使用独立测试 Bot/);
-  assert.match(page, /configurationAllowed/);
   assert.match(page, /fetch\(["']\/api\/trading["'], \{ cache: ["']no-store["'] \}\)/);
   assert.match(page, /\/api\/trading\/signals\/\$\{.*\}\/refresh/);
   assert.match(page, /\/api\/trading\/deliveries\/\$\{.*\}\/retry/);

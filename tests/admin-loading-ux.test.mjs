@@ -63,9 +63,6 @@ test("trading destinations use semantic topics and block incomplete saves", () =
   assert.doesNotMatch(page, /orderedDistributionTopics/);
   assert.match(page, /canSaveDestination/);
   assert.match(page, /disabled=\{busy\s*\|\|\s*disabled\}/);
-  assert.match(page, /data\.logs\.slice\(0,\s*20\)/);
-  assert.match(page, /显示全部/);
-  assert.match(page, /className="mt-4 break-all text-xl font-black leading-tight"/);
 });
 
 test("paused monitoring is reported as historical instead of current", () => {
@@ -87,7 +84,7 @@ test("new group discovery hides groups that every bot has left", () => {
 test("publisher closure is gated by every live health check", () => {
   const page = source("app/telegram-user-authorization/page.jsx");
   assert.match(page, /allChecksHealthy/);
-  assert.match(page, /check\.blocking === false \|\| check\.ok !== false/);
+  assert.match(page, /arePublisherBlockingChecksHealthy/);
   assert.match(page, /闭环待恢复/);
   assert.doesNotMatch(page, /tone=\{ready\s*\?\s*"green"\s*:\s*"amber"\}/);
 });

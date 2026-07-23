@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   PUBLISHER_HEARTBEAT_STALE_MS,
+  buildBotAccessScopes,
   buildInitializationChecklist,
   getBotOperationalStatus,
   getFriendlyRefreshError,
@@ -90,6 +91,44 @@ test("bot operational status distinguishes API reachability from target-group pe
     now,
     group: { bots: [{ name: "AdminBot", isAdmin: true, canManageTopics: true }] }
   }).label, "状态已过期");
+});
+
+test("bot access scopes list each Telegram group once while preserving component coverage", () => {
+  const scopes = buildBotAccessScopes([
+    {
+      name: "AdminBot",
+      groups: [
+        { chatId: "-1001", title: "DEMO Academy", isForum: true, bound: true },
+        { chatId: "-1002", title: "Shared Name", isForum: false }
+      ]
+    },
+    {
+      name: "SpeakerBot",
+      groups: [
+        { id: "-1001", title: "DEMO Academy", isForum: true },
+        { chatId: "-1003", title: "Shared Name", isForum: true }
+      ]
+    },
+    {
+      name: "ForwardBot",
+      groups: [{ chatId: "-1001", title: "DEMO Academy", isForum: true }]
+    }
+  ]);
+
+  assert.equal(scopes.length, 3);
+  assert.deepEqual(
+    scopes.find((scope) => scope.chatId === "-1001").components,
+    ["AdminBot", "SpeakerBot", "ForwardBot"]
+  );
+  assert.equal(scopes.find((scope) => scope.chatId === "-1001").bound, true);
+  assert.equal(scopes.filter((scope) => scope.title === "Shared Name").length, 2);
+});
+
+test("bot capability page renders one authoritative access-scope section", () => {
+  const source = readFileSync(new URL("../app/bots/page.jsx", import.meta.url), "utf8");
+  assert.match(source, /buildBotAccessScopes/);
+  assert.match(source, /每个群仅显示一次/);
+  assert.doesNotMatch(source, /bot\.groups\.map/);
 });
 
 test("new-group checklist labels form preparation separately from live permission checks", () => {

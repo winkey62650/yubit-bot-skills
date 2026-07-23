@@ -56,9 +56,8 @@ test("authenticated trading management routes expose safe operator actions and i
   assert.doesNotMatch(middleware, /pathname\.startsWith\(["']\/api\/trading/);
 });
 
-test("trading system status exposes missing cron configuration and gates release readiness on infrastructure", async () => {
+test("trading keeps system health in the top-level settings workflow", async () => {
   const page = await readFile(new URL("../app/trading/page.jsx", import.meta.url), "utf8");
-  assert.match(page, /定时密钥未配置/);
-  assert.match(page, /health\.scheduler\?\.ok/);
-  assert.match(page, /health\.database\?\.ok[\s\S]*speaker\.ok[\s\S]*health\.scheduler\?\.ok/);
+  assert.doesNotMatch(page, /\["health", "系统状态"\]/);
+  assert.doesNotMatch(page, /function SystemHealth/);
 });

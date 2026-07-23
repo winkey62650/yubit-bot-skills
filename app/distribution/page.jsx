@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import ConsoleShell from "../components/ConsoleShell";
 import { Card, Field, PageHeader, StatusPill, inputClass } from "../components/ui";
 import SocialSourceManager from "./SocialSourceManager";
@@ -81,7 +82,17 @@ const emptyAutomation = { id: "", kind: "automation", name: "", contentType: "da
 const emptyBroadcast = { id: "", kind: "broadcast", name: "", mode: "automatic", enabled: true, source: { chatId: "", chatType: "supergroup", threadId: "", groupName: "", topicName: "" }, targets: [] };
 
 export default function DistributionPage() {
-  const [view, setView] = useState("automation");
+  return <Suspense fallback={<ConsoleShell><Card className="p-8 text-center font-bold text-ops-muted">正在加载内容分发中心…</Card></ConsoleShell>}>
+    <DistributionPageContent />
+  </Suspense>;
+}
+
+function DistributionPageContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedView = searchParams.get("view");
+  const requestedContentType = searchParams.get("contentType");
+  const view = tabs.some(([key]) => key === requestedView) ? requestedView : "automation";
   const [data, setData] = useState({ rules: [], review: [], deliveries: [], database: null, publisher: null, migration: null });
   const [groups, setGroups] = useState([]);
   const [socialPackages, setSocialPackages] = useState([]);
@@ -97,12 +108,18 @@ export default function DistributionPage() {
   const [backfill, setBackfill] = useState({ ruleId: "", references: "", preview: null });
 
   useEffect(() => {
-    const requested = new URLSearchParams(window.location.search).get("view");
-    const requestedContentType = new URLSearchParams(window.location.search).get("contentType");
-    if (tabs.some(([key]) => key === requested)) setView(requested);
-    if (contentTypes.some(([key]) => key === requestedContentType)) setAutomationForm((current) => ({ ...current, contentType: requestedContentType, schedulePreset: recommendedScheduleFor(requestedContentType) }));
     loadAll();
   }, []);
+
+  useEffect(() => {
+    if (contentTypes.some(([key]) => key === requestedContentType)) {
+      setAutomationForm((current) => ({
+        ...current,
+        contentType: requestedContentType,
+        schedulePreset: recommendedScheduleFor(requestedContentType)
+      }));
+    }
+  }, [requestedContentType]);
 
   async function loadAll() {
     setLoading(true);
@@ -239,8 +256,7 @@ export default function DistributionPage() {
   }
 
   function changeView(next) {
-    setView(next);
-    window.history.replaceState(null, "", `/distribution?view=${next}`);
+    router.replace(`/distribution?view=${next}`, { scroll: false });
   }
 
   const automationRules = data.rules.filter((rule) => rule.kind === "automation");

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   applyDistributionTopicMappings,
+  arePublisherBlockingChecksHealthy,
   buildDistributionSourceOptions,
   buildDistributionTargetOptions,
   buildBroadcastRouteSummary,
@@ -80,6 +81,24 @@ test("publisher status checks expose identity, bridge, session, routing and late
   assert.equal(recoveredBridge.find((check) => check.key === "delivery").blocking, false);
   assert.equal(recoveredBridge.find((check) => check.key === "delivery").status, "历史失败");
   assert.match(recoveredBridge.find((check) => check.key === "identity").detail, /窗口标题不作为用户名依据/);
+  assert.equal(arePublisherBlockingChecksHealthy(recoveredBridge), true);
+  assert.equal(arePublisherBlockingChecksHealthy(offline), false);
+  assert.equal(arePublisherBlockingChecksHealthy([]), false);
+  assert.equal(arePublisherBlockingChecksHealthy([
+    { key: "identity", ok: null, blocking: true },
+    { key: "delivery", ok: true, blocking: false }
+  ]), false);
+});
+
+test("distribution view follows the URL so the top navigation always switches panels", async () => {
+  const source = await import("node:fs/promises").then(({ readFile }) => (
+    readFile(new URL("../app/distribution/page.jsx", import.meta.url), "utf8")
+  ));
+
+  assert.match(source, /useSearchParams/);
+  assert.match(source, /searchParams\.get\(["']view["']\)/);
+  assert.match(source, /router\.replace\(`\/distribution\?view=\$\{next\}`/);
+  assert.doesNotMatch(source, /window\.history\.replaceState/);
 });
 
 test("broadcast target options exclude every topic from the selected source group", () => {

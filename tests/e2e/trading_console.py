@@ -125,7 +125,6 @@ def main() -> None:
             "交易日志": "订单号来自 Trader",
             "Trader 管理": "新增 Trader",
             "发布目标": "新增发布目标",
-            "系统状态": "SpeakerBot 接收入口",
         }
         for tab_name, expected_text in tab_expectations.items():
             tab = page.get_by_role("tab", name=tab_name)
@@ -133,6 +132,9 @@ def main() -> None:
             page.get_by_text(expected_text, exact=False).first.wait_for()
             assert tab.get_attribute("aria-selected") == "true", f"{tab_name} was not selected"
             result["tabs"].append(tab_name)
+
+        assert page.get_by_role("tab", name="系统状态").count() == 0
+        assert page.get_by_role("link", name="系统设置").get_attribute("href") == "/settings"
 
         page_size = page.evaluate(
             """() => ({

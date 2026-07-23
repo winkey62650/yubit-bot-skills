@@ -6,7 +6,7 @@ import ConsoleShell from "../components/ConsoleShell";
 import LiveStatusStamp from "../components/LiveStatusStamp";
 import { useLiveAutoRefresh } from "../hooks/useLiveAutoRefresh";
 import { Card, PageHeader, StatusPill } from "../components/ui";
-import { buildPublisherStatusChecks } from "../../lib/distribution-ui.mjs";
+import { arePublisherBlockingChecksHealthy, buildPublisherStatusChecks } from "../../lib/distribution-ui.mjs";
 import { PUBLISHER_HEARTBEAT_STALE_MS } from "../../lib/live-status.mjs";
 
 const DEMO_CHAT_ID = "-1003710405969";
@@ -49,7 +49,7 @@ export default function TelegramUserAuthorizationPage() {
   const approvedTargets = publisher?.approvedTargetIds || [];
   const lastSeenAt = publisher?.lastSeenAt || publisher?.lastVerifiedAt || null;
   const checks = buildPublisherStatusChecks(publisher || {});
-  const allChecksHealthy = !loading && checks.every((check) => check.blocking === false || check.ok !== false);
+  const allChecksHealthy = !loading && arePublisherBlockingChecksHealthy(checks);
 
   return (
     <ConsoleShell>

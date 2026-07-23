@@ -5,7 +5,7 @@ import ConsoleShell from "../components/ConsoleShell";
 import LiveStatusStamp from "../components/LiveStatusStamp";
 import { Card, PageHeader, StatusPill } from "../components/ui";
 import { useLiveAutoRefresh } from "../hooks/useLiveAutoRefresh";
-import { getBotOperationalStatus } from "../../lib/live-status.mjs";
+import { buildBotAccessScopes, getBotOperationalStatus } from "../../lib/live-status.mjs";
 
 const fallbackBots = [
   { name: "AdminBot", role: "目标群发现 / Topic 初始化 / 权限复核", username: "Bonnie_geniustrader_bot", status: "读取中", groups: [] },
@@ -19,7 +19,8 @@ export default function BotsPage() {
   const [running, setRunning] = useState(true);
   const [generatedAt, setGeneratedAt] = useState("");
   const [refreshError, setRefreshError] = useState("");
-  const coveredGroupCount = useMemo(() => new Set(bots.flatMap((bot) => (bot.groups || []).map((group) => String(group.id)))).size, [bots]);
+  const accessScopes = useMemo(() => buildBotAccessScopes(bots), [bots]);
+  const coveredGroupCount = accessScopes.length;
   const availableCount = bots.filter((bot) => bot.apiAvailable ?? (bot.status === "在线")).length;
   const hasLiveResult = Boolean(generatedAt);
 
@@ -69,7 +70,7 @@ export default function BotsPage() {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[980px] text-sm">
             <thead className="bg-[#f9fbfa] text-left text-xs uppercase text-ops-muted">
-              <tr><th className="px-5 py-3">组件</th><th className="px-5 py-3">职责</th><th className="px-5 py-3">当前可访问范围</th><th className="px-5 py-3">状态</th></tr>
+              <tr><th className="px-5 py-3">组件</th><th className="px-5 py-3">职责</th><th className="px-5 py-3">状态</th></tr>
             </thead>
             <tbody>
               {bots.map((bot) => {
@@ -77,14 +78,6 @@ export default function BotsPage() {
                 return <tr className="border-t border-ops-line align-top" key={bot.name}>
                   <td className="px-5 py-4"><b>{bot.name}</b>{bot.username ? <div className="mt-1 text-xs text-ops-muted">@{bot.username}</div> : null}</td>
                   <td className="px-5 py-4">{bot.role}</td>
-                  <td className="px-5 py-4">
-                    {(bot.groups || []).length ? <div className="grid gap-2">{bot.groups.map((group) => (
-                      <div className="rounded-lg border border-ops-line bg-[#fbfcfb] px-3 py-2" key={group.chatId || group.id}>
-                        <div className="flex flex-wrap items-center gap-2"><b>{group.title}</b><span className={`rounded-full px-2 py-0.5 text-[11px] font-black ${group.isForum ? "bg-[#e6f7ef] text-ops-accent" : "bg-[#fff5dd] text-[#91620d]"}`}>{group.isForum ? "Forum / Topic 可用" : "未开启 Topics"}</span>{group.bound ? <span className="rounded-full bg-[#edf2ff] px-2 py-0.5 text-[11px] font-black text-[#536aa1]">已保存</span> : null}</div>
-                        <div className="mt-1 font-mono text-[11px] text-ops-muted">{group.chatId || group.id} · {memberLabel(group.membership)}{group.isForum ? ` · ${group.canManageTopics ? "可管理 Topic" : "无 Topic 管理权限"}` : ""}</div>
-                      </div>
-                    ))}</div> : <span className="text-ops-muted">暂无有效群，请确认机器人已入群并产生过更新</span>}
-                  </td>
                   <td className="px-5 py-4"><StatusPill tone={botStatus.tone}>{botStatus.label}</StatusPill><div className="mt-2 text-xs text-ops-muted">{botStatus.detail}</div></td>
                 </tr>;
               })}
@@ -92,17 +85,30 @@ export default function BotsPage() {
           </table>
         </div>
       </Card>
+      <Card className="mt-5 overflow-hidden">
+        <div className="border-b border-ops-line p-5">
+          <h2 className="text-xl font-black">当前可访问范围</h2>
+          <p className="mt-1 text-sm leading-6 text-ops-muted">每个群仅显示一次；标签表示已识别该群的后台能力组件。</p>
+        </div>
+        {accessScopes.length ? <div className="grid gap-3 p-5 md:grid-cols-2">
+          {accessScopes.map((scope) => (
+            <div className="rounded-lg border border-ops-line bg-[#fbfcfb] px-4 py-3" key={scope.chatId}>
+              <div className="flex flex-wrap items-center gap-2">
+                <b>{scope.title}</b>
+                <span className={`rounded-full px-2 py-0.5 text-[11px] font-black ${scope.isForum ? "bg-[#e6f7ef] text-ops-accent" : "bg-[#fff5dd] text-[#91620d]"}`}>{scope.isForum ? "Forum / Topic 可用" : "未开启 Topics"}</span>
+                {scope.bound ? <span className="rounded-full bg-[#edf2ff] px-2 py-0.5 text-[11px] font-black text-[#536aa1]">已保存</span> : null}
+              </div>
+              <div className="mt-2 font-mono text-[11px] text-ops-muted">{scope.chatId}</div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {scope.components.map((component) => <span className="rounded-full border border-ops-line bg-white px-2 py-1 text-[11px] font-black text-[#52605a]" key={component}>{component}</span>)}
+              </div>
+            </div>
+          ))}
+        </div> : <div className="p-8 text-center text-sm font-bold text-ops-muted">暂无有效群，请确认能力组件已入群并产生过更新。</div>}
+      </Card>
       <div className="mt-4 rounded-lg border border-ops-line bg-white px-5 py-4 text-sm leading-6 text-ops-muted">AdminBot 需在目标群拥有管理员与 Topic 权限；SpeakerBot 只接收 Trader 私聊，ForwardBot 只监听已配置来源，两者无需加入每个目标群。所有出站内容统一进入 @Serenity_Crypto 发布队列。</div>
     </ConsoleShell>
   );
-}
-
-function memberLabel(status) {
-  if (status === "administrator") return "管理员";
-  if (status === "creator") return "群主";
-  if (status === "member") return "成员";
-  if (status === "restricted") return "受限成员";
-  return "待确认";
 }
 
 function MetricBox({ label, value, sub }) {

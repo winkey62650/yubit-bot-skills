@@ -9,11 +9,10 @@ const tabs = [
   ["logs", "交易日志"],
   ["traders", "Trader 管理"],
   ["destinations", "发布目标"],
-  ["health", "系统状态"],
 ];
 
 const emptyData = {
-  metrics: {}, traders: [], accounts: [], destinations: [], signals: [], deliveries: [], logs: [], health: {},
+  metrics: {}, traders: [], accounts: [], destinations: [], signals: [], deliveries: [], logs: [],
 };
 const emptyTrader = { id: "", displayName: "", telegramUserId: "", telegramUsername: "", status: "enabled" };
 const emptyAccount = { id: "", label: "", apiKey: "", apiSecret: "", traderIds: [], status: "pending" };
@@ -161,7 +160,6 @@ export default function TradingPage() {
       {!loading && view === "logs" ? <TradingLogs data={data} busy={busy} detail={detail} detailLoading={detailLoading} selectedSignal={selectedSignal} onCopy={copyText} onOpen={openSignal} onRefresh={refreshSignal} onRetry={retryDelivery} /> : null}
       {!loading && view === "traders" ? <TraderManagement data={data} busy={busy} traderForm={traderForm} setTraderForm={setTraderForm} accountForm={accountForm} setAccountForm={setAccountForm} verifySymbol={verifySymbol} setVerifySymbol={setVerifySymbol} onPost={post} onCopy={copyText} /> : null}
       {!loading && view === "destinations" ? <DestinationManagement data={data} groups={groups} busy={busy} form={destinationForm} setForm={setDestinationForm} onPost={post} /> : null}
-      {!loading && view === "health" ? <SystemHealth data={data} busy={busy} onPost={post} /> : null}
     </ConsoleShell>
   );
 
@@ -340,52 +338,6 @@ function DestinationManagement({ data, groups, busy, form, setForm, onPost }) {
   </div>;
 }
 
-function SystemHealth({ data, busy, onPost }) {
-  const [showAllLogs, setShowAllLogs] = useState(false);
-  const health = data.health || {};
-  const speaker = health.speakerBot || {};
-  const scheduler = health.scheduler || {};
-  const releaseReady = Boolean(
-    health.database?.ok
-    && speaker.ok
-    && health.scheduler?.ok
-    && data.metrics.publishReadyTraders
-  );
-  const schedulerValue = !scheduler.configured
-    ? "定时密钥未配置"
-    : scheduler.lastRunAt
-      ? "调度已运行"
-      : "等待首次运行";
-  const schedulerDetail = scheduler.lastRunAt
-    ? `上次 ${formatDate(scheduler.lastRunAt)}`
-    : scheduler.errorCode || "尚无记录";
-  const webhookDetail = speaker.webhookConfigured
-    ? speaker.webhookMatchesDeployment
-      ? `Webhook 正常 · 待处理 ${speaker.pendingUpdates || 0}`
-      : "Webhook 指向其他部署，请重新配置"
-    : speaker.errorCode || "Webhook 未配置";
-  const previewNotice = speaker.environment === "preview"
-    ? "预览环境必须使用独立测试 Bot，系统不会复用或覆盖正式 SpeakerBot 的 Webhook。"
-    : "正式环境只会把 SpeakerBot Webhook 配置到当前正式地址。";
-  const visibleLogs = showAllLogs ? data.logs : data.logs.slice(0, 20);
-  return <div className="grid gap-5">
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-      <HealthCard title="数据库" ok={health.database?.ok} value={health.database?.ok ? "连接正常" : "连接异常"} detail={health.database?.driver || health.database?.errorCode || "未配置"} />
-      <HealthCard title="SpeakerBot" ok={speaker.ok} value={speaker.username ? `@${speaker.username}` : speaker.configured ? "已配置" : "未配置"} detail={webhookDetail} />
-      <HealthCard title="订单追踪" ok={scheduler.ok} value={schedulerValue} detail={schedulerDetail} />
-      <HealthCard title="上线准备" ok={releaseReady} value={`${data.metrics.orderReadyTraders || 0} Trader 核验就绪`} detail={releaseReady ? `${data.metrics.publishReadyTraders || 0} 名 Trader 可完整发布` : data.metrics.orderReadyTraders ? "订单核验已就绪，发布目标待配置" : "数据库、Bot、定时追踪和 Trader 账户关联必须全部正常"} />
-    </div>
-    <Card className="p-5 md:p-6">
-      <SectionHead title="SpeakerBot 接收入口" desc="Webhook 只接收 SpeakerBot 私聊消息，并校验 Telegram Secret Token。不会在页面展示 Bot Token 或 API Secret。" />
-      <div className="mt-4 rounded-lg border border-[#e7c883] bg-[#fff9e9] p-4 text-sm leading-6 text-[#6f551d]">{previewNotice}{speaker.expectedWebhookUrl ? <p className="mt-2 break-all font-mono text-xs">目标：{speaker.expectedWebhookUrl}</p> : null}</div>
-      <button className="mt-4 min-h-11 rounded-lg bg-ops-accent px-5 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50" disabled={busy === "configure-webhook" || !speaker.configurationAllowed} onClick={() => { if (window.confirm(`确认将 SpeakerBot Webhook 配置到 ${speaker.expectedWebhookUrl || "当前线上地址"}？`)) onPost({ action: "configure-webhook" }, "SpeakerBot Webhook 配置成功"); }} type="button">{busy === "configure-webhook" ? "配置中…" : "配置 SpeakerBot Webhook"}</button>
-      {!speaker.configurationAllowed ? <p className="mt-3 text-xs font-bold text-[#9d3128]">当前不可配置：{speaker.errorCode || "环境配置不完整"}</p> : null}
-    </Card>
-    <Card className="p-5 md:p-6"><SectionHead title="最近管理操作" desc={`账户凭证不会写入操作日志。${data.logs.length > 20 && !showAllLogs ? "默认显示最近 20 条。" : ""}`} />{!data.logs.length ? <Empty text="暂无管理操作记录。" /> : <><div className="mt-4 overflow-x-auto"><table className="min-w-[720px] w-full text-left text-sm"><thead><tr><Th>时间</Th><Th>操作</Th><Th>对象</Th><Th>结果</Th></tr></thead><tbody>{visibleLogs.map((log, index) => <tr className="border-t border-ops-line" key={log.id || `${log.createdAt}-${index}`}><Td>{formatDate(log.createdAt || log.at)}</Td><Td>{auditLabel(log.action)}</Td><Td><span className="break-all font-mono text-xs">{log.entityId || log.targetId || "—"}</span></Td><Td>{log.errorCode || "完成"}</Td></tr>)}</tbody></table></div>{data.logs.length > 20 ? <SmallButton className="mt-4" onClick={() => setShowAllLogs((current) => !current)}>{showAllLogs ? "收起" : "显示全部"}</SmallButton> : null}</>}</Card>
-  </div>;
-}
-
-function HealthCard({ title, ok, value, detail }) { return <Card className="min-w-0 p-5"><div className="flex items-center justify-between gap-3"><strong>{title}</strong><StatusPill tone={ok ? "green" : "amber"}>{ok ? "正常" : "检查"}</StatusPill></div><p className="mt-4 break-all text-xl font-black leading-tight">{value}</p><p className="mt-2 break-all text-xs leading-5 text-ops-muted">{detail}</p></Card>; }
 function SectionHead({ title, desc }) { return <div><h2 className="text-lg font-black">{title}</h2><p className="mt-1 text-sm leading-6 text-ops-muted">{desc}</p></div>; }
 function Empty({ text }) { return <div className="py-10 text-center text-sm font-bold text-ops-muted">{text}</div>; }
 function Fact({ label, value }) { return <div className="rounded-lg border border-ops-line bg-[#fbfcfb] p-3"><p className="text-xs font-bold text-ops-muted">{label}</p><p className="mt-1 break-all font-black">{value}</p></div>; }
