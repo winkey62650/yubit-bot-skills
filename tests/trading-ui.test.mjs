@@ -4,10 +4,13 @@ import test from "node:test";
 
 test("console navigation exposes the trading center after content distribution", async () => {
   const shell = await readFile(new URL("../app/components/ConsoleShell.jsx", import.meta.url), "utf8");
+  const analytics = shell.indexOf('label: "网站数据"');
   const distribution = shell.indexOf('label: "内容分发中心"');
   const trading = shell.indexOf('label: "交易中心"');
   const bots = shell.indexOf('label: "后台能力"');
-  assert.ok(distribution >= 0 && trading > distribution && bots > trading);
+  assert.ok(analytics >= 0 && distribution > analytics && trading > distribution && bots > trading);
+  assert.match(shell, /href: ["']\/distribution\?view=site-analytics["']/);
+  assert.match(shell, /view: ["']site-analytics["']/);
   assert.match(shell, /href: ["']\/trading["']/);
   assert.doesNotMatch(shell, /label: ["']群数据["']/);
 });

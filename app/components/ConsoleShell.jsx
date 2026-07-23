@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 
 const navItems = [
-  { href: "/distribution", label: "内容分发中心" },
+  { href: "/distribution?view=site-analytics", label: "网站数据", view: "site-analytics" },
+  { href: "/distribution?view=automation", label: "内容分发中心", view: "automation" },
   { href: "/group-config", label: "群与 Topic" },
   { href: "/new-group", label: "新群初始化" },
   { href: "/trading", label: "交易中心" },
@@ -13,6 +14,33 @@ const navItems = [
   { href: "/bots", label: "后台能力" },
   { href: "/settings", label: "系统设置" }
 ];
+
+function NavigationLinks({ pathname, distributionView }) {
+  return (
+    <nav className="mt-3 flex gap-2 overflow-x-auto pb-1 lg:mt-0 lg:grid lg:overflow-visible lg:pb-0">
+      {navItems.map((item) => {
+        const active = item.view
+          ? pathname === "/distribution" && distributionView === item.view
+          : pathname === item.href || pathname.startsWith(`${item.href}/`);
+        return (
+          <Link
+            className={`flex min-h-10 shrink-0 items-center whitespace-nowrap rounded-lg px-3 text-left text-sm font-bold transition lg:min-h-12 ${active ? "bg-[#edf7f2] text-ops-accent shadow-sm" : "text-[#33423b] hover:bg-ops-soft"}`}
+            href={item.href}
+            key={item.href}
+          >
+            {item.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+function ConsoleNavigation({ pathname }) {
+  const searchParams = useSearchParams();
+  const distributionView = searchParams.get("view") || "automation";
+  return <NavigationLinks distributionView={distributionView} pathname={pathname} />;
+}
 
 export default function ConsoleShell({ children }) {
   const pathname = usePathname();
@@ -45,20 +73,9 @@ export default function ConsoleShell({ children }) {
           {loggingOut ? "退出中…" : "退出"}
         </button>
         </div>
-        <nav className="mt-3 flex gap-2 overflow-x-auto pb-1 lg:mt-0 lg:grid lg:overflow-visible lg:pb-0">
-          {navItems.map((item) => {
-            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-            return (
-              <Link
-                className={`flex min-h-10 shrink-0 items-center whitespace-nowrap rounded-lg px-3 text-left text-sm font-bold transition lg:min-h-12 ${active ? "bg-[#edf7f2] text-ops-accent shadow-sm" : "text-[#33423b] hover:bg-ops-soft"}`}
-                href={item.href}
-                key={item.href}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
+        <Suspense fallback={<NavigationLinks distributionView="automation" pathname={pathname} />}>
+          <ConsoleNavigation pathname={pathname} />
+        </Suspense>
         <div className="mt-12 hidden rounded-lg border border-ops-line bg-white p-4 shadow-sm lg:block">
           <div className="text-sm font-black">帮助与支持</div>
           <p className="mt-1 text-xs leading-5 text-ops-muted">使用文档 / 常见问题</p>
