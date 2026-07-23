@@ -1,24 +1,38 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ConsoleShell from "../components/ConsoleShell";
 import LiveStatusStamp from "../components/LiveStatusStamp";
 import { Card, Field, PageHeader, StatusPill, inputClass } from "../components/ui";
 import { useLiveAutoRefresh } from "../hooks/useLiveAutoRefresh";
 import { getLiveFreshness } from "../../lib/live-status.mjs";
-import { isRetiredTelegramGroup, normalizeDistributionGroupTopics } from "../../lib/distribution-ui.mjs";
+import {
+  applyDistributionTopicMappings,
+  isRetiredTelegramGroup,
+  normalizeDistributionGroupTopics
+} from "../../lib/distribution-ui.mjs";
+import { resolveDiscoveredGroups } from "../../lib/group-config-policy.mjs";
 
 export default function GroupConfigPage() {
   const [groups, setGroups] = useState([]);
+  const groupsRef = useRef([]);
   const [status, setStatus] = useState("正在读取已保存群配置…");
   const [busy, setBusy] = useState(false);
   const [manualChatId, setManualChatId] = useState("");
   const [generatedAt, setGeneratedAt] = useState("");
   const [refreshError, setRefreshError] = useState("");
   const [publisher, setPublisher] = useState(null);
+  const [distributionRules, setDistributionRules] = useState([]);
   const [groupsLoaded, setGroupsLoaded] = useState(false);
   const [publisherLoaded, setPublisherLoaded] = useState(false);
+
+  function storeGroups(nextGroups) {
+    const value = Array.isArray(nextGroups) ? nextGroups : [];
+    groupsRef.current = value;
+    setGroups(value);
+    return value;
+  }
 
   useEffect(() => {
     async function bootstrap() {
@@ -40,7 +54,7 @@ export default function GroupConfigPage() {
       const response = await fetch("/api/group-config", { cache: "no-store" });
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error(data.error || "群配置读取失败");
-      setGroups(data.groups || []);
+      storeGroups(data.groups || []);
       setStatus(data.groups?.length ? `已读取 ${data.groups.length} 个 Telegram 对象；当前只允许 Forum 群 / Topic 作为出站目标。` : "暂无已保存群，请刷新 Telegram 列表。");
     } catch (error) {
       setStatus(error.message);
@@ -55,6 +69,7 @@ export default function GroupConfigPage() {
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error(data.error || "发布账号状态读取失败");
       setPublisher(data.publisher || null);
+      setDistributionRules(data.rules || []);
     } catch (error) {
       setPublisher({ mode: "user", ready: false, username: "@Serenity_Crypto", lastError: error.message });
     } finally {
@@ -72,7 +87,7 @@ export default function GroupConfigPage() {
       const response = await fetch(`/api/chats?refresh=${Date.now()}`, { cache: "no-store" });
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error(data.error || "Telegram 群 / Channel 发现失败");
-      let nextGroups = data.chats || [];
+      let nextGroups = resolveDiscoveredGroups(groupsRef.current, data.chats || []).groups;
       let saveResult = null;
       if (persist) {
         const saveResponse = await fetch("/api/group-config", {
@@ -84,7 +99,7 @@ export default function GroupConfigPage() {
         if (!saveResponse.ok || !saveResult.ok) throw new Error(saveResult.error || "群配置保存失败");
         nextGroups = saveResult.groups || nextGroups;
       }
-      setGroups(nextGroups);
+      storeGroups(nextGroups);
       setGeneratedAt(data.generatedAt || new Date().toISOString());
       setRefreshError("");
       const retiredCount = nextGroups.filter((group) => group.type !== "channel" && isRetiredTelegramGroup(group)).length;
@@ -133,7 +148,7 @@ export default function GroupConfigPage() {
       });
       const saved = await saveResponse.json();
       if (!saveResponse.ok || !saved.ok) throw new Error(saved.error || "群配置保存失败");
-      setGroups(saved.groups || mergedGroups);
+      storeGroups(saved.groups || mergedGroups);
       setGeneratedAt(data.generatedAt || new Date().toISOString());
       setRefreshError("");
       setManualChatId("");
@@ -148,15 +163,16 @@ export default function GroupConfigPage() {
     }
   }
 
-  const retiredGroups = groups.filter((group) => group.type !== "channel" && isRetiredTelegramGroup(group));
-  const forumGroups = groups.filter((group) => group.type !== "channel" && !isRetiredTelegramGroup(group));
+  const mappedGroups = applyDistributionTopicMappings(groups, distributionRules);
+  const retiredGroups = mappedGroups.filter((group) => group.type !== "channel" && isRetiredTelegramGroup(group));
+  const forumGroups = mappedGroups.filter((group) => group.type !== "channel" && !isRetiredTelegramGroup(group));
   const normalizedForumTopics = forumGroups.map((group) => normalizeDistributionGroupTopics(group));
   const topicCount = normalizedForumTopics.reduce((total, topics) => total + topics.length, 0);
   const confirmedTopics = normalizedForumTopics.reduce(
     (total, topics) => total + topics.filter((topic) => Number(topic.threadId || topic.topicId) > 0).length,
     0
   );
-  const channels = groups.filter((group) => group.type === "channel");
+  const channels = mappedGroups.filter((group) => group.type === "channel");
   const freshness = getLiveFreshness(generatedAt);
   const liveIsFresh = freshness.state === "fresh";
   const publisherIsDesktop = publisher?.mode === "desktop";

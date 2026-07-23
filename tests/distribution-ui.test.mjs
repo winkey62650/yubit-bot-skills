@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  applyDistributionTopicMappings,
   buildDistributionSourceOptions,
   buildDistributionTargetOptions,
   buildBroadcastRouteSummary,
@@ -237,6 +238,60 @@ test("Demo template placeholders and discovered threads collapse into one truthf
   assert.equal(normalized.length, 7);
   assert.equal(normalized.filter((topic) => topic.threadId).length, 4);
   assert.equal(normalized.find((topic) => topic.name === "3. Market Events").threadId, 8);
+});
+
+test("saved groups reconcile exact topic names and thread IDs from active distribution rules", () => {
+  const groups = [{
+    chatId: "-1003710405969",
+    title: "DEMO Academy",
+    topics: [
+      { name: "1. READ FIRST - DISCLAIMER" },
+      { name: "2. CryptoGuy Trading Zone" },
+      { name: "3. Market Events" },
+      { name: "4. Market Analysis - Crypto/Stocks/TradFi" },
+      { name: "5. Community Signal" },
+      { name: "6. Smart Money Tracker" },
+      { name: "7. YUBIT Updates" },
+      { name: "Topic 8", threadId: 8 },
+      { name: "Topic 10", threadId: 10 }
+    ]
+  }];
+  const rules = [
+    {
+      source: {
+        chatId: "-1003710405969",
+        threadId: 8,
+        topicName: "3. Market Events"
+      },
+      targets: [{
+        chatId: "-1004378187866",
+        threadId: 8,
+        topicName: "3. Market Events"
+      }]
+    },
+    {
+      source: {
+        chatId: "-1003710405969",
+        threadId: 10,
+        topicName: "4. Market Analysis - Crypto/Stocks/TradFi"
+      }
+    },
+    {
+      source: {
+        chatId: "-1003710405969",
+        threadId: 14,
+        topicName: "5. Community Signal"
+      }
+    }
+  ];
+
+  const [mapped] = applyDistributionTopicMappings(groups, rules);
+  const topics = normalizeDistributionGroupTopics(mapped);
+  assert.equal(topics.length, 7);
+  assert.equal(topics.some((topic) => /^Topic\s+\d+$/i.test(topic.name)), false);
+  assert.equal(topics.find((topic) => topic.name === "3. Market Events").threadId, 8);
+  assert.equal(topics.find((topic) => topic.name === "4. Market Analysis - Crypto/Stocks/TradFi").threadId, 10);
+  assert.equal(topics.find((topic) => topic.name === "5. Community Signal").threadId, 14);
 });
 
 test("saved rule destinations display the semantic Demo topic instead of a generic thread label", () => {
