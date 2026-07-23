@@ -57,6 +57,7 @@ test("Postgres delivery records preserve every Telegram message id", async () =>
     targetMessageId: null,
     targetMessageIds: [],
     publisherProgress: [],
+    publisherVerification: null,
     error: null,
     deliveredAt: null
   });
@@ -74,8 +75,9 @@ test("Postgres delivery records preserve every Telegram message id", async () =>
         target_message_id: params[3],
         target_message_ids: JSON.parse(params[4]),
         publisher_progress: JSON.parse(params[5]),
-        error: params[6],
-        delivered_at: params[7],
+        publisher_verification: JSON.parse(params[6]),
+        error: params[7],
+        delivered_at: params[8],
         created_at: "2026-07-15T00:00:00.000Z",
         updated_at: "2026-07-15T00:00:00.000Z"
       }];
@@ -88,6 +90,11 @@ test("Postgres delivery records preserve every Telegram message id", async () =>
     targetMessageId: 521,
     targetMessageIds: [521, 522],
     publisherProgress: [{ stepId: "1-photo-a1", checksum: "a1", targetMessageId: 521 }],
+    publisherVerification: {
+      leaseId: "lease-1",
+      stepId: "1-photo-a1",
+      observedGroupName: "DEMO Academy"
+    },
     deliveredAt: "2026-07-15T15:40:00.000Z"
   });
 
@@ -95,8 +102,10 @@ test("Postgres delivery records preserve every Telegram message id", async () =>
   assert.match(captured.sql, /publisher_progress/);
   assert.equal(captured.params[4], "[521,522]");
   assert.equal(captured.params[5], '[{"stepId":"1-photo-a1","checksum":"a1","targetMessageId":521}]');
+  assert.equal(captured.params[6], '{"leaseId":"lease-1","stepId":"1-photo-a1","observedGroupName":"DEMO Academy"}');
   assert.deepEqual(delivery.targetMessageIds, [521, 522]);
   assert.deepEqual(delivery.publisherProgress, [{ stepId: "1-photo-a1", checksum: "a1", targetMessageId: 521 }]);
+  assert.equal(delivery.publisherVerification.leaseId, "lease-1");
 });
 
 test("Postgres delivery records hide legacy zero Telegram message ids", async () => {
@@ -114,6 +123,7 @@ test("Postgres delivery records hide legacy zero Telegram message ids", async ()
         target_message_id: 0,
         target_message_ids: [0],
         publisher_progress: [],
+        publisher_verification: null,
         error: null,
         delivered_at: "2026-07-22T07:29:04.813Z",
         created_at: "2026-07-22T07:15:08.000Z",
@@ -137,7 +147,8 @@ test("Postgres delivery updates keep a standalone Telegram message id", async ()
     attempts: 0,
     targetMessageId: null,
     targetMessageIds: [],
-    publisherProgress: []
+    publisherProgress: [],
+    publisherVerification: null
   });
   repository.sql = {
     async query(_sql, params) {
@@ -149,6 +160,7 @@ test("Postgres delivery updates keep a standalone Telegram message id", async ()
         target_message_id: params[3],
         target_message_ids: JSON.parse(params[4]),
         publisher_progress: [],
+        publisher_verification: JSON.parse(params[6]),
         error: null
       }];
     }

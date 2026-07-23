@@ -654,7 +654,7 @@ test("desktop publishing queues generated content and completes only after a Dem
   assert.equal(claimed.deliveryId, "delivery-desktop");
   assert.equal(claimed.groupName, "DEMO Academy");
   assert.equal(claimed.topicName, "3. Market Events");
-  assert.equal(claimed.contractVersion, "telegram-template-v1");
+  assert.equal(claimed.contractVersion, "telegram-template-v2");
   assert.equal(claimed.templateVersion, "editorial-template-v1");
   assert.equal(claimed.contentPolicy, "verbatim");
   assert.equal(claimed.identityPolicy, "group-official");
@@ -672,6 +672,51 @@ test("desktop publishing queues generated content and completes only after a Dem
   const busyClaim = await claimDesktopPublisherDelivery({ repository, env, now: "2026-07-21T12:06:00.000Z" });
   assert.equal(busyClaim, null);
 
+  await assert.rejects(() => completeDesktopPublisherDelivery("delivery-desktop", {
+    status: "progress",
+    leaseId: claimed.leaseId,
+    stepId: claimed.steps[0].stepId,
+    targetMessageId: 901
+  }, { repository, env, now: "2026-07-21T12:06:15.000Z" }), /DESKTOP_PUBLISHER_PREFLIGHT_REQUIRED/);
+
+  await assert.rejects(() => completeDesktopPublisherDelivery("delivery-desktop", {
+    status: "prepared",
+    leaseId: claimed.leaseId,
+    stepId: claimed.steps[0].stepId,
+    observedGroupName: "CryptoGuy Academy",
+    observedTopicName: claimed.topicName,
+    observedSenderName: claimed.groupName
+  }, { repository, env, now: "2026-07-21T12:06:30.000Z" }), /DESKTOP_PUBLISHER_GROUP_MISMATCH/);
+
+  await assert.rejects(() => completeDesktopPublisherDelivery("delivery-desktop", {
+    status: "prepared",
+    leaseId: claimed.leaseId,
+    stepId: claimed.steps[0].stepId,
+    observedGroupName: claimed.groupName,
+    observedTopicName: "4. Market Analysis - Crypto/Stocks/TradFi",
+    observedSenderName: claimed.groupName
+  }, { repository, env, now: "2026-07-21T12:06:35.000Z" }), /DESKTOP_PUBLISHER_TOPIC_MISMATCH/);
+
+  await assert.rejects(() => completeDesktopPublisherDelivery("delivery-desktop", {
+    status: "prepared",
+    leaseId: claimed.leaseId,
+    stepId: claimed.steps[0].stepId,
+    observedGroupName: claimed.groupName,
+    observedTopicName: claimed.topicName,
+    observedSenderName: "Serenity_Crypto"
+  }, { repository, env, now: "2026-07-21T12:06:40.000Z" }), /DESKTOP_PUBLISHER_SENDER_MISMATCH/);
+
+  const prepared = await completeDesktopPublisherDelivery("delivery-desktop", {
+    status: "prepared",
+    leaseId: claimed.leaseId,
+    stepId: claimed.steps[0].stepId,
+    observedGroupName: claimed.groupName,
+    observedTopicName: claimed.topicName,
+    observedSenderName: claimed.groupName
+  }, { repository, env, now: "2026-07-21T12:06:45.000Z" });
+  assert.equal(prepared.publisherVerification.stepId, claimed.steps[0].stepId);
+  assert.equal(prepared.publisherVerification.observedSenderName, "DEMO Academy");
+
   const firstProgress = await completeDesktopPublisherDelivery("delivery-desktop", {
     status: "progress",
     leaseId: claimed.leaseId,
@@ -680,6 +725,7 @@ test("desktop publishing queues generated content and completes only after a Dem
   }, { repository, env, now: "2026-07-21T12:07:00.000Z" });
   assert.equal(firstProgress.status, "sending");
   assert.deepEqual(firstProgress.publisherProgress.map((step) => step.stepId), [claimed.steps[0].stepId]);
+  assert.equal(firstProgress.publisherVerification, null);
   assert.equal(leases.get("desktop-publisher-lock-v1").leaseUntil, "2026-07-21T12:17:00.000Z");
 
   await assert.rejects(() => completeDesktopPublisherDelivery("delivery-desktop", {
@@ -701,6 +747,15 @@ test("desktop publishing queues generated content and completes only after a Dem
   assert.equal(resumed.deliveryId, claimed.deliveryId);
   assert.notEqual(resumed.leaseId, claimed.leaseId);
   assert.deepEqual(resumed.completedSteps.map((step) => step.stepId), [claimed.steps[0].stepId]);
+
+  await completeDesktopPublisherDelivery("delivery-desktop", {
+    status: "prepared",
+    leaseId: resumed.leaseId,
+    stepId: claimed.steps[1].stepId,
+    observedGroupName: resumed.groupName,
+    observedTopicName: resumed.topicName,
+    observedSenderName: resumed.groupName
+  }, { repository, env, now: "2026-07-21T12:18:30.000Z" });
 
   await completeDesktopPublisherDelivery("delivery-desktop", {
     status: "progress",

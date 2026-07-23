@@ -37,6 +37,9 @@ export async function POST(request) {
       status: body.status,
       leaseId: body.leaseId,
       stepId: body.stepId,
+      observedGroupName: body.observedGroupName,
+      observedTopicName: body.observedTopicName,
+      observedSenderName: body.observedSenderName,
       targetMessageId: body.targetMessageId,
       targetMessageIds: body.targetMessageIds,
       error: body.error

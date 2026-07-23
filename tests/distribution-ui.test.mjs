@@ -9,6 +9,7 @@ import {
   bulkDeleteNotice,
   failedBulkDeleteIds,
   getContentTemplate,
+  isRetiredTelegramGroup,
   normalizeDistributionGroupTopics,
   orderedDistributionTopics,
   reconcileRuleSelection,
@@ -126,6 +127,48 @@ test("distribution selectors exclude General Chat and follow the managed editori
   assert.deepEqual(buildDistributionSourceOptions(groups).map((option) => option.source.topicName), expectedNames);
   assert.equal(JSON.stringify(buildDistributionSourceOptions(groups)).includes("整群"), false);
   assert.equal(JSON.stringify(buildDistributionTargetOptions(groups)).includes("General Chat"), false);
+});
+
+test("retired Telegram groups are excluded without hiding active or recoverable groups", () => {
+  const retired = {
+    chatId: "-1004309440933",
+    title: "Fight Club",
+    type: "supergroup",
+    isForum: false,
+    canUseTopics: false,
+    topics: [],
+    bots: [
+      { name: "AdminBot", membership: "kicked" },
+      { name: "SpeakerBot", membership: "not_found" },
+      { name: "ForwardBot", membership: "kicked" }
+    ]
+  };
+  const active = {
+    chatId: "-1004378187866",
+    title: "CryptoGuy Academy",
+    type: "supergroup",
+    isForum: true,
+    canUseTopics: true,
+    topics: [{ name: "3. Market Events", threadId: 8 }],
+    bots: [
+      { name: "AdminBot", membership: "member" },
+      { name: "SpeakerBot", membership: "member" },
+      { name: "ForwardBot", membership: "member" }
+    ]
+  };
+  const recoverable = {
+    chatId: "-1005000000000",
+    title: "Saved Draft Group",
+    type: "supergroup",
+    topics: []
+  };
+
+  assert.equal(isRetiredTelegramGroup(retired), true);
+  assert.equal(isRetiredTelegramGroup(active), false);
+  assert.equal(isRetiredTelegramGroup(recoverable), false);
+  assert.equal(buildDistributionTargetOptions([retired, active]).some((option) => option.target.chatId === retired.chatId), false);
+  assert.equal(buildDistributionSourceOptions([retired, active]).some((option) => option.source.chatId === retired.chatId), false);
+  assert.equal(buildDistributionTargetOptions([retired, active]).some((option) => option.target.chatId === active.chatId), true);
 });
 
 test("generic Demo Topic names are resolved to the managed editorial names", () => {

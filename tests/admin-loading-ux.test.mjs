@@ -24,6 +24,7 @@ test("group status waits for saved groups and publisher state before enabling ac
   assert.match(page, /publisherLoaded/);
   assert.match(page, /!groupsLoaded\s*\|\|\s*busy/);
   assert.match(page, /normalizeDistributionGroupTopics/);
+  assert.match(page, /isRetiredTelegramGroup/);
 
   const globalWarning = page.indexOf("发布桥最近一次投递失败");
   const groupCard = page.indexOf("function GroupCard");
@@ -68,8 +69,15 @@ test("paused monitoring is reported as historical instead of current", () => {
   assert.match(page, /monitoringPaused/);
   assert.match(page, /value=\{currentStatus\}/);
   assert.match(page, /监控未运行；最近一次真实消息已成功送达/);
-  assert.match(page, /以下为最近一次检查结果/);
+  assert.match(page, /仅暂停 Lark 健康监控/);
+  assert.match(page, /不影响内容分发调度与自动发布/);
   assert.match(page, /历史正常/);
+});
+
+test("new group discovery hides groups that every bot has left", () => {
+  const page = source("app/new-group/page.jsx");
+  assert.match(page, /isRetiredTelegramGroup/);
+  assert.match(page, /group\.type !== "channel"\s*&&\s*!isRetiredTelegramGroup\(group\)/);
 });
 
 test("publisher closure is gated by every live health check", () => {

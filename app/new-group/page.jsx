@@ -8,6 +8,7 @@ import { useLiveAutoRefresh } from "../hooks/useLiveAutoRefresh";
 import { defaultTopicTemplate, migrateTopicTemplateList, topicNameWithSequence } from "../../templates.mjs";
 import { buildInitializationChecklist, getBotOperationalStatus } from "../../lib/live-status.mjs";
 import { selectPreferredInitializationGroup } from "../../lib/telegram-discovery.mjs";
+import { isRetiredTelegramGroup } from "../../lib/distribution-ui.mjs";
 import { loadWorkspaceState, saveWorkspaceState } from "../../lib/workspace-client";
 
 const defaultTopics = defaultTopicTemplate.map((topic) => [topic.id, topic.emoji, topicNameWithSequence(topic), topic.attribute, topic.announcement || "", topic.imageUrl || ""]);
@@ -115,7 +116,7 @@ export default function NewGroupPage() {
       const response = await fetch(`/api/chats?refresh=${Date.now()}`, { cache: "no-store" });
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error(data.error || "群发现失败");
-      const liveGroups = (data.chats || []).filter((group) => group.type !== "channel");
+      const liveGroups = (data.chats || []).filter((group) => group.type !== "channel" && !isRetiredTelegramGroup(group));
       setGroups(liveGroups);
       setBots(data.bots?.length ? data.bots : currentBotFallback);
       setGeneratedAt(data.generatedAt || new Date().toISOString());
@@ -167,7 +168,7 @@ export default function NewGroupPage() {
       });
       const saved = await saveResponse.json();
       if (!saveResponse.ok || !saved.ok) throw new Error(saved.error || "群配置保存失败");
-      setGroups(saved.groups || mergedGroups);
+      setGroups((saved.groups || mergedGroups).filter((group) => group.type !== "channel" && !isRetiredTelegramGroup(group)));
       setBots(data.bots?.length ? data.bots : currentBotFallback);
       setGeneratedAt(data.generatedAt || new Date().toISOString());
       setRefreshError("");

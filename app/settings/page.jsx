@@ -160,7 +160,7 @@ export default function SettingsPage() {
       <Card className="mt-5 overflow-hidden">
         <div className="border-b border-ops-line p-5">
           <h2 className="text-xl font-black">程序健康检查</h2>
-          <p className="mt-1 text-sm text-ops-muted">{monitoringPaused ? "监控已暂停；以下为最近一次检查结果。" : "生产 Worker 每分钟核对是否到达检查时间；到点后按上方频率执行，异常时根据阈值推送。"}</p>
+          <p className="mt-1 text-sm text-ops-muted">{monitoringPaused ? "仅暂停 Lark 健康监控；以下为最近一次检查结果，不影响内容分发调度与自动发布。" : "生产 Worker 每分钟核对是否到达检查时间；到点后按上方频率执行，异常时根据阈值推送。"}</p>
           {monitorStatus?.lastRunAt ? <p className="mt-2 text-xs font-bold text-ops-accent">最近检查：{new Date(monitorStatus.lastRunAt).toLocaleString()} · {monitorStatus.lastResult?.summary}</p> : null}
         </div>
         <div className="overflow-x-auto">

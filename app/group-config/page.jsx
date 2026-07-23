@@ -7,7 +7,7 @@ import LiveStatusStamp from "../components/LiveStatusStamp";
 import { Card, Field, PageHeader, StatusPill, inputClass } from "../components/ui";
 import { useLiveAutoRefresh } from "../hooks/useLiveAutoRefresh";
 import { getLiveFreshness } from "../../lib/live-status.mjs";
-import { normalizeDistributionGroupTopics } from "../../lib/distribution-ui.mjs";
+import { isRetiredTelegramGroup, normalizeDistributionGroupTopics } from "../../lib/distribution-ui.mjs";
 
 export default function GroupConfigPage() {
   const [groups, setGroups] = useState([]);
@@ -87,11 +87,13 @@ export default function GroupConfigPage() {
       setGroups(nextGroups);
       setGeneratedAt(data.generatedAt || new Date().toISOString());
       setRefreshError("");
-      const forumCount = nextGroups.filter((group) => group.canUseTopics).length;
+      const retiredCount = nextGroups.filter((group) => group.type !== "channel" && isRetiredTelegramGroup(group)).length;
+      const activeGroups = nextGroups.filter((group) => group.type !== "channel" && !isRetiredTelegramGroup(group));
+      const forumCount = activeGroups.filter((group) => group.canUseTopics).length;
       const channelCount = nextGroups.filter((group) => group.type === "channel").length;
       setStatus(saveResult?.preservedExisting
         ? saveResult.warning
-        : `已实时核验 ${nextGroups.length} 个群 / Channel：${forumCount} 个 Forum 群，${channelCount} 个 Channel${persist ? "，并已保存" : ""}。`);
+        : `已实时核验 ${activeGroups.length + channelCount} 个有效群 / Channel：${forumCount} 个 Forum 群，${channelCount} 个 Channel${retiredCount ? `；另有 ${retiredCount} 条失效历史群已隐藏` : ""}${persist ? "，并已保存" : ""}。`);
     } catch (error) {
       setRefreshError(error.message);
       if (!silent) setStatus(`刷新失败：${error.message}`);
@@ -146,7 +148,8 @@ export default function GroupConfigPage() {
     }
   }
 
-  const forumGroups = groups.filter((group) => group.type !== "channel");
+  const retiredGroups = groups.filter((group) => group.type !== "channel" && isRetiredTelegramGroup(group));
+  const forumGroups = groups.filter((group) => group.type !== "channel" && !isRetiredTelegramGroup(group));
   const normalizedForumTopics = forumGroups.map((group) => normalizeDistributionGroupTopics(group));
   const topicCount = normalizedForumTopics.reduce((total, topics) => total + topics.length, 0);
   const confirmedTopics = normalizedForumTopics.reduce(
@@ -193,7 +196,7 @@ export default function GroupConfigPage() {
           <p className="mt-2 text-xs font-bold text-ops-muted">无需在这台 Mac 登录 Bot。AdminBot 通过 Bot API 检查群、Topics 与初始化权限；@Serenity_Crypto 必须是目标群管理员并进入发布白名单。实际出站使用匿名管理员 / Send As 能力，强制显示目标群名称和群头像。首次登记请填写以 -100 开头的群 ID。</p>
         </div>
         <div className="flex flex-col gap-4 border-b border-ops-line p-5 md:flex-row md:items-center md:justify-between">
-          <div><h2 className="text-xl font-black">目标群与 Topic 健康状态</h2><p className="mt-1 text-sm text-ops-muted">刷新用于复核 AdminBot 初始化权限、Topic Thread ID 和主发布账号白名单。{channels.length ? `已隐藏 ${channels.length} 条历史 Channel 记录，当前不作为出站目标。` : ""}</p></div>
+          <div><h2 className="text-xl font-black">目标群与 Topic 健康状态</h2><p className="mt-1 text-sm text-ops-muted">刷新用于复核 AdminBot 初始化权限、Topic Thread ID 和主发布账号白名单。{channels.length || retiredGroups.length ? `已隐藏 ${channels.length} 条历史 Channel 和 ${retiredGroups.length} 条失效群记录，当前不作为出站目标。` : ""}</p></div>
           <button className="min-h-11 rounded-lg border border-ops-accent px-5 text-sm font-black text-ops-accent disabled:opacity-50" disabled={!groupsLoaded || busy} onClick={discoverChats} type="button">{busy ? "正在刷新…" : "刷新群、Topic 与权限"}</button>
         </div>
         <div aria-live="polite" className="border-b border-ops-line bg-[#fbfcfb] px-5 py-3 text-sm font-bold text-ops-muted">{status}</div>
