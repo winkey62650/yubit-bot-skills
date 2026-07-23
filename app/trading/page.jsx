@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import ConsoleShell from "../components/ConsoleShell";
 import { Card, Field, Metric, PageHeader, StatusPill, inputClass } from "../components/ui";
-import { orderedDistributionTopics } from "../../lib/distribution-ui.mjs";
+import { normalizeDistributionGroupTopics } from "../../lib/distribution-ui.mjs";
 
 const tabs = [
   ["logs", "交易日志"],
@@ -307,6 +307,10 @@ function ExchangeAccountCard({ account, busy, onCopy, onEdit, onPost, setVerifyS
 
 function DestinationManagement({ data, groups, busy, form, setForm, onPost }) {
   const options = groupTopicOptions(groups);
+  const canSaveDestination = Boolean(
+    form.chatId
+    && (form.scopeType !== "trader" || form.scopeId)
+  );
 
   async function save(event) {
     event.preventDefault();
@@ -331,12 +335,13 @@ function DestinationManagement({ data, groups, busy, form, setForm, onPost }) {
   }
 
   return <div className="grid items-start gap-5 xl:grid-cols-[minmax(340px,.8fr)_minmax(0,1.2fr)]">
-    <Card className="p-5 md:p-6"><SectionHead title={form.id ? "编辑发布目标" : "新增发布目标"} desc="工作区目标接收所有 Trader；Trader 专属目标只接收指定 Trader。" /><form className="mt-5 grid gap-4" onSubmit={save}><Field label="发布范围"><select className={inputClass} onChange={(event) => setForm({ ...form, scopeType: event.target.value, scopeId: "" })} value={form.scopeType}><option value="workspace">所有 Trader</option><option value="trader">指定 Trader</option></select></Field>{form.scopeType === "trader" ? <Field label="Trader"><select className={inputClass} onChange={(event) => setForm({ ...form, scopeId: event.target.value })} required value={form.scopeId}><option value="">请选择 Trader</option>{data.traders.map((trader) => <option key={trader.id} value={trader.id}>{trader.displayName}</option>)}</select></Field> : null}<Field label="目标群 / Topic"><select className={inputClass} onChange={(event) => chooseTarget(event.target.value)} required value={form.targetKey}><option value="">请选择已识别的群与 Topic</option>{options.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}</select></Field><details className="rounded-lg border border-ops-line p-4"><summary className="cursor-pointer text-sm font-black">手动填写群 ID / Topic ID</summary><div className="mt-4 grid gap-3"><Field label="群 ID"><input className={inputClass} onChange={(event) => setForm({ ...form, chatId: event.target.value })} required value={form.chatId} /></Field><Field label="Topic ID"><input className={inputClass} inputMode="numeric" onChange={(event) => setForm({ ...form, threadId: event.target.value })} value={form.threadId} /></Field><Field label="群名称"><input className={inputClass} onChange={(event) => setForm({ ...form, chatTitle: event.target.value })} value={form.chatTitle || ""} /></Field><Field label="Topic 名称"><input className={inputClass} onChange={(event) => setForm({ ...form, topicTitle: event.target.value })} value={form.topicTitle || ""} /></Field></div></details><label className="flex items-center gap-3 rounded-lg border border-ops-line p-3 text-sm font-bold"><input checked={Boolean(form.enabled)} onChange={(event) => setForm({ ...form, enabled: event.target.checked })} type="checkbox" />保存后立即启用</label><FormActions busy={busy === "save-destination"} editing={Boolean(form.id)} onCancel={() => setForm(emptyDestination)} /></form></Card>
+    <Card className="p-5 md:p-6"><SectionHead title={form.id ? "编辑发布目标" : "新增发布目标"} desc="工作区目标接收所有 Trader；Trader 专属目标只接收指定 Trader。" /><form className="mt-5 grid gap-4" onSubmit={save}><Field label="发布范围"><select className={inputClass} onChange={(event) => setForm({ ...form, scopeType: event.target.value, scopeId: "" })} value={form.scopeType}><option value="workspace">所有 Trader</option><option value="trader">指定 Trader</option></select></Field>{form.scopeType === "trader" ? <Field label="Trader"><select className={inputClass} onChange={(event) => setForm({ ...form, scopeId: event.target.value })} required value={form.scopeId}><option value="">请选择 Trader</option>{data.traders.map((trader) => <option key={trader.id} value={trader.id}>{trader.displayName}</option>)}</select></Field> : null}<Field label="目标群 / Topic"><select className={inputClass} onChange={(event) => chooseTarget(event.target.value)} required value={form.targetKey}><option value="">请选择已识别的群与 Topic</option>{options.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}</select></Field><details className="rounded-lg border border-ops-line p-4"><summary className="cursor-pointer text-sm font-black">手动填写群 ID / Topic ID</summary><div className="mt-4 grid gap-3"><Field label="群 ID"><input className={inputClass} onChange={(event) => setForm({ ...form, chatId: event.target.value })} required value={form.chatId} /></Field><Field label="Topic ID"><input className={inputClass} inputMode="numeric" onChange={(event) => setForm({ ...form, threadId: event.target.value })} value={form.threadId} /></Field><Field label="群名称"><input className={inputClass} onChange={(event) => setForm({ ...form, chatTitle: event.target.value })} value={form.chatTitle || ""} /></Field><Field label="Topic 名称"><input className={inputClass} onChange={(event) => setForm({ ...form, topicTitle: event.target.value })} value={form.topicTitle || ""} /></Field></div></details><label className="flex items-center gap-3 rounded-lg border border-ops-line p-3 text-sm font-bold"><input checked={Boolean(form.enabled)} onChange={(event) => setForm({ ...form, enabled: event.target.checked })} type="checkbox" />保存后立即启用</label><FormActions busy={busy === "save-destination"} disabled={!canSaveDestination} editing={Boolean(form.id)} onCancel={() => setForm(emptyDestination)} /></form></Card>
     <Card className="p-5 md:p-6"><SectionHead title="发布目标" desc="每个目标独立投递，单个目标失败不会影响其他群。" />{!data.destinations.length ? <Empty text="暂无发布目标。请先选择目标群与 Topic。" /> : <div className="mt-4 grid gap-3">{data.destinations.map((destination) => <div className="rounded-lg border border-ops-line p-4" key={destination.id}><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><strong>{destination.chatTitle || destination.chatId}</strong><StatusPill tone={destination.enabled ? "green" : "amber"}>{destination.enabled ? "已启用" : "已停用"}</StatusPill></div><p className="mt-1 text-sm">{destination.topicTitle || (destination.threadId ? `Topic ${destination.threadId}` : "群聊")}</p><p className="mt-1 break-all font-mono text-xs text-ops-muted">{destination.chatId}:{destination.threadId || 0}</p><p className="mt-2 text-xs text-ops-muted">{destination.scopeType === "trader" ? `仅 ${data.traders.find((trader) => trader.id === destination.scopeId)?.displayName || "指定 Trader"}` : "所有 Trader"} · {destination.lastVerifiedAt ? `已验证 ${formatDate(destination.lastVerifiedAt)}` : "尚未验证"}</p>{destination.lastErrorCode ? <p className="mt-2 break-all text-xs text-[#9d3128]">{destination.lastErrorCode}</p> : null}</div><div className="flex flex-wrap gap-2"><SmallButton onClick={() => edit(destination)}>编辑</SmallButton><SmallButton disabled={busy === "verify-destination"} onClick={() => onPost({ action: "verify-destination", destinationId: destination.id }, "目标权限验证完成")}>验证配置</SmallButton><SmallButton disabled={busy === "test-destination"} onClick={() => test(destination)}>发送测试消息</SmallButton></div></div></div>)}</div>}</Card>
   </div>;
 }
 
 function SystemHealth({ data, busy, onPost }) {
+  const [showAllLogs, setShowAllLogs] = useState(false);
   const health = data.health || {};
   const speaker = health.speakerBot || {};
   const scheduler = health.scheduler || {};
@@ -362,6 +367,7 @@ function SystemHealth({ data, busy, onPost }) {
   const previewNotice = speaker.environment === "preview"
     ? "预览环境必须使用独立测试 Bot，系统不会复用或覆盖正式 SpeakerBot 的 Webhook。"
     : "正式环境只会把 SpeakerBot Webhook 配置到当前正式地址。";
+  const visibleLogs = showAllLogs ? data.logs : data.logs.slice(0, 20);
   return <div className="grid gap-5">
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       <HealthCard title="数据库" ok={health.database?.ok} value={health.database?.ok ? "连接正常" : "连接异常"} detail={health.database?.driver || health.database?.errorCode || "未配置"} />
@@ -375,7 +381,7 @@ function SystemHealth({ data, busy, onPost }) {
       <button className="mt-4 min-h-11 rounded-lg bg-ops-accent px-5 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50" disabled={busy === "configure-webhook" || !speaker.configurationAllowed} onClick={() => { if (window.confirm(`确认将 SpeakerBot Webhook 配置到 ${speaker.expectedWebhookUrl || "当前线上地址"}？`)) onPost({ action: "configure-webhook" }, "SpeakerBot Webhook 配置成功"); }} type="button">{busy === "configure-webhook" ? "配置中…" : "配置 SpeakerBot Webhook"}</button>
       {!speaker.configurationAllowed ? <p className="mt-3 text-xs font-bold text-[#9d3128]">当前不可配置：{speaker.errorCode || "环境配置不完整"}</p> : null}
     </Card>
-    <Card className="p-5 md:p-6"><SectionHead title="最近管理操作" desc="账户凭证不会写入操作日志。" />{!data.logs.length ? <Empty text="暂无管理操作记录。" /> : <div className="mt-4 overflow-x-auto"><table className="min-w-[720px] w-full text-left text-sm"><thead><tr><Th>时间</Th><Th>操作</Th><Th>对象</Th><Th>结果</Th></tr></thead><tbody>{data.logs.slice(0, 50).map((log, index) => <tr className="border-t border-ops-line" key={log.id || `${log.createdAt}-${index}`}><Td>{formatDate(log.createdAt || log.at)}</Td><Td>{auditLabel(log.action)}</Td><Td><span className="break-all font-mono text-xs">{log.entityId || log.targetId || "—"}</span></Td><Td>{log.errorCode || "完成"}</Td></tr>)}</tbody></table></div>}</Card>
+    <Card className="p-5 md:p-6"><SectionHead title="最近管理操作" desc={`账户凭证不会写入操作日志。${data.logs.length > 20 && !showAllLogs ? "默认显示最近 20 条。" : ""}`} />{!data.logs.length ? <Empty text="暂无管理操作记录。" /> : <><div className="mt-4 overflow-x-auto"><table className="min-w-[720px] w-full text-left text-sm"><thead><tr><Th>时间</Th><Th>操作</Th><Th>对象</Th><Th>结果</Th></tr></thead><tbody>{visibleLogs.map((log, index) => <tr className="border-t border-ops-line" key={log.id || `${log.createdAt}-${index}`}><Td>{formatDate(log.createdAt || log.at)}</Td><Td>{auditLabel(log.action)}</Td><Td><span className="break-all font-mono text-xs">{log.entityId || log.targetId || "—"}</span></Td><Td>{log.errorCode || "完成"}</Td></tr>)}</tbody></table></div>{data.logs.length > 20 ? <SmallButton className="mt-4" onClick={() => setShowAllLogs((current) => !current)}>{showAllLogs ? "收起" : "显示全部"}</SmallButton> : null}</>}</Card>
   </div>;
 }
 
@@ -383,13 +389,13 @@ function HealthCard({ title, ok, value, detail }) { return <Card className="p-5"
 function SectionHead({ title, desc }) { return <div><h2 className="text-lg font-black">{title}</h2><p className="mt-1 text-sm leading-6 text-ops-muted">{desc}</p></div>; }
 function Empty({ text }) { return <div className="py-10 text-center text-sm font-bold text-ops-muted">{text}</div>; }
 function Fact({ label, value }) { return <div className="rounded-lg border border-ops-line bg-[#fbfcfb] p-3"><p className="text-xs font-bold text-ops-muted">{label}</p><p className="mt-1 break-all font-black">{value}</p></div>; }
-function FormActions({ busy, editing, onCancel }) { return <div className="flex flex-wrap gap-2"><button className="min-h-11 rounded-lg bg-ops-accent px-5 text-sm font-black text-white disabled:opacity-50" disabled={busy} type="submit">{busy ? "保存中…" : editing ? "保存修改" : "保存"}</button>{editing ? <button className="min-h-11 rounded-lg border border-ops-line px-5 text-sm font-black" onClick={onCancel} type="button">取消编辑</button> : null}</div>; }
+function FormActions({ busy, disabled = false, editing, onCancel }) { return <div className="flex flex-wrap gap-2"><button className="min-h-11 rounded-lg bg-ops-accent px-5 text-sm font-black text-white disabled:opacity-50" disabled={busy || disabled} type="submit">{busy ? "保存中…" : editing ? "保存修改" : "保存"}</button>{editing ? <button className="min-h-11 rounded-lg border border-ops-line px-5 text-sm font-black" onClick={onCancel} type="button">取消编辑</button> : null}</div>; }
 function SmallButton({ children, className = "", ...props }) { return <button className={`min-h-9 rounded-lg border border-ops-line bg-white px-3 text-xs font-black text-[#33423b] disabled:opacity-50 ${className}`} type="button" {...props}>{children}</button>; }
 function Th({ children }) { return <th className="px-4 py-3 font-black">{children}</th>; }
 function Td({ children, className = "" }) { return <td className={`px-4 py-3 align-top ${className}`}>{children}</td>; }
 
 function groupTopicOptions(groups) {
-  return groups.flatMap((group) => orderedDistributionTopics(group.topics || []).filter((topic) => Number(topic.threadId || topic.topicId) > 0).map((topic) => {
+  return groups.flatMap((group) => normalizeDistributionGroupTopics(group).filter((topic) => Number(topic.threadId || topic.topicId) > 0).map((topic) => {
     const target = { chatId: String(group.chatId), threadId: Number(topic.threadId || topic.topicId), chatTitle: group.title || group.name || "", topicTitle: topic.name || topic.title || "" };
     return { key: `${target.chatId}:${target.threadId}`, label: `${target.chatTitle} / ${target.topicTitle}`, target };
   }));

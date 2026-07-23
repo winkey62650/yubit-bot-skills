@@ -49,6 +49,7 @@ export default function TelegramUserAuthorizationPage() {
   const approvedTargets = publisher?.approvedTargetIds || [];
   const lastSeenAt = publisher?.lastSeenAt || publisher?.lastVerifiedAt || null;
   const checks = buildPublisherStatusChecks(publisher || {});
+  const allChecksHealthy = !loading && checks.every((check) => check.ok !== false);
 
   return (
     <ConsoleShell>
@@ -85,7 +86,7 @@ export default function TelegramUserAuthorizationPage() {
               <h2 className="text-xl font-black">实时检测项</h2>
               <p className="mt-1 text-sm text-ops-muted">账号身份、本机发布桥、Telegram 会话、目标白名单和最近一次投递分别检测，不再用单一“在线”状态掩盖局部故障。</p>
             </div>
-            <StatusPill tone={checks.every((check) => check.ok !== false) ? "green" : "amber"}>{checks.every((check) => check.ok !== false) ? "检测通过" : "需要处理"}</StatusPill>
+            <StatusPill tone={allChecksHealthy ? "green" : "amber"}>{allChecksHealthy ? "检测通过" : "需要处理"}</StatusPill>
           </div>
         </div>
         <div className="grid divide-y divide-ops-line md:grid-cols-2 md:divide-x md:divide-y-0 xl:grid-cols-5">
@@ -99,7 +100,7 @@ export default function TelegramUserAuthorizationPage() {
             <h2 className="text-xl font-black">检测通过后的发布闭环</h2>
             <p className="mt-1 text-sm text-ops-muted">运营只需要维护内容规则、目标群和 Topic，不再处理账号开发凭证或选择 Bot 发送人。</p>
           </div>
-          <StatusPill tone={ready ? "green" : "amber"}>{ready ? "闭环在线" : "等待发布桥"}</StatusPill>
+          <StatusPill tone={allChecksHealthy ? "green" : "amber"}>{allChecksHealthy ? "闭环在线" : "闭环待恢复"}</StatusPill>
         </div>
         <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <Step number="1" title="生成内容" text="自动任务、广播或 Trader 信号进入服务端发布队列。" />

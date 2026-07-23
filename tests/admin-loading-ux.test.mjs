@@ -51,3 +51,29 @@ test("the console shell prevents mobile horizontal clipping", () => {
   assert.match(shell, /overflow-x-hidden/);
   assert.match(shell, /max-w-full/);
 });
+
+test("trading destinations use semantic topics and block incomplete saves", () => {
+  const page = source("app/trading/page.jsx");
+  assert.match(page, /normalizeDistributionGroupTopics/);
+  assert.doesNotMatch(page, /orderedDistributionTopics/);
+  assert.match(page, /canSaveDestination/);
+  assert.match(page, /disabled=\{busy\s*\|\|\s*disabled\}/);
+  assert.match(page, /data\.logs\.slice\(0,\s*20\)/);
+  assert.match(page, /显示全部/);
+});
+
+test("paused monitoring is reported as historical instead of current", () => {
+  const page = source("app/settings/page.jsx");
+  assert.match(page, /monitoringPaused/);
+  assert.match(page, /value=\{currentStatus\}/);
+  assert.match(page, /监控未运行；最近一次真实消息已成功送达/);
+  assert.match(page, /以下为最近一次检查结果/);
+  assert.match(page, /历史正常/);
+});
+
+test("publisher closure is gated by every live health check", () => {
+  const page = source("app/telegram-user-authorization/page.jsx");
+  assert.match(page, /allChecksHealthy/);
+  assert.match(page, /闭环待恢复/);
+  assert.doesNotMatch(page, /tone=\{ready\s*\?\s*"green"\s*:\s*"amber"\}/);
+});

@@ -107,6 +107,27 @@ export default function SettingsPage() {
   const configured = Boolean(settings.webhook) && settings.status === "启用";
   const verified = monitorStatus?.verified === true;
   const checks = monitorStatus?.lastResult?.checks?.length ? monitorStatus.lastResult.checks : pendingChecks;
+  const monitoringPaused = settingsLoaded && settings.status === "暂停";
+  const currentStatus = !settingsLoaded
+    ? "—"
+    : monitoringPaused
+      ? "已暂停"
+      : verified
+        ? "已验证"
+        : configured
+          ? "待验证"
+          : "待配置";
+  const currentStatusDetail = !settingsLoaded
+    ? "正在核验配置"
+    : monitoringPaused
+      ? verified
+        ? "监控未运行；最近一次真实消息已成功送达"
+        : "监控任务不会运行"
+      : verified
+        ? "真实消息已成功送达"
+        : configured
+          ? "请发送测试消息"
+          : "填入 Webhook 并启用";
 
   return (
     <ConsoleShell>
@@ -115,7 +136,7 @@ export default function SettingsPage() {
         <MetricBox label="检查频率" value={settingsLoaded ? settings.frequency : "—"} sub={settingsLoaded ? "可按业务低频调整" : "正在读取云端设置"} />
         <MetricBox label="监控程序" value="5" sub="后台 / 内容分发 / 自动任务 / 建群 / Lark" />
         <MetricBox label="告警渠道" value="Lark" sub="Webhook 推送" />
-        <MetricBox label="当前状态" value={!settingsLoaded ? "—" : verified ? "已验证" : configured ? "待验证" : "待配置"} sub={!settingsLoaded ? "正在核验配置" : verified ? "真实消息已成功送达" : configured ? "请发送测试消息" : "填入 Webhook 并启用"} />
+        <MetricBox label="当前状态" value={currentStatus} sub={currentStatusDetail} />
       </section>
 
       <Card className="p-6">
@@ -139,7 +160,7 @@ export default function SettingsPage() {
       <Card className="mt-5 overflow-hidden">
         <div className="border-b border-ops-line p-5">
           <h2 className="text-xl font-black">程序健康检查</h2>
-          <p className="mt-1 text-sm text-ops-muted">生产 Worker 每分钟核对是否到达检查时间；到点后按上方频率执行，异常时根据阈值推送。</p>
+          <p className="mt-1 text-sm text-ops-muted">{monitoringPaused ? "监控已暂停；以下为最近一次检查结果。" : "生产 Worker 每分钟核对是否到达检查时间；到点后按上方频率执行，异常时根据阈值推送。"}</p>
           {monitorStatus?.lastRunAt ? <p className="mt-2 text-xs font-bold text-ops-accent">最近检查：{new Date(monitorStatus.lastRunAt).toLocaleString()} · {monitorStatus.lastResult?.summary}</p> : null}
         </div>
         <div className="overflow-x-auto">
@@ -153,7 +174,7 @@ export default function SettingsPage() {
                   <td className="px-5 py-4 font-bold">{check.name}</td>
                   <td className="px-5 py-4">{check.target || "—"}</td>
                   <td className="px-5 py-4">{check.message || "—"}{Number.isFinite(check.latencyMs) ? ` · ${check.latencyMs}ms` : ""}</td>
-                  <td className="px-5 py-4"><StatusPill tone={check.ok === true ? "green" : "amber"}>{check.ok === true ? "正常" : check.ok === false ? "异常" : "待检查"}</StatusPill></td>
+                  <td className="px-5 py-4"><StatusPill tone={check.ok === true ? "green" : "amber"}>{monitoringPaused ? check.ok === true ? "历史正常" : check.ok === false ? "历史异常" : "待检查" : check.ok === true ? "正常" : check.ok === false ? "异常" : "待检查"}</StatusPill></td>
                 </tr>
               ))}
             </tbody>
