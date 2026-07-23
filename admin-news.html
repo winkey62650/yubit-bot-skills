@@ -28,6 +28,13 @@
       <h1 class="text-3xl font-black">新闻配置</h1>
       <p class="mt-3 page-kicker text-ops-muted">维护新闻源池，测试每个来源是否正常，并生成适合 Telegram 的新闻卡片；群和 Topic 的投放绑定在群配置里设置。</p>
 
+      <div class="mt-6 flex gap-2 border-b border-ops-line">
+        <button data-news-tab="sources" class="border-b-2 border-ops-accent px-4 py-3 text-sm font-black text-ops-accent">新闻源</button>
+        <button data-news-tab="daily" class="border-b-2 border-transparent px-4 py-3 text-sm font-black text-ops-muted">日报</button>
+      </div>
+
+      <div id="newsSourcesPanel">
+
       <section class="mt-6 grid gap-0 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops md:grid-cols-3">
         <div class="border-b border-ops-line p-5 md:border-b-0 md:border-r"><div class="text-sm font-bold text-ops-muted">新闻源池</div><div id="metricTotal" class="mt-1 text-2xl font-black">-</div><div class="mt-1 text-xs text-ops-muted">RSS / API / 聚合源</div></div>
         <div class="border-b border-ops-line p-5 md:border-b-0 md:border-r"><div class="text-sm font-bold text-ops-muted">可直接测试</div><div id="metricReady" class="mt-1 text-2xl font-black">-</div><div class="mt-1 text-xs text-ops-muted">公开 RSS 或无 key 源</div></div>
@@ -55,6 +62,14 @@
               <tbody id="sourceRows"></tbody>
             </table>
           </div>
+          <div class="flex flex-col gap-3 border-t border-ops-line px-5 py-4 text-sm text-ops-muted md:flex-row md:items-center md:justify-between">
+            <div id="sourcePageInfo">-</div>
+            <div class="flex items-center gap-2">
+              <button id="sourcePrevPage" class="rounded-lg border border-ops-line px-3 py-2 text-xs font-black text-ops-muted disabled:cursor-not-allowed disabled:opacity-40">上一页</button>
+              <div id="sourcePageButtons" class="flex items-center gap-1"></div>
+              <button id="sourceNextPage" class="rounded-lg border border-ops-line px-3 py-2 text-xs font-black text-ops-muted disabled:cursor-not-allowed disabled:opacity-40">下一页</button>
+            </div>
+          </div>
         </div>
 
         <div class="rounded-lg border border-ops-line bg-white p-5 shadow-ops">
@@ -76,25 +91,197 @@
         <div id="previewBody" class="mt-4 rounded-lg bg-[#fbfcfb] p-4 text-sm leading-6 text-ops-muted">点击 Cointelegraph RSS 或其他来源的“测试”。</div>
       </section>
 
+      </div>
+      <div id="newsDailyPanel" class="hidden">
+
+      <section class="mt-5 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops">
+        <div class="flex flex-col gap-4 border-b border-ops-line p-5 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 class="text-xl font-black">每日早间热点</h2>
+            <p class="mt-1 text-sm text-ops-muted">配置 Daily Morning Brief。到点后会发送到群配置里绑定了这个新闻配置的 Topic。</p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button id="saveDailyReport" class="rounded-lg border border-ops-accent px-4 py-2 text-sm font-black text-ops-accent">保存日报</button>
+            <button id="testDailyReport" class="rounded-lg bg-ops-accent px-4 py-2 text-sm font-black text-white">测试发送</button>
+          </div>
+        </div>
+        <div class="grid gap-0 lg:grid-cols-[280px_220px_220px_minmax(0,1fr)]">
+          <label class="grid gap-2 border-b border-ops-line p-5 text-sm font-bold text-ops-muted lg:border-b-0 lg:border-r">发送时间
+            <input id="dailyReportTime" type="time" class="min-h-10 rounded-lg border border-ops-line px-3 text-ops-ink" value="08:30"/>
+          </label>
+          <label class="grid gap-2 border-b border-ops-line p-5 text-sm font-bold text-ops-muted lg:border-b-0 lg:border-r">时区
+            <select id="dailyReportTimezone" class="min-h-10 rounded-lg border border-ops-line px-3 text-ops-ink">
+              <option>Asia/Shanghai</option>
+              <option>UTC</option>
+              <option>America/New_York</option>
+            </select>
+          </label>
+          <label class="grid gap-2 border-b border-ops-line p-5 text-sm font-bold text-ops-muted lg:border-b-0 lg:border-r">机器人
+            <select id="dailyReportBot" class="min-h-10 rounded-lg border border-ops-line px-3 text-ops-ink">
+              <option>Trader1</option>
+              <option>YUBITadmin</option>
+            </select>
+          </label>
+          <div class="p-5 text-sm text-ops-muted">
+            <strong class="text-ops-ink">绑定名称：Daily Morning Brief</strong>
+            <div class="mt-2 leading-6">在「群配置」里选择类型「新闻配置」，配置名称选 Daily Morning Brief，再绑定到要发送的 Topic。</div>
+          </div>
+        </div>
+        <div class="border-t border-ops-line p-5">
+          <label class="grid gap-2 text-sm font-bold text-ops-muted">日报正文（英文）
+            <textarea id="dailyReportBody" class="min-h-[360px] w-full rounded-lg border border-ops-line p-4 font-mono text-sm leading-6 text-ops-ink outline-none focus:border-ops-accent focus:ring-4 focus:ring-ops-accent/10"></textarea>
+          </label>
+          <div id="dailyReportStatus" class="mt-3 rounded-lg bg-[#fbfcfb] px-4 py-3 text-sm font-bold text-ops-muted">日报配置待加载。</div>
+        </div>
+      </section>
+
+      <section class="mt-5 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops">
+        <div class="flex flex-col gap-4 border-b border-ops-line p-5 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 class="text-xl font-black">每日 BTC/ETH & 美股看图分析</h2>
+            <p class="mt-1 text-sm text-ops-muted">配置 Daily Chart Analysis。到点后会发送 BTC/ETH 合约图卡和美股 TradFi 图卡。</p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button id="saveChartAnalysis" class="rounded-lg border border-ops-accent px-4 py-2 text-sm font-black text-ops-accent">保存配置</button>
+            <button id="testChartAnalysis" class="rounded-lg bg-ops-accent px-4 py-2 text-sm font-black text-white">测试发送</button>
+          </div>
+        </div>
+        <div class="grid gap-0 lg:grid-cols-[220px_220px_180px_220px_minmax(0,1fr)]">
+          <label class="grid gap-2 border-b border-ops-line p-5 text-sm font-bold text-ops-muted lg:border-b-0 lg:border-r">发送时间
+            <input id="chartAnalysisTime" type="time" class="min-h-10 rounded-lg border border-ops-line px-3 text-ops-ink" value="09:00"/>
+          </label>
+          <label class="grid gap-2 border-b border-ops-line p-5 text-sm font-bold text-ops-muted lg:border-b-0 lg:border-r">时区
+            <select id="chartAnalysisTimezone" class="min-h-10 rounded-lg border border-ops-line px-3 text-ops-ink">
+              <option>Asia/Shanghai</option>
+              <option>UTC</option>
+              <option>America/New_York</option>
+            </select>
+          </label>
+          <label class="grid gap-2 border-b border-ops-line p-5 text-sm font-bold text-ops-muted lg:border-b-0 lg:border-r">周期
+            <select id="chartAnalysisInterval" class="min-h-10 rounded-lg border border-ops-line px-3 text-ops-ink">
+              <option>15m</option>
+              <option selected>1h</option>
+              <option>4h</option>
+              <option>1d</option>
+            </select>
+          </label>
+          <label class="grid gap-2 border-b border-ops-line p-5 text-sm font-bold text-ops-muted lg:border-b-0 lg:border-r">机器人
+            <select id="chartAnalysisBot" class="min-h-10 rounded-lg border border-ops-line px-3 text-ops-ink">
+              <option>Trader1</option>
+              <option>YUBITadmin</option>
+            </select>
+          </label>
+          <div class="p-5 text-sm text-ops-muted">
+            <strong class="text-ops-ink">绑定名称：Daily Chart Analysis</strong>
+            <div class="mt-2 leading-6">在「群配置」里选择类型「新闻配置」，配置名称选 Daily Chart Analysis，再绑定到要发送的 Topic。</div>
+          </div>
+        </div>
+        <div class="grid gap-0 border-t border-ops-line lg:grid-cols-2">
+          <label class="grid gap-2 border-b border-ops-line p-5 text-sm font-bold text-ops-muted lg:border-b-0 lg:border-r">加密标的
+            <input id="chartAnalysisSymbols" class="min-h-10 rounded-lg border border-ops-line px-3 text-ops-ink" value="BTCUSDT, ETHUSDT"/>
+          </label>
+          <label class="grid gap-2 p-5 text-sm font-bold text-ops-muted">美股观察池
+            <input id="chartAnalysisStocks" class="min-h-10 rounded-lg border border-ops-line px-3 text-ops-ink" value="SPY, QQQ, DIA, IWM, TLT, GLD, USO, UUP"/>
+          </label>
+        </div>
+        <div class="border-t border-ops-line p-5">
+          <label class="grid gap-2 text-sm font-bold text-ops-muted">分析要求
+            <textarea id="chartAnalysisBody" class="min-h-[120px] w-full rounded-lg border border-ops-line p-4 font-mono text-sm leading-6 text-ops-ink outline-none focus:border-ops-accent focus:ring-4 focus:ring-ops-accent/10"></textarea>
+          </label>
+          <div id="chartAnalysisStatus" class="mt-3 rounded-lg bg-[#fbfcfb] px-4 py-3 text-sm font-bold text-ops-muted">看图分析配置待加载。</div>
+        </div>
+      </section>
+
+      <section class="mt-5 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops">
+        <div class="flex flex-col gap-4 border-b border-ops-line p-5 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 class="text-xl font-black">Market Events AI</h2>
+            <p class="mt-1 text-sm text-ops-muted">用固定提示词生成 3 条市场重点；粘贴 AI 返回的 JSON 后，会带 Market Event 封面图发布到 Market Events Topic。</p>
+          </div>
+          <button id="saveMarketEvent" class="rounded-lg border border-ops-accent px-4 py-2 text-sm font-black text-ops-accent">保存提示词</button>
+        </div>
+        <div class="grid gap-0 border-b border-ops-line lg:grid-cols-2">
+          <label class="grid gap-2 border-b border-ops-line p-5 text-sm font-bold text-ops-muted lg:border-b-0 lg:border-r">目标群 Chat ID
+            <input id="marketEventChatId" class="min-h-10 rounded-lg border border-ops-line px-3 text-ops-ink" />
+          </label>
+          <label class="grid gap-2 p-5 text-sm font-bold text-ops-muted">Market Events Thread ID
+            <input id="marketEventThreadId" class="min-h-10 rounded-lg border border-ops-line px-3 text-ops-ink" />
+          </label>
+        </div>
+        <div class="grid gap-0 lg:grid-cols-2">
+          <label class="grid gap-2 border-b border-ops-line p-5 text-sm font-bold text-ops-muted lg:border-b-0 lg:border-r">AI 提示词
+            <textarea id="marketEventPrompt" class="min-h-[360px] w-full rounded-lg border border-ops-line p-4 font-mono text-sm leading-6 text-ops-ink"></textarea>
+          </label>
+          <div class="grid gap-3 p-5">
+            <label class="grid gap-2 text-sm font-bold text-ops-muted">AI 输出 JSON
+              <textarea id="marketEventOutput" class="min-h-[290px] w-full rounded-lg border border-ops-line p-4 font-mono text-sm leading-6 text-ops-ink" placeholder='{"title":"Market Highlights (Jul 13)","highlights":[{"heading":"...","detail":"..."},{"heading":"...","detail":"..."},{"heading":"...","detail":"..."}]}'></textarea>
+            </label>
+            <button id="publishMarketEvent" class="rounded-lg bg-ops-accent px-4 py-3 text-sm font-black text-white">发布到 Market Events</button>
+            <div id="marketEventStatus" class="rounded-lg bg-[#fbfcfb] px-4 py-3 text-sm font-bold text-ops-muted">Market Events AI 配置待加载。</div>
+          </div>
+        </div>
+      </section>
+      </div>
+
+      <section id="smartMoneyPanel" class="mt-5 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops">
+        <div class="flex flex-col gap-4 border-b border-ops-line p-5 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 class="text-xl font-black">大户挂单 & 巨鲸数据源</h2>
+            <p class="mt-1 text-sm text-ops-muted">这些源会用于 Smart Money Tracker。免费源可以先跑，专业链上标签和 ETF/爆仓数据需要 key。</p>
+          </div>
+          <button id="smartMoneyTest" class="rounded-lg bg-ops-accent px-4 py-2 text-sm font-black text-white">测试免费监控</button>
+        </div>
+        <div class="grid gap-0 border-b border-ops-line md:grid-cols-4">
+          <div class="border-b border-ops-line p-5 md:border-b-0 md:border-r"><div class="text-sm font-bold text-ops-muted">免费可用</div><div id="smartFreeMetric" class="mt-1 text-2xl font-black">-</div><div class="mt-1 text-xs text-ops-muted">无需 key，当前可跑</div></div>
+          <div class="border-b border-ops-line p-5 md:border-b-0 md:border-r"><div class="text-sm font-bold text-ops-muted">免费试用</div><div id="smartTrialMetric" class="mt-1 text-2xl font-black">-</div><div class="mt-1 text-xs text-ops-muted">试用后付费</div></div>
+          <div class="border-b border-ops-line p-5 md:border-b-0 md:border-r"><div class="text-sm font-bold text-ops-muted">需要 Key</div><div id="smartKeyMetric" class="mt-1 text-2xl font-black">-</div><div class="mt-1 text-xs text-ops-muted">申请 key 后接入</div></div>
+          <div class="p-5"><div class="text-sm font-bold text-ops-muted">推送脚本</div><div class="mt-1 text-2xl font-black">已接入</div><div class="mt-1 text-xs text-ops-muted">smart-money-monitor.mjs</div></div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[1020px] text-sm">
+            <thead class="bg-[#f9fbfa] text-left text-xs uppercase text-ops-muted">
+              <tr><th class="px-5 py-3">数据源</th><th class="px-5 py-3">费用</th><th class="px-5 py-3">适合监控</th><th class="px-5 py-3">环境变量</th><th class="px-5 py-3">状态</th></tr>
+            </thead>
+            <tbody id="smartMoneyRows"></tbody>
+          </table>
+        </div>
+      </section>
+
       <script type="module">
         import { cryptoNewsSources, recommendedCryptoNewsSources } from './crypto-news-sources.mjs';
+        import { smartMoneySources } from './smart-money-sources.mjs';
 
         const rows = document.getElementById('sourceRows');
+        const smartRows = document.getElementById('smartMoneyRows');
         const filter = document.getElementById('sourceFilter');
         const enabledSources = document.getElementById('enabledSources');
-        const selected = new Set(recommendedCryptoNewsSources.filter((source) => !source.status.includes('Key')).map((source) => source.name));
+        const selected = new Set(recommendedCryptoNewsSources.filter(canPreview).map((source) => source.name));
         let newsConfigs = [];
+        let dailyReportConfig = null;
+        let chartAnalysisConfig = null;
+        let marketEventConfig = null;
+        const sourcePageSize = 6;
+        let sourcePage = 1;
 
         document.getElementById('metricTotal').textContent = String(cryptoNewsSources.length);
         document.getElementById('metricReady').textContent = String(cryptoNewsSources.filter(canPreview).length);
+        document.getElementById('smartFreeMetric').textContent = String(smartMoneySources.filter((source) => source.access === 'No key').length);
+        document.getElementById('smartTrialMetric').textContent = String(smartMoneySources.filter((source) => source.access.toLowerCase().includes('trial')).length);
+        document.getElementById('smartKeyMetric').textContent = String(smartMoneySources.filter((source) => source.env).length);
 
         function canPreview(source) {
-          return source.kind.includes('RSS') && !source.endpoint.includes('$') && /^https?:\/\//.test(source.endpoint);
+          return source.kind.includes('RSS') && !source.endpoint.includes('$') && /^https?:\/\//.test(source.endpoint) && !/key|required|payment|付费|密钥/i.test(source.status + ' ' + source.access);
         }
 
         function pill(source) {
-          const amber = source.status.includes('Key') || source.access.includes('key');
+          const amber = /key|required|payment|付费|密钥/i.test(source.status + ' ' + source.access);
           return '<span class="rounded-full ' + (amber ? 'bg-[#fff4df] text-[#c98118]' : 'bg-[#e6f7ef] text-ops-accent') + ' px-2 py-1 text-xs font-black">' + source.status + '</span>';
+        }
+
+        function smartTone(source) {
+          if (source.access === 'No key') return 'bg-[#e6f7ef] text-ops-accent';
+          if (source.access.toLowerCase().includes('trial')) return 'bg-[#edf7f2] text-ops-accent';
+          return 'bg-[#fff4df] text-[#c98118]';
         }
 
         function escapeHtml(value) {
@@ -119,6 +306,108 @@
               main.sources.forEach((name) => selected.add(name));
             }
           } catch {}
+        }
+
+        async function loadDailyReportConfig() {
+          const status = document.getElementById('dailyReportStatus');
+          try {
+            const response = await fetch('/api/daily-report-config');
+            const data = await response.json();
+            dailyReportConfig = data.config;
+            document.getElementById('dailyReportTime').value = dailyReportConfig.reportTime || '08:30';
+            document.getElementById('dailyReportTimezone').value = dailyReportConfig.timezone || 'Asia/Shanghai';
+            document.getElementById('dailyReportBot').value = dailyReportConfig.bot || 'Trader1';
+            document.getElementById('dailyReportBody').value = dailyReportConfig.body || '';
+            status.textContent = '日报配置已加载。';
+          } catch (error) {
+            status.textContent = '日报配置读取失败：' + error.message;
+          }
+        }
+
+        async function loadChartAnalysisConfig() {
+          const status = document.getElementById('chartAnalysisStatus');
+          try {
+            const response = await fetch('/api/daily-chart-analysis-config');
+            const data = await response.json();
+            chartAnalysisConfig = data.config;
+            document.getElementById('chartAnalysisTime').value = chartAnalysisConfig.reportTime || '09:00';
+            document.getElementById('chartAnalysisTimezone').value = chartAnalysisConfig.timezone || 'Asia/Shanghai';
+            document.getElementById('chartAnalysisInterval').value = chartAnalysisConfig.chartInterval || '1h';
+            document.getElementById('chartAnalysisBot').value = chartAnalysisConfig.bot || 'Trader1';
+            document.getElementById('chartAnalysisSymbols').value = (chartAnalysisConfig.symbols || ['BTCUSDT', 'ETHUSDT']).join(', ');
+            document.getElementById('chartAnalysisStocks').value = chartAnalysisConfig.stockUniverse || 'SPY, QQQ, DIA, IWM, TLT, GLD, USO, UUP';
+            document.getElementById('chartAnalysisBody').value = chartAnalysisConfig.body || '';
+            status.textContent = '看图分析配置已加载。';
+          } catch (error) {
+            status.textContent = '看图分析配置读取失败：' + error.message;
+          }
+        }
+
+        async function loadMarketEventConfig() {
+          const status = document.getElementById('marketEventStatus');
+          try {
+            const response = await fetch('/api/market-event-config');
+            const data = await response.json();
+            marketEventConfig = data.config || {};
+            document.getElementById('marketEventChatId').value = marketEventConfig.chatId || '';
+            document.getElementById('marketEventThreadId').value = marketEventConfig.threadId || '';
+            document.getElementById('marketEventPrompt').value = marketEventConfig.prompt || '';
+            status.textContent = 'Market Events AI 配置已加载。';
+          } catch (error) {
+            status.textContent = 'Market Events AI 配置读取失败：' + error.message;
+          }
+        }
+
+        function readMarketEventForm() {
+          return {
+            ...marketEventConfig,
+            chatId: document.getElementById('marketEventChatId').value.trim(),
+            threadId: document.getElementById('marketEventThreadId').value.trim(),
+            prompt: document.getElementById('marketEventPrompt').value.trim()
+          };
+        }
+
+        async function saveMarketEventConfig() {
+          const status = document.getElementById('marketEventStatus');
+          status.textContent = '正在保存 Market Events AI 提示词...';
+          const response = await fetch('/api/market-event-config', {
+            method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ config: readMarketEventForm() })
+          });
+          const data = await response.json();
+          marketEventConfig = data.config || marketEventConfig;
+          status.textContent = data.ok ? 'Market Events AI 提示词已保存。' : (data.error || 'Market Events AI 保存失败。');
+        }
+
+        async function publishMarketEvent() {
+          const status = document.getElementById('marketEventStatus');
+          let draft;
+          try { draft = JSON.parse(document.getElementById('marketEventOutput').value); }
+          catch (error) { status.textContent = 'AI 输出不是有效 JSON：' + error.message; return; }
+          if (!draft.title || !Array.isArray(draft.highlights) || draft.highlights.length !== 3) {
+            status.textContent = 'AI 输出必须包含 title 和恰好 3 条 highlights。'; return;
+          }
+          const config = readMarketEventForm();
+          if (!confirm('确认发布到 Market Events Topic（#' + config.threadId + '）吗？')) return;
+          status.textContent = '正在发布到 Market Events...';
+          const response = await fetch('/api/scripts', {
+            method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ scriptId: 'marketEvent', payload: { mode: 'production', chatId: config.chatId, threadId: config.threadId, marketEventTitle: draft.title, marketEventItems: draft.highlights, marketEventImage: config.imagePath } })
+          });
+          const data = await response.json();
+          if (!data.ok) { status.textContent = data.error || data.stderr || 'Market Events 发布失败。'; return; }
+          try { status.textContent = '已发布到 Telegram，消息编号 ' + (JSON.parse(data.stdout || '{}').messageId || '已返回') + '。'; }
+          catch { status.textContent = 'Market Events 已发布。'; }
+        }
+
+        function switchNewsTab(tab) {
+          const daily = tab === 'daily';
+          document.getElementById('newsSourcesPanel').classList.toggle('hidden', daily);
+          document.getElementById('smartMoneyPanel').classList.toggle('hidden', daily);
+          document.getElementById('newsDailyPanel').classList.toggle('hidden', !daily);
+          document.querySelectorAll('[data-news-tab]').forEach((button) => {
+            const active = button.dataset.newsTab === tab;
+            button.className = 'border-b-2 px-4 py-3 text-sm font-black ' + (active ? 'border-ops-accent text-ops-accent' : 'border-transparent text-ops-muted');
+          });
         }
 
         async function saveNewsConfigs() {
@@ -146,22 +435,119 @@
           }).catch(() => {});
         }
 
+        function readDailyReportForm() {
+          const reportTime = document.getElementById('dailyReportTime').value || '08:30';
+          return {
+            name: 'Daily Morning Brief',
+            kind: 'daily-report',
+            reportTime,
+            timezone: document.getElementById('dailyReportTimezone').value || 'Asia/Shanghai',
+            bot: document.getElementById('dailyReportBot').value || 'Trader1',
+            frequency: '每日 ' + reportTime,
+            status: '已启用',
+            body: document.getElementById('dailyReportBody').value.trim()
+          };
+        }
+
+        async function saveDailyReportConfig() {
+          const status = document.getElementById('dailyReportStatus');
+          status.textContent = '正在保存日报配置...';
+          const response = await fetch('/api/daily-report-config', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(readDailyReportForm())
+          });
+          const data = await response.json();
+          dailyReportConfig = data.config;
+          status.textContent = data.ok ? '日报配置已保存。' : (data.error || '日报配置保存失败。');
+          await loadNewsConfigs();
+          renderEnabled();
+        }
+
+        function splitSymbols(value) {
+          return String(value || '').split(',').map((symbol) => symbol.trim().toUpperCase()).filter(Boolean);
+        }
+
+        function readChartAnalysisForm() {
+          const reportTime = document.getElementById('chartAnalysisTime').value || '09:00';
+          return {
+            name: 'Daily Chart Analysis',
+            kind: 'daily-chart-analysis',
+            reportTime,
+            timezone: document.getElementById('chartAnalysisTimezone').value || 'Asia/Shanghai',
+            bot: document.getElementById('chartAnalysisBot').value || 'Trader1',
+            frequency: '每日 ' + reportTime,
+            status: '已启用',
+            symbols: splitSymbols(document.getElementById('chartAnalysisSymbols').value || 'BTCUSDT,ETHUSDT'),
+            chartInterval: document.getElementById('chartAnalysisInterval').value || '1h',
+            stockUniverse: document.getElementById('chartAnalysisStocks').value || 'SPY, QQQ, DIA, IWM, TLT, GLD, USO, UUP',
+            body: document.getElementById('chartAnalysisBody').value.trim()
+          };
+        }
+
+        async function saveChartAnalysisConfig() {
+          const status = document.getElementById('chartAnalysisStatus');
+          status.textContent = '正在保存看图分析配置...';
+          const response = await fetch('/api/daily-chart-analysis-config', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(readChartAnalysisForm())
+          });
+          const data = await response.json();
+          chartAnalysisConfig = data.config;
+          status.textContent = data.ok ? '看图分析配置已保存。' : (data.error || '看图分析配置保存失败。');
+          await loadNewsConfigs();
+          renderEnabled();
+        }
+
         function renderSources() {
           const value = filter.value;
           const visible = cryptoNewsSources.filter((source) => value === '全部' || source.kind.includes(value));
-          rows.innerHTML = visible.map((source) => {
+          const totalPages = Math.max(1, Math.ceil(visible.length / sourcePageSize));
+          sourcePage = Math.min(Math.max(1, sourcePage), totalPages);
+          const start = (sourcePage - 1) * sourcePageSize;
+          const pageItems = visible.slice(start, start + sourcePageSize);
+          rows.innerHTML = pageItems.map((source) => {
             const checked = selected.has(source.name) ? 'checked' : '';
-            const disabled = canPreview(source) ? '' : 'opacity-50';
+            const disabled = canPreview(source) ? '' : 'cursor-not-allowed opacity-50';
+            const disabledAttr = canPreview(source) ? '' : 'disabled';
             return '<tr class="border-t border-ops-line align-top">' +
               '<td class="px-5 py-4"><input data-toggle="' + escapeHtml(source.name) + '" type="checkbox" class="h-4 w-4" ' + checked + '/></td>' +
-              '<td class="px-5 py-4"><strong>' + escapeHtml(source.name) + '</strong><div class="mt-1 text-xs text-ops-muted">' + escapeHtml(source.access === '无需密钥' ? '可直接测试' : '需要先补齐密钥') + '</div></td>' +
+              '<td class="px-5 py-4"><strong>' + escapeHtml(source.name) + '</strong><div class="mt-1 text-xs text-ops-muted">' + escapeHtml(canPreview(source) ? '可直接测试' : '需要先补齐密钥或付费') + '</div></td>' +
               '<td class="px-5 py-4">' + escapeHtml(source.kind) + '</td>' +
               '<td class="px-5 py-4">' + escapeHtml(source.access) + '</td>' +
-              '<td class="px-5 py-4">' + escapeHtml(source.access === '无需密钥' ? '当前可测试' : '补齐密钥后可启用') + '</td>' +
+              '<td class="px-5 py-4">' + escapeHtml(canPreview(source) ? '当前可测试' : '补齐密钥或付费后可启用') + '</td>' +
               '<td class="px-5 py-4">' + pill(source) + '</td>' +
-              '<td class="px-5 py-4"><button data-test="' + escapeHtml(source.name) + '" class="rounded-lg border border-ops-accent px-3 py-2 text-xs font-black text-ops-accent ' + disabled + '">测试</button></td>' +
+              '<td class="px-5 py-4"><button data-test="' + escapeHtml(source.name) + '" ' + disabledAttr + ' class="rounded-lg border border-ops-accent px-3 py-2 text-xs font-black text-ops-accent ' + disabled + '">测试</button></td>' +
             '</tr>';
           }).join('');
+          renderSourcePagination(visible.length, totalPages, start, pageItems.length);
+        }
+
+        function renderSourcePagination(total, totalPages, start, count) {
+          document.getElementById('sourcePageInfo').textContent = total
+            ? '显示 ' + (start + 1) + '-' + (start + count) + ' / ' + total + ' 个新闻源'
+            : '没有匹配的新闻源';
+          document.getElementById('sourcePrevPage').disabled = sourcePage <= 1;
+          document.getElementById('sourceNextPage').disabled = sourcePage >= totalPages;
+          const buttons = document.getElementById('sourcePageButtons');
+          buttons.innerHTML = Array.from({ length: totalPages }, (_, index) => {
+            const page = index + 1;
+            const active = page === sourcePage;
+            return '<button data-source-page="' + page + '" class="h-8 min-w-8 rounded-lg px-2 text-xs font-black ' + (active ? 'bg-ops-accent text-white' : 'border border-ops-line text-ops-muted') + '">' + page + '</button>';
+          }).join('');
+        }
+
+        function renderSmartMoneySources() {
+          smartRows.innerHTML = smartMoneySources.map((source) =>
+            '<tr class="border-t border-ops-line align-top">' +
+              '<td class="px-5 py-4"><strong>' + escapeHtml(source.name) + '</strong><div class="mt-1 max-w-sm break-all font-mono text-xs text-ops-muted">' + escapeHtml(source.endpoint) + '</div></td>' +
+              '<td class="px-5 py-4"><span class="rounded-full px-2 py-1 text-xs font-black ' + smartTone(source) + '">' + escapeHtml(source.access) + '</span></td>' +
+              '<td class="px-5 py-4">' + escapeHtml(source.coverage) + '<div class="mt-1 text-xs text-ops-muted">' + escapeHtml(source.note) + '</div></td>' +
+              '<td class="px-5 py-4 font-mono text-xs">' + escapeHtml(source.env || '无需配置') + '</td>' +
+              '<td class="px-5 py-4">' + escapeHtml(source.status) + '</td>' +
+            '</tr>'
+          ).join('');
         }
 
         async function testSource(sourceName) {
@@ -201,6 +587,74 @@
             ).join('');
         }
 
+        async function testSmartMoney() {
+          const status = document.getElementById('previewStatus');
+          const sub = document.getElementById('previewSub');
+          const body = document.getElementById('previewBody');
+          status.className = 'w-fit rounded-full bg-[#edf7f2] px-2 py-1 text-xs font-black text-ops-accent';
+          status.textContent = '测试中';
+          sub.textContent = 'Smart Money Tracker · 正在发送到 demo 群 test Topic';
+          body.className = 'mt-4 rounded-lg bg-[#fbfcfb] p-4 text-sm leading-6 text-ops-muted';
+          body.textContent = '正在抓取 Binance 公共盘口墙，并检查已配置的专业数据源。';
+          const response = await fetch('/api/smart-money-test', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ sendTelegram: true })
+          });
+          const data = await response.json();
+          status.className = 'w-fit rounded-full px-2 py-1 text-xs font-black ' + (data.ok ? 'bg-[#e6f7ef] text-ops-accent' : 'bg-[#fff4df] text-[#c98118]');
+          status.textContent = data.ok ? '已发送' : '需处理';
+          sub.textContent = data.ok ? 'Smart Money Tracker · 已发送到 demo 群 test Topic' : 'Smart Money Tracker · 测试失败';
+          body.className = data.ok ? 'mt-4 rounded-lg bg-[#fbfcfb] p-4 font-mono text-xs leading-6 text-ops-muted whitespace-pre-wrap' : 'mt-4 rounded-lg bg-[#fff4df] p-4 text-sm leading-6 text-[#8a5a13]';
+          body.textContent = data.ok ? (data.stdout || '已发送。') : (data.stderr || data.error || '测试失败。');
+        }
+
+        async function testDailyReportConfig() {
+          await saveDailyReportConfig();
+          const status = document.getElementById('previewStatus');
+          const sub = document.getElementById('previewSub');
+          const body = document.getElementById('previewBody');
+          status.className = 'w-fit rounded-full bg-[#edf7f2] px-2 py-1 text-xs font-black text-ops-accent';
+          status.textContent = '测试中';
+          sub.textContent = 'Daily Morning Brief · 正在发送到 demo 群 test Topic';
+          body.className = 'mt-4 rounded-lg bg-[#fbfcfb] p-4 text-sm leading-6 text-ops-muted';
+          body.textContent = '正在发送日报测试消息。';
+          const response = await fetch('/api/daily-report-test', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ config: readDailyReportForm(), sendTelegram: true })
+          });
+          const data = await response.json();
+          status.className = 'w-fit rounded-full px-2 py-1 text-xs font-black ' + (data.ok ? 'bg-[#e6f7ef] text-ops-accent' : 'bg-[#fff4df] text-[#c98118]');
+          status.textContent = data.ok ? '已发送' : '需处理';
+          sub.textContent = data.ok ? 'Daily Morning Brief · 已发送到 demo 群 test Topic' : 'Daily Morning Brief · 测试失败';
+          body.className = data.ok ? 'mt-4 rounded-lg bg-[#fbfcfb] p-4 font-mono text-xs leading-6 text-ops-muted whitespace-pre-wrap' : 'mt-4 rounded-lg bg-[#fff4df] p-4 text-sm leading-6 text-[#8a5a13]';
+          body.textContent = data.ok ? (data.stdout || '已发送。') : (data.stderr || data.error || '测试失败。');
+        }
+
+        async function testChartAnalysisConfig() {
+          await saveChartAnalysisConfig();
+          const status = document.getElementById('previewStatus');
+          const sub = document.getElementById('previewSub');
+          const body = document.getElementById('previewBody');
+          status.className = 'w-fit rounded-full bg-[#edf7f2] px-2 py-1 text-xs font-black text-ops-accent';
+          status.textContent = '测试中';
+          sub.textContent = 'Daily Chart Analysis · 正在发送 BTC/ETH 和美股图卡到 demo 群 test Topic';
+          body.className = 'mt-4 rounded-lg bg-[#fbfcfb] p-4 text-sm leading-6 text-ops-muted';
+          body.textContent = '正在生成并发送看图分析测试消息。';
+          const response = await fetch('/api/daily-chart-analysis-test', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ config: readChartAnalysisForm(), sendTelegram: true })
+          });
+          const data = await response.json();
+          status.className = 'w-fit rounded-full px-2 py-1 text-xs font-black ' + (data.ok ? 'bg-[#e6f7ef] text-ops-accent' : 'bg-[#fff4df] text-[#c98118]');
+          status.textContent = data.ok ? '已发送' : '需处理';
+          sub.textContent = data.ok ? 'Daily Chart Analysis · 已发送到 demo 群 test Topic' : 'Daily Chart Analysis · 测试失败';
+          body.className = data.ok ? 'mt-4 rounded-lg bg-[#fbfcfb] p-4 font-mono text-xs leading-6 text-ops-muted whitespace-pre-wrap' : 'mt-4 rounded-lg bg-[#fff4df] p-4 text-sm leading-6 text-[#8a5a13]';
+          body.textContent = data.ok ? (data.stdout || '已发送图卡。') : (data.stderr || data.error || '测试失败。');
+        }
+
         document.addEventListener('change', (event) => {
           const name = event.target?.dataset?.toggle;
           if (!name) return;
@@ -216,9 +670,38 @@
           testSource(name);
         });
 
-        filter.addEventListener('change', renderSources);
+        filter.addEventListener('change', () => {
+          sourcePage = 1;
+          renderSources();
+        });
+        document.getElementById('sourcePrevPage').addEventListener('click', () => {
+          sourcePage -= 1;
+          renderSources();
+        });
+        document.getElementById('sourceNextPage').addEventListener('click', () => {
+          sourcePage += 1;
+          renderSources();
+        });
+        document.getElementById('sourcePageButtons').addEventListener('click', (event) => {
+          const page = Number(event.target?.dataset?.sourcePage || 0);
+          if (!page) return;
+          sourcePage = page;
+          renderSources();
+        });
+        document.getElementById('smartMoneyTest').addEventListener('click', testSmartMoney);
+        document.getElementById('saveDailyReport').addEventListener('click', saveDailyReportConfig);
+        document.getElementById('testDailyReport').addEventListener('click', testDailyReportConfig);
+        document.getElementById('saveChartAnalysis').addEventListener('click', saveChartAnalysisConfig);
+        document.getElementById('testChartAnalysis').addEventListener('click', testChartAnalysisConfig);
+        document.getElementById('saveMarketEvent').addEventListener('click', saveMarketEventConfig);
+        document.getElementById('publishMarketEvent').addEventListener('click', publishMarketEvent);
+        document.querySelectorAll('[data-news-tab]').forEach((button) => button.addEventListener('click', () => switchNewsTab(button.dataset.newsTab)));
         await loadNewsConfigs();
+        await loadDailyReportConfig();
+        await loadChartAnalysisConfig();
+        await loadMarketEventConfig();
         renderSources();
+        renderSmartMoneySources();
         renderEnabled();
         saveNewsConfigs();
       </script>

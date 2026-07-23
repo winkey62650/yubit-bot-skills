@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 import process from "node:process";
 
 const apiBase = "https://api.telegram.org/bot";
@@ -16,8 +17,8 @@ if (!chatId) {
 
 const config = JSON.parse(await fs.readFile(configPath, "utf8"));
 const dryRun = String(process.env.DRY_RUN ?? config.dryRun ?? "true") !== "false";
-const telegramDelayMs = Number(process.env.TELEGRAM_DELAY_MS || 5000);
-const topicDelayMs = Number(process.env.TELEGRAM_TOPIC_DELAY_MS || 8000);
+const telegramDelayMs = Number(process.env.TELEGRAM_DELAY_MS || 8000);
+const topicDelayMs = Number(process.env.TELEGRAM_TOPIC_DELAY_MS || 12000);
 const statePath = process.env.YUBIT_SETUP_STATE || ".runtime/setup-state.json";
 
 const createdTopics = [];
@@ -48,7 +49,8 @@ for (const topic of config.topics ?? []) {
   if (!forumTopic) {
     forumTopic = await call("createForumTopic", {
       chat_id: chatId,
-      name: topic.name
+      name: topic.name,
+      ...(topic.iconCustomEmojiId ? { icon_custom_emoji_id: topic.iconCustomEmojiId } : {})
     });
     state.topics = { ...(state.topics || {}), [topicKey]: forumTopic };
     await writeState(state);
@@ -65,22 +67,36 @@ for (const topic of config.topics ?? []) {
 
   await sleep(topicDelayMs);
 
-  if (!topic.announcement) continue;
+  const messages = topic.messages?.length
+    ? topic.messages
+    : topic.announcement
+      ? [{ text: topic.announcement }]
+      : [];
 
-  const message = await call("sendMessage", {
-    chat_id: chatId,
-    message_thread_id: forumTopic?.message_thread_id,
-    text: topic.announcement,
-    parse_mode: config.defaultParseMode || "HTML",
-    disable_web_page_preview: true
-  });
+  for (const content of messages) {
+    const message = content.photo
+      ? await call("sendPhoto", {
+          chat_id: chatId,
+          message_thread_id: forumTopic?.message_thread_id,
+          photo: path.resolve(process.cwd(), content.photo),
+          caption: content.caption || "",
+          parse_mode: config.defaultParseMode || "HTML"
+        })
+      : await call("sendMessage", {
+          chat_id: chatId,
+          message_thread_id: forumTopic?.message_thread_id,
+          text: content.text || "",
+          parse_mode: config.defaultParseMode || "HTML",
+          disable_web_page_preview: true
+        });
 
-  if (topic.pin && message?.message_id) {
-    await optionalCall("pinChatMessage", {
-      chat_id: chatId,
-      message_id: message.message_id,
-      disable_notification: true
-    });
+    if (topic.pin && message?.message_id) {
+      await optionalCall("pinChatMessage", {
+        chat_id: chatId,
+        message_id: message.message_id,
+        disable_notification: true
+      });
+    }
   }
 
   if (topic.close) {
@@ -101,7 +117,7 @@ async function call(method, payload) {
     if (method === "createForumTopic") {
       return { message_thread_id: Math.floor(Math.random() * 9000) + 1000 };
     }
-    if (method === "sendMessage") {
+    if (method === "sendMessage" || method === "sendPhoto") {
       return { message_id: Math.floor(Math.random() * 9000) + 1000 };
     }
     return {};
@@ -110,11 +126,10 @@ async function call(method, payload) {
   while (true) {
     let body;
     try {
-      const response = await fetch(`${apiBase}${token}/${method}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload)
-      });
+      const request = method === "sendPhoto"
+        ? { method: "POST", body: await photoFormData(payload) }
+        : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) };
+      const response = await fetch(`${apiBase}${token}/${method}`, request);
       body = await response.json();
     } catch (error) {
       console.error(`${method} network error: ${error.message}. Retrying after 10s.`);
@@ -144,6 +159,19 @@ async function call(method, payload) {
     const description = body.description || "Unknown Telegram API error";
     throw new Error(`${method} failed: ${description}`);
   }
+}
+
+async function photoFormData(payload) {
+  const form = new FormData();
+  for (const [key, value] of Object.entries(payload)) {
+    if (key === "photo") {
+      const data = await fs.readFile(value);
+      form.append("photo", new Blob([data]), path.basename(value));
+    } else if (value !== undefined && value !== null) {
+      form.append(key, String(value));
+    }
+  }
+  return form;
 }
 
 async function optionalCall(method, payload) {

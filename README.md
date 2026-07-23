@@ -120,6 +120,60 @@ The source topic receives status replies:
 - `已转发：N 个目标` when forwarding succeeds
 - `转发失败：...` when forwarding fails
 
+## Social Forwarding Logic
+
+Social forwarding is driven by enabled `代理社媒` bindings in the group configuration.
+
+The local server starts a social dispatcher when `npm run serve:local` or the launchd service is running:
+
+- checks enabled Twitter/X packages every minute by default
+- reads `TWITTERAPI_IO_KEY` from `.env.telegram-tokens.local` or the process environment
+- prefers the username parsed from `accountUrl`, then falls back to `userId`
+- records existing tweets on first initialization without sending historical posts
+- sends only new tweets to the bound Telegram group topic
+- stores sent tweet IDs and health status in `.runtime/social-status.json`
+
+You can inspect the current dispatcher state at:
+
+```text
+http://localhost:4173/api/social-status
+```
+
+Optional tuning:
+
+```bash
+SOCIAL_DISPATCH_INTERVAL_MS=60000
+SOCIAL_MAX_SEND_PER_BINDING=3
+TWITTERAPI_TIMEOUT_MS=12000
+DISABLE_SOCIAL_DISPATCHER=true
+```
+
+## macOS Service
+
+For local always-on operation, install the user LaunchAgent:
+
+```bash
+zsh scripts/install-launchd-service.zsh
+```
+
+Because macOS LaunchAgents can be blocked when running directly from `Documents`, the installer syncs a runnable copy to:
+
+```text
+~/Library/Application Support/YubitBot/yubit-bot-skills
+```
+
+After editing source files, sync and restart the service:
+
+```bash
+npm run service:sync
+```
+
+Check service status:
+
+```bash
+npm run service:status
+```
+
 ## Environment
 
 Copy `.env.example` to `.env` locally and fill only on your machine:

@@ -5,7 +5,7 @@ import ConsoleShell from "../components/ConsoleShell";
 import { Card, Field, PageHeader, StatusPill, inputClass } from "../components/ui";
 import { defaultTopicTemplate } from "../../templates.mjs";
 
-const defaultTopics = defaultTopicTemplate.map((topic) => [topic.id, topic.emoji, topic.name, topic.attribute, topic.announcement || ""]);
+const defaultTopics = defaultTopicTemplate.map((topic) => [topic.id, topic.emoji, topic.name, topic.attribute, topic.announcement || "", topic.messages || []]);
 
 export default function NewGroupPage() {
   const [log, setLog] = useState("准备初始化新群。");
@@ -45,7 +45,7 @@ export default function NewGroupPage() {
             mode: "production",
             groupName,
             chatId,
-            topics: topics.map(([id, emoji, name, attribute, announcement]) => ({ id, emoji, name, attribute, announcement }))
+            topics: topics.map(([id, emoji, name, attribute, announcement, messages]) => ({ id, emoji, name, attribute, announcement, messages }))
           }
         })
       });

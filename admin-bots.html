@@ -98,6 +98,8 @@
     async function refreshBotGroups() {
       const button = document.getElementById("refreshBotGroupsBtn");
       const status = document.getElementById("botRefreshStatus");
+      if (button.disabled) return;
+      button.disabled = true;
       button.textContent = "刷新中...";
       status.textContent = "读取中";
       try {
@@ -108,12 +110,14 @@
       } catch (error) {
         status.textContent = "失败";
       } finally {
+        button.disabled = false;
         button.textContent = "刷新机器人群";
       }
     }
 
     renderBots(fallbackBots);
     document.getElementById("refreshBotGroupsBtn").addEventListener("click", refreshBotGroups);
+    refreshBotGroups();
   </script>
 </body>
 </html>

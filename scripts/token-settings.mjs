@@ -6,6 +6,7 @@ const role = process.env.BOT_ROLE || "admin";
 const roleMap = {
   admin: "YUBITADMIN_BOT_TOKEN",
   trader: "TRADER1_BOT_TOKEN",
+  forward: "FORWARD_BOT_TOKEN",
   mod: "MOD1_BOT_TOKEN",
   jack: "JACK_BOT_TOKEN",
   tony: "TONY_BOT_TOKEN"

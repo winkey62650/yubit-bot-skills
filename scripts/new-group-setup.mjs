@@ -3,7 +3,7 @@ import { writeFile, mkdtemp, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
-import { communityDisclaimer, defaultTopicTemplate } from "../templates.mjs";
+import { communityDisclaimer, defaultTopicTemplate, readFirstMessages } from "../templates.mjs";
 
 const dryRun = process.env.DRY_RUN !== "false";
 const chatId = process.env.TELEGRAM_CHAT_ID;
@@ -63,7 +63,13 @@ async function resolveConfigPath() {
     return process.env.YUBIT_TG_CONFIG || "telegram-community.config.json";
   }
 
-  const topics = process.env.TOPIC_TEMPLATE_JSON ? JSON.parse(process.env.TOPIC_TEMPLATE_JSON) : defaultTopicTemplate;
+  const requestedTopics = process.env.TOPIC_TEMPLATE_JSON ? JSON.parse(process.env.TOPIC_TEMPLATE_JSON) : defaultTopicTemplate;
+  const topics = requestedTopics.map((topic) => {
+    const templateTopic = defaultTopicTemplate.find(
+      (item) => String(item.id) === String(topic.id) || item.name === topic.name
+    );
+    return { ...templateTopic, ...topic };
+  });
   const config = {
     chatTitle: process.env.GROUP_NAME || "",
     chatDescription:
@@ -75,7 +81,9 @@ async function resolveConfigPath() {
       key: slug(topic.name),
       name: cleanTopicName(topic.name),
       emoji: topic.emoji || "",
+      iconCustomEmojiId: topic.iconCustomEmojiId || "",
       announcement: topic.announcement || (topic.name.includes("READ FIRST") ? communityDisclaimer : `<b>${escapeHtml(topic.name)}</b>`),
+      messages: topic.messages || (topic.name.includes("READ FIRST") ? readFirstMessages : undefined),
       pin: true,
       close: topic.attribute === "关闭话题" || topic.attribute === "频道禁言"
     }))
@@ -93,7 +101,7 @@ function slug(value) {
 }
 
 function cleanTopicName(value) {
-  return String(value).replace(/^[^\p{Letter}\p{Number}]+/u, "").trim();
+  return String(value).trim();
 }
 
 function escapeHtml(value) {

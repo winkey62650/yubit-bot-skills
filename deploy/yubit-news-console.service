@@ -1,0 +1,17 @@
+[Unit]
+Description=YUBIT News Console (Next.js)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/yubit-bot-skills
+Environment=NODE_ENV=production
+Environment=PORT=4174
+Environment=PATH=/opt/yubit-node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/opt/yubit-node/bin/node /opt/yubit-bot-skills/node_modules/next/dist/bin/next start -p 4174
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

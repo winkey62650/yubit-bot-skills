@@ -43,6 +43,10 @@ const scriptMap = {
     label: "News Card",
     command: ["news-poster.mjs"]
   },
+  marketEvent: {
+    label: "Market Event Publisher",
+    command: ["scripts/send-market-event.mjs"]
+  },
   cycle15m: {
     label: "15m Cycle",
     command: ["run-15m-cycle.mjs"]
@@ -107,6 +111,10 @@ function buildEnv(payload) {
     BOT_ROLE: payload.botRole || "admin",
     GROUP_NAME: payload.groupName || "",
     TOPIC_TEMPLATE_JSON: payload.topics ? JSON.stringify(payload.topics) : "",
+    MARKET_EVENT_TITLE: payload.marketEventTitle || "",
+    MARKET_EVENT_ITEMS_JSON: payload.marketEventItems ? JSON.stringify(payload.marketEventItems) : "",
+    MARKET_EVENT_IMAGE: payload.marketEventImage || "",
+    TELEGRAM_MESSAGE_ID: payload.messageId || "",
     DELETE_DUPLICATE_TOPICS: payload.deleteTopics === false ? "false" : "true",
     TOKEN_FILE: payload.tokenFile || ".env.telegram-tokens.local"
   };

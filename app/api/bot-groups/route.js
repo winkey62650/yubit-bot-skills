@@ -8,6 +8,7 @@ export async function GET() {
   const botRoles = [
     { name: "YUBITadmin", role: "群管理 / 建群 / 公告", token: tokens.YUBITADMIN_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN },
     { name: "Trader1", role: "新闻 / 信号推送", token: tokens.TRADER1_BOT_TOKEN || process.env.TRADER1_BOT_TOKEN },
+    { name: "ForwardBot", role: "广播 / 消息转发", token: tokens.FORWARD_BOT_TOKEN || process.env.FORWARD_BOT_TOKEN },
     { name: "MOD1", role: "人工管理辅助", token: tokens.MOD1_BOT_TOKEN || process.env.MOD1_BOT_TOKEN },
     { name: "Jack", role: "市场讨论", token: tokens.JACK_BOT_TOKEN || process.env.JACK_BOT_TOKEN },
     { name: "Tony", role: "风险讨论", token: tokens.TONY_BOT_TOKEN || process.env.TONY_BOT_TOKEN }
