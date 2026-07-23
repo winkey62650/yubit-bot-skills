@@ -883,6 +883,91 @@ test("desktop publisher claims an explicitly approved CryptoGuy Topic delivery",
   assert.equal(claimed.steps[0].text, "Topic sync acceptance");
 });
 
+test("desktop publisher prioritizes a realtime broadcast over an older automation delivery", async () => {
+  const automationDelivery = {
+    id: "delivery-automation",
+    eventId: "event-automation",
+    ruleId: "rule-whale",
+    status: "pending",
+    createdAt: "2026-07-22T05:00:00.000Z",
+    target: {
+      id: "demo-whale",
+      chatId: "-1003710405969",
+      chatType: "supergroup",
+      threadId: 16,
+      groupName: "DEMO Academy",
+      topicName: "6. Smart Money Tracker"
+    }
+  };
+  const broadcastDelivery = {
+    id: "delivery-broadcast",
+    eventId: "event-broadcast",
+    ruleId: "rule-community-signal",
+    status: "pending",
+    createdAt: "2026-07-22T06:00:00.000Z",
+    target: {
+      id: "crypto-signal",
+      chatId: "-1004378187866",
+      chatType: "supergroup",
+      threadId: 17,
+      groupName: "CryptoGuy Academy",
+      topicName: "5. Community Signal"
+    }
+  };
+  const deliveries = [automationDelivery, broadcastDelivery];
+  const events = new Map([
+    [automationDelivery.eventId, {
+      id: automationDelivery.eventId,
+      payload: {
+        jobId: "whale-signals",
+        deliveryPlans: [{
+          target: automationDelivery.target,
+          steps: [{ method: "sendMessage", payload: { text: "Scheduled whale signal" } }]
+        }]
+      }
+    }],
+    [broadcastDelivery.eventId, {
+      id: broadcastDelivery.eventId,
+      payload: {
+        deliveryPlans: [{
+          target: broadcastDelivery.target,
+          steps: [{ method: "sendMessage", payload: { text: "Realtime community signal" } }]
+        }]
+      }
+    }]
+  ]);
+  const rules = new Map([
+    [automationDelivery.ruleId, { id: automationDelivery.ruleId, kind: "automation" }],
+    [broadcastDelivery.ruleId, { id: broadcastDelivery.ruleId, kind: "broadcast" }]
+  ]);
+  const repository = {
+    async listDeliveries({ status } = {}) {
+      return deliveries.filter((delivery) => delivery.status === status);
+    },
+    async getRule(id) { return rules.get(id) || null; },
+    async claimDelivery(id) {
+      const delivery = deliveries.find((item) => item.id === id);
+      delivery.status = "sending";
+      return delivery;
+    },
+    async getEvent(id) { return events.get(id) || null; },
+    async updateDelivery(id, patch) {
+      return Object.assign(deliveries.find((item) => item.id === id), patch);
+    }
+  };
+  const env = {
+    NODE_ENV: "production",
+    DEMO_TELEGRAM_CHAT_ID: "-1003710405969",
+    TELEGRAM_USER_PUBLISHER_TARGETS: "-1003710405969,-1004378187866"
+  };
+
+  const claimed = await claimDesktopPublisherDelivery({ repository, env });
+
+  assert.equal(claimed.deliveryId, broadcastDelivery.id);
+  assert.equal(claimed.ruleId, broadcastDelivery.ruleId);
+  assert.equal(automationDelivery.status, "pending");
+});
+
 test("broadcast validation checks ForwardBot on the source and the desktop publisher on the target", async () => {
   const source = {
     chatId: "-1003710405969",
