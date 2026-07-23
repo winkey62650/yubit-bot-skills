@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
+  PUBLISHER_HEARTBEAT_STALE_MS,
   buildInitializationChecklist,
   getBotOperationalStatus,
   getFriendlyRefreshError,
@@ -20,6 +21,24 @@ test("live freshness stops presenting expired or missing checks as current", () 
   assert.equal(getLiveFreshness("2026-07-17T05:29:40.000Z", { now }).state, "fresh");
   assert.equal(getLiveFreshness("2026-07-17T05:27:00.000Z", { now }).state, "stale");
   assert.match(getLiveFreshness("2026-07-17T05:27:00.000Z", { now }).label, /状态已过期/);
+});
+
+test("publisher heartbeat uses the server's 15-minute operating window", () => {
+  assert.equal(PUBLISHER_HEARTBEAT_STALE_MS, 15 * 60_000);
+  assert.equal(
+    getLiveFreshness("2026-07-17T05:27:00.000Z", {
+      now,
+      staleAfterMs: PUBLISHER_HEARTBEAT_STALE_MS
+    }).state,
+    "fresh"
+  );
+  assert.equal(
+    getLiveFreshness("2026-07-17T05:13:00.000Z", {
+      now,
+      staleAfterMs: PUBLISHER_HEARTBEAT_STALE_MS
+    }).state,
+    "stale"
+  );
 });
 
 test("refresh failures are converted to concise user-facing messages", () => {

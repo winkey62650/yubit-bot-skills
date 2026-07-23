@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { getFriendlyRefreshError, getLiveFreshness } from "../../lib/live-status.mjs";
 import { StatusPill } from "./ui";
 
-export default function LiveStatusStamp({ generatedAt, error = "", refreshing = false }) {
+export default function LiveStatusStamp({ generatedAt, error = "", refreshing = false, staleAfterMs }) {
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -12,7 +12,7 @@ export default function LiveStatusStamp({ generatedAt, error = "", refreshing = 
     return () => window.clearInterval(timer);
   }, []);
 
-  const freshness = getLiveFreshness(generatedAt, { now });
+  const freshness = getLiveFreshness(generatedAt, { now, staleAfterMs });
   const friendlyError = getFriendlyRefreshError(error);
   const label = refreshing ? "正在实时核验" : freshness.label;
   const tone = refreshing ? "amber" : freshness.tone;

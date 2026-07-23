@@ -1,0 +1,48 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+function source(path) {
+  return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+}
+
+test("distribution summaries stay neutral while live data is loading", () => {
+  const page = source("app/distribution/page.jsx");
+  assert.match(page, /loading\s*\?\s*"—"/);
+  assert.match(page, /socialReadiness\.enabled/);
+  assert.match(page, /socialReadiness\.stable/);
+  assert.doesNotMatch(page, /socialReadiness\.enabledCount|socialReadiness\.stableCount/);
+});
+
+test("group status waits for saved groups and publisher state before enabling actions", () => {
+  const page = source("app/group-config/page.jsx");
+  assert.match(page, /groupsLoaded/);
+  assert.match(page, /publisherLoaded/);
+  assert.match(page, /!groupsLoaded\s*\|\|\s*busy/);
+
+  const globalWarning = page.indexOf("发布桥最近一次投递失败");
+  const groupCard = page.indexOf("function GroupCard");
+  assert.ok(globalWarning >= 0 && globalWarning < groupCard, "publisher warning must be global, not repeated per group");
+});
+
+test("settings cannot overwrite cloud configuration before the initial load completes", () => {
+  const page = source("app/settings/page.jsx");
+  assert.match(page, /settingsLoaded/);
+  assert.match(page, /if\s*\(!settingsLoaded\)\s*return/);
+  assert.match(page, /disabled=\{!settingsLoaded\s*\|\|\s*saving\}/);
+});
+
+test("live capability and publisher pages expose an explicit loading state", () => {
+  const bots = source("app/bots/page.jsx");
+  const publisher = source("app/telegram-user-authorization/page.jsx");
+  assert.match(bots, /hasLiveResult/);
+  assert.match(publisher, /PUBLISHER_HEARTBEAT_STALE_MS/);
+  assert.match(publisher, /staleAfterMs=\{PUBLISHER_HEARTBEAT_STALE_MS\}/);
+  assert.match(publisher, /loading\s*\?\s*"正在核验"/);
+});
+
+test("the console shell prevents mobile horizontal clipping", () => {
+  const shell = source("app/components/ConsoleShell.jsx");
+  assert.match(shell, /overflow-x-hidden/);
+  assert.match(shell, /max-w-full/);
+});

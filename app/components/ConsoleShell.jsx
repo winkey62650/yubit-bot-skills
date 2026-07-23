@@ -57,10 +57,10 @@ export default function ConsoleShell({ children }) {
     }
   }
   return (
-    <div className="min-h-screen bg-[#fbfcfb] text-ops-ink lg:grid lg:grid-cols-[238px_minmax(0,1fr)] xl:grid-cols-[258px_minmax(0,1fr)]">
-      <aside className="border-b border-ops-line bg-white px-4 py-3 lg:sticky lg:top-0 lg:h-screen lg:overflow-y-auto lg:border-b-0 lg:border-r lg:p-6">
+    <div className="min-h-screen max-w-full overflow-x-hidden bg-[#fbfcfb] text-ops-ink lg:grid lg:grid-cols-[238px_minmax(0,1fr)] xl:grid-cols-[258px_minmax(0,1fr)]">
+      <aside className="min-w-0 max-w-full border-b border-ops-line bg-white px-4 py-3 lg:sticky lg:top-0 lg:h-screen lg:overflow-y-auto lg:border-b-0 lg:border-r lg:p-6">
         <div className="flex items-center justify-between gap-3 lg:block">
-        <Link className="flex items-center gap-3 lg:mb-10" href="/">
+        <Link className="flex min-w-0 shrink items-center gap-3 lg:mb-10" href="/">
           <span className="grid h-9 w-9 place-items-center rounded-lg bg-ops-accent text-lg font-black text-white">Y</span>
           <strong className="text-xl tracking-tight lg:text-2xl">YUBIT</strong>
         </Link>
@@ -89,7 +89,7 @@ export default function ConsoleShell({ children }) {
           {loggingOut ? "正在退出…" : "退出登录"}
         </button>
       </aside>
-      <main className="min-w-0 p-4 sm:p-5 md:p-7 xl:p-8">{children}</main>
+      <main className="min-w-0 max-w-full overflow-x-hidden p-4 sm:p-5 md:p-7 xl:p-8">{children}</main>
     </div>
   );
 }

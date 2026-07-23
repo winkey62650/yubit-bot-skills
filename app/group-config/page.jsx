@@ -16,17 +16,23 @@ export default function GroupConfigPage() {
   const [generatedAt, setGeneratedAt] = useState("");
   const [refreshError, setRefreshError] = useState("");
   const [publisher, setPublisher] = useState(null);
+  const [groupsLoaded, setGroupsLoaded] = useState(false);
+  const [publisherLoaded, setPublisherLoaded] = useState(false);
 
   useEffect(() => {
-    loadSavedGroups().finally(() => Promise.all([
-      refreshLiveGroups({ silent: true }),
-      loadPublisherStatus()
-    ]));
+    async function bootstrap() {
+      await loadSavedGroups();
+      await Promise.all([
+        refreshLiveGroups({ silent: true }),
+        loadPublisherStatus()
+      ]);
+    }
+    bootstrap();
   }, []);
   useLiveAutoRefresh(() => Promise.all([
     refreshLiveGroups({ silent: true }),
     loadPublisherStatus()
-  ]), { enabled: !busy });
+  ]), { enabled: groupsLoaded && !busy });
 
   async function loadSavedGroups() {
     try {
@@ -37,6 +43,8 @@ export default function GroupConfigPage() {
       setStatus(data.groups?.length ? `已读取 ${data.groups.length} 个 Telegram 对象；当前只允许 Forum 群 / Topic 作为出站目标。` : "暂无已保存群，请刷新 Telegram 列表。");
     } catch (error) {
       setStatus(error.message);
+    } finally {
+      setGroupsLoaded(true);
     }
   }
 
@@ -48,10 +56,13 @@ export default function GroupConfigPage() {
       setPublisher(data.publisher || null);
     } catch (error) {
       setPublisher({ mode: "user", ready: false, username: "@Serenity_Crypto", lastError: error.message });
+    } finally {
+      setPublisherLoaded(true);
     }
   }
 
   async function refreshLiveGroups({ silent = false, persist = false } = {}) {
+    if (!groupsLoaded && !silent) return;
     if (!silent) {
       setBusy(true);
       setStatus("正在通过 Telegram 事件和权限接口复核…");
@@ -84,6 +95,7 @@ export default function GroupConfigPage() {
       setRefreshError(error.message);
       if (!silent) setStatus(`刷新失败：${error.message}`);
     } finally {
+      setGroupsLoaded(true);
       if (!silent) setBusy(false);
     }
   }
@@ -93,7 +105,7 @@ export default function GroupConfigPage() {
   }
 
   async function probeAndSaveChat() {
-    if (busy) return;
+    if (!groupsLoaded || busy) return;
     const normalizedChatId = manualChatId.trim();
     if (!/^-100\d+$/.test(normalizedChatId)) {
       setStatus("请输入以 -100 开头的 Telegram Forum 超级群 ID。");
@@ -159,30 +171,35 @@ export default function GroupConfigPage() {
       />
 
       <section className="mb-5 grid overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="已识别群" value={forumGroups.length} detail="跨设备持久保存" />
-        <Metric label="初始化就绪" value={forumGroups.filter((group) => group.adminBotReady).length} detail={liveIsFresh ? "已实时核验 AdminBot" : "状态已过期，等待刷新"} />
-        <Metric label="Topic 总数" value={topicCount} detail={`${confirmedTopics} 个已确认 Thread ID`} />
-        <Metric label="主发布账号" value={publisherStatus} detail={publisherDetail} />
+        <Metric label="已识别群" value={groupsLoaded ? forumGroups.length : "—"} detail={groupsLoaded ? "跨设备持久保存" : "正在读取已保存群"} />
+        <Metric label="初始化就绪" value={groupsLoaded ? forumGroups.filter((group) => group.adminBotReady).length : "—"} detail={!groupsLoaded ? "正在读取群权限" : liveIsFresh ? "已实时核验 AdminBot" : "状态已过期，等待刷新"} />
+        <Metric label="Topic 总数" value={groupsLoaded ? topicCount : "—"} detail={groupsLoaded ? `${confirmedTopics} 个已确认 Thread ID` : "正在读取 Topic"} />
+        <Metric label="主发布账号" value={publisherLoaded ? publisherStatus : "—"} detail={publisherLoaded ? publisherDetail : "正在核验发布桥"} />
       </section>
 
       <Card className="overflow-hidden">
         <div className="border-b border-ops-line bg-[#f7faf8] p-5">
           <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
             <Field label="新 Forum 群 ID">
-              <input className={`${inputClass} w-full`} value={manualChatId} onChange={(event) => setManualChatId(event.target.value)} placeholder="-100xxxxxxxxxx" />
+              <input className={`${inputClass} w-full`} disabled={!groupsLoaded || busy} value={manualChatId} onChange={(event) => setManualChatId(event.target.value)} placeholder="-100xxxxxxxxxx" />
             </Field>
-            <button className="min-h-11 rounded-lg bg-ops-accent px-5 text-sm font-black text-white disabled:opacity-50" disabled={busy} onClick={probeAndSaveChat} type="button">{busy ? "正在检测…" : "按群 ID 检测并保存"}</button>
+            <button className="min-h-11 rounded-lg bg-ops-accent px-5 text-sm font-black text-white disabled:opacity-50" disabled={!groupsLoaded || busy} onClick={probeAndSaveChat} type="button">{busy ? "正在检测…" : groupsLoaded ? "按群 ID 检测并保存" : "正在读取群配置…"}</button>
           </div>
           <p className="mt-2 text-xs font-bold text-ops-muted">无需在这台 Mac 登录 Bot。AdminBot 通过 Bot API 检查群、Topics 与初始化权限；@Serenity_Crypto 必须是目标群管理员并进入发布白名单。实际出站使用匿名管理员 / Send As 能力，强制显示目标群名称和群头像。首次登记请填写以 -100 开头的群 ID。</p>
         </div>
         <div className="flex flex-col gap-4 border-b border-ops-line p-5 md:flex-row md:items-center md:justify-between">
           <div><h2 className="text-xl font-black">目标群与 Topic 健康状态</h2><p className="mt-1 text-sm text-ops-muted">刷新用于复核 AdminBot 初始化权限、Topic Thread ID 和主发布账号白名单。{channels.length ? `已隐藏 ${channels.length} 条历史 Channel 记录，当前不作为出站目标。` : ""}</p></div>
-          <button className="min-h-11 rounded-lg border border-ops-accent px-5 text-sm font-black text-ops-accent disabled:opacity-50" disabled={busy} onClick={discoverChats} type="button">{busy ? "正在刷新…" : "刷新群、Topic 与权限"}</button>
+          <button className="min-h-11 rounded-lg border border-ops-accent px-5 text-sm font-black text-ops-accent disabled:opacity-50" disabled={!groupsLoaded || busy} onClick={discoverChats} type="button">{busy ? "正在刷新…" : "刷新群、Topic 与权限"}</button>
         </div>
         <div aria-live="polite" className="border-b border-ops-line bg-[#fbfcfb] px-5 py-3 text-sm font-bold text-ops-muted">{status}</div>
         <div className="border-b border-ops-line px-5 py-3"><LiveStatusStamp generatedAt={generatedAt} error={refreshError} refreshing={busy} /></div>
+        {publisherLoaded && publisher?.lastError ? <div className="border-b border-[#f0d99f] bg-[#fff7e7] px-5 py-3 text-sm font-bold text-[#6f551d]">发布桥最近一次投递失败：{publisher.lastError}</div> : null}
         <div className="divide-y divide-ops-line">
-          {forumGroups.length ? forumGroups.map((group) => <GroupCard group={group} isFresh={liveIsFresh} key={group.chatId} publisher={publisher} />) : <div className="p-8 text-center font-bold text-ops-muted">尚未发现 Forum 群。请确认 @Serenity_Crypto 与 AdminBot 已加入目标群并设为管理员。</div>}
+          {!groupsLoaded || !publisherLoaded
+            ? <div className="p-8 text-center font-bold text-ops-muted">正在读取群、Topic 与发布账号状态…</div>
+            : forumGroups.length
+              ? forumGroups.map((group) => <GroupCard group={group} isFresh={liveIsFresh} key={group.chatId} publisher={publisher} />)
+              : <div className="p-8 text-center font-bold text-ops-muted">尚未发现 Forum 群。请确认 @Serenity_Crypto 与 AdminBot 已加入目标群并设为管理员。</div>}
         </div>
       </Card>
     </ConsoleShell>
@@ -210,7 +227,7 @@ function GroupCard({ group, isFresh, publisher }) {
         <div className="rounded-lg border border-ops-line p-3"><div className="font-black">初始化执行器</div><div className={`mt-1 text-xs font-bold ${isFresh && healthy ? "text-ops-accent" : "text-[#a04a3d]"}`}>AdminBot · {!isFresh ? "等待重新核验" : healthy ? "权限完整" : adminBot.membership === "member" ? "已加入，非管理员" : group.initializationBlockReason || "权限待处理"}</div></div>
       </div>
     </div>
-    <div className="mt-4 rounded-lg bg-[#f7f9f8] p-4"><div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm">Topics：{knownCount} 个已知 / {resolvedCount} 个已确认</strong><div className="flex flex-wrap gap-3"><span className={`text-xs font-bold ${targetApproved ? "text-ops-accent" : "text-[#a04a3d]"}`}>{authorizationLabel}</span><span className={`text-xs font-bold ${bridgeActive ? "text-ops-accent" : "text-[#a04a3d]"}`}>{bridgeLabel}</span></div></div><p className="mt-2 text-xs leading-5 text-ops-muted">出站消息由 {publisher?.username || "@Serenity_Crypto"} 通过本群的匿名管理员 / Send As 能力发布，Telegram 客户端必须显示本群名称和群头像；若无法取得权限，系统会拒绝发送且不会回退到 Bot 或个人身份。</p><div className="mt-3 flex flex-wrap gap-2">{(group.topics || []).map((topic) => <span className={`rounded-full px-3 py-1 text-xs font-bold ${topic.threadId ? "bg-[#e6f7ef] text-ops-accent" : "bg-[#fff1df] text-[#8a5d1a]"}`} key={`${topic.name}-${topic.threadId || "template"}`}>{topic.name}{topic.threadId ? ` · ${topic.threadId}` : " · 待识别"}</span>)}</div>{publisher?.lastError ? <p className="mt-2 text-xs font-bold text-[#6f551d]">最近一次投递失败：{publisher.lastError}</p> : null}</div>
+    <div className="mt-4 rounded-lg bg-[#f7f9f8] p-4"><div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm">Topics：{knownCount} 个已知 / {resolvedCount} 个已确认</strong><div className="flex flex-wrap gap-3"><span className={`text-xs font-bold ${targetApproved ? "text-ops-accent" : "text-[#a04a3d]"}`}>{authorizationLabel}</span><span className={`text-xs font-bold ${bridgeActive ? "text-ops-accent" : "text-[#a04a3d]"}`}>{bridgeLabel}</span></div></div><p className="mt-2 text-xs leading-5 text-ops-muted">出站消息由 {publisher?.username || "@Serenity_Crypto"} 通过本群的匿名管理员 / Send As 能力发布，Telegram 客户端必须显示本群名称和群头像；若无法取得权限，系统会拒绝发送且不会回退到 Bot 或个人身份。</p><div className="mt-3 flex flex-wrap gap-2">{(group.topics || []).map((topic) => <span className={`rounded-full px-3 py-1 text-xs font-bold ${topic.threadId ? "bg-[#e6f7ef] text-ops-accent" : "bg-[#fff1df] text-[#8a5d1a]"}`} key={`${topic.name}-${topic.threadId || "template"}`}>{topic.name}{topic.threadId ? ` · ${topic.threadId}` : " · 待识别"}</span>)}</div></div>
   </article>;
 }
 

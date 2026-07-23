@@ -274,7 +274,7 @@ export default function DistributionPage() {
       <PageHeader
         title={analyticsView ? "网站数据中心" : "内容分发中心"}
         desc={analyticsView ? "在现有后台统一管理代理网站，并观察从访问、视频播放到 Telegram 转化的完整表现。" : `自动发布与内容同步均由 ${publisherName} 完成签名授权，并以目标 Forum 群的名称和头像发布；ForwardBot 只负责监听来源新消息。`}
-        action={analyticsView ? null : <button className="min-h-11 rounded-lg border border-ops-accent px-5 text-sm font-black text-ops-accent disabled:opacity-50" disabled={Boolean(busy)} onClick={() => post({ action: "configure-webhook" }, "ForwardBot Webhook 已配置。")}>配置 ForwardBot Webhook</button>}
+        action={analyticsView ? null : <button className="min-h-11 rounded-lg border border-ops-accent px-5 text-sm font-black text-ops-accent disabled:opacity-50" disabled={loading || Boolean(busy)} onClick={() => post({ action: "configure-webhook" }, "ForwardBot Webhook 已配置。")}>配置 ForwardBot Webhook</button>}
       />
 
       {!analyticsView ? <div className="mb-5 rounded-lg border border-[#d9bd73] bg-[#fff9e8] px-4 py-3" role="status">
@@ -283,15 +283,17 @@ export default function DistributionPage() {
       </div> : null}
 
       {!analyticsView ? <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-        <Summary label="数据库" value={data.database?.ok ? "正常" : "待配置"} detail={data.database?.driver || "未连接"} />
-        <Summary label="发布器" value={publisherStatus} detail={publisherDetail} />
-        <Summary label="自动任务" value={automationRules.length} detail={`${automationRules.filter((rule) => rule.enabled).length} 条启用`} />
-        <Summary label="同步规则" value={broadcastRules.length} detail={`${broadcastRules.filter((rule) => rule.enabled).length} 条启用`} />
-        <Summary label="代理来源" value={socialReadiness.enabledCount} detail={socialReadiness.ready ? `${socialReadiness.stableCount} 条稳定可用` : "需要添加 X / YouTube 来源"} />
-        <Summary label="待审核" value={data.review.length} detail="默认保留 7 天" />
+        <Summary label="数据库" value={loading ? "—" : data.database?.ok ? "正常" : "待配置"} detail={loading ? "正在读取…" : data.database?.driver || "未连接"} />
+        <Summary label="发布器" value={loading ? "—" : publisherStatus} detail={loading ? "正在核验…" : publisherDetail} />
+        <Summary label="自动任务" value={loading ? "—" : automationRules.length} detail={loading ? "正在读取…" : `${automationRules.filter((rule) => rule.enabled).length} 条启用`} />
+        <Summary label="同步规则" value={loading ? "—" : broadcastRules.length} detail={loading ? "正在读取…" : `${broadcastRules.filter((rule) => rule.enabled).length} 条启用`} />
+        <Summary label="代理来源" value={loading ? "—" : socialReadiness.enabled} detail={loading ? "正在读取…" : socialReadiness.ready ? `${socialReadiness.stable} 条稳定可用` : "需要添加 X / YouTube 来源"} />
+        <Summary label="待审核" value={loading ? "—" : data.review.length} detail={loading ? "正在读取…" : "默认保留 7 天"} />
       </div> : null}
 
-      {view === "automation" ? <OfficialPublishingWorkflow status={publisherStatus} detail={publisherDetail} ready={publisherOperationalReady} /> : null}
+      {view === "automation" ? loading
+        ? <Card className="mb-5 p-5 text-sm font-bold text-ops-muted">正在核验官方群发布闭环…</Card>
+        : <OfficialPublishingWorkflow status={publisherStatus} detail={publisherDetail} ready={publisherOperationalReady} /> : null}
 
       {!analyticsView && notice ? <div role="status" className="mb-5 rounded-lg border border-ops-line bg-white px-4 py-3 text-sm font-bold text-[#33423b]">{notice}</div> : null}
       {!analyticsView && validation ? <ValidationPanel result={validation} onClose={() => setValidation(null)} /> : null}

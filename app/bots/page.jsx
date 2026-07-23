@@ -21,6 +21,7 @@ export default function BotsPage() {
   const [refreshError, setRefreshError] = useState("");
   const coveredGroupCount = useMemo(() => new Set(bots.flatMap((bot) => (bot.groups || []).map((group) => String(group.id)))).size, [bots]);
   const availableCount = bots.filter((bot) => bot.apiAvailable ?? (bot.status === "在线")).length;
+  const hasLiveResult = Boolean(generatedAt);
 
   useEffect(() => { refresh(); }, []);
   useLiveAutoRefresh(() => refresh({ silent: true }), { enabled: !running });
@@ -56,10 +57,10 @@ export default function BotsPage() {
       />
       <div className="mb-4"><LiveStatusStamp generatedAt={generatedAt} error={refreshError} refreshing={running} /></div>
       <section className="mb-5 grid gap-0 overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops md:grid-cols-4">
-        <MetricBox label="能力组件" value={String(bots.length)} sub="保留全部原有功能" />
-        <MetricBox label="API 可用" value={String(availableCount)} sub="仅表示 Bot API 与身份核验通过" />
-        <MetricBox label="有效群" value={String(coveredGroupCount)} sub="已去重并核验成员身份" />
-        <MetricBox label="状态" value={status} sub={generatedAt ? new Date(generatedAt).toLocaleString("zh-CN") : "不显示 Token"} />
+        <MetricBox label="能力组件" value={hasLiveResult ? String(bots.length) : "—"} sub={hasLiveResult ? "保留全部原有功能" : "正在读取…"} />
+        <MetricBox label="API 可用" value={hasLiveResult ? String(availableCount) : "—"} sub={hasLiveResult ? "仅表示 Bot API 与身份核验通过" : "正在核验…"} />
+        <MetricBox label="有效群" value={hasLiveResult ? String(coveredGroupCount) : "—"} sub={hasLiveResult ? "已去重并核验成员身份" : "正在核验…"} />
+        <MetricBox label="状态" value={hasLiveResult ? status : "正在读取"} sub={generatedAt ? new Date(generatedAt).toLocaleString("zh-CN") : "等待实时结果"} />
       </section>
       <Card className="overflow-hidden">
         <div className="border-b border-ops-line p-5">

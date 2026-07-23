@@ -126,6 +126,39 @@ test("distribution selectors exclude General Chat and follow the managed editori
   assert.equal(JSON.stringify(buildDistributionTargetOptions(groups)).includes("General Chat"), false);
 });
 
+test("generic Demo Topic names are resolved to the managed editorial names", () => {
+  const groups = [{
+    chatId: "-1003710405969",
+    title: "DEMO Academy",
+    topics: [
+      { name: "General Chat", threadId: 1 },
+      { name: "Topic 12", threadId: 12 },
+      { name: "Topic 18", threadId: 18 },
+      { name: "Topic 8", threadId: 8 },
+      { name: "Topic 6", threadId: 6 },
+      { name: "Topic 16", threadId: 16 },
+      { name: "Topic 14", threadId: 14 },
+      { name: "Topic 10", threadId: 10 }
+    ]
+  }];
+  const expectedNames = [
+    "1. READ FIRST - DISCLAIMER",
+    "2. CryptoGuy Trading Zone",
+    "3. Market Events",
+    "4. Market Analysis - Crypto/Stocks/TradFi",
+    "5. Community Signal",
+    "6. Smart Money Tracker",
+    "7. YUBIT Updates"
+  ];
+
+  assert.deepEqual(buildDistributionTargetOptions(groups).map((option) => option.target.topicName), expectedNames);
+  assert.deepEqual(buildDistributionSourceOptions(groups).map((option) => option.source.topicName), expectedNames);
+  assert.deepEqual(
+    buildDistributionTargetOptions(groups).map((option) => option.label),
+    expectedNames.map((name) => `DEMO Academy / ${name}`)
+  );
+});
+
 test("private channels are selectable as whole destinations without a fake Topic", () => {
   const groups = [{
     chatId: "-1009001",

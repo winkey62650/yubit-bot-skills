@@ -7,6 +7,7 @@ import LiveStatusStamp from "../components/LiveStatusStamp";
 import { useLiveAutoRefresh } from "../hooks/useLiveAutoRefresh";
 import { Card, PageHeader, StatusPill } from "../components/ui";
 import { buildPublisherStatusChecks } from "../../lib/distribution-ui.mjs";
+import { PUBLISHER_HEARTBEAT_STALE_MS } from "../../lib/live-status.mjs";
 
 const DEMO_CHAT_ID = "-1003710405969";
 
@@ -35,7 +36,8 @@ export default function TelegramUserAuthorizationPage() {
 
   const operationalStatus = publisher?.operationalStatus || "offline";
   const ready = publisher?.operationalReady === true;
-  const statusLabel = operationalStatus === "publishing"
+  const statusLabel = loading ? "正在核验"
+    : operationalStatus === "publishing"
     ? "正在发布"
     : operationalStatus === "stalled"
       ? "任务卡住"
@@ -57,16 +59,16 @@ export default function TelegramUserAuthorizationPage() {
       />
 
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <LiveStatusStamp generatedAt={lastSeenAt} error={error} refreshing={loading} />
+        <LiveStatusStamp generatedAt={lastSeenAt} error={error} refreshing={loading} staleAfterMs={PUBLISHER_HEARTBEAT_STALE_MS} />
         <button className="min-h-11 rounded-lg border border-ops-accent bg-white px-5 text-sm font-black text-ops-accent disabled:opacity-50" disabled={loading} onClick={() => refresh()} type="button">
           {loading ? "正在核验" : "刷新运行状态"}
         </button>
       </div>
 
       <section className="mb-5 grid overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="主发布账号" value={publisher?.username || "@Serenity_Crypto"} ok />
+        <Metric label="主发布账号" value={loading ? "—" : publisher?.username || "@Serenity_Crypto"} ok={!loading} />
         <Metric label="本机发布桥" value={statusLabel} ok={ready || operationalStatus === "publishing"} />
-        <Metric label="已授权目标" value={`${approvedTargets.length} 个`} ok={approvedTargets.length > 0} />
+        <Metric label="已授权目标" value={loading ? "—" : `${approvedTargets.length} 个`} ok={!loading && approvedTargets.length > 0} />
         <Metric label="安全回退" value="禁止 Bot / 个人身份" ok />
       </section>
 
