@@ -69,6 +69,7 @@ fi
 
 sudo install -m 0644 deploy/systemd/yubit-academy-web.service /etc/systemd/system/yubit-academy-web.service
 sudo install -m 0644 deploy/systemd/yubit-academy-worker.service /etc/systemd/system/yubit-academy-worker.service
+sudo install -m 0644 deploy/systemd/yubit-academy-discord.service /etc/systemd/system/yubit-academy-discord.service
 release_env="$(mktemp)"
 {
   printf 'APP_RELEASE_SHA=%s\n' "$commit"
@@ -109,6 +110,7 @@ done
 
 sudo systemctl enable yubit-academy-worker.service
 sudo systemctl restart yubit-academy-worker.service
+sudo systemctl enable --now yubit-academy-discord.service
 sudo systemctl reload nginx
 
 if [[ "$ENABLE_HTTPS" == "1" ]]; then
@@ -134,6 +136,7 @@ if [[ "$ip_location" != "https://$SERVER_NAME/" ]]; then
 fi
 sudo systemctl is-active --quiet yubit-academy-web.service
 sudo systemctl is-active --quiet yubit-academy-worker.service
+sudo systemctl is-active --quiet yubit-academy-discord.service
 
 find "$APP_ROOT/releases" -mindepth 1 -maxdepth 1 -type d ! -path "$release" -printf '%T@ %p\n' \
   | sort -nr | awk 'NR > 2 {sub(/^[^ ]+ /, ""); print}' \

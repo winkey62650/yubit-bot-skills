@@ -1,0 +1,22 @@
+[Unit]
+Description=YUBIT Academy Discord Gateway
+After=network-online.target yubit-academy-web.service
+Wants=network-online.target
+Requires=yubit-academy-web.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/yubit-academy/current
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/yubit-academy/production.env
+EnvironmentFile=-/etc/yubit-academy/release.env
+ExecStart=/opt/yubit-node/bin/node /opt/yubit-academy/current/scripts/discord-gateway.mjs
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

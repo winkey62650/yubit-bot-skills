@@ -1,0 +1,76 @@
+import { NextResponse } from "next/server";
+
+import {
+  getDiscordStatus,
+  initializeDiscordGuild,
+  sendDiscordTestMessage,
+  updateDiscordSettings,
+} from "../../../lib/discord-service.mjs";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+const noStoreHeaders = {
+  "Cache-Control": "no-store, max-age=0",
+};
+
+function json(payload, init = {}) {
+  return NextResponse.json(payload, {
+    ...init,
+    headers: {
+      ...noStoreHeaders,
+      ...(init.headers || {}),
+    },
+  });
+}
+
+export async function GET() {
+  try {
+    const status = await getDiscordStatus();
+    return json({ ok: true, ...status });
+  } catch (error) {
+    return json(
+      { ok: false, error: error?.message || "Discord 状态读取失败。" },
+      { status: 500 },
+    );
+  }
+}
+
+export async function POST(request) {
+  try {
+    const body = await request.json();
+    const action = String(body?.action || "").trim();
+    let result;
+
+    if (action === "initialize") {
+      const initialized = await initializeDiscordGuild({
+        guildId: body.guildId,
+        selectedTemplateIds: body.templateIds,
+        dryRun: body.dryRun === true,
+        markAsDemo: body.markAsDemo === true,
+      });
+      result = { initialized };
+    } else if (action === "settings") {
+      result = {
+        settings: await updateDiscordSettings({
+          demoGuildId: body.demoGuildId,
+          syncEnabled: body.syncEnabled,
+        }),
+      };
+    } else if (action === "test-message") {
+      result = {
+        testMessage: await sendDiscordTestMessage(body.channelId, body.content),
+      };
+    } else {
+      return json({ ok: false, error: "不支持的 Discord 操作。" }, { status: 400 });
+    }
+
+    const status = await getDiscordStatus();
+    return json({ ok: true, result, ...status });
+  } catch (error) {
+    return json(
+      { ok: false, error: error?.message || "Discord 操作失败。" },
+      { status: 400 },
+    );
+  }
+}
