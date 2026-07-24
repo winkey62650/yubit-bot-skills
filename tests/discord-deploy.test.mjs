@@ -22,6 +22,7 @@ test("DC 部署包含 Discord systemd 常驻服务", () => {
   assert.match(unit, /scripts\/discord-gateway\.mjs/);
   assert.match(unit, /EnvironmentFile=\/etc\/yubit-academy\/production\.env/);
   assert.match(deploy, /yubit-academy-discord\.service/);
-  assert.match(deploy, /enable --now yubit-academy-discord/);
+  assert.match(deploy, /enable yubit-academy-discord/);
+  assert.match(deploy, /restart yubit-academy-discord/);
   assert.match(deploy, /is-active --quiet yubit-academy-discord/);
 });
