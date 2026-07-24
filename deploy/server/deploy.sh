@@ -110,7 +110,36 @@ done
 
 sudo systemctl enable yubit-academy-worker.service
 sudo systemctl restart yubit-academy-worker.service
-sudo systemctl enable --now yubit-academy-discord.service
+sudo systemctl enable yubit-academy-discord.service
+discord_started_at="$(date --iso-8601=seconds)"
+sudo systemctl restart yubit-academy-discord.service
+
+discord_ready=0
+for _ in {1..20}; do
+  if sudo journalctl \
+    -u yubit-academy-discord.service \
+    --since "$discord_started_at" \
+    --no-pager \
+    | grep -Fq "[discord-gateway] connected as"; then
+    discord_ready=1
+    break
+  fi
+
+  sleep 2
+done
+
+if [[ "$discord_ready" -ne 1 ]]; then
+  echo "Discord Gateway did not reach the ready state." >&2
+  sudo journalctl \
+    -u yubit-academy-discord.service \
+    --since "$discord_started_at" \
+    --no-pager \
+    | sed -E \
+      -e 's/[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{20,}/[redacted]/g' \
+      -e 's/(DISCORD_BOT_TOKEN=)[^[:space:]]+/\1[redacted]/g' \
+    >&2
+  exit 1
+fi
 sudo systemctl reload nginx
 
 if [[ "$ENABLE_HTTPS" == "1" ]]; then
