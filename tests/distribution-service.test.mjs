@@ -811,7 +811,8 @@ test("desktop publisher replaces stale generic Topic labels with the automation 
 
   const claimed = await claimDesktopPublisherDelivery({
     repository,
-    env: { NODE_ENV: "production", DEMO_TELEGRAM_CHAT_ID: delivery.target.chatId }
+    env: { NODE_ENV: "production", DEMO_TELEGRAM_CHAT_ID: delivery.target.chatId },
+    now: "2026-07-21T12:01:00.000Z"
   });
 
   assert.equal(claimed.topicName, "3. Market Events");
@@ -854,7 +855,11 @@ test("desktop publisher replaces a stale generic Topic label for a standard broa
     TELEGRAM_USER_PUBLISHER_TARGETS: "-1003710405969,-1004378187866"
   };
 
-  const claimed = await claimDesktopPublisherDelivery({ repository, env });
+  const claimed = await claimDesktopPublisherDelivery({
+    repository,
+    env,
+    now: "2026-07-23T10:35:00.000Z"
+  });
 
   assert.equal(claimed.topicName, "5. Community Signal");
 });
@@ -916,7 +921,11 @@ test("desktop publisher claims an explicitly approved CryptoGuy Topic delivery",
     TELEGRAM_USER_PUBLISHER_TARGETS: "-1003710405969,-1004378187866"
   };
 
-  const claimed = await claimDesktopPublisherDelivery({ repository, env });
+  const claimed = await claimDesktopPublisherDelivery({
+    repository,
+    env,
+    now: "2026-07-22T06:01:00.000Z"
+  });
 
   assert.equal(claimed.chatId, "-1004378187866");
   assert.equal(claimed.threadId, 8);
@@ -1003,11 +1012,152 @@ test("desktop publisher prioritizes a realtime broadcast over an older automatio
     TELEGRAM_USER_PUBLISHER_TARGETS: "-1003710405969,-1004378187866"
   };
 
-  const claimed = await claimDesktopPublisherDelivery({ repository, env });
+  const claimed = await claimDesktopPublisherDelivery({
+    repository,
+    env,
+    now: "2026-07-22T06:01:00.000Z"
+  });
 
   assert.equal(claimed.deliveryId, broadcastDelivery.id);
   assert.equal(claimed.ruleId, broadcastDelivery.ruleId);
   assert.equal(automationDelivery.status, "pending");
+});
+
+test("desktop publisher archives a stale zero-progress delivery instead of blocking fresh work", async () => {
+  const expiredDelivery = {
+    id: "delivery-expired",
+    eventId: "event-expired",
+    ruleId: "rule-expired-whale",
+    status: "sending",
+    createdAt: "2026-07-20T00:00:00.000Z",
+    attempts: 0,
+    target: {
+      id: "demo-whale",
+      chatId: "-1003710405969",
+      chatType: "supergroup",
+      threadId: 16,
+      groupName: "DEMO Academy",
+      topicName: "6. Smart Money Tracker"
+    }
+  };
+  const freshDelivery = {
+    id: "delivery-fresh-broadcast",
+    eventId: "event-fresh-broadcast",
+    ruleId: "production-broadcast-topic-5",
+    status: "pending",
+    createdAt: "2026-07-22T06:00:00.000Z",
+    target: {
+      id: "crypto-signal",
+      chatId: "-1004378187866",
+      chatType: "supergroup",
+      threadId: 17,
+      groupName: "CryptoGuy Academy",
+      topicName: "5. Community Signal"
+    }
+  };
+  const deliveries = [expiredDelivery, freshDelivery];
+  const events = new Map([
+    [expiredDelivery.eventId, {
+      id: expiredDelivery.eventId,
+      payload: {
+        jobId: "whale-signals",
+        deliveryPlans: [{
+          target: expiredDelivery.target,
+          steps: [{ method: "sendMessage", payload: { text: "Expired signal" } }]
+        }]
+      }
+    }],
+    [freshDelivery.eventId, {
+      id: freshDelivery.eventId,
+      payload: {
+        deliveryPlans: [{
+          target: freshDelivery.target,
+          steps: [{ method: "sendMessage", payload: { text: "Fresh community signal" } }]
+        }]
+      }
+    }]
+  ]);
+  const repository = {
+    async listDeliveries({ status } = {}) {
+      return deliveries.filter((delivery) => delivery.status === status);
+    },
+    async getRule(id) {
+      return id === freshDelivery.ruleId ? { id, kind: "broadcast" } : { id, kind: "automation" };
+    },
+    async claimDelivery(id) {
+      const delivery = deliveries.find((item) => item.id === id);
+      delivery.status = "sending";
+      return delivery;
+    },
+    async getEvent(id) { return events.get(id) || null; },
+    async updateDelivery(id, patch) {
+      return Object.assign(deliveries.find((item) => item.id === id), patch);
+    }
+  };
+  const env = {
+    NODE_ENV: "production",
+    DEMO_TELEGRAM_CHAT_ID: "-1003710405969",
+    TELEGRAM_USER_PUBLISHER_TARGETS: "-1003710405969,-1004378187866"
+  };
+
+  const claimed = await claimDesktopPublisherDelivery({
+    repository,
+    env,
+    now: "2026-07-22T06:01:00.000Z"
+  });
+
+  assert.equal(claimed.deliveryId, freshDelivery.id);
+  assert.equal(expiredDelivery.status, "failed");
+  assert.equal(expiredDelivery.attempts, 1);
+  assert.match(expiredDelivery.error, /安全归档/);
+});
+
+test("desktop publisher resumes an old delivery when at least one step already succeeded", async () => {
+  const delivery = {
+    id: "delivery-old-progress",
+    eventId: "event-old-progress",
+    ruleId: "rule-old-progress",
+    status: "sending",
+    createdAt: "2026-07-20T00:00:00.000Z",
+    publisherProgress: [{ stepId: "completed-step", completedAt: "2026-07-20T00:01:00.000Z" }],
+    target: {
+      id: "demo-events",
+      chatId: "-1003710405969",
+      chatType: "supergroup",
+      threadId: 8,
+      groupName: "DEMO Academy",
+      topicName: "3. Market Events"
+    }
+  };
+  const event = {
+    id: delivery.eventId,
+    payload: {
+      jobId: "daily-events",
+      deliveryPlans: [{
+        target: delivery.target,
+        steps: [{ method: "sendMessage", payload: { text: "Remaining step" } }]
+      }]
+    }
+  };
+  const repository = {
+    async listDeliveries({ status } = {}) { return status === delivery.status ? [delivery] : []; },
+    async claimDelivery() { throw new Error("sending delivery must be resumed"); },
+    async getEvent() { return event; },
+    async updateDelivery(_id, patch) { return Object.assign(delivery, patch); }
+  };
+
+  const claimed = await claimDesktopPublisherDelivery({
+    repository,
+    env: {
+      NODE_ENV: "production",
+      DEMO_TELEGRAM_CHAT_ID: "-1003710405969"
+    },
+    now: "2026-07-22T06:01:00.000Z"
+  });
+
+  assert.equal(claimed.deliveryId, delivery.id);
+  assert.equal(claimed.completedSteps.length, 1);
+  assert.equal(delivery.status, "sending");
 });
 
 test("broadcast validation checks ForwardBot on the source and the desktop publisher on the target", async () => {
