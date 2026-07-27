@@ -246,7 +246,13 @@ export default function NewGroupPage() {
     let currentProgress = 8;
     const timer = window.setInterval(() => {
       currentProgress = Math.min(92, currentProgress + Math.max(1, Math.round((92 - currentProgress) / 8)));
-      setProgress({ active: true, value: currentProgress, label: "初始化群与 Topic" });
+      setProgress({
+        active: true,
+        value: currentProgress,
+        label: currentProgress >= 92
+          ? "等待 Telegram 完成最后的 Topic 操作（限流时会延迟，请勿重复提交）"
+          : "初始化群与 Topic"
+      });
     }, 3000);
 
     try {

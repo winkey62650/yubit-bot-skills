@@ -92,6 +92,17 @@ test("new-group UI includes Telegram stderr in the operator result", () => {
   assert.match(source, /data\.stderr/);
   assert.match(source, /await refreshGroups\(chatId\)/);
   assert.match(source, /初始化完成，Telegram 群与 Topic 状态已刷新/);
+  assert.match(source, /等待 Telegram 完成最后的 Topic 操作/);
+});
+
+test("new-group API rejects a concurrent initialization for the same chat", () => {
+  const source = readFileSync(new URL("../app/api/scripts/route.js", import.meta.url), "utf8");
+
+  assert.match(source, /const activeRuns = new Set\(\)/);
+  assert.match(source, /activeRuns\.has\(runKey\)/);
+  assert.match(source, /status: 409/);
+  assert.match(source, /该群正在初始化/);
+  assert.match(source, /activeRuns\.delete\(runKey\)/);
 });
 
 test("new-group UI never restores or persists production mode from a cloud draft", () => {

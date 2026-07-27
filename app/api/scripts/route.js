@@ -53,6 +53,11 @@ const scriptMap = {
   }
 };
 
+// The production web service is a single long-running process. Keep one
+// initialization per Telegram chat in flight so a reload or second browser
+// cannot create duplicate Topics while Telegram is rate limiting the first run.
+const activeRuns = new Set();
+
 export async function POST(request) {
   const body = await request.json().catch(() => ({}));
   const script = scriptMap[body.scriptId];
@@ -68,6 +73,18 @@ export async function POST(request) {
   } catch (error) {
     return NextResponse.json({ ok: false, label: script.label, error: error.message }, { status: 400 });
   }
+
+  const runKey = body.scriptId === "newGroup" && env.TELEGRAM_CHAT_ID
+    ? `newGroup:${env.TELEGRAM_CHAT_ID}`
+    : "";
+  if (runKey && activeRuns.has(runKey)) {
+    return NextResponse.json({
+      ok: false,
+      label: script.label,
+      error: "该群正在初始化，请等待当前任务完成后再刷新状态，不要重复提交。"
+    }, { status: 409 });
+  }
+  if (runKey) activeRuns.add(runKey);
 
   try {
     const result = await runNode(script.command, env);
@@ -89,6 +106,8 @@ export async function POST(request) {
       },
       { status: 500 }
     );
+  } finally {
+    if (runKey) activeRuns.delete(runKey);
   }
 }
 
