@@ -135,6 +135,7 @@ export default function NewGroupPage() {
       } else {
         setDiscoveryStatus(liveGroups.length ? `已识别 ${liveGroups.length} 个群；${readyCount} 个群已满足 AdminBot 初始化权限` : "未识别到群，请确认 AdminBot 已加入并重新刷新");
       }
+      return preferred;
     } catch (error) {
       setRefreshError(error.message);
       if (!silent) setDiscoveryStatus(`刷新失败：${error.message}`);
@@ -269,7 +270,12 @@ export default function NewGroupPage() {
       });
       const data = await response.json();
       setProgress({ active: true, value: data.ok ? 100 : 96, label: data.ok ? "执行完成" : "执行结束，请查看结果" });
-      setLog([data.ok ? "初始化检查完成" : "初始化检查失败", data.stdout, data.stderr, data.error].filter(Boolean).join("\n\n"));
+      if (data.ok) {
+        const refreshed = await refreshGroups(chatId);
+        setLog([dryRun ? "安全检查完成" : "初始化完成，Telegram 群与 Topic 状态已刷新", refreshed?.title ? `目标群：${refreshed.title}` : "", data.stdout, data.stderr].filter(Boolean).join("\n\n"));
+      } else {
+        setLog(["初始化检查失败", data.stdout, data.stderr, data.error].filter(Boolean).join("\n\n"));
+      }
     } catch (error) {
       setProgress({ active: true, value: 96, label: "执行结束，请查看结果" });
       setLog(`请求失败：${error.message}`);

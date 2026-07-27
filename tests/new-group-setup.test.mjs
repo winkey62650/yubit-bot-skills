@@ -44,6 +44,8 @@ test("new-group UI includes Telegram stderr in the operator result", () => {
   const source = readFileSync(new URL("../app/new-group/page.jsx", import.meta.url), "utf8");
 
   assert.match(source, /data\.stderr/);
+  assert.match(source, /await refreshGroups\(chatId\)/);
+  assert.match(source, /初始化完成，Telegram 群与 Topic 状态已刷新/);
 });
 
 test("new-group UI never restores or persists production mode from a cloud draft", () => {

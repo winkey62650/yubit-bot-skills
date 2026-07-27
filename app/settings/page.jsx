@@ -11,7 +11,9 @@ const defaultSettings = {
   alertMode: "异常才推送",
   failureThreshold: "2 次连续失败告警",
   environment: "生产环境",
-  status: "暂停"
+  status: "暂停",
+  telegramPublishMode: "user",
+  telegramForwardMode: "user"
 };
 
 const pendingChecks = [
@@ -138,6 +140,17 @@ export default function SettingsPage() {
         <MetricBox label="告警渠道" value="Lark" sub="Webhook 推送" />
         <MetricBox label="当前状态" value={currentStatus} sub={currentStatusDetail} />
       </section>
+
+      <Card className="mb-5 p-6">
+        <h2 className="text-xl font-black">Telegram 自动发送身份</h2>
+        <p className="mt-1 text-sm text-ops-muted">自动内容发布和广播转发可以分别选择 Bot 或真人 Telegram 账号；保存后生产 Worker 下一轮任务立即使用新设置。</p>
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <Field label="自动发布消息"><select className={inputClass} disabled={!settingsLoaded || saving} value={settings.telegramPublishMode} onChange={(event) => update("telegramPublishMode", event.target.value)}><option value="bot">使用 SpeakerBot</option><option value="user">使用真人 TG 账号</option></select></Field>
+          <Field label="广播转发消息"><select className={inputClass} disabled={!settingsLoaded || saving} value={settings.telegramForwardMode} onChange={(event) => update("telegramForwardMode", event.target.value)}><option value="bot">使用 ForwardBot</option><option value="user">使用真人 TG 账号</option></select></Field>
+        </div>
+        <div className="mt-4 rounded-lg bg-[#f7f9f8] px-4 py-3 text-sm font-bold text-ops-muted">真人账号模式继续使用已授权的 @Serenity_Crypto 发布桥；Bot 模式使用对应 Bot Token，不会删除真人账号授权。</div>
+        <div className="mt-5 flex flex-wrap items-center gap-3"><button className="rounded-lg bg-ops-accent px-5 py-3 text-sm font-black text-white disabled:opacity-60" disabled={!settingsLoaded || saving} onClick={save} type="button">{saving ? "保存中..." : "保存发送身份"}</button><span className="text-xs font-bold text-ops-accent">{saveStatus}</span></div>
+      </Card>
 
       <Card className="p-6">
         <h2 className="text-xl font-black">Lark 监控配置</h2>

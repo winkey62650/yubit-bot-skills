@@ -85,7 +85,7 @@ test("production publishing fails closed when the user publisher flag is omitted
   assert.equal(telegramUserPublisherStatus(env).required, true);
 });
 
-test("production refuses an explicit Bot publisher mode so official group identity cannot regress", async () => {
+test("production honors an explicit Bot publisher mode selected by the backend", async () => {
   let botCalls = 0;
   const env = publisherEnv({
     TELEGRAM_PUBLISHER_MODE: "bot",
@@ -95,26 +95,24 @@ test("production refuses an explicit Bot publisher mode so official group identi
   });
   const delivery = createTelegramDelivery({
     env,
-    botApiCall: async () => { botCalls += 1; }
+    botApiCall: async () => { botCalls += 1; return { message_id: 902 }; }
   });
 
-  await assert.rejects(
-    () => delivery("speaker-token", "sendMessage", {
-      chat_id: DEMO_GROUP_ID,
-      text: "must not expose the Bot identity"
-    }),
-    (error) => error?.code === "TELEGRAM_USER_PUBLISHER_NOT_CONFIGURED"
-  );
+  const result = await delivery("speaker-token", "sendMessage", {
+    chat_id: DEMO_GROUP_ID,
+    text: "send through the selected Bot"
+  });
 
-  assert.equal(botCalls, 0);
+  assert.deepEqual(result, { message_id: 902 });
+  assert.equal(botCalls, 1);
   assert.deepEqual(telegramUserPublisherStatus(env), {
-    mode: "user",
-    required: true,
+    mode: "bot",
+    required: false,
     credentialsReady: true,
     encryptionReady: true,
     routingReady: true,
     ready: true,
-    username: "@Serenity_Crypto",
+    username: "@Satoshi_geniustrader_bot",
     approvedTargetIds: [DEMO_GROUP_ID]
   });
 });

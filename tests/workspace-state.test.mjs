@@ -43,3 +43,12 @@ test("workspace sections only keep their supported fields", () => {
   assert.deepEqual(normalizeWorkspaceState("signals", { selected: ["Daily Analysis"] }), { selected: ["Daily Analysis"] });
   assert.throws(() => normalizeWorkspaceState("unknown", {}), /Unsupported workspace section/);
 });
+
+test("settings persist Telegram publish and forward modes", () => {
+  const state = normalizeWorkspaceState("settings", {
+    telegramPublishMode: "bot",
+    telegramForwardMode: "user"
+  });
+  assert.equal(state.telegramPublishMode, "bot");
+  assert.equal(state.telegramForwardMode, "user");
+});
