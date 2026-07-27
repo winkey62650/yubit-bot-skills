@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -38,6 +38,52 @@ test("safe new-group check stops after bounded Telegram network retries", () => 
 
   assert.equal(result.status, 1);
   assert.match(`${result.stdout}\n${result.stderr}`, /network error.*1 attempt/i);
+});
+
+test("production setup discards an invalid saved Topic id and rebuilds it", () => {
+  const dir = mkdtempSync(join(tmpdir(), "yubit-stale-topic-test-"));
+  const configPath = join(dir, "config.json");
+  const logPath = join(dir, "telegram-methods.log");
+  const stateDirectory = join(dir, "setup-states");
+  mkdirSync(stateDirectory, { recursive: true });
+  writeFileSync(configPath, JSON.stringify({ topics: [{ key: "topic_1", name: "1. READ FIRST - DISCLAIMER" }] }));
+  writeFileSync(logPath, "");
+  writeFileSync(join(stateDirectory, "-1001234567890.json"), JSON.stringify({
+    chatId: "-1001234567890",
+    topics: {
+      topic_1: {
+        message_thread_id: 42,
+        configuredName: "1. READ FIRST - DISCLAIMER",
+        configuredIconCustomEmojiId: ""
+      }
+    }
+  }));
+
+  const result = spawnSync(process.execPath, ["--import", mockFetch, "setup-telegram-community.mjs"], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      TELEGRAM_BOT_TOKEN: "test-token",
+      TELEGRAM_CHAT_ID: "-1001234567890",
+      YUBIT_TG_CONFIG: configPath,
+      JSON_STORE_DIRECTORY: dir,
+      DRY_RUN: "false",
+      TELEGRAM_DELAY_MS: "0",
+      TELEGRAM_MESSAGE_DELAY_MS: "0",
+      TELEGRAM_TOPIC_DELAY_MS: "0",
+      MOCK_TELEGRAM_LOG: logPath,
+      MOCK_TELEGRAM_STALE_TOPIC: "true"
+    },
+    timeout: 5000
+  });
+
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  const methods = readFileSync(logPath, "utf8").trim().split("\n").filter(Boolean);
+  assert.ok(methods.indexOf("editForumTopic") < methods.indexOf("createForumTopic"));
+  const state = JSON.parse(readFileSync(join(stateDirectory, "-1001234567890.json"), "utf8"));
+  assert.equal(state.topics.topic_1.message_thread_id, 77);
+  assert.match(result.stderr, /stale topic state removed and will be rebuilt/);
 });
 
 test("new-group UI includes Telegram stderr in the operator result", () => {
@@ -114,7 +160,7 @@ function runSetup(extraEnv = {}) {
       DRY_RUN: "true",
       MOCK_TELEGRAM_LOG: logPath
     },
-    timeout: 1500
+    timeout: 5000
   });
 
   return { ...result, logPath };

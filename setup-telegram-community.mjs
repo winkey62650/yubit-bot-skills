@@ -70,6 +70,30 @@ for (const topic of config.topics ?? []) {
   }
   let actions = topicActionPlan(topicState, desiredTopic);
 
+  // Telegram invalidates every stored message_thread_id when Topics are
+  // disabled/re-enabled or a topic is deleted. Verify resumed state before
+  // trusting it so a stale state file cannot produce a false-success run.
+  if (!dryRun && !actions.create) {
+    const topicStillExists = await verifySavedTopic(topicState, desiredTopic);
+    if (!topicStillExists) {
+      const staleThreadId = topicState.message_thread_id;
+      state.topics = { ...(state.topics || {}) };
+      delete state.topics[topicKey];
+      await writeState(state);
+      topicState = {};
+      actions = topicActionPlan(topicState, desiredTopic);
+      const warning = `stale topic state removed and will be rebuilt: ${desiredTopic.name} (thread ${staleThreadId})`;
+      warnings.push(warning);
+      console.error(warning);
+    } else {
+      topicState.configuredName = desiredTopic.name;
+      topicState.configuredIconCustomEmojiId = desiredTopic.iconCustomEmojiId;
+      topicState.verifiedAt = new Date().toISOString();
+      await saveTopicProgress(topicKey, topicState);
+      actions = topicActionPlan(topicState, desiredTopic);
+    }
+  }
+
   if (actions.create) {
     const createPayload = {
       chat_id: chatId,
@@ -89,7 +113,8 @@ for (const topic of config.topics ?? []) {
       contentDraftVersion: "",
       contentMessageIds: [],
       pinnedContentMessageIds: [],
-      closed: false
+      closed: false,
+      verifiedAt: new Date().toISOString()
     };
     createdNow = true;
     await saveTopicProgress(topicKey, topicState);
@@ -110,6 +135,7 @@ for (const topic of config.topics ?? []) {
     await call("editForumTopic", editPayload);
     topicState.configuredName = desiredTopic.name;
     topicState.configuredIconCustomEmojiId = desiredTopic.iconCustomEmojiId;
+    topicState.verifiedAt = new Date().toISOString();
     await saveTopicProgress(topicKey, topicState);
   }
 
@@ -314,6 +340,24 @@ async function sendStructuredContentMessage(message, messageThreadId) {
     });
   }
   throw new Error(`Unsupported structured content message type: ${message.type}`);
+}
+
+async function verifySavedTopic(topicState, desiredTopic) {
+  const payload = {
+    chat_id: chatId,
+    message_thread_id: topicState.message_thread_id,
+    name: desiredTopic.name
+  };
+  if (desiredTopic.iconCustomEmojiId) payload.icon_custom_emoji_id = desiredTopic.iconCustomEmojiId;
+  try {
+    await call("editForumTopic", payload);
+    return true;
+  } catch (error) {
+    if (/TOPIC_ID_INVALID|message thread not found|topic[^\n]*not found/i.test(String(error?.message || error))) {
+      return false;
+    }
+    throw error;
+  }
 }
 
 function structuredContentVersion(topic) {

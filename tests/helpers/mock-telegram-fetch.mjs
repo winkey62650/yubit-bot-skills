@@ -1,7 +1,8 @@
 import { appendFileSync } from "node:fs";
 
-globalThis.fetch = async (url) => {
+globalThis.fetch = async (url, options = {}) => {
   const method = String(url).split("/").pop();
+  const payload = options.body ? JSON.parse(options.body) : {};
   if (process.env.MOCK_TELEGRAM_LOG) {
     appendFileSync(process.env.MOCK_TELEGRAM_LOG, `${method}\n`);
   }
@@ -33,6 +34,18 @@ globalThis.fetch = async (url) => {
   }
   if (method === "getForumTopicIconStickers") {
     return json({ ok: true, result: [] });
+  }
+  if (method === "editForumTopic" && process.env.MOCK_TELEGRAM_STALE_TOPIC === "true" && payload.message_thread_id === 42) {
+    return json({ ok: false, description: "Bad Request: TOPIC_ID_INVALID" });
+  }
+  if (method === "createForumTopic") {
+    return json({ ok: true, result: { message_thread_id: 77 } });
+  }
+  if (["editForumTopic", "setChatTitle", "setChatDescription", "editGeneralForumTopic", "closeForumTopic", "unpinAllForumTopicMessages", "pinChatMessage"].includes(method)) {
+    return json({ ok: true, result: true });
+  }
+  if (["sendMessage", "sendPhoto"].includes(method)) {
+    return json({ ok: true, result: { message_id: 88 } });
   }
 
   return json({ ok: false, description: `Unexpected mutating call: ${method}` });
