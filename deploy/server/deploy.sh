@@ -111,7 +111,10 @@ done
 sudo systemctl enable yubit-academy-worker.service
 sudo systemctl restart yubit-academy-worker.service
 sudo systemctl enable yubit-academy-discord.service
-discord_started_at="$(date --iso-8601=seconds)"
+# Ubuntu hosts with older systemd reject RFC 3339 timestamps containing a
+# timezone offset in journalctl --since. The local calendar format works on
+# both old and new journalctl releases.
+discord_started_at="$(date '+%Y-%m-%d %H:%M:%S')"
 sudo systemctl restart yubit-academy-discord.service
 
 discord_ready=0

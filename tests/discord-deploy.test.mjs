@@ -25,4 +25,6 @@ test("DC 部署包含 Discord systemd 常驻服务", () => {
   assert.match(deploy, /enable yubit-academy-discord/);
   assert.match(deploy, /restart yubit-academy-discord/);
   assert.match(deploy, /is-active --quiet yubit-academy-discord/);
+  assert.match(deploy, /date '\+%Y-%m-%d %H:%M:%S'/);
+  assert.doesNotMatch(deploy, /date --iso-8601=seconds/);
 });
