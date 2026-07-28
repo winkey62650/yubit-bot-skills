@@ -16,6 +16,7 @@ import {
   parseBackfillReferences,
   processTelegramWebhookUpdate,
   repairAutomationTargetLabels,
+  repairDemoToJennaXDirection,
   retryDistributionDelivery,
   runDueDistributionJobs,
   runDistributionAutomationRule,
@@ -188,6 +189,40 @@ test("automation targets repair only stale generic Topic labels", () => {
   assert.equal(repaired.targets[0].topicName, "3. Market Events");
   assert.equal(repaired.targets[1].topicName, "Editorial Events");
   assert.equal(rule.targets[0].topicName, "Topic 8");
+});
+
+test("Demo to JennaX rules repair an accidentally reversed source and target", () => {
+  const reversed = {
+    id: "smart-money-sync",
+    kind: "broadcast",
+    name: "Demo to JennaX Smart Money",
+    source: {
+      chatId: "-1003332783916",
+      chatType: "supergroup",
+      threadId: 22,
+      groupName: "JennaX Trading Academy",
+      topicName: "6. Smart Money Tracker"
+    },
+    targets: [{
+      id: "target-smart-money",
+      chatId: "-1003710405969",
+      chatType: "supergroup",
+      threadId: 16,
+      groupName: "DEMO Academy",
+      topicName: "6. Smart Money Tracker",
+      enabled: true,
+      order: 0
+    }]
+  };
+
+  const repaired = repairDemoToJennaXDirection(reversed);
+
+  assert.equal(repaired.source.chatId, "-1003710405969");
+  assert.equal(repaired.source.threadId, 16);
+  assert.equal(repaired.targets[0].chatId, "-1003332783916");
+  assert.equal(repaired.targets[0].threadId, 22);
+  assert.equal(repaired.targets[0].id, "target-smart-money");
+  assert.equal(reversed.source.chatId, "-1003332783916");
 });
 
 test("manual backfill accepts IDs, ranges and Telegram links without exceeding 100 messages", () => {
