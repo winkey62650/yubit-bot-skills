@@ -292,7 +292,9 @@ function DistributionPageContent() {
   const publisherIsDesktop = data.publisher?.mode === "desktop";
   const automaticPublisherName = deliverySettings.telegramPublishMode === "bot" ? "@Satoshi_geniustrader_bot" : "@Serenity_Crypto";
   const forwardPublisherName = deliverySettings.telegramForwardMode === "bot" ? "@Biupa_geniustrader_bot" : "@Serenity_Crypto";
-  const publisherName = data.publisher?.username || forwardPublisherName;
+  const publisherName = deliverySettings.telegramForwardMode === "bot"
+    ? forwardPublisherName
+    : data.publisher?.username || forwardPublisherName;
   const operationalStatus = data.publisher?.operationalStatus || (data.publisher?.ready ? "online" : "offline");
   const automationPublisher = data.automationPublisher || data.publisher;
   const automationOperationalStatus = automationPublisher?.operationalStatus || (automationPublisher?.ready ? "online" : "offline");
@@ -352,7 +354,7 @@ function DistributionPageContent() {
 
       {!analyticsView ? <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
         <Summary label="数据库" value={loading ? "—" : data.database?.ok ? "正常" : "待配置"} detail={loading ? "正在读取…" : data.database?.driver || "未连接"} />
-        <Summary label="发布器" value={loading ? "—" : publisherStatus} detail={loading ? "正在核验…" : publisherDetail} />
+        <Summary label="内容同步发布器" value={loading ? "—" : publisherStatus} detail={loading ? "正在核验…" : publisherDetail} />
         <Summary label="自动任务" value={loading ? "—" : automationRules.length} detail={loading ? "正在读取…" : `${automationRules.filter((rule) => rule.enabled).length} 条启用`} />
         <Summary label="同步规则" value={loading ? "—" : broadcastRules.length} detail={loading ? "正在读取…" : `${broadcastRules.filter((rule) => rule.enabled).length} 条启用`} />
         <Summary label="代理来源" value={loading ? "—" : socialReadiness.enabled} detail={loading ? "正在读取…" : socialReadiness.ready ? `${socialReadiness.stable} 条稳定可用` : "需要添加 X / YouTube 来源"} />
