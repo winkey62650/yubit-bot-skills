@@ -47,6 +47,10 @@ test("bulk deletion confirms the count and sends one delete-many request", () =>
 });
 
 test("automatic publishing explains the official identity workflow and exact topic routing", () => {
+  assert.match(pageSource, /顶部自动发布身份/);
+  assert.match(pageSource, /生产 Worker 通过 Telegram Bot API 自动发布/);
+  assert.match(pageSource, /SpeakerBot 通过 Bot API 发布到 DEMO Academy/);
+  assert.match(pageSource, /真人 TG 发布桥在线/);
   assert.match(pageSource, /服务器生成带指纹的定稿模板并排队/);
   assert.match(pageSource, /本机发布桥取得唯一租约，单实例领取/);
   assert.match(pageSource, /Telegram Desktop 以 DEMO Academy 群身份逐步发送/);

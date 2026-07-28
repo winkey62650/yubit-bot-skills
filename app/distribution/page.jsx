@@ -56,6 +56,13 @@ const officialPublishingSteps = [
   "每步回写检查点，完成后回写消息编号"
 ];
 
+const botPublishingSteps = [
+  "服务器生成带指纹的定稿模板并排队",
+  "生产 Worker 取得唯一租约，单实例领取",
+  "SpeakerBot 通过 Bot API 发布到 DEMO Academy",
+  "每步回写检查点，完成后回写消息编号"
+];
+
 const officialPublishingRoutes = [
   "Daily Events → 3. Market Events",
   "Daily Analysis → 4. Market Analysis - Crypto/Stocks/TradFi",
@@ -287,7 +294,22 @@ function DistributionPageContent() {
   const forwardPublisherName = deliverySettings.telegramForwardMode === "bot" ? "@Biupa_geniustrader_bot" : "@Serenity_Crypto";
   const publisherName = data.publisher?.username || forwardPublisherName;
   const operationalStatus = data.publisher?.operationalStatus || (data.publisher?.ready ? "online" : "offline");
-  const publisherOperationalReady = data.publisher?.operationalReady ?? Boolean(data.publisher?.ready);
+  const automationPublisher = data.automationPublisher || data.publisher;
+  const automationOperationalStatus = automationPublisher?.operationalStatus || (automationPublisher?.ready ? "online" : "offline");
+  const automationPublisherReady = deliverySettings.telegramPublishMode === "bot"
+    ? Boolean(automationPublisher?.ready)
+    : automationPublisher?.operationalReady ?? Boolean(automationPublisher?.ready);
+  const automationPublisherStatus = deliverySettings.telegramPublishMode === "bot"
+    ? automationPublisherReady ? "Bot API 发布已启用" : "Bot API 发布未就绪"
+    : automationOperationalStatus === "publishing" ? "真人 TG 正在发布"
+      : automationOperationalStatus === "stalled" ? "真人发布任务卡住"
+        : automationOperationalStatus === "degraded" ? "真人发布桥异常"
+          : automationPublisherReady ? "真人 TG 发布桥在线" : "真人 TG 发布桥离线";
+  const automationPublisherDetail = automationPublisherReady
+    ? `${automaticPublisherName} · ${automationPublisher?.approvedTargetIds?.length || 0} 个白名单目标`
+    : deliverySettings.telegramPublishMode === "bot"
+      ? "请检查 SpeakerBot Token 与目标群权限"
+      : "需保持 Mac、Telegram 与本机发布桥在线";
   const publisherStatus = operationalStatus === "stalled"
     ? "发布任务卡住"
     : operationalStatus === "degraded"
@@ -339,7 +361,7 @@ function DistributionPageContent() {
 
       {view === "automation" ? loading
         ? <Card className="mb-5 p-5 text-sm font-bold text-ops-muted">正在核验官方群发布闭环…</Card>
-        : <OfficialPublishingWorkflow status={publisherStatus} detail={publisherDetail} ready={deliverySettings.telegramPublishMode === "bot" ? true : publisherOperationalReady} /> : null}
+        : <OfficialPublishingWorkflow status={automationPublisherStatus} detail={automationPublisherDetail} ready={automationPublisherReady} deliveryMode={deliverySettings.telegramPublishMode} busy={busy} onDeliveryModeChange={(value) => saveDeliveryIdentity("telegramPublishMode", value)} /> : null}
 
       {!analyticsView && notice ? <div role="status" className="mb-5 rounded-lg border border-ops-line bg-white px-4 py-3 text-sm font-bold text-[#33423b]">{notice}</div> : null}
       {!analyticsView && validation ? <ValidationPanel result={validation} onClose={() => setValidation(null)} /> : null}
@@ -367,7 +389,8 @@ function DistributionPageContent() {
   }
 }
 
-function OfficialPublishingWorkflow({ status, detail, ready }) {
+function OfficialPublishingWorkflow({ status, detail, ready, deliveryMode, busy, onDeliveryModeChange }) {
+  const steps = deliveryMode === "bot" ? botPublishingSteps : officialPublishingSteps;
   return <Card className="mb-5 p-5">
     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
       <div>
@@ -378,8 +401,11 @@ function OfficialPublishingWorkflow({ status, detail, ready }) {
       <StatusPill ok={ready}>{status}</StatusPill>
     </div>
     <p className="mt-3 text-xs leading-5 text-ops-muted">{detail}</p>
+    <div className="mt-4 rounded-lg border border-ops-line bg-[#fbfcfb] p-4">
+      <DeliveryIdentitySelector purpose="顶部自动发布身份" value={deliveryMode} botLabel="使用 SpeakerBot" userLabel="使用真人 TG 账号" botDescription="生产 Worker 通过 Telegram Bot API 自动发布" userDescription="由本机 Telegram Desktop 发布桥发送" busy={busy} onChange={onDeliveryModeChange} />
+    </div>
     <ol className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-      {officialPublishingSteps.map((step, index) => <li className="rounded-lg border border-ops-line bg-[#f7faf8] p-3" key={step}><span className="mr-2 inline-flex size-6 items-center justify-center rounded-full bg-ops-accent text-xs font-black text-white">{index + 1}</span><span className="text-xs font-black text-ops-ink">{step}</span></li>)}
+      {steps.map((step, index) => <li className="rounded-lg border border-ops-line bg-[#f7faf8] p-3" key={step}><span className="mr-2 inline-flex size-6 items-center justify-center rounded-full bg-ops-accent text-xs font-black text-white">{index + 1}</span><span className="text-xs font-black text-ops-ink">{step}</span></li>)}
     </ol>
     <div className="mt-4 rounded-lg border border-[#d9bd73] bg-[#fff9e8] p-3">
       <p className="text-xs font-black text-[#5f4513]">自动发布验收路由（先发 DEMO Academy）</p>
