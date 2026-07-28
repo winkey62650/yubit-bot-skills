@@ -75,7 +75,7 @@ jobs:
             printf 'TRADING_DEMO_ONLY=true\n'
             printf 'TELEGRAM_PUBLISHER_MODE=user\n'
             printf 'TELEGRAM_USER_PUBLISHER_REQUIRED=true\n'
-            printf 'TELEGRAM_USER_PUBLISHER_TARGETS=-1003710405969,-1004378187866\n'
+            printf 'TELEGRAM_USER_PUBLISHER_TARGETS=-1003710405969,-1004378187866,-1003332783916\n'
             printf 'TELEGRAM_USER_PUBLISHER_USERNAME=Serenity_Crypto\n'
             printf 'TELEGRAM_USER_SESSION_ENCRYPTION_KEY=%s\n' "$session_key"
             printf 'TELEGRAM_DESKTOP_PUBLISHER_REQUIRED=true\n'

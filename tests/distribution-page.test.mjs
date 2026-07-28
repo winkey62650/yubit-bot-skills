@@ -23,6 +23,7 @@ test("content sync clearly configures where the selected Bot or human account co
   assert.match(pageSource, /ForwardBot 通过 Bot API 复制到目标 Topic/);
   assert.match(pageSource, /来源群 \/ 频道 \/ Topic/);
   assert.match(pageSource, /目标 Forum 群 \/ Topic（可多选）/);
+  assert.match(pageSource, /Bot API 发布已启用/);
   assert.match(pageSource, /Forum 群必须选择具体来源 Topic/);
   assert.match(pageSource, /群必须填写 Thread ID/);
   assert.doesNotMatch(pageSource, /可监听整个群 \/ 频道/);

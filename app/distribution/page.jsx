@@ -295,8 +295,8 @@ function DistributionPageContent() {
       : operationalStatus === "publishing"
         ? "官方群身份发布中"
         : data.publisher?.ready
-          ? publisherIsDesktop ? "本机官方群身份在线" : publisherIsBot ? "旧 Bot 模式已禁用" : "群官方身份已授权"
-          : publisherIsDesktop ? "本机发布桥接离线" : "群官方发布器未就绪";
+          ? publisherIsDesktop ? "本机官方群身份在线" : publisherIsBot ? "Bot API 发布已启用" : "群官方身份已授权"
+          : publisherIsDesktop ? "本机发布桥接离线" : publisherIsBot ? "Bot API 发布未就绪" : "群官方发布器未就绪";
   const activeDeliveryDetail = data.publisher?.activeDelivery
     ? ` · 当前投递 ${data.publisher.activeDelivery.id} · 已回写 ${data.publisher.activeDelivery.completedSteps || 0} 步`
     : "";
