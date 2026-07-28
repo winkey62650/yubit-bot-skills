@@ -280,6 +280,22 @@ test("Demo template placeholders and discovered threads collapse into one truthf
   assert.equal(normalized.find((topic) => topic.name === "3. Market Events").threadId, 8);
 });
 
+test("managed Demo topics remain complete after every broadcast rule is deleted", () => {
+  const [mapped] = applyDistributionTopicMappings([{
+    chatId: "-1003710405969",
+    title: "DEMO Academy",
+    topics: [
+      { name: "3. Market Events", threadId: 8 },
+      { name: "4. Market Analysis - Crypto/Stocks/TradFi", threadId: 10 },
+      { name: "6. Smart Money Tracker", threadId: 16 }
+    ]
+  }], []);
+
+  const sources = buildDistributionSourceOptions([mapped]);
+  assert.equal(sources.length, 7);
+  assert.deepEqual(sources.map((option) => option.source.threadId), [6, 18, 8, 10, 14, 16, 12]);
+});
+
 test("saved groups reconcile exact topic names and thread IDs from active distribution rules", () => {
   const groups = [{
     chatId: "-1003710405969",

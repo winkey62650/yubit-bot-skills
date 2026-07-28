@@ -6,6 +6,7 @@ import ConsoleShell from "../components/ConsoleShell";
 import { Card, Field, PageHeader, StatusPill, inputClass } from "../components/ui";
 import SocialSourceManager from "./SocialSourceManager";
 import SiteAnalyticsPanel from "./SiteAnalyticsPanel";
+import { loadWorkspaceState, saveWorkspaceState } from "../../lib/workspace-client";
 import {
   applyDistributionTopicMappings,
   bulkDeleteNotice,
@@ -46,6 +47,7 @@ const schedules = [
 ];
 
 const DEMO_ACADEMY_CHAT_ID = "-1003710405969";
+const defaultDeliverySettings = { telegramPublishMode: "user", telegramForwardMode: "user" };
 
 const officialPublishingSteps = [
   "服务器生成带指纹的定稿模板并排队",
@@ -106,6 +108,7 @@ function DistributionPageContent() {
   const [selectedBroadcastRules, setSelectedBroadcastRules] = useState([]);
   const [selectedReviews, setSelectedReviews] = useState([]);
   const [backfill, setBackfill] = useState({ ruleId: "", references: "", preview: null });
+  const [deliverySettings, setDeliverySettings] = useState(defaultDeliverySettings);
 
   useEffect(() => {
     loadAll();
@@ -124,7 +127,7 @@ function DistributionPageContent() {
   async function loadAll() {
     setLoading(true);
     try {
-      const [overviewResponse, groupsResponse, socialResponse] = await Promise.all([fetch("/api/distribution", { cache: "no-store" }), fetch("/api/group-config", { cache: "no-store" }), fetch("/api/social-packages", { cache: "no-store" })]);
+      const [overviewResponse, groupsResponse, socialResponse, savedSettings] = await Promise.all([fetch("/api/distribution", { cache: "no-store" }), fetch("/api/group-config", { cache: "no-store" }), fetch("/api/social-packages", { cache: "no-store" }), loadWorkspaceState("settings")]);
       const [overview, groupConfig, socialConfig] = await Promise.all([overviewResponse.json(), groupsResponse.json(), socialResponse.json()]);
       if (!overviewResponse.ok || !overview.ok) throw new Error(overview.error || "内容分发数据读取失败");
       if (!groupsResponse.ok || !groupConfig.ok) throw new Error(groupConfig.error || "群与 Topic 数据读取失败");
@@ -132,12 +135,28 @@ function DistributionPageContent() {
       setData(overview);
       setGroups(applyDistributionTopicMappings(groupConfig.groups, overview.rules));
       setSocialPackages(Array.isArray(socialConfig.packages) ? socialConfig.packages : []);
+      setDeliverySettings({ ...defaultDeliverySettings, ...(savedSettings.state || {}) });
       const firstBroadcast = overview.rules?.find((rule) => rule.kind === "broadcast");
       setBackfill((current) => ({ ...current, ruleId: current.ruleId || firstBroadcast?.id || "" }));
     } catch (error) {
       setNotice(error.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function saveDeliveryIdentity(field, value) {
+    setBusy(`delivery-identity-${field}`);
+    setNotice("");
+    try {
+      const saved = await saveWorkspaceState("settings", { ...deliverySettings, [field]: value });
+      setDeliverySettings(saved.state);
+      setNotice(`${field === "telegramPublishMode" ? "自动发布" : "内容同步"}已切换为${value === "bot" ? "Bot" : "真人 TG"}身份。`);
+      await loadAll();
+    } catch (error) {
+      setNotice(`发送身份保存失败：${error.message}`);
+    } finally {
+      setBusy("");
     }
   }
 
@@ -264,7 +283,9 @@ function DistributionPageContent() {
   const socialReadiness = buildSocialSourceReadiness(socialPackages);
   const publisherIsBot = data.publisher?.mode === "bot";
   const publisherIsDesktop = data.publisher?.mode === "desktop";
-  const publisherName = data.publisher?.username || "@Serenity_Crypto";
+  const automaticPublisherName = deliverySettings.telegramPublishMode === "bot" ? "@Satoshi_geniustrader_bot" : "@Serenity_Crypto";
+  const forwardPublisherName = deliverySettings.telegramForwardMode === "bot" ? "@Biupa_geniustrader_bot" : "@Serenity_Crypto";
+  const publisherName = data.publisher?.username || forwardPublisherName;
   const operationalStatus = data.publisher?.operationalStatus || (data.publisher?.ready ? "online" : "offline");
   const publisherOperationalReady = data.publisher?.operationalReady ?? Boolean(data.publisher?.ready);
   const publisherStatus = operationalStatus === "stalled"
@@ -298,7 +319,7 @@ function DistributionPageContent() {
     <ConsoleShell>
       <PageHeader
         title={analyticsView ? "网站数据中心" : "内容分发中心"}
-        desc={analyticsView ? "在现有后台统一管理代理网站，并观察从访问、视频播放到 Telegram 转化的完整表现。" : `自动发布与内容同步均由 ${publisherName} 完成签名授权，并以目标 Forum 群的名称和头像发布；ForwardBot 只负责监听来源新消息。`}
+        desc={analyticsView ? "在现有后台统一管理代理网站，并观察从访问、视频播放到 Telegram 转化的完整表现。" : `自动发布使用 ${automaticPublisherName}；内容同步使用 ${forwardPublisherName}。两种身份可分别切换并立即应用到生产 Worker。`}
         action={analyticsView ? null : <button className="min-h-11 rounded-lg border border-ops-accent px-5 text-sm font-black text-ops-accent disabled:opacity-50" disabled={loading || Boolean(busy)} onClick={() => post({ action: "configure-webhook" }, "ForwardBot Webhook 已配置。")}>配置 ForwardBot Webhook</button>}
       />
 
@@ -318,7 +339,7 @@ function DistributionPageContent() {
 
       {view === "automation" ? loading
         ? <Card className="mb-5 p-5 text-sm font-bold text-ops-muted">正在核验官方群发布闭环…</Card>
-        : <OfficialPublishingWorkflow status={publisherStatus} detail={publisherDetail} ready={publisherOperationalReady} /> : null}
+        : <OfficialPublishingWorkflow status={publisherStatus} detail={publisherDetail} ready={deliverySettings.telegramPublishMode === "bot" ? true : publisherOperationalReady} /> : null}
 
       {!analyticsView && notice ? <div role="status" className="mb-5 rounded-lg border border-ops-line bg-white px-4 py-3 text-sm font-bold text-[#33423b]">{notice}</div> : null}
       {!analyticsView && validation ? <ValidationPanel result={validation} onClose={() => setValidation(null)} /> : null}
@@ -334,8 +355,8 @@ function DistributionPageContent() {
 
       {analyticsView ? <SiteAnalyticsPanel /> : null}
       {loading && !analyticsView ? <Card className="p-8 text-center font-bold text-ops-muted">正在加载持久化配置…</Card> : null}
-      {!loading && view === "automation" ? <AutomationView form={automationForm} setForm={setAutomationForm} rules={automationRules} groups={groups} socialPackages={socialPackages} publisherName={publisherName} busy={busy} selected={selectedAutomationRules} setSelected={setSelectedAutomationRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedAutomationRules, "自动任务")} onSave={() => saveRule(automationForm, () => setAutomationForm(emptyAutomation))} onEdit={setAutomationForm} onAction={post} onValidate={validate} onPersistSocial={saveSocialPackages} onNotice={setNotice} /> : null}
-      {!loading && view === "broadcast" ? <BroadcastView form={broadcastForm} setForm={setBroadcastForm} rules={broadcastRules} groups={groups} approvedTargetIds={data.publisher?.approvedTargetIds} publisherName={publisherName} busy={busy} selected={selectedBroadcastRules} setSelected={setSelectedBroadcastRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedBroadcastRules, "内容同步规则")} backfill={backfill} setBackfill={setBackfill} onBackfill={previewBackfill} onSave={() => saveRule(broadcastForm, () => setBroadcastForm(emptyBroadcast))} onEdit={setBroadcastForm} onAction={post} onValidate={validate} /> : null}
+      {!loading && view === "automation" ? <AutomationView form={automationForm} setForm={setAutomationForm} rules={automationRules} groups={groups} socialPackages={socialPackages} publisherName={automaticPublisherName} deliveryMode={deliverySettings.telegramPublishMode} onDeliveryModeChange={(value) => saveDeliveryIdentity("telegramPublishMode", value)} busy={busy} selected={selectedAutomationRules} setSelected={setSelectedAutomationRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedAutomationRules, "自动任务")} onSave={() => saveRule(automationForm, () => setAutomationForm(emptyAutomation))} onEdit={setAutomationForm} onAction={post} onValidate={validate} onPersistSocial={saveSocialPackages} onNotice={setNotice} /> : null}
+      {!loading && view === "broadcast" ? <BroadcastView form={broadcastForm} setForm={setBroadcastForm} rules={broadcastRules} groups={groups} approvedTargetIds={data.publisher?.approvedTargetIds} publisherName={forwardPublisherName} deliveryMode={deliverySettings.telegramForwardMode} onDeliveryModeChange={(value) => saveDeliveryIdentity("telegramForwardMode", value)} busy={busy} selected={selectedBroadcastRules} setSelected={setSelectedBroadcastRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedBroadcastRules, "内容同步规则")} backfill={backfill} setBackfill={setBackfill} onBackfill={previewBackfill} onSave={() => saveRule(broadcastForm, () => setBroadcastForm(emptyBroadcast))} onEdit={setBroadcastForm} onAction={post} onValidate={validate} /> : null}
       {!loading && view === "review" ? <ReviewView events={data.review} selected={selectedReviews} setSelected={setSelectedReviews} busy={busy} onAction={reviewAction} /> : null}
       {!loading && view === "logs" ? <LogsView deliveries={data.deliveries} busy={busy} onRetry={async (id) => { setBusy("retry"); try { const response = await fetch("/api/distribution/logs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "retry", deliveryId: id }) }); const result = await response.json(); if (!response.ok || !result.ok) throw new Error(result.error); setNotice("失败目标已单独重试，不影响其他目标。"); await loadAll(); } catch (error) { setNotice(error.message); } finally { setBusy(""); } }} /> : null}
     </ConsoleShell>
@@ -381,7 +402,7 @@ function OfficialPublishingWorkflow({ status, detail, ready }) {
   </Card>;
 }
 
-function AutomationView({ form, setForm, rules, groups, socialPackages, publisherName, busy, selected, setSelected, onDeleteMany, onSave, onEdit, onAction, onValidate, onPersistSocial, onNotice }) {
+function AutomationView({ form, setForm, rules, groups, socialPackages, publisherName, deliveryMode, onDeliveryModeChange, busy, selected, setSelected, onDeleteMany, onSave, onEdit, onAction, onValidate, onPersistSocial, onNotice }) {
   const template = getContentTemplate(form.contentType);
   const [confirmedFor, setConfirmedFor] = useState("");
   const [preview, setPreview] = useState(null);
@@ -411,6 +432,7 @@ function AutomationView({ form, setForm, rules, groups, socialPackages, publishe
     {form.contentType === "agent-sync" ? <SocialSourceManager packages={socialPackages} busy={busy} onPersist={onPersistSocial} onNotice={onNotice} /> : null}
     <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.08fr)_minmax(340px,.92fr)]">
     <RuleForm title={form.id ? "编辑自动任务" : "新增自动任务"} eyebrow="按发送前确认流程配置" submitLabel="保存自动任务" submitDisabled={!canSave} submitHint={!form.name.trim() ? "请先填写任务名称" : !form.targets.length ? "请至少选择一个 Forum 群 Topic" : !sourcesReady ? "请先添加并启用至少一条代理来源" : !confirmed ? "请确认内容模板、频率和目标" : "已完成发送前确认"} busy={busy} onSubmit={onSave}>
+      <DeliveryIdentitySelector purpose="自动发布身份" value={deliveryMode} botLabel="使用 SpeakerBot" userLabel="使用真人 TG 账号" botDescription="服务器通过 Telegram Bot API 自动发布" userDescription="由本机 Telegram Desktop 发布桥发送" busy={busy} onChange={onDeliveryModeChange} />
       <FormStep number="1" title="选择内容模板" desc="模板决定 Telegram 文案结构、配图和数据来源。" />
       <Field label="任务名称"><input className={inputClass} required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="例如：每日市场事件" /></Field>
       <Field label="内容模板"><select className={inputClass} value={form.contentType} onChange={(event) => { const contentType = event.target.value; setForm({ ...form, contentType, schedulePreset: recommendedScheduleFor(contentType) }); setPreview(null); setPreviewState(""); }}>{contentTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
@@ -431,7 +453,7 @@ function AutomationView({ form, setForm, rules, groups, socialPackages, publishe
   </div>;
 }
 
-function BroadcastView({ form, setForm, rules, groups, approvedTargetIds, publisherName, busy, selected, setSelected, onDeleteMany, backfill, setBackfill, onBackfill, onSave, onEdit, onAction, onValidate }) {
+function BroadcastView({ form, setForm, rules, groups, approvedTargetIds, publisherName, deliveryMode, onDeliveryModeChange, busy, selected, setSelected, onDeleteMany, backfill, setBackfill, onBackfill, onSave, onEdit, onAction, onValidate }) {
   const sources = sourceOptions(groups);
   const sourceValue = sourceKey(form.source);
   const approvedIds = new Set((Array.isArray(approvedTargetIds) ? approvedTargetIds : []).map(String));
@@ -451,8 +473,9 @@ function BroadcastView({ form, setForm, rules, groups, approvedTargetIds, publis
   }
   return <div className="grid gap-5">
     <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.08fr)_minmax(340px,.92fr)]">
-      <RuleForm title={form.id ? "编辑内容同步规则" : "新增内容同步规则"} eyebrow="ForwardBot 监听 · @Serenity_Crypto 发布" submitLabel="保存内容同步规则" submitDisabled={!canSave} submitHint={!form.name.trim() ? "请先填写规则名称" : route.missing.length ? `还需要：${route.missing.join("、")}` : "同步路径已完整"} busy={busy} onSubmit={onSave}>
-        <div className="rounded-lg border border-[#cae5da] bg-[#f2faf6] p-4"><p className="text-sm font-black text-[#173f31]">从哪里同步到哪里</p><p className="mt-1 text-xs leading-5 text-[#41564d]">ForwardBot 监听指定来源群、频道或 Topic；通过审核或自动处理后，由 @Serenity_Crypto 以各目标群官方身份发布。</p></div>
+      <RuleForm title={form.id ? "编辑内容同步规则" : "新增内容同步规则"} eyebrow={`ForwardBot 监听 · ${publisherName} 发布`} submitLabel="保存内容同步规则" submitDisabled={!canSave} submitHint={!form.name.trim() ? "请先填写规则名称" : route.missing.length ? `还需要：${route.missing.join("、")}` : "同步路径已完整"} busy={busy} onSubmit={onSave}>
+        <div className="rounded-lg border border-[#cae5da] bg-[#f2faf6] p-4"><p className="text-sm font-black text-[#173f31]">从哪里同步到哪里</p><p className="mt-1 text-xs leading-5 text-[#41564d]">ForwardBot 监听指定来源群、频道或 Topic；通过审核或自动处理后，由当前选择的 {publisherName} 发布。</p></div>
+        <DeliveryIdentitySelector purpose="转发发布身份" value={deliveryMode} botLabel="使用 ForwardBot" userLabel="使用真人 TG 账号" botDescription="ForwardBot 通过 Bot API 复制到目标 Topic" userDescription="由本机 Telegram Desktop 发布桥发送" busy={busy} onChange={onDeliveryModeChange} />
         <Field label="规则名称"><input className={inputClass} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="例如：Demo 群同步到新群" /></Field>
         <FormStep number="1" title="选择消息来源" desc="Forum 群必须选择具体来源 Topic；Channel 选择整个频道。" />
         <Field label="来源群 / 频道 / Topic"><select className={inputClass} value={sourceValue} onChange={(event) => setBroadcastSource(sources.find((item) => item.key === event.target.value)?.source || emptyBroadcast.source)}><option value="">请选择来源</option>{sources.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></Field>
@@ -462,7 +485,7 @@ function BroadcastView({ form, setForm, rules, groups, approvedTargetIds, publis
         <FormStep number="3" title="选择同步目标" desc="一条来源可以同步到其他已授权群的多个 Topic；来源群不会出现在目标列表，避免群内回环。" />
         <TargetPicker options={broadcastTargets} selected={form.targets.filter((key) => broadcastTargets.some((option) => option.key === key))} onChange={(targets) => setForm({ ...form, targets })} />
         <Toggle checked={form.enabled} label="创建后立即启用" onChange={(enabled) => setForm({ ...form, enabled })} />
-        <div className="rounded-lg bg-[#fff8e8] p-3 text-xs leading-5 text-[#79591e]">ForwardBot 固定负责监听和接收入站消息；{publisherName} 固定负责向每个目标发布。Telegram 不会把其他机器人发出的消息交给 ForwardBot；机器人内容请使用「自动发布」直接选择全部目标。Bot API 也无法感知来源消息删除；可处理的文字与 Caption 编辑会同步。</div>
+        <div className="rounded-lg bg-[#fff8e8] p-3 text-xs leading-5 text-[#79591e]">ForwardBot 固定负责监听和接收入站消息；当前选择由 {publisherName} 向目标发布。切换为 ForwardBot 时使用 Bot API；切换为真人 TG 时进入本机发布桥。Bot API 无法感知来源消息删除；可处理的文字与 Caption 编辑会同步。</div>
       </RuleForm>
       <BroadcastRoutePreview route={route} targets={resolvedTargets} mode={form.mode} publisherName={publisherName} />
     </div>
@@ -476,6 +499,10 @@ function RuleForm({ title, eyebrow, submitLabel, submitDisabled = false, submitH
 
 function FormStep({ number, title, desc }) {
   return <div className="mt-1 flex gap-3 border-t border-ops-line pt-4 first:mt-0 first:border-t-0 first:pt-0"><span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#e6f7ef] text-xs font-black text-ops-accent">{number}</span><div><h3 className="text-sm font-black text-[#21352d]">{title}</h3><p className="mt-1 text-xs leading-5 text-ops-muted">{desc}</p></div></div>;
+}
+
+function DeliveryIdentitySelector({ purpose, value, botLabel, userLabel, botDescription, userDescription, busy, onChange }) {
+  return <fieldset className="grid gap-2"><legend className="mb-1 text-sm font-black text-[#21352d]">{purpose}</legend><div className="grid gap-2 sm:grid-cols-2">{[["bot", botLabel, botDescription], ["user", userLabel, userDescription]].map(([mode, label, description]) => <label className={`rounded-lg border p-4 ${value === mode ? "border-ops-accent bg-[#f2faf6]" : "border-ops-line bg-white"}`} key={mode}><span className="flex items-center gap-2 text-sm font-black"><input checked={value === mode} disabled={Boolean(busy)} name={purpose} onChange={() => onChange(mode)} type="radio" />{label}</span><span className="mt-2 block text-xs leading-5 text-ops-muted">{description}</span></label>)}</div></fieldset>;
 }
 
 function TelegramTemplatePreview({ form, template, publisherName, preview, previewState, onGenerate }) {

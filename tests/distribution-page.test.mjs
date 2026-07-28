@@ -10,12 +10,17 @@ test("automatic publishing and Telegram broadcast keep separate rule selections"
   assert.match(pageSource, /reconcileRuleSelection/);
 });
 
-test("content sync clearly configures where Serenity copies messages from and to", () => {
+test("content sync clearly configures where the selected Bot or human account copies messages", () => {
   assert.match(pageSource, /\["broadcast", "内容同步"\]/);
   assert.match(pageSource, /新增内容同步规则/);
   assert.match(pageSource, /从哪里同步到哪里/);
   assert.match(pageSource, /ForwardBot 监听/);
   assert.match(pageSource, /@Serenity_Crypto/);
+  assert.match(pageSource, /telegramForwardMode/);
+  assert.match(pageSource, /转发发布身份/);
+  assert.match(pageSource, /使用 ForwardBot/);
+  assert.match(pageSource, /使用真人 TG 账号/);
+  assert.match(pageSource, /ForwardBot 通过 Bot API 复制到目标 Topic/);
   assert.match(pageSource, /来源群 \/ 频道 \/ Topic/);
   assert.match(pageSource, /目标 Forum 群 \/ Topic（可多选）/);
   assert.match(pageSource, /Forum 群必须选择具体来源 Topic/);
