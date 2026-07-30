@@ -10,7 +10,8 @@ test("all requested automation schedules are registered", () => {
   assert.equal(AUTOMATION_JOBS.find((job) => job.id === "daily-events").schedule, "每日 08:00 UTC");
   assert.equal(AUTOMATION_JOBS.find((job) => job.id === "daily-analysis").schedule, "每日 08:00 UTC");
   assert.equal(AUTOMATION_JOBS.find((job) => job.id === "whale-hourly").schedule, "每小时检查，重大异动才发布");
-  assert.equal(AUTOMATION_JOBS.find((job) => job.id === "agent-sync-4h").schedule, "每 4 小时");
+  assert.equal(AUTOMATION_JOBS.find((job) => job.id === "agent-sync-4h").schedule, "每小时");
+  assert.equal(AUTOMATION_JOBS.find((job) => job.id === "agent-sync-4h").cron, "15 * * * *");
   assert.deepEqual(AUTOMATION_JOBS.map(({ id, topic, bot }) => ({ id, topic, bot })), [
     { id: "news-feed", topic: "7. YUBIT Updates", bot: "SpeakerBot" },
     { id: "daily-events", topic: "3. Market Events", bot: "SpeakerBot" },
@@ -29,6 +30,28 @@ test("idempotency slots follow daily, hourly and four-hour windows", () => {
   assert.equal(automationSlot("whale-hourly", now), "2026-07-14T10");
   assert.equal(automationSlot("agent-sync-4h", now), "2026-07-14T08");
   assert.equal(automationSlot("news-feed", now), "2026-07-14T10:40");
+});
+
+test("disabled automation rules do not contribute delivery targets", () => {
+  const resolved = distributionTargetsForJob(
+    { id: "agent-sync-4h", contentType: "agent-sync" },
+    [{
+      id: "disabled-agent-rule",
+      kind: "automation",
+      contentType: "agent-sync",
+      enabled: false,
+      targets: [{
+        chatId: "-100123",
+        threadId: 8,
+        groupName: "Disabled group",
+        topicName: "3. Market Events"
+      }]
+    }]
+  );
+
+  assert.equal(resolved.configured, false);
+  assert.equal(resolved.ruleCount, 0);
+  assert.deepEqual(resolved.targets, []);
 });
 
 test("legacy automation status resolves every database-backed distribution target", () => {
