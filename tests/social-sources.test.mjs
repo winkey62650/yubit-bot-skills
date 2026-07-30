@@ -4,6 +4,7 @@ import {
   detectSocialPlatform,
   normalizeSocialPackages,
   parseSocialFeed,
+  renderAgentUpdateText,
   socialFetchPlan,
   summarizeSocialSources
 } from "../lib/social-sources.mjs";
@@ -30,7 +31,26 @@ test("social source configuration keeps X and YouTube fields needed by the crawl
   assert.equal(packages[0].feedUrl, "https://feeds.example.com/ricky.xml");
   assert.equal(packages[0].bot, "SpeakerBot");
   assert.equal(packages[1].platform, "YouTube");
-  assert.equal(packages[1].frequency, "每 4 小时");
+  assert.equal(packages[1].frequency, "每小时");
+});
+
+test("agent updates use the concise platform, date and link template", () => {
+  assert.equal(
+    renderAgentUpdateText({
+      platform: "X",
+      publishedAt: "2026-07-30T01:23:45.000Z",
+      url: "https://x.com/example/status/123"
+    }),
+    "X Updated + 2026-07-30\nhttps://x.com/example/status/123"
+  );
+  assert.equal(
+    renderAgentUpdateText({
+      platform: "YouTube",
+      publishedAt: "2026-07-29T18:00:00.000Z",
+      url: "https://www.youtube.com/watch?v=abc"
+    }),
+    "YouTube Updated + 2026-07-29\nhttps://www.youtube.com/watch?v=abc"
+  );
 });
 
 test("legacy paused sources stay paused instead of becoming active during migration", () => {

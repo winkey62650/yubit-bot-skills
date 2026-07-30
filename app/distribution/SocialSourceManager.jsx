@@ -17,7 +17,7 @@ export default function SocialSourceManager({ packages, busy, onPersist, onNotic
     if (!canSave) return;
     const source = { ...form, id: form.id || `social-${Date.now()}` };
     const next = form.id ? packages.map((item) => item.id === form.id ? source : item) : [...packages, source];
-    const saved = await onPersist(next, form.id ? "代理来源已更新。" : "代理来源已添加，并会每 4 小时检查一次。");
+    const saved = await onPersist(next, form.id ? "代理来源已更新。" : "代理来源已添加，并会每小时检查一次。");
     if (saved) {
       setForm(emptySource);
       setPreview(null);
@@ -55,7 +55,7 @@ export default function SocialSourceManager({ packages, busy, onPersist, onNotic
 
   return <Card className="overflow-hidden">
     <div className="flex flex-col gap-3 border-b border-ops-line p-5 lg:flex-row lg:items-start lg:justify-between">
-      <div><p className="text-xs font-black uppercase tracking-[.16em] text-ops-accent">代理内容来源</p><h2 className="mt-1 text-xl font-black">X / YouTube 自动抓取</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-ops-muted">后台抓取任务每 4 小时检查一次，只在识别到新内容时共享。一个代理可以分别添加 X 和 YouTube 两条来源。</p></div>
+      <div><p className="text-xs font-black uppercase tracking-[.16em] text-ops-accent">代理内容来源</p><h2 className="mt-1 text-xl font-black">X / YouTube 自动抓取</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-ops-muted">后台抓取任务每小时检查一次，只在识别到新内容时共享。一个代理可以分别添加 X 和 YouTube 两条来源。</p></div>
       <div className="flex flex-wrap gap-2"><StatusPill tone={readiness.ready ? "green" : "amber"}>{readiness.enabled} 条启用</StatusPill><StatusPill tone={readiness.limited ? "amber" : "green"}>{readiness.stable} 条稳定 · {readiness.limited} 条有限</StatusPill></div>
     </div>
     <div className="grid gap-5 p-5 xl:grid-cols-[minmax(320px,.82fr)_minmax(0,1.18fr)]">
@@ -74,8 +74,8 @@ export default function SocialSourceManager({ packages, busy, onPersist, onNotic
       <div className="overflow-hidden rounded-lg border border-ops-line">
         <div className="border-b border-ops-line bg-[#f9fbfa] px-4 py-3"><h3 className="font-black">已保存来源</h3><p className="mt-1 text-xs text-ops-muted">配置会保存在服务端，刷新、换设备和重新部署后仍然存在。</p></div>
         <div className="divide-y divide-ops-line">{packages.length ? packages.map((item) => {
-          const stable = Boolean(item.feedUrl) || item.platform === "YouTube";
-          return <article className="p-4" key={item.id}><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><strong>{item.name}</strong><StatusPill tone={item.status === "已启用" ? "green" : "amber"}>{item.status}</StatusPill><StatusPill tone={stable ? "green" : "amber"}>{stable ? "稳定抓取" : "有限检测"}</StatusPill></div><p className="mt-2 text-sm text-ops-muted">{item.agent} · {item.platform} · 每 4 小时</p><p className="mt-1 truncate text-xs text-ops-muted">{item.feedUrl || item.accountUrl || "未填写地址"}</p></div><div className="flex shrink-0 flex-wrap gap-2"><SourceButton onClick={() => { setForm(item); setPreview(null); }}>编辑</SourceButton><SourceButton onClick={() => updatePackages(packages.map((source) => source.id === item.id ? { ...source, status: source.status === "已启用" ? "已暂停" : "已启用" } : source), item.status === "已启用" ? "代理来源已暂停。" : "代理来源已启用。")}>{item.status === "已启用" ? "暂停" : "启用"}</SourceButton><SourceButton danger onClick={() => window.confirm("确认删除这条代理来源？") && updatePackages(packages.filter((source) => source.id !== item.id), "代理来源已删除。")}>删除</SourceButton></div></div></article>;
+          const stable = item.reliability === "stable" || Boolean(item.feedUrl) || item.platform === "YouTube";
+          return <article className="p-4" key={item.id}><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><strong>{item.name}</strong><StatusPill tone={item.status === "已启用" ? "green" : "amber"}>{item.status}</StatusPill><StatusPill tone={stable ? "green" : "amber"}>{stable ? "稳定抓取" : "有限检测"}</StatusPill></div><p className="mt-2 text-sm text-ops-muted">{item.agent} · {item.platform} · 每小时</p><p className="mt-1 truncate text-xs text-ops-muted">{item.feedUrl || item.accountUrl || "未填写地址"}</p></div><div className="flex shrink-0 flex-wrap gap-2"><SourceButton onClick={() => { setForm(item); setPreview(null); }}>编辑</SourceButton><SourceButton onClick={() => updatePackages(packages.map((source) => source.id === item.id ? { ...source, status: source.status === "已启用" ? "已暂停" : "已启用" } : source), item.status === "已启用" ? "代理来源已暂停。" : "代理来源已启用。")}>{item.status === "已启用" ? "暂停" : "启用"}</SourceButton><SourceButton danger onClick={() => window.confirm("确认删除这条代理来源？") && updatePackages(packages.filter((source) => source.id !== item.id), "代理来源已删除。")}>删除</SourceButton></div></div></article>;
         }) : <div className="p-8 text-center text-sm font-bold text-ops-muted">之前的入口已恢复。现在还没有来源，请先在左侧添加代理的 X 或 YouTube。</div>}</div>
       </div>
     </div>

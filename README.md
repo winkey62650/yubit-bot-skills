@@ -75,7 +75,7 @@ SpeakerBot 不会自动开单，也不能修改或关闭订单。服务端只用
 - `APP_BASE_URL`：当前 HTTPS 生产域名。
 - `YUBIT_API_BASE_URL`：可选，默认使用 `https://openapi.yubit.com`。
 
-独立服务器生产环境由 `yubit-academy-worker` 常驻服务执行调度：每 15 秒检查到期的内容任务、每 5 分钟追踪订单、每 4 小时同步代理信息。GitHub Actions 仅保留手动故障回退，不再承担生产定时器。首次上线后必须确认 Webhook，并至少观察一个完整追踪周期。
+独立服务器生产环境由 `yubit-academy-worker` 常驻服务执行调度：每 15 秒检查到期的内容任务、每 5 分钟追踪订单、每小时同步代理信息。GitHub Actions 仅保留手动故障回退，不再承担生产定时器。首次上线后必须确认 Webhook，并至少观察一个完整追踪周期。
 
 ### 独立服务器部署
 

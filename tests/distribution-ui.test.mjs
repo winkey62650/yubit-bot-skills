@@ -494,7 +494,7 @@ test("social source readiness distinguishes stable sources from limited X fallba
 test("each automatic content template recommends the production schedule and real job", () => {
   assert.equal(recommendedScheduleFor("daily-events"), "daily-0800-utc");
   assert.equal(recommendedScheduleFor("whale-signals"), "hourly");
-  assert.equal(recommendedScheduleFor("agent-sync"), "every-4-hours");
+  assert.equal(recommendedScheduleFor("agent-sync"), "hourly");
   assert.equal(getContentTemplate("daily-analysis").jobId, "daily-analysis");
   assert.match(getContentTemplate("news").runtimeNote, /执行时/);
 });

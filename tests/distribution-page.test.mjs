@@ -80,6 +80,11 @@ test("queued desktop publishing is reported as waiting instead of a false failur
   assert.doesNotMatch(pageSource, /result\.result\?\.status !== "success"/);
 });
 
+test("automatic tasks can select discovered groups and topics", () => {
+  assert.match(pageSource, /const automationTargets = targetOptions\(groups\);/);
+  assert.match(pageSource, /请选择自动任务要投递的群组与 Topic/);
+});
+
 test("desktop publisher status distinguishes online, stalled, degraded and offline states", () => {
   assert.match(pageSource, /operationalStatus === "stalled"/);
   assert.match(pageSource, /发布任务卡住/);
