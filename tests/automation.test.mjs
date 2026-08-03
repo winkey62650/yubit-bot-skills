@@ -10,7 +10,8 @@ test("all requested automation schedules are registered", () => {
   assert.equal(AUTOMATION_JOBS.find((job) => job.id === "daily-events").schedule, "每日 08:00 UTC");
   assert.equal(AUTOMATION_JOBS.find((job) => job.id === "daily-analysis").schedule, "每日 08:00 UTC");
   assert.equal(AUTOMATION_JOBS.find((job) => job.id === "whale-hourly").schedule, "每小时检查，重大异动才发布");
-  assert.equal(AUTOMATION_JOBS.find((job) => job.id === "agent-sync-4h").schedule, "每 4 小时");
+  assert.equal(AUTOMATION_JOBS.find((job) => job.id === "agent-sync-4h").schedule, "每小时");
+  assert.equal(AUTOMATION_JOBS.find((job) => job.id === "agent-sync-4h").cron, "15 * * * *");
   assert.deepEqual(AUTOMATION_JOBS.map(({ id, topic, bot }) => ({ id, topic, bot })), [
     { id: "news-feed", topic: "7. YUBIT Updates", bot: "SpeakerBot" },
     { id: "daily-events", topic: "3. Market Events", bot: "SpeakerBot" },
@@ -22,13 +23,33 @@ test("all requested automation schedules are registered", () => {
   assert.equal(automationTopicMatches("⚡️ 2. CryptoGuy Trading Zone", "CryptoGuy Trading Zone"), true);
 });
 
-test("idempotency slots follow daily, hourly and four-hour windows", () => {
+test("idempotency slots follow daily, hourly and five-minute windows", () => {
   const now = new Date("2026-07-14T10:42:00.000Z");
   assert.equal(automationSlot("daily-events", now), "2026-07-14");
   assert.equal(automationSlot("daily-analysis", now), "2026-07-14");
   assert.equal(automationSlot("whale-hourly", now), "2026-07-14T10");
-  assert.equal(automationSlot("agent-sync-4h", now), "2026-07-14T08");
+  assert.equal(automationSlot("agent-sync-4h", now), "2026-07-14T10");
   assert.equal(automationSlot("news-feed", now), "2026-07-14T10:40");
+});
+
+test("agent updates use the compact platform, date and link template", () => {
+  assert.equal(typeof automation.renderAgentUpdateText, "function");
+  assert.equal(automation.renderAgentUpdateText({ platform: "X", publishedAt: "2026-08-04T01:20:00Z", url: "https://x.com/demo/status/1" }), "X Updated + 2026-08-04\nhttps://x.com/demo/status/1");
+  assert.equal(automation.renderAgentUpdateText({ package: { platform: "YouTube" }, publishedAt: "2026-08-03T23:20:00Z", url: "https://youtu.be/demo" }), "YouTube Updated + 2026-08-03\nhttps://youtu.be/demo");
+});
+
+test("agent update plans support multiple groups and topics", () => {
+  assert.equal(typeof automation.buildAgentUpdateTelegramPlans, "function");
+  const targets = [
+    { chatId: "-1001", threadId: 8, chatType: "supergroup" },
+    { chatId: "-1002", threadId: 11, chatType: "supergroup" }
+  ];
+  const plans = automation.buildAgentUpdateTelegramPlans([
+    { platform: "X", publishedAt: "2026-08-04T01:20:00Z", url: "https://x.com/demo/status/1" }
+  ], targets);
+  assert.equal(plans.length, 2);
+  assert.deepEqual(plans.map((plan) => plan.target.chatId), ["-1001", "-1002"]);
+  assert.ok(plans.every((plan) => plan.steps[0].payload.text === "X Updated + 2026-08-04\nhttps://x.com/demo/status/1"));
 });
 
 test("legacy automation status resolves every database-backed distribution target", () => {

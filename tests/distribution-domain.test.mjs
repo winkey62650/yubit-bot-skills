@@ -68,7 +68,7 @@ test("standard production provisioning keeps editorial SpeakerBot automations in
     { contentType: "daily-events", schedulePreset: "daily-0800-utc" },
     { contentType: "daily-analysis", schedulePreset: "daily-0800-utc" },
     { contentType: "whale-signals", schedulePreset: "hourly" },
-    { contentType: "agent-sync", schedulePreset: "every-4-hours" },
+    { contentType: "agent-sync", schedulePreset: "hourly" },
   ]);
   assert.deepEqual(automations.map((rule) => rule.targets.map((target) => target.threadId)), [
     [107, 207],

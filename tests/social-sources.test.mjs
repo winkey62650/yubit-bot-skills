@@ -30,7 +30,7 @@ test("social source configuration keeps X and YouTube fields needed by the crawl
   assert.equal(packages[0].feedUrl, "https://feeds.example.com/ricky.xml");
   assert.equal(packages[0].bot, "SpeakerBot");
   assert.equal(packages[1].platform, "YouTube");
-  assert.equal(packages[1].frequency, "每 4 小时");
+  assert.equal(packages[1].frequency, "每小时");
 });
 
 test("legacy paused sources stay paused instead of becoming active during migration", () => {

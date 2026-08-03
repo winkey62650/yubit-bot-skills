@@ -1551,7 +1551,7 @@ test("production deployment authorizes the official Demo and CryptoGuy Forum ide
 
   assert.match(workflow, /vars\.TELEGRAM_DISTRIBUTION_APPROVED_TARGETS/);
   assert.match(workflow, /\(\[1-9\]\[0-9\]\*\|channel\)/);
-  assert.match(workflow, /TELEGRAM_DEMO_ONLY=true/);
+  assert.match(workflow, /TELEGRAM_DEMO_ONLY=false/);
   assert.match(workflow, /TELEGRAM_DISTRIBUTION_APPROVED_TARGETS=%s/);
   assert.match(workflow, /TRADING_DEMO_ONLY=true/);
   assert.match(workflow, /TELEGRAM_PUBLISHER_MODE=user/);

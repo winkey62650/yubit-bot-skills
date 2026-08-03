@@ -21,8 +21,8 @@ This project started as a set of Telegram bot scripts and is now a productized l
 Do not commit real Telegram bot tokens, chat IDs, `.env` files, or runtime state.
 All production credentials must be passed through environment variables.
 
-生产内容分发默认保持 `TELEGRAM_DEMO_ONLY=true`。需要逐步开放真实群时，只能通过
-`TELEGRAM_DISTRIBUTION_APPROVED_TARGETS` 添加精确的 `chatId:threadId` 白名单；未列出的
+生产内容分发默认允许向后台规则中已授权的群和 Topic 发布（`TELEGRAM_DEMO_ONLY=false`）。目标仍须通过
+`TELEGRAM_DISTRIBUTION_APPROVED_TARGETS` 的精确 `chatId:threadId` 白名单授权；未列出的
 Topic（包括 Trader/Community Signal）仍会被拒绝。交易信号和 PNL 卡片另受
 `TRADING_DEMO_ONLY=true` 保护，不会因内容广播白名单而自动开放。
 
@@ -75,7 +75,7 @@ SpeakerBot 不会自动开单，也不能修改或关闭订单。服务端只用
 - `APP_BASE_URL`：当前 HTTPS 生产域名。
 - `YUBIT_API_BASE_URL`：可选，默认使用 `https://openapi.yubit.com`。
 
-独立服务器生产环境由 `yubit-academy-worker` 常驻服务执行调度：每 15 秒检查到期的内容任务、每 5 分钟追踪订单、每 4 小时同步代理信息。GitHub Actions 仅保留手动故障回退，不再承担生产定时器。首次上线后必须确认 Webhook，并至少观察一个完整追踪周期。
+独立服务器生产环境由 `yubit-academy-worker` 常驻服务执行调度：每 15 秒检查到期的内容任务、每 5 分钟追踪订单、每小时同步代理信息。GitHub Actions 仅保留手动故障回退，不再承担生产定时器。首次上线后必须确认 Webhook，并至少观察一个完整追踪周期。
 
 ### 独立服务器部署
 
