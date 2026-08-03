@@ -39,3 +39,16 @@ test("生产部署只在明确启用 Discord 时要求其凭证", () => {
   assert.match(workflow, /if \[ "\$DISCORD_GATEWAY_ENABLED" = "true" \]/);
   assert.match(workflow, /DISCORD_GATEWAY_ENABLED=%s/);
 });
+
+test("生产部署从 GitHub 目标提交启动，不调用服务器旧版脚本", () => {
+  const workflow = read(".github/workflows/deploy-production-server.yml");
+  const deploy = read("deploy/server/deploy.sh");
+
+  assert.match(workflow, /DEPLOY_SHA: \$\{\{ github\.sha \}\}/);
+  assert.match(workflow, /git clone --quiet --depth 1 --branch code\/academy/);
+  assert.match(workflow, /actual_sha="\$\(git -C "\$bootstrap_dir" rev-parse HEAD\)"/);
+  assert.match(workflow, /EXPECTED_COMMIT="\$DEPLOY_SHA" bash "\$bootstrap_dir\/deploy\/server\/deploy\.sh"/);
+  assert.doesNotMatch(workflow, /cd \/opt\/yubit-academy\/current/);
+  assert.match(deploy, /EXPECTED_COMMIT/);
+  assert.match(deploy, /Resolved commit .* does not match requested commit/);
+});

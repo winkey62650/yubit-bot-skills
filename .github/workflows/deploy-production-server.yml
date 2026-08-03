@@ -29,6 +29,7 @@ jobs:
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
           DISCORD_GATEWAY_ENABLED: ${{ vars.DISCORD_GATEWAY_ENABLED || 'false' }}
           APPROVED_DISTRIBUTION_TARGETS: ${{ vars.TELEGRAM_DISTRIBUTION_APPROVED_TARGETS }}
+          DEPLOY_SHA: ${{ github.sha }}
         run: |
           if [ -z "$SSHPASS" ]; then
             echo "YUBIT_SERVER_PASSWORD is not configured." >&2
@@ -52,6 +53,10 @@ jobs:
             echo "Production distribution target allowlist is missing or invalid." >&2
             exit 1
           fi
+          if ! [[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "GitHub target commit is invalid." >&2
+            exit 1
+          fi
           policy_b64="$(printf '%s' "$APPROVED_DISTRIBUTION_TARGETS" | base64 -w0)"
           desktop_secret_b64="$(printf '%s' "$DESKTOP_PUBLISHER_SECRET" | base64 -w0)"
           discord_app_id_b64="$(printf '%s' "$DISCORD_APP_ID" | base64 -w0)"
@@ -63,7 +68,7 @@ jobs:
             -o ServerAliveInterval=10 \
             -o StrictHostKeyChecking=accept-new \
             ubuntu@152.32.161.174 \
-            "POLICY_B64='$policy_b64' DESKTOP_SECRET_B64='$desktop_secret_b64' DISCORD_APP_ID_B64='$discord_app_id_b64' DISCORD_PUBLIC_KEY_B64='$discord_public_key_b64' DISCORD_BOT_TOKEN_B64='$discord_bot_token_b64' DISCORD_GATEWAY_ENABLED_B64='$discord_gateway_enabled_b64' bash -s" <<'REMOTE'
+            "POLICY_B64='$policy_b64' DESKTOP_SECRET_B64='$desktop_secret_b64' DISCORD_APP_ID_B64='$discord_app_id_b64' DISCORD_PUBLIC_KEY_B64='$discord_public_key_b64' DISCORD_BOT_TOKEN_B64='$discord_bot_token_b64' DISCORD_GATEWAY_ENABLED_B64='$discord_gateway_enabled_b64' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           env_file=/etc/yubit-academy/production.env
           approved_targets="$(printf '%s' "$POLICY_B64" | base64 -d)"
@@ -96,6 +101,15 @@ jobs:
           } >>"$env_tmp"
           sudo install -m 0600 -o root -g root "$env_tmp" "$env_file"
           rm -f "$env_tmp"
-          cd /opt/yubit-academy/current
-          bash deploy/server/deploy.sh
+          bootstrap_dir="$(mktemp -d)"
+          trap 'rm -rf "$bootstrap_dir"' EXIT
+          git clone --quiet --depth 1 --branch code/academy \
+            https://github.com/winkey62650/yubit-bot-skills.git \
+            "$bootstrap_dir"
+          actual_sha="$(git -C "$bootstrap_dir" rev-parse HEAD)"
+          if [ "$actual_sha" != "$DEPLOY_SHA" ]; then
+            echo "Branch advanced during deployment; expected $DEPLOY_SHA but resolved $actual_sha." >&2
+            exit 1
+          fi
+          EXPECTED_COMMIT="$DEPLOY_SHA" bash "$bootstrap_dir/deploy/server/deploy.sh"
           REMOTE

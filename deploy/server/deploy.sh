@@ -37,6 +37,10 @@ if [[ -z "$commit" ]]; then
   echo "Unable to resolve $REPO_URL branch $BRANCH" >&2
   exit 1
 fi
+if [[ -n "${EXPECTED_COMMIT:-}" && "$commit" != "$EXPECTED_COMMIT" ]]; then
+  echo "Resolved commit $commit does not match requested commit $EXPECTED_COMMIT" >&2
+  exit 1
+fi
 release="$APP_ROOT/releases/$commit"
 
 if [[ ! -d "$release/.git" ]]; then
