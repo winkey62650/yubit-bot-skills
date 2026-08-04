@@ -4,8 +4,9 @@ import { readFile, writeFile, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { telegramCall } from "./lib/telegram-client.mjs";
+import { CustomFile } from "teleproto";
 
-const telegramBase = "https://api.telegram.org/bot";
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const chatId = process.env.TELEGRAM_CHAT_ID;
 const threadId = Number(process.env.TELEGRAM_THREAD_ID || 12);
@@ -155,37 +156,26 @@ function formatNumber(value) {
 }
 
 async function postTelegram(text) {
-  const response = await fetch(`${telegramBase}${token}/sendMessage`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      message_thread_id: threadId,
-      text,
-      parse_mode: "HTML",
-      disable_web_page_preview: true
-    })
+  await telegramCall(token, "sendMessage", {
+    chat_id: chatId,
+    message_thread_id: threadId,
+    text,
+    parse_mode: "HTML",
+    disable_web_page_preview: true
   });
-
-  const body = await response.json();
-  if (!body.ok) throw new Error(body.description || "Telegram sendMessage failed");
 }
 
 async function postTelegramPhoto(caption, photoPath) {
-  const form = new FormData();
-  form.set("chat_id", chatId);
-  form.set("message_thread_id", String(threadId));
-  form.set("caption", trimCaption(caption));
-  form.set("parse_mode", "HTML");
-  form.set("photo", new Blob([await readFile(photoPath)], { type: "image/png" }), "tradfi-signal.png");
+  const buffer = await readFile(photoPath);
+  const customFile = new CustomFile("tradfi-signal.png", buffer.length, "", buffer);
 
-  const response = await fetch(`${telegramBase}${token}/sendPhoto`, {
-    method: "POST",
-    body: form
+  await telegramCall(token, "sendPhoto", {
+    chat_id: chatId,
+    message_thread_id: threadId,
+    caption: trimCaption(caption),
+    parse_mode: "HTML",
+    photo: customFile
   });
-
-  const body = await response.json();
-  if (!body.ok) throw new Error(body.description || "Telegram sendPhoto failed");
 }
 
 async function renderSignalCard(rows) {

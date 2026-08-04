@@ -7,6 +7,7 @@ import { spawn } from "node:child_process";
 import process from "node:process";
 import { getTelegramGroupMetrics } from "./lib/telegram-metrics.mjs";
 import { cryptoNewsSources } from "./crypto-news-sources.mjs";
+import { telegramCall } from "./lib/telegram-client.mjs";
 
 const port = Number(process.env.PORT || 4173);
 const host = process.env.HOST || "127.0.0.1";
@@ -684,14 +685,7 @@ function mergeBotGroups(...lists) {
 }
 
 async function telegram(token, method, payload) {
-  const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-  const body = await response.json();
-  if (!body.ok) throw new Error(body.description || `${method} failed`);
-  return body;
+  return await telegramCall(token, method, payload);
 }
 
 async function readLocalGroupConfig() {

@@ -34,9 +34,14 @@ async function resources() {
 export async function GET() {
   try {
     const { repository, manager } = await resources();
+    const store = createTelegramUserSessionStore({
+      repository,
+      encryptionKey: process.env.TELEGRAM_USER_SESSION_ENCRYPTION_KEY
+    });
     return NextResponse.json({
       ok: true,
       publisher: await telegramUserPublisherHealth({ repository }),
+      accounts: await store.listAccounts(),
       authorization: manager.status()
     });
   } catch (error) {
@@ -53,9 +58,14 @@ export async function POST(request) {
     }
     if (body.action === "complete") {
       await manager.complete(body);
+      const store = createTelegramUserSessionStore({
+        repository,
+        encryptionKey: process.env.TELEGRAM_USER_SESSION_ENCRYPTION_KEY
+      });
       return NextResponse.json({
         ok: true,
         publisher: await telegramUserPublisherHealth({ repository }),
+        accounts: await store.listAccounts(),
         authorization: manager.status()
       });
     }

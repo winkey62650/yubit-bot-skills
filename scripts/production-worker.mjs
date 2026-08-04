@@ -177,6 +177,14 @@ export async function startProductionWorker({ env = process.env, fetchImpl = fet
       logger,
       task: () => callEndpoint("/api/cron/lark"),
     }),
+    runLoop({
+      name: "composer-queue",
+      intervalMs: config.distributionIntervalMs, // Same cadence as distribution (15s)
+      initialDelayMs: 5_000,
+      signal: controller.signal,
+      logger,
+      task: () => callEndpoint("/api/cron/composer"),
+    }),
   ]);
 
   return {

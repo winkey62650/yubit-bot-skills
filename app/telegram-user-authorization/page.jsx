@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import ConsoleShell from "../components/ConsoleShell";
 import LiveStatusStamp from "../components/LiveStatusStamp";
 import { useLiveAutoRefresh } from "../hooks/useLiveAutoRefresh";
-import { Card, PageHeader, StatusPill } from "../components/ui";
+import { Card, PageHeader, StatusPill, Field, inputClass } from "../components/ui";
 import { arePublisherBlockingChecksHealthy, buildPublisherStatusChecks } from "../../lib/distribution-ui.mjs";
 import { PUBLISHER_HEARTBEAT_STALE_MS } from "../../lib/live-status.mjs";
 
@@ -13,16 +13,18 @@ const DEMO_CHAT_ID = "-1003710405969";
 
 export default function TelegramUserAuthorizationPage() {
   const [publisher, setPublisher] = useState(null);
+  const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const refresh = useCallback(async ({ silent = false } = {}) => {
     if (!silent) setLoading(true);
     try {
-      const response = await fetch("/api/distribution", { cache: "no-store" });
+      const response = await fetch("/api/telegram/user-authorization", { cache: "no-store" });
       const data = await response.json();
-      if (!response.ok || !data.ok) throw new Error(data.error || "发布账号状态检测失败");
+      if (!response.ok || !data.ok) throw new Error(data.error || "获取授权信息失败");
       setPublisher(data.publisher || null);
+      setAccounts(data.accounts || []);
       setError("");
     } catch (nextError) {
       setError(nextError.message || "发布账号状态检测失败");
@@ -54,9 +56,9 @@ export default function TelegramUserAuthorizationPage() {
   return (
     <ConsoleShell>
       <PageHeader
-        title="发布账号状态检测"
-        desc="实时核验 @Serenity_Crypto、Telegram 会话、本机发布桥、目标白名单和最近一次投递；这里不保存账号密码或开发凭证。"
-        action={<Link className="grid min-h-11 place-items-center rounded-lg bg-ops-accent px-5 text-sm font-black text-white" href="/distribution">进入内容分发中心</Link>}
+        title="Telegram 账号授权"
+        desc="添加需要发布消息的 Telegram 账号。可以在此添加您的个人账号，用于发送内容。请注意保管好您的账号权限。"
+        action={<Link className="grid min-h-11 place-items-center rounded-lg bg-ops-accent px-5 text-sm font-black text-white" href="/composer">进入发布中心</Link>}
       />
 
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -67,10 +69,10 @@ export default function TelegramUserAuthorizationPage() {
       </div>
 
       <section className="mb-5 grid overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="主发布账号" value={loading ? "—" : publisher?.username || "@Serenity_Crypto"} ok={!loading} />
+        <Metric label="已授权账号" value={loading ? "—" : `${accounts.length} 个`} ok={!loading && accounts.length > 0} />
         <Metric label="本机发布桥" value={statusLabel} ok={ready || operationalStatus === "publishing"} />
         <Metric label="已授权目标" value={loading ? "—" : `${approvedTargets.length} 个`} ok={!loading && approvedTargets.length > 0} />
-        <Metric label="安全回退" value="禁止 Bot / 个人身份" ok />
+        <Metric label="安全回退" value="禁止匿名" ok />
       </section>
 
       {(error || publisher?.operationalError) ? (
@@ -79,36 +81,38 @@ export default function TelegramUserAuthorizationPage() {
         </div>
       ) : null}
 
-      <Card className="mb-5 overflow-hidden">
-        <div className="border-b border-ops-line p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-xl font-black">实时检测项</h2>
-              <p className="mt-1 text-sm text-ops-muted">账号身份、本机发布桥、Telegram 会话、目标白名单和最近一次投递分别检测，不再用单一“在线”状态掩盖局部故障。</p>
+      {!loading && (
+        <Card className="mb-5 p-6 border-ops-line bg-white">
+          <h2 className="text-xl font-black mb-4">已授权账号</h2>
+          {accounts.length === 0 ? (
+            <p className="text-ops-muted text-sm">暂无已授权的 Telegram 账号，请在下方登录添加。</p>
+          ) : (
+            <div className="grid gap-3">
+              {accounts.map(account => (
+                <div key={account.userId} className="flex items-center justify-between p-4 bg-[#fdfefe] border border-ops-line rounded-lg">
+                  <div>
+                    <div className="font-bold">{account.firstName} {account.lastName}</div>
+                    <div className="text-sm text-ops-muted">@{account.username || account.userId}</div>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      if (confirm("确定要移除该账号的授权吗？")) {
+                        await fetch(`/api/telegram-auth/session?userId=${account.userId}`, { method: "DELETE" });
+                        refresh();
+                      }
+                    }}
+                    className="text-sm font-bold text-[#a04a3d] hover:underline"
+                  >
+                    移除授权
+                  </button>
+                </div>
+              ))}
             </div>
-            <StatusPill tone={allChecksHealthy ? "green" : "amber"}>{allChecksHealthy ? "检测通过" : "需要处理"}</StatusPill>
-          </div>
-        </div>
-        <div className="grid divide-y divide-ops-line md:grid-cols-2 md:divide-x md:divide-y-0 xl:grid-cols-5">
-          {checks.map((check) => <StatusCheck check={check} key={check.key} />)}
-        </div>
-      </Card>
+          )}
+        </Card>
+      )}
 
-      <Card className="p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-xl font-black">检测通过后的发布闭环</h2>
-            <p className="mt-1 text-sm text-ops-muted">运营只需要维护内容规则、目标群和 Topic，不再处理账号开发凭证或选择 Bot 发送人。</p>
-          </div>
-          <StatusPill tone={allChecksHealthy ? "green" : "amber"}>{allChecksHealthy ? "闭环在线" : "闭环待恢复"}</StatusPill>
-        </div>
-        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <Step number="1" title="生成内容" text="自动任务、广播或 Trader 信号进入服务端发布队列。" />
-          <Step number="2" title="安全领取" text="本机发布桥单实例领取任务，防止重复发布。" />
-          <Step number="3" title="官方群身份发布" text="@Serenity_Crypto 选择目标群身份与正确 Topic，严格按模板发送。" />
-          <Step number="4" title="结果回写" text="逐步回写消息编号、成功状态或可重试错误。" />
-        </div>
-      </Card>
+      <TelegramLogin onLoginSuccess={() => refresh()} />
 
       <Card className="mt-5 p-6">
         <h2 className="text-xl font-black">发布边界</h2>
@@ -149,3 +153,138 @@ function Step({ number, title, text }) {
 function Scope({ title, value, mono = false }) {
   return <div className="rounded-lg bg-[#f7f9f8] p-4"><div className="text-xs font-bold text-ops-muted">{title}</div><div className={`mt-1 font-black ${mono ? "font-mono" : ""}`}>{value}</div></div>;
 }
+
+function TelegramLogin({ onLoginSuccess }) {
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [phoneCode, setPhoneCode] = useState("");
+  const [step, setStep] = useState(1);
+  const [phoneCodeHash, setPhoneCodeHash] = useState("");
+  const [sessionString, setSessionString] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function requestCode() {
+    if (!phoneNumber) return;
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/telegram-auth/send-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phoneNumber })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || "获取验证码失败");
+      setPhoneCodeHash(data.phoneCodeHash);
+      setSessionString(data.session);
+      setStep(2);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function verifyCode() {
+    if (!phoneCode) return;
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/telegram-auth/verify-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phoneNumber, phoneCode, phoneCodeHash, session: sessionString })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.needsPassword) {
+          setStep(3);
+          return;
+        }
+        throw new Error(data.error || "登录验证失败");
+      }
+      if (!data.ok) throw new Error(data.error || "登录验证失败");
+      onLoginSuccess();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function verifyPassword() {
+    if (!password) return;
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/telegram-auth/verify-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password, session: sessionString })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || "密码验证失败");
+      setStep(1);
+      setPhoneNumber("");
+      setPhoneCode("");
+      setPassword("");
+      onLoginSuccess();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card className="mb-5 p-6 border-ops-accent border-2 bg-[#fdfefe]">
+      <h2 className="text-xl font-black text-ops-accent">添加 Telegram 账号</h2>
+      <p className="mt-2 text-sm text-ops-muted">请输入需要授权发布的 Telegram 账号手机号（包含国际区号，如 +1234567890）。</p>
+      
+      {error && <div className="mt-3 text-sm font-bold text-[#a04a3d] bg-[#fef5f4] p-3 rounded">{error}</div>}
+
+      <div className="mt-4 grid gap-4 max-w-sm">
+        {step === 1 && (
+          <>
+            <Field label="手机号码">
+              <input type="text" className={inputClass} placeholder="+1234567890" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} disabled={busy} />
+            </Field>
+            <button className="min-h-11 rounded-lg bg-ops-accent px-5 text-sm font-black text-white disabled:opacity-50" onClick={requestCode} disabled={busy || !phoneNumber}>
+              {busy ? "请求中..." : "获取验证码"}
+            </button>
+          </>
+        )}
+        
+        {step === 2 && (
+          <>
+            <Field label="验证码">
+              <input type="text" className={inputClass} placeholder="输入 Telegram 收到的 5 位验证码" value={phoneCode} onChange={(e) => setPhoneCode(e.target.value)} disabled={busy} />
+            </Field>
+            <button className="min-h-11 rounded-lg bg-ops-accent px-5 text-sm font-black text-white disabled:opacity-50" onClick={verifyCode} disabled={busy || !phoneCode}>
+              {busy ? "验证中..." : "确认登录"}
+            </button>
+            <button className="text-sm font-bold text-ops-muted underline mt-2 text-left" onClick={() => setStep(1)} disabled={busy}>
+              修改手机号
+            </button>
+          </>
+        )}
+
+        {step === 3 && (
+          <>
+            <Field label="Enter Password">
+              <input type="password" className={inputClass} placeholder="Enter Password" value={password} onChange={(e) => setPassword(e.target.value)} disabled={busy} />
+            </Field>
+            <button className="min-h-11 rounded-lg bg-ops-accent px-5 text-sm font-black text-white disabled:opacity-50" onClick={verifyPassword} disabled={busy || !password}>
+              {busy ? "验证中..." : "确认登录"}
+            </button>
+            <button className="text-sm font-bold text-ops-muted underline mt-2 text-left" onClick={() => setStep(1)} disabled={busy}>
+              重新开始
+            </button>
+          </>
+        )}
+      </div>
+    </Card>
+  )
+}
+
