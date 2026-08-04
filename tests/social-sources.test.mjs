@@ -110,6 +110,22 @@ test("X reader fallback selects the newest account post and ignores pinned or qu
   });
 });
 
+test("X reader fallback accepts mobile Twitter links and normalizes them to X", () => {
+  const markdown = `
+* Pinned [Jenna](https://mobile.twitter.com/JennaXCrypto) [Aug 1](https://mobile.twitter.com/JennaXCrypto/status/2083552295225045247) Pinned older post
+* [Jenna](https://mobile.twitter.com/JennaXCrypto) [3h](https://mobile.twitter.com/JennaXCrypto/status/2084476005536743718) You know you’re locked in when you make coffee at 11pm ☕️⚰️
+* [Jenna](https://mobile.twitter.com/JennaXCrypto) [Aug 3](https://mobile.twitter.com/JennaXCrypto/status/2084083353775468832) My update [Other](https://mobile.twitter.com/Other/status/9999999999999999999) Quoted post
+`;
+
+  assert.deepEqual(parseXReaderTimeline(markdown, "JennaXCrypto"), {
+    externalId: "2084476005536743718",
+    title: "You know you’re locked in when you make coffee at 11pm ☕️⚰️",
+    description: "You know you’re locked in when you make coffee at 11pm ☕️⚰️",
+    url: "https://x.com/JennaXCrypto/status/2084476005536743718",
+    publishedAt: "2026-08-04T03:06:22.068Z"
+  });
+});
+
 test("X public timeline parser selects the newest original account post", () => {
   const payload = {
     props: {
