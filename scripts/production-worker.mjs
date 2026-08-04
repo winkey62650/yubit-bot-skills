@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const DEFAULTS = Object.freeze({
   distributionIntervalMs: 15_000,
   tradingIntervalMs: 5 * 60_000,
-  agentIntervalMs: 4 * 60 * 60_000,
+  agentIntervalMs: 60 * 60_000,
   larkIntervalMs: 60_000,
   requestTimeoutMs: 90_000,
   maxDistributionClaims: 10,

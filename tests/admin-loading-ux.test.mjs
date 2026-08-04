@@ -13,9 +13,10 @@ test("distribution summaries stay neutral while live data is loading", () => {
   assert.match(page, /socialReadiness\.stable/);
   assert.doesNotMatch(page, /socialReadiness\.enabledCount|socialReadiness\.stableCount/);
   assert.match(page, /approvedTargetCount/);
-  assert.match(page, /自动发布固定先进入 Demo Academy/);
+  assert.match(page, /可选择一个或多个已授权的群和 Topic/);
+  assert.match(page, /const automationTargets = targetOptions\(groups\)/);
   assert.doesNotMatch(page, /当前生产白名单只允许 Demo Academy Forum/);
-  assert.match(page, /自动发布验收路由（先发 DEMO Academy）/);
+  assert.match(page, /自动发布标准路由/);
 });
 
 test("group status waits for saved groups and publisher state before enabling actions", () => {

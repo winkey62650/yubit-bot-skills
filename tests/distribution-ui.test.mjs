@@ -350,6 +350,24 @@ test("saved groups reconcile exact topic names and thread IDs from active distri
   assert.equal(topics.find((topic) => topic.name === "5. Community Signal").threadId, 14);
 });
 
+test("live Telegram topic names win over stale distribution rule labels", () => {
+  const [mapped] = applyDistributionTopicMappings([{
+    chatId: "-1003332783916",
+    title: "JennaX Trading Academy",
+    topics: [{ name: "JennaX Trading Zone", threadId: 10, verified: true, source: "telegram" }]
+  }], [{
+    kind: "automation",
+    targets: [{
+      chatId: "-1003332783916",
+      threadId: 10,
+      topicName: "2. CryptoGuy Trading Zone"
+    }]
+  }]);
+
+  assert.equal(mapped.topics.length, 1);
+  assert.equal(mapped.topics[0].name, "JennaX Trading Zone");
+});
+
 test("distribution rules restore complete 1-7 selectors for every configured group", () => {
   const groups = [
     {
@@ -470,7 +488,7 @@ test("every SpeakerBot content type points to its semantic numbered Topic", () =
   });
 });
 
-test("social source readiness distinguishes stable sources from limited X fallback", () => {
+test("social source readiness recognizes X public timeline and YouTube as usable sources", () => {
   assert.deepEqual(buildSocialSourceReadiness([]), {
     total: 0,
     enabled: 0,
@@ -485,8 +503,8 @@ test("social source readiness distinguishes stable sources from limited X fallba
   ]), {
     total: 3,
     enabled: 2,
-    stable: 1,
-    limited: 1,
+    stable: 2,
+    limited: 0,
     ready: true
   });
 });
@@ -494,7 +512,7 @@ test("social source readiness distinguishes stable sources from limited X fallba
 test("each automatic content template recommends the production schedule and real job", () => {
   assert.equal(recommendedScheduleFor("daily-events"), "daily-0800-utc");
   assert.equal(recommendedScheduleFor("whale-signals"), "hourly");
-  assert.equal(recommendedScheduleFor("agent-sync"), "every-4-hours");
+  assert.equal(recommendedScheduleFor("agent-sync"), "hourly");
   assert.equal(getContentTemplate("daily-analysis").jobId, "daily-analysis");
   assert.match(getContentTemplate("news").runtimeNote, /执行时/);
 });

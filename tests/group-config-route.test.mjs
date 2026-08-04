@@ -24,6 +24,11 @@ test("group config UI can verify and save a group by chat id without a local Tel
   assert.doesNotMatch(source, /三个 Bot 管理员|请确认三个 Bot 已加入|服务器上的三个 Bot/);
 });
 
+test("group config automatically persists a successful live Telegram reconciliation", async () => {
+  const source = await readFile(new URL("../app/group-config/page.jsx", import.meta.url), "utf8");
+  assert.match(source, /refreshLiveGroups\(\{ silent: true, persist: true \}\)/);
+});
+
 test("group config shows the user publisher and official Forum group identity", async () => {
   const source = await readFile(new URL("../app/group-config/page.jsx", import.meta.url), "utf8");
   assert.match(source, /setPublisher/);

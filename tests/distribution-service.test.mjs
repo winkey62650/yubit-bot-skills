@@ -39,6 +39,7 @@ test("desktop publisher health reflects a recent local bridge heartbeat", async 
   };
   const env = {
     NODE_ENV: "production",
+    TELEGRAM_PUBLISHER_MODE: "user",
     DESKTOP_PUBLISHER_SECRET: "desktop-secret",
     TELEGRAM_USER_PUBLISHER_TARGETS: "-1003710405969",
     TELEGRAM_USER_PUBLISHER_USERNAME: "Serenity_Crypto"
@@ -68,6 +69,7 @@ test("desktop publisher health becomes offline after the heartbeat expires", asy
     repository,
     env: {
       NODE_ENV: "production",
+      TELEGRAM_PUBLISHER_MODE: "user",
       DESKTOP_PUBLISHER_SECRET: "desktop-secret",
       TELEGRAM_USER_PUBLISHER_TARGETS: "-1003710405969"
     },
@@ -103,6 +105,7 @@ test("desktop publisher health keeps bridge availability separate from the lates
   };
   const env = {
     NODE_ENV: "production",
+    TELEGRAM_PUBLISHER_MODE: "user",
     DESKTOP_PUBLISHER_SECRET: "desktop-secret",
     TELEGRAM_USER_PUBLISHER_TARGETS: "-1003710405969"
   };
@@ -160,6 +163,7 @@ test("desktop publisher health suppresses the obsolete Telegram window-title ide
     repository,
     env: {
       NODE_ENV: "production",
+      TELEGRAM_PUBLISHER_MODE: "user",
       DESKTOP_PUBLISHER_SECRET: "desktop-secret",
       TELEGRAM_USER_PUBLISHER_TARGETS: "-1003710405969",
       TELEGRAM_USER_PUBLISHER_USERNAME: "Serenity_Crypto"
@@ -651,6 +655,7 @@ test("desktop publishing queues generated content and completes only after a Dem
   };
   const env = {
     NODE_ENV: "production",
+    TELEGRAM_PUBLISHER_MODE: "user",
     TELEGRAM_DESKTOP_PUBLISHER_REQUIRED: "true",
     DEMO_TELEGRAM_CHAT_ID: target.chatId,
     APP_BASE_URL: "https://academy.example.com"
@@ -1223,6 +1228,7 @@ test("broadcast validation checks ForwardBot on the source and the desktop publi
   repository.health = async () => ({ ok: true });
   const env = {
     NODE_ENV: "production",
+    TELEGRAM_PUBLISHER_MODE: "user",
     FORWARD_BOT_TOKEN: "123:forward-token",
     TELEGRAM_DESKTOP_PUBLISHER_REQUIRED: "true",
     TELEGRAM_USER_PUBLISHER_USERNAME: "Serenity_Crypto",
@@ -1284,6 +1290,7 @@ test("a desktop broadcast webhook queues the exact approved target Topic for the
   const telegramCalls = [];
   const env = {
     NODE_ENV: "production",
+    TELEGRAM_PUBLISHER_MODE: "user",
     TELEGRAM_DESKTOP_PUBLISHER_REQUIRED: "true",
     TELEGRAM_USER_PUBLISHER_TARGETS: "-1003710405969,-1004378187866",
     DEMO_TELEGRAM_CHAT_ID: source.chatId
@@ -1339,6 +1346,7 @@ test("a desktop photo broadcast preserves the source caption byte for byte", asy
     repository,
     env: {
       NODE_ENV: "production",
+      TELEGRAM_PUBLISHER_MODE: "user",
       TELEGRAM_DESKTOP_PUBLISHER_REQUIRED: "true",
       TELEGRAM_USER_PUBLISHER_TARGETS: `${source.chatId},${target.chatId}`,
       DEMO_TELEGRAM_CHAT_ID: source.chatId,
@@ -1545,21 +1553,21 @@ test("GitHub Actions keeps distribution as a manual server recovery path", async
   assert.match(distributionJob, /if \[ "\$claimed" = "0" \]/);
 });
 
-test("production deployment authorizes the official Demo and CryptoGuy Forum identities and keeps Trader Demo-only", async () => {
+test("production deployment defaults to Bot while retaining the optional authorized user publisher", async () => {
   const workflow = await readFile(new URL("../.github/workflows/deploy-production-server.yml", import.meta.url), "utf8");
   const desktopRoute = await readFile(new URL("../app/api/cron/desktop-publisher/route.js", import.meta.url), "utf8");
 
   assert.match(workflow, /vars\.TELEGRAM_DISTRIBUTION_APPROVED_TARGETS/);
   assert.match(workflow, /\(\[1-9\]\[0-9\]\*\|channel\)/);
-  assert.match(workflow, /TELEGRAM_DEMO_ONLY=true/);
+  assert.match(workflow, /TELEGRAM_DEMO_ONLY=false/);
   assert.match(workflow, /TELEGRAM_DISTRIBUTION_APPROVED_TARGETS=%s/);
   assert.match(workflow, /TRADING_DEMO_ONLY=true/);
-  assert.match(workflow, /TELEGRAM_PUBLISHER_MODE=user/);
+  assert.match(workflow, /TELEGRAM_PUBLISHER_MODE=bot/);
   assert.match(workflow, /TELEGRAM_USER_PUBLISHER_USERNAME=Serenity_Crypto/);
-  assert.match(workflow, /TELEGRAM_USER_PUBLISHER_REQUIRED=true/);
+  assert.match(workflow, /TELEGRAM_USER_PUBLISHER_REQUIRED=false/);
   assert.match(workflow, /TELEGRAM_USER_PUBLISHER_TARGETS=-1003710405969,-1004378187866/);
   assert.match(workflow, /TELEGRAM_USER_SESSION_ENCRYPTION_KEY=%s/);
-  assert.match(workflow, /TELEGRAM_DESKTOP_PUBLISHER_REQUIRED=true/);
+  assert.match(workflow, /TELEGRAM_DESKTOP_PUBLISHER_REQUIRED=false/);
   assert.match(workflow, /secrets\.DESKTOP_PUBLISHER_SECRET/);
   assert.match(workflow, /DESKTOP_PUBLISHER_SECRET=%s/);
   assert.match(desktopRoute, /process\.env\.DESKTOP_PUBLISHER_SECRET/);
@@ -1567,7 +1575,6 @@ test("production deployment authorizes the official Demo and CryptoGuy Forum ide
   assert.match(desktopRoute, /stepId: body\.stepId/);
   assert.match(desktopRoute, /targetMessageId: body\.targetMessageId/);
   assert.doesNotMatch(desktopRoute, /cronSecretConfig/);
-  assert.doesNotMatch(workflow, /TELEGRAM_PUBLISHER_MODE=bot/);
   assert.doesNotMatch(workflow, /TELEGRAM_USER_PUBLISHER_TARGETS=-1003862539988/);
   assert.match(workflow, /sudo install -m 0600/);
 });

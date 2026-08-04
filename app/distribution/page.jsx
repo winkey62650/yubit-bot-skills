@@ -47,19 +47,19 @@ const schedules = [
 ];
 
 const DEMO_ACADEMY_CHAT_ID = "-1003710405969";
-const defaultDeliverySettings = { telegramPublishMode: "user", telegramForwardMode: "user" };
+const defaultDeliverySettings = { telegramPublishMode: "bot", telegramForwardMode: "bot" };
 
 const officialPublishingSteps = [
   "服务器生成带指纹的定稿模板并排队",
   "本机发布桥取得唯一租约，单实例领取",
-  "Telegram Desktop 以 DEMO Academy 群身份逐步发送",
+  "Telegram Desktop 以目标群官方身份逐步发送",
   "每步回写检查点，完成后回写消息编号"
 ];
 
 const botPublishingSteps = [
   "服务器生成带指纹的定稿模板并排队",
   "生产 Worker 取得唯一租约，单实例领取",
-  "SpeakerBot 通过 Bot API 发布到 DEMO Academy",
+  "SpeakerBot 通过 Bot API 发布到选定目标群",
   "每步回写检查点，完成后回写消息编号"
 ];
 
@@ -349,7 +349,7 @@ function DistributionPageContent() {
 
       {!analyticsView ? <div className="mb-5 rounded-lg border border-[#d9bd73] bg-[#fff9e8] px-4 py-3" role="status">
         <p className="text-sm font-black text-[#5f4513]">发布边界保护已开启</p>
-        <p className="mt-1 text-xs leading-5 text-[#7b642f]">{loading ? "正在读取发布白名单与同步边界…" : `自动发布固定先进入 Demo Academy；内容同步只会按已启用规则投递到 ${approvedTargetCount} 个已批准目标。权限或授权异常时停止发送，不会退回显示 Bot / 个人身份。`}</p>
+        <p className="mt-1 text-xs leading-5 text-[#7b642f]">{loading ? "正在读取发布白名单与同步边界…" : `自动发布可选择已授权群和 Topic；内容同步只会按已启用规则投递到 ${approvedTargetCount} 个已批准目标。权限或授权异常时停止发送，不会退回错误身份。`}</p>
       </div> : null}
 
       {!analyticsView ? <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
@@ -369,8 +369,8 @@ function DistributionPageContent() {
       {!analyticsView && validation ? <ValidationPanel result={validation} onClose={() => setValidation(null)} /> : null}
 
       {!loading && view === "automation" && !socialReadiness.ready && automationForm.contentType !== "agent-sync" ? <div className="mb-5 flex flex-col gap-3 rounded-lg border border-[#e7c883] bg-[#fff9e9] px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-        <div><p className="text-sm font-black text-[#5f4513]">代理的 X / YouTube 更新尚未接入</p><p className="mt-1 text-xs leading-5 text-[#7b642f]">添加并启用代理来源后，系统会按每 4 小时抓取、去重并发布到所选 Forum 群 Topic。</p></div>
-        <button className="min-h-10 shrink-0 rounded-lg bg-[#6f551d] px-4 text-sm font-black text-white" onClick={() => setAutomationForm((current) => ({ ...current, contentType: "agent-sync", schedulePreset: "every-4-hours" }))} type="button">配置代理来源</button>
+        <div><p className="text-sm font-black text-[#5f4513]">代理的 X / YouTube 更新尚未接入</p><p className="mt-1 text-xs leading-5 text-[#7b642f]">添加并启用代理来源后，系统会每小时抓取、去重并发布到所选群和 Topic。</p></div>
+        <button className="min-h-10 shrink-0 rounded-lg bg-[#6f551d] px-4 text-sm font-black text-white" onClick={() => setAutomationForm((current) => ({ ...current, contentType: "agent-sync", schedulePreset: "hourly" }))} type="button">配置代理来源</button>
       </div> : null}
 
       <div className="mb-5 flex gap-2 overflow-x-auto border-b border-ops-line" role="tablist" aria-label="内容分发功能">
@@ -410,7 +410,7 @@ function OfficialPublishingWorkflow({ status, detail, ready, deliveryMode, busy,
       {steps.map((step, index) => <li className="rounded-lg border border-ops-line bg-[#f7faf8] p-3" key={step}><span className="mr-2 inline-flex size-6 items-center justify-center rounded-full bg-ops-accent text-xs font-black text-white">{index + 1}</span><span className="text-xs font-black text-ops-ink">{step}</span></li>)}
     </ol>
     <div className="mt-4 rounded-lg border border-[#d9bd73] bg-[#fff9e8] p-3">
-      <p className="text-xs font-black text-[#5f4513]">自动发布验收路由（先发 DEMO Academy）</p>
+      <p className="text-xs font-black text-[#5f4513]">自动发布标准路由</p>
       <ul className="mt-2 grid gap-1 text-xs leading-5 text-[#7b642f] md:grid-cols-3">
         {officialPublishingRoutes.map((route) => <li key={route}>{route}</li>)}
       </ul>
@@ -440,7 +440,7 @@ function AutomationView({ form, setForm, rules, groups, socialPackages, publishe
   const confirmed = confirmedFor === fingerprint;
   const sourcesReady = form.contentType !== "agent-sync" || sourceReadiness.ready;
   const canSave = Boolean(form.name.trim() && form.targets.length && sourcesReady && confirmed);
-  const automationTargets = targetOptions(groups).filter((option) => option.target.chatId === DEMO_ACADEMY_CHAT_ID);
+  const automationTargets = targetOptions(groups);
 
   async function generatePreview() {
     setPreviewState("loading");
@@ -470,7 +470,7 @@ function AutomationView({ form, setForm, rules, groups, socialPackages, publishe
       </div>
       <FormStep number="2" title="确认频率" desc="日更任务按 UTC 运行；监控任务按时间窗口扫描并去重。" />
       <Field label="预设频率"><select className={inputClass} value={form.schedulePreset} disabled={form.contentType === "whale-signals"} onChange={(event) => setForm({ ...form, schedulePreset: event.target.value })}>{schedules.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>{form.contentType === "whale-signals" ? <p className="mt-1 text-xs text-ops-muted">系统每小时检查真实订单簿，仅在异动达到阈值时发布，相同信号冷却期内不重复。</p> : null}</Field>
-      <FormStep number="3" title="选择发布目标" desc={`自动发布固定先进入 Demo Academy；建议发布到 ${template.destinationHint}，可在 Demo 内选择多个 Topic。`} />
+      <FormStep number="3" title="选择发布目标" desc={`建议发布到 ${template.destinationHint}；可选择一个或多个已授权的群和 Topic。`} />
       <TargetPicker options={automationTargets} selected={form.targets} onChange={(targets) => setForm({ ...form, targets })} />
       <Toggle checked={form.enabled} label="创建后立即启用" onChange={(enabled) => setForm({ ...form, enabled })} />
       <label className="flex items-start gap-3 rounded-lg border border-ops-line bg-[#fbfcfb] p-3 text-sm font-bold leading-6 text-[#33423b]"><input className="mt-1" checked={confirmed} onChange={(event) => setConfirmedFor(event.target.checked ? fingerprint : "")} type="checkbox" /><span>我已确认发送模板、频率和目标。动态数据会在实际执行时刷新。</span></label>

@@ -24,6 +24,9 @@ export async function POST(request) {
       return NextResponse.json({ ok: false, error: error.message }, { status: 422 });
     }
   }
+  if (body.action) {
+    return NextResponse.json({ ok: false, error: `不支持的操作：${String(body.action)}` }, { status: 400 });
+  }
   const packages = normalizeSocialPackages(body.packages || body);
   const config = { packages, updatedAt: new Date().toISOString() };
   await writeJson(socialPackagesPath, config);

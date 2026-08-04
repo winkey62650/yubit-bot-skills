@@ -23,7 +23,7 @@ test("buildWorkerConfig targets the private local web service", () => {
   assert.equal(config.secret, "secret-value");
   assert.equal(config.distributionIntervalMs, 15_000);
   assert.equal(config.tradingIntervalMs, 300_000);
-  assert.equal(config.agentIntervalMs, 14_400_000);
+  assert.equal(config.agentIntervalMs, 3_600_000);
   assert.equal(config.larkIntervalMs, 60_000);
 });
 
