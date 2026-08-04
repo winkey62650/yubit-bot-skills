@@ -47,7 +47,7 @@ const schedules = [
 ];
 
 const DEMO_ACADEMY_CHAT_ID = "-1003710405969";
-const defaultDeliverySettings = { telegramPublishMode: "user", telegramForwardMode: "user" };
+const defaultDeliverySettings = { telegramPublishMode: "bot", telegramForwardMode: "bot" };
 
 const officialPublishingSteps = [
   "服务器生成带指纹的定稿模板并排队",

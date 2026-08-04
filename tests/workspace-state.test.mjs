@@ -52,3 +52,9 @@ test("settings persist Telegram publish and forward modes", () => {
   assert.equal(state.telegramPublishMode, "bot");
   assert.equal(state.telegramForwardMode, "user");
 });
+
+test("new settings default both Telegram delivery paths to Bot without removing explicit user mode", () => {
+  const state = normalizeWorkspaceState("settings", {});
+  assert.equal(state.telegramPublishMode, "bot");
+  assert.equal(state.telegramForwardMode, "bot");
+});

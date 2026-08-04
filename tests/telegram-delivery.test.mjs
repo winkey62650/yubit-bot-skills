@@ -63,7 +63,7 @@ test("required user publishing never falls back to a visible Bot identity", asyn
   assert.equal(botCalls, 0);
 });
 
-test("production publishing fails closed when the user publisher flag is omitted", async () => {
+test("production publishing defaults to Bot when no delivery identity was explicitly selected", async () => {
   let botCalls = 0;
   const env = publisherEnv({
     TELEGRAM_USER_PUBLISHER_REQUIRED: undefined,
@@ -74,15 +74,12 @@ test("production publishing fails closed when the user publisher flag is omitted
     botApiCall: async () => { botCalls += 1; }
   });
 
-  await assert.rejects(
-    () => delivery("speaker-token", "sendMessage", {
-      chat_id: DEMO_GROUP_ID,
-      text: "must not use Bot API"
-    }),
-    (error) => error?.code === "TELEGRAM_USER_PUBLISHER_NOT_CONFIGURED"
-  );
-  assert.equal(botCalls, 0);
-  assert.equal(telegramUserPublisherStatus(env).required, true);
+  await delivery("speaker-token", "sendMessage", {
+    chat_id: DEMO_GROUP_ID,
+    text: "use the safe default Bot publisher"
+  });
+  assert.equal(botCalls, 1);
+  assert.equal(telegramUserPublisherStatus(env).required, false);
 });
 
 test("production honors an explicit Bot publisher mode selected by the backend", async () => {

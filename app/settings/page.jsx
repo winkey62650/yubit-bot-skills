@@ -12,8 +12,8 @@ const defaultSettings = {
   failureThreshold: "2 次连续失败告警",
   environment: "生产环境",
   status: "暂停",
-  telegramPublishMode: "user",
-  telegramForwardMode: "user"
+  telegramPublishMode: "bot",
+  telegramForwardMode: "bot"
 };
 
 const pendingChecks = [

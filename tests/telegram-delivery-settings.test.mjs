@@ -16,6 +16,20 @@ test("backend delivery settings independently select publishing and forwarding i
   });
 });
 
+test("production defaults to Bot while an explicit saved user selection is preserved", () => {
+  assert.deepEqual(normalizeTelegramDeliverySettings({}, { NODE_ENV: "production" }), {
+    telegramPublishMode: "bot",
+    telegramForwardMode: "bot"
+  });
+  assert.deepEqual(normalizeTelegramDeliverySettings({
+    telegramPublishMode: "user",
+    telegramForwardMode: "user"
+  }, { NODE_ENV: "production" }), {
+    telegramPublishMode: "user",
+    telegramForwardMode: "user"
+  });
+});
+
 test("Bot mode disables the user and desktop publisher without deleting credentials", () => {
   const env = applyTelegramDeliveryMode({
     TELEGRAM_DESKTOP_PUBLISHER_REQUIRED: "true",
