@@ -4,6 +4,7 @@ import {
   detectSocialPlatform,
   normalizeSocialPackages,
   parseSocialFeed,
+  parseXSyndicationTimeline,
   socialFetchPlan,
   summarizeSocialSources
 } from "../lib/social-sources.mjs";
@@ -53,6 +54,73 @@ test("platform detection and fetch plans choose stable sources first", () => {
     { kind: "youtube-feed", url: "https://www.youtube.com/feeds/videos.xml?channel_id=UCabc", reliability: "stable" }
   );
   assert.equal(socialFetchPlan({ platform: "X", accountUrl: "https://x.com/agent" }, { hasXToken: true }).kind, "x-api");
+  assert.deepEqual(
+    socialFetchPlan({ platform: "X", accountUrl: "https://x.com/agent" }, { hasXToken: false }),
+    {
+      kind: "x-syndication",
+      username: "agent",
+      url: "https://syndication.twitter.com/srv/timeline-profile/screen-name/agent",
+      reliability: "standard"
+    }
+  );
+});
+
+test("X public timeline parser selects the newest original account post", () => {
+  const payload = {
+    props: {
+      pageProps: {
+        timeline: {
+          entries: [
+            {
+              entry_id: "tweet-100",
+              content: {
+                tweet: {
+                  id_str: "100",
+                  created_at: "Mon Jul 27 01:00:00 +0000 2026",
+                  full_text: "Pinned older post",
+                  permalink: "/JennaXCrypto/status/100",
+                  user: { screen_name: "JennaXCrypto" }
+                }
+              }
+            },
+            {
+              entry_id: "tweet-2083552295225045247",
+              content: {
+                tweet: {
+                  id_str: "2083552295225045247",
+                  created_at: "Sat Aug 01 08:30:00 +0000 2026",
+                  full_text: "Latest Jenna market update",
+                  permalink: "/JennaXCrypto/status/2083552295225045247",
+                  user: { screen_name: "JennaXCrypto" }
+                }
+              }
+            },
+            {
+              entry_id: "tweet-9999999999999999999",
+              content: {
+                tweet: {
+                  id_str: "9999999999999999999",
+                  created_at: "Sun Aug 02 08:30:00 +0000 2026",
+                  full_text: "Another account",
+                  permalink: "/OtherAccount/status/9999999999999999999",
+                  user: { screen_name: "OtherAccount" }
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  };
+  const html = `<html><script type="application/json" id="__NEXT_DATA__">${JSON.stringify(payload)}</script></html>`;
+
+  assert.deepEqual(parseXSyndicationTimeline(html, "JennaXCrypto"), {
+    externalId: "2083552295225045247",
+    title: "Latest Jenna market update",
+    description: "Latest Jenna market update",
+    url: "https://x.com/JennaXCrypto/status/2083552295225045247",
+    publishedAt: "Sat Aug 01 08:30:00 +0000 2026"
+  });
 });
 
 test("RSS and YouTube Atom feeds produce one stable latest-content snapshot", () => {

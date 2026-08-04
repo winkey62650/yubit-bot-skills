@@ -488,7 +488,7 @@ test("every SpeakerBot content type points to its semantic numbered Topic", () =
   });
 });
 
-test("social source readiness distinguishes stable sources from limited X fallback", () => {
+test("social source readiness recognizes X public timeline and YouTube as usable sources", () => {
   assert.deepEqual(buildSocialSourceReadiness([]), {
     total: 0,
     enabled: 0,
@@ -503,8 +503,8 @@ test("social source readiness distinguishes stable sources from limited X fallba
   ]), {
     total: 3,
     enabled: 2,
-    stable: 1,
-    limited: 1,
+    stable: 2,
+    limited: 0,
     ready: true
   });
 });
