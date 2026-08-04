@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   detectSocialPlatform,
   normalizeSocialPackages,
+  parseXReaderTimeline,
   parseXProfileTimeline,
   parseSocialFeed,
   parseXSyndicationTimeline,
@@ -90,6 +91,22 @@ test("X public profile parser selects the newest top-level account post", () => 
     description: "Coffee & markets ☕️",
     url: "https://x.com/JennaXCrypto/status/2084476005536743718",
     publishedAt: "2026-08-04T03:06:22.000Z"
+  });
+});
+
+test("X reader fallback selects the newest account post and ignores pinned or quoted posts", () => {
+  const markdown = `
+* Pinned [Jenna](https://x.com/JennaXCrypto) [@JennaXCrypto](https://x.com/JennaXCrypto) [Aug 1](https://x.com/JennaXCrypto/status/2083552295225045247) Pinned older post [![Image 1](https://pbs.twimg.com/old.jpg)](https://x.com/JennaXCrypto/status/2083552295225045247/photo/1)
+* [Jenna](https://x.com/JennaXCrypto) [@JennaXCrypto](https://x.com/JennaXCrypto) [3h](https://x.com/JennaXCrypto/status/2084476005536743718) Coffee with [@Markets](https://x.com/Markets) & conviction ☕️ [![Image 2](https://pbs.twimg.com/new.jpg)](https://x.com/JennaXCrypto/status/2084476005536743718/photo/1)
+* [Jenna](https://x.com/JennaXCrypto) [@JennaXCrypto](https://x.com/JennaXCrypto) [Aug 3](https://x.com/JennaXCrypto/status/2084083353775468832) My update [Other](https://x.com/Other) [Aug 4](https://x.com/Other/status/9999999999999999999) Quoted post
+`;
+
+  assert.deepEqual(parseXReaderTimeline(markdown, "JennaXCrypto"), {
+    externalId: "2084476005536743718",
+    title: "Coffee with @Markets & conviction ☕️",
+    description: "Coffee with @Markets & conviction ☕️",
+    url: "https://x.com/JennaXCrypto/status/2084476005536743718",
+    publishedAt: "2026-08-04T03:06:22.068Z"
   });
 });
 
