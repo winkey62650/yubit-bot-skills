@@ -38,14 +38,14 @@ export default function GroupConfigPage() {
     async function bootstrap() {
       await loadSavedGroups();
       await Promise.all([
-        refreshLiveGroups({ silent: true }),
+        refreshLiveGroups({ silent: true, persist: true }),
         loadPublisherStatus()
       ]);
     }
     bootstrap();
   }, []);
   useLiveAutoRefresh(() => Promise.all([
-    refreshLiveGroups({ silent: true }),
+    refreshLiveGroups({ silent: true, persist: true }),
     loadPublisherStatus()
   ]), { enabled: groupsLoaded && !busy });
 

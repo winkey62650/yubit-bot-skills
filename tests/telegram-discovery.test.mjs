@@ -471,6 +471,18 @@ test("collapses legacy template placeholders and duplicate numbered topic events
   assert.equal(topics[6].name, "CryptoGuy Trading Zone");
 });
 
+test("recognizes and preserves an agent-specific Trading Zone topic", () => {
+  const topics = mergeExpectedForumTopics([
+    { name: "JennaX Trading Zone", threadId: 10, source: "setup-state", verified: true }
+  ], [
+    { name: "CryptoGuy Trading Zone" }
+  ]);
+
+  assert.equal(topics.length, 1);
+  assert.equal(topics[0].threadId, 10);
+  assert.equal(topics[0].name, "JennaX Trading Zone");
+});
+
 test("uses completed setup state as the authority for managed topic ids", () => {
   const group = {
     chatId: activeId,

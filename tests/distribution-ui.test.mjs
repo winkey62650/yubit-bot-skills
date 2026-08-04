@@ -350,6 +350,24 @@ test("saved groups reconcile exact topic names and thread IDs from active distri
   assert.equal(topics.find((topic) => topic.name === "5. Community Signal").threadId, 14);
 });
 
+test("live Telegram topic names win over stale distribution rule labels", () => {
+  const [mapped] = applyDistributionTopicMappings([{
+    chatId: "-1003332783916",
+    title: "JennaX Trading Academy",
+    topics: [{ name: "JennaX Trading Zone", threadId: 10, verified: true, source: "telegram" }]
+  }], [{
+    kind: "automation",
+    targets: [{
+      chatId: "-1003332783916",
+      threadId: 10,
+      topicName: "2. CryptoGuy Trading Zone"
+    }]
+  }]);
+
+  assert.equal(mapped.topics.length, 1);
+  assert.equal(mapped.topics[0].name, "JennaX Trading Zone");
+});
+
 test("distribution rules restore complete 1-7 selectors for every configured group", () => {
   const groups = [
     {
