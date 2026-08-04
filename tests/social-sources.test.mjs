@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   detectSocialPlatform,
   normalizeSocialPackages,
+  parseXProfileTimeline,
   parseSocialFeed,
   parseXSyndicationTimeline,
   socialFetchPlan,
@@ -57,12 +58,39 @@ test("platform detection and fetch plans choose stable sources first", () => {
   assert.deepEqual(
     socialFetchPlan({ platform: "X", accountUrl: "https://x.com/agent" }, { hasXToken: false }),
     {
-      kind: "x-syndication",
+      kind: "x-profile",
       username: "agent",
-      url: "https://syndication.twitter.com/srv/timeline-profile/screen-name/agent",
+      url: "https://x.com/agent",
       reliability: "standard"
     }
   );
+});
+
+test("X public profile parser selects the newest top-level account post", () => {
+  const html = `
+    <article data-tweet-id="100" itemScope="" itemType="https://schema.org/SocialMediaPosting">
+      <meta content="100" itemProp="identifier"/>
+      <meta content="2026-08-01T08:00:00.000Z" itemProp="datePublished"/>
+      <meta content="https://x.com/JennaXCrypto/status/100" itemProp="url"/>
+      <meta content="Pinned older post" itemProp="articleBody"/>
+      <meta content="JennaXCrypto" itemProp="alternateName"/>
+      <article data-tweet-id="9999999999999999999"><meta content="Quoted post" itemProp="articleBody"/></article>
+    </article>
+    <article itemType="https://schema.org/SocialMediaPosting" data-tweet-id="2084476005536743718">
+      <meta itemProp="identifier" content="2084476005536743718"/>
+      <meta itemProp="datePublished" content="2026-08-04T03:06:22.000Z"/>
+      <meta itemProp="url" content="https://x.com/JennaXCrypto/status/2084476005536743718"/>
+      <meta itemProp="articleBody" content="Coffee &amp; markets ☕️"/>
+      <meta itemProp="alternateName" content="JennaXCrypto"/>
+    </article>`;
+
+  assert.deepEqual(parseXProfileTimeline(html, "JennaXCrypto"), {
+    externalId: "2084476005536743718",
+    title: "Coffee & markets ☕️",
+    description: "Coffee & markets ☕️",
+    url: "https://x.com/JennaXCrypto/status/2084476005536743718",
+    publishedAt: "2026-08-04T03:06:22.000Z"
+  });
 });
 
 test("X public timeline parser selects the newest original account post", () => {
