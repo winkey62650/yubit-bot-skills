@@ -116,6 +116,7 @@ function DistributionPageContent() {
   const [selectedReviews, setSelectedReviews] = useState([]);
   const [backfill, setBackfill] = useState({ ruleId: "", references: "", preview: null });
   const [deliverySettings, setDeliverySettings] = useState(defaultDeliverySettings);
+  const [targetPresets, setTargetPresets] = useState([]);
 
   useEffect(() => {
     loadAll();
@@ -134,7 +135,7 @@ function DistributionPageContent() {
   async function loadAll() {
     setLoading(true);
     try {
-      const [overviewResponse, groupsResponse, socialResponse, savedSettings] = await Promise.all([fetch("/api/distribution", { cache: "no-store" }), fetch("/api/group-config", { cache: "no-store" }), fetch("/api/social-packages", { cache: "no-store" }), loadWorkspaceState("settings")]);
+      const [overviewResponse, groupsResponse, socialResponse, savedSettings, savedPresets] = await Promise.all([fetch("/api/distribution", { cache: "no-store" }), fetch("/api/group-config", { cache: "no-store" }), fetch("/api/social-packages", { cache: "no-store" }), loadWorkspaceState("settings"), loadWorkspaceState("target-presets")]);
       const [overview, groupConfig, socialConfig] = await Promise.all([overviewResponse.json(), groupsResponse.json(), socialResponse.json()]);
       if (!overviewResponse.ok || !overview.ok) throw new Error(overview.error || "内容分发数据读取失败");
       if (!groupsResponse.ok || !groupConfig.ok) throw new Error(groupConfig.error || "群与 Topic 数据读取失败");
@@ -143,6 +144,7 @@ function DistributionPageContent() {
       setGroups(applyDistributionTopicMappings(groupConfig.groups, overview.rules));
       setSocialPackages(Array.isArray(socialConfig.packages) ? socialConfig.packages : []);
       setDeliverySettings({ ...defaultDeliverySettings, ...(savedSettings.state || {}) });
+      setTargetPresets(savedPresets?.state?.presets || []);
       const firstBroadcast = overview.rules?.find((rule) => rule.kind === "broadcast");
       setBackfill((current) => ({ ...current, ruleId: current.ruleId || firstBroadcast?.id || "" }));
     } catch (error) {
@@ -162,6 +164,37 @@ function DistributionPageContent() {
       await loadAll();
     } catch (error) {
       setNotice(`发送身份保存失败：${error.message}`);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function savePreset(name, targets) {
+    setBusy("save-preset");
+    setNotice("");
+    try {
+      const newPreset = { id: crypto.randomUUID(), name, targets };
+      const nextPresets = [...targetPresets, newPreset];
+      const saved = await saveWorkspaceState("target-presets", { presets: nextPresets });
+      setTargetPresets(saved.state?.presets || []);
+      setNotice(`已保存群组预设 "${name}"。`);
+    } catch (error) {
+      setNotice(`预设保存失败：${error.message}`);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function deletePreset(presetId) {
+    setBusy("delete-preset");
+    setNotice("");
+    try {
+      const nextPresets = targetPresets.filter(p => p.id !== presetId);
+      const saved = await saveWorkspaceState("target-presets", { presets: nextPresets });
+      setTargetPresets(saved.state?.presets || []);
+      setNotice(`预设已删除。`);
+    } catch (error) {
+      setNotice(`预设删除失败：${error.message}`);
     } finally {
       setBusy("");
     }
@@ -379,8 +412,8 @@ function DistributionPageContent() {
 
       {analyticsView ? <SiteAnalyticsPanel /> : null}
       {loading && !analyticsView ? <Card className="p-8 text-center font-bold text-ops-muted">正在加载持久化配置…</Card> : null}
-      {!loading && view === "automation" ? <AutomationView form={automationForm} setForm={setAutomationForm} rules={automationRules} groups={groups} socialPackages={socialPackages} publisherName={automaticPublisherName} deliveryMode={deliverySettings.telegramPublishMode} onDeliveryModeChange={(value) => saveDeliveryIdentity("telegramPublishMode", value)} busy={busy} selected={selectedAutomationRules} setSelected={setSelectedAutomationRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedAutomationRules, "自动任务")} onSave={() => saveRule(automationForm, () => setAutomationForm(emptyAutomation))} onEdit={setAutomationForm} onAction={post} onValidate={validate} onPersistSocial={saveSocialPackages} onNotice={setNotice} /> : null}
-      {!loading && view === "broadcast" ? <BroadcastView form={broadcastForm} setForm={setBroadcastForm} rules={broadcastRules} groups={groups} approvedTargetIds={data.publisher?.approvedTargetIds} publisherName={forwardPublisherName} deliveryMode={deliverySettings.telegramForwardMode} onDeliveryModeChange={(value) => saveDeliveryIdentity("telegramForwardMode", value)} busy={busy} selected={selectedBroadcastRules} setSelected={setSelectedBroadcastRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedBroadcastRules, "内容同步规则")} backfill={backfill} setBackfill={setBackfill} onBackfill={previewBackfill} onSave={() => saveRule(broadcastForm, () => setBroadcastForm(emptyBroadcast))} onEdit={setBroadcastForm} onAction={post} onValidate={validate} /> : null}
+      {!loading && view === "automation" ? <AutomationView form={automationForm} setForm={setAutomationForm} rules={automationRules} groups={groups} socialPackages={socialPackages} publisherName={automaticPublisherName} deliveryMode={deliverySettings.telegramPublishMode} onDeliveryModeChange={(value) => saveDeliveryIdentity("telegramPublishMode", value)} busy={busy} selected={selectedAutomationRules} setSelected={setSelectedAutomationRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedAutomationRules, "自动任务")} onSave={() => saveRule(automationForm, () => setAutomationForm(emptyAutomation))} onEdit={setAutomationForm} onAction={post} onValidate={validate} onPersistSocial={saveSocialPackages} onNotice={setNotice} presets={targetPresets} onSavePreset={savePreset} onDeletePreset={deletePreset} /> : null}
+      {!loading && view === "broadcast" ? <BroadcastView form={broadcastForm} setForm={setBroadcastForm} rules={broadcastRules} groups={groups} approvedTargetIds={data.publisher?.approvedTargetIds} publisherName={forwardPublisherName} deliveryMode={deliverySettings.telegramForwardMode} onDeliveryModeChange={(value) => saveDeliveryIdentity("telegramForwardMode", value)} busy={busy} selected={selectedBroadcastRules} setSelected={setSelectedBroadcastRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedBroadcastRules, "内容同步规则")} backfill={backfill} setBackfill={setBackfill} onBackfill={previewBackfill} onSave={() => saveRule(broadcastForm, () => setBroadcastForm(emptyBroadcast))} onEdit={setBroadcastForm} onAction={post} onValidate={validate} presets={targetPresets} onSavePreset={savePreset} onDeletePreset={deletePreset} /> : null}
       {!loading && view === "review" ? <ReviewView events={data.review} selected={selectedReviews} setSelected={setSelectedReviews} busy={busy} onAction={reviewAction} /> : null}
       {!loading && view === "logs" ? <LogsView deliveries={data.deliveries} busy={busy} onRetry={async (id) => { setBusy("retry"); try { const response = await fetch("/api/distribution/logs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "retry", deliveryId: id }) }); const result = await response.json(); if (!response.ok || !result.ok) throw new Error(result.error); setNotice("失败目标已单独重试，不影响其他目标。"); await loadAll(); } catch (error) { setNotice(error.message); } finally { setBusy(""); } }} /> : null}
     </ConsoleShell>
@@ -430,7 +463,7 @@ function OfficialPublishingWorkflow({ status, detail, ready, deliveryMode, busy,
   </Card>;
 }
 
-function AutomationView({ form, setForm, rules, groups, socialPackages, publisherName, deliveryMode, onDeliveryModeChange, busy, selected, setSelected, onDeleteMany, onSave, onEdit, onAction, onValidate, onPersistSocial, onNotice }) {
+function AutomationView({ form, setForm, rules, groups, socialPackages, publisherName, deliveryMode, onDeliveryModeChange, busy, selected, setSelected, onDeleteMany, onSave, onEdit, onAction, onValidate, onPersistSocial, onNotice, presets, onSavePreset, onDeletePreset }) {
   const template = getContentTemplate(form.contentType);
   const [confirmedFor, setConfirmedFor] = useState("");
   const [preview, setPreview] = useState(null);
@@ -471,7 +504,7 @@ function AutomationView({ form, setForm, rules, groups, socialPackages, publishe
       <FormStep number="2" title="确认频率" desc="日更任务按 UTC 运行；监控任务按时间窗口扫描并去重。" />
       <Field label="预设频率"><select className={inputClass} value={form.schedulePreset} disabled={form.contentType === "whale-signals"} onChange={(event) => setForm({ ...form, schedulePreset: event.target.value })}>{schedules.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>{form.contentType === "whale-signals" ? <p className="mt-1 text-xs text-ops-muted">系统每小时检查真实订单簿，仅在异动达到阈值时发布，相同信号冷却期内不重复。</p> : null}</Field>
       <FormStep number="3" title="选择发布目标" desc={`建议发布到 ${template.destinationHint}；可选择一个或多个已授权的群和 Topic。`} />
-      <TargetPicker options={automationTargets} selected={form.targets} onChange={(targets) => setForm({ ...form, targets })} />
+      <TargetPicker options={automationTargets} selected={form.targets} onChange={(targets) => setForm({ ...form, targets })} presets={presets} onSavePreset={(name) => onSavePreset(name, form.targets)} onDeletePreset={onDeletePreset} />
       <Toggle checked={form.enabled} label="创建后立即启用" onChange={(enabled) => setForm({ ...form, enabled })} />
       <label className="flex items-start gap-3 rounded-lg border border-ops-line bg-[#fbfcfb] p-3 text-sm font-bold leading-6 text-[#33423b]"><input className="mt-1" checked={confirmed} onChange={(event) => setConfirmedFor(event.target.checked ? fingerprint : "")} type="checkbox" /><span>我已确认发送模板、频率和目标。动态数据会在实际执行时刷新。</span></label>
     </RuleForm>
@@ -481,7 +514,7 @@ function AutomationView({ form, setForm, rules, groups, socialPackages, publishe
   </div>;
 }
 
-function BroadcastView({ form, setForm, rules, groups, approvedTargetIds, publisherName, deliveryMode, onDeliveryModeChange, busy, selected, setSelected, onDeleteMany, backfill, setBackfill, onBackfill, onSave, onEdit, onAction, onValidate }) {
+function BroadcastView({ form, setForm, rules, groups, approvedTargetIds, publisherName, deliveryMode, onDeliveryModeChange, busy, selected, setSelected, onDeleteMany, backfill, setBackfill, onBackfill, onSave, onEdit, onAction, onValidate, presets, onSavePreset, onDeletePreset }) {
   const sources = sourceOptions(groups);
   const sourceValue = sourceKey(form.source);
   const approvedIds = new Set((Array.isArray(approvedTargetIds) ? approvedTargetIds : []).map(String));
@@ -511,7 +544,7 @@ function BroadcastView({ form, setForm, rules, groups, approvedTargetIds, publis
         <FormStep number="2" title="选择处理方式" desc="运营敏感内容建议先审核，日常同步可直接自动转发。" />
         <fieldset className="grid gap-2 sm:grid-cols-2"><legend className="sr-only">处理方式</legend>{[["automatic", "自动转发", "新消息通常 10 秒内到达目标"], ["review", "先审核", "批准前绝不发送，默认保留 7 天"]].map(([value, title, desc]) => <label className={`rounded-lg border p-4 ${form.mode === value ? "border-ops-accent bg-[#f2faf6]" : "border-ops-line bg-white"}`} key={value}><span className="flex items-center gap-2 text-sm font-black"><input checked={form.mode === value} name="broadcast-mode" onChange={() => setForm({ ...form, mode: value })} type="radio" />{title}</span><span className="mt-2 block text-xs leading-5 text-ops-muted">{desc}</span></label>)}</fieldset>
         <FormStep number="3" title="选择同步目标" desc="一条来源可以同步到其他已授权群的多个 Topic；来源群不会出现在目标列表，避免群内回环。" />
-        <TargetPicker options={broadcastTargets} selected={form.targets.filter((key) => broadcastTargets.some((option) => option.key === key))} onChange={(targets) => setForm({ ...form, targets })} />
+        <TargetPicker options={broadcastTargets} selected={form.targets.filter((key) => broadcastTargets.some((option) => option.key === key))} onChange={(targets) => setForm({ ...form, targets })} presets={presets} onSavePreset={(name) => onSavePreset(name, form.targets)} onDeletePreset={onDeletePreset} />
         <Toggle checked={form.enabled} label="创建后立即启用" onChange={(enabled) => setForm({ ...form, enabled })} />
         <div className="rounded-lg bg-[#fff8e8] p-3 text-xs leading-5 text-[#79591e]">ForwardBot 固定负责监听和接收入站消息；当前选择由 {publisherName} 向目标发布。切换为 ForwardBot 时使用 Bot API；切换为真人 TG 时进入本机发布桥。Bot API 无法感知来源消息删除；可处理的文字与 Caption 编辑会同步。</div>
       </RuleForm>
@@ -640,8 +673,27 @@ function RuleList({ rules, empty, busy, kindLabel, selected, setSelected, onDele
   </Card>;
 }
 
-function TargetPicker({ options, selected, onChange }) {
-  return <fieldset className="grid gap-2"><legend className="mb-1 text-sm font-bold text-ops-muted">目标 Forum 群 / Topic（可多选）</legend><div className="max-h-52 overflow-y-auto rounded-lg border border-ops-line p-2">{options.length ? options.map((option) => <label className="flex min-h-10 items-center gap-3 rounded-md px-2 text-sm hover:bg-ops-soft" key={option.key}><input checked={selected.includes(option.key)} onChange={() => onChange(selected.includes(option.key) ? selected.filter((key) => key !== option.key) : [...selected, option.key])} type="checkbox" /><span>{option.label}</span></label>) : <p className="p-2 text-sm text-ops-muted">暂未识别到可发布的 Forum 群 Topic，请先刷新群与 Topic。</p>}</div></fieldset>;
+function TargetPicker({ options, selected, onChange, presets = [], onSavePreset, onDeletePreset }) {
+  const [presetName, setPresetName] = useState("");
+  return <fieldset className="grid gap-2"><legend className="mb-1 text-sm font-bold text-ops-muted">目标 Forum 群 / Topic（可多选）</legend>
+    {presets.length > 0 ? (
+       <div className="mb-2 flex flex-wrap gap-2">
+         {presets.map(p => (
+           <div key={p.id} className="flex items-center gap-1 rounded bg-[#e8f0ec] px-2 py-1 text-xs text-[#173f31]">
+             <button type="button" onClick={() => onChange(p.targets)} className="font-bold hover:underline">{p.name}</button>
+             <button type="button" onClick={() => onDeletePreset && window.confirm(`确认删除预设 "${p.name}"？`) && onDeletePreset(p.id)} className="ml-1 text-[#8b9d94] hover:text-[#d85f5f]">×</button>
+           </div>
+         ))}
+       </div>
+    ) : null}
+    <div className="max-h-52 overflow-y-auto rounded-lg border border-ops-line p-2">{options.length ? options.map((option) => <label className="flex min-h-10 items-center gap-3 rounded-md px-2 text-sm hover:bg-ops-soft" key={option.key}><input checked={selected.includes(option.key)} onChange={() => onChange(selected.includes(option.key) ? selected.filter((key) => key !== option.key) : [...selected, option.key])} type="checkbox" /><span>{option.label}</span></label>) : <p className="p-2 text-sm text-ops-muted">暂未识别到可发布的 Forum 群 Topic，请先刷新群与 Topic。</p>}</div>
+    {onSavePreset ? (
+      <div className="mt-2 flex gap-2">
+        <input className={inputClass + " flex-1"} placeholder="预设名称..." value={presetName} onChange={e => setPresetName(e.target.value)} />
+        <SmallButton disabled={!presetName || !selected.length} onClick={() => { onSavePreset(presetName); setPresetName(""); }}>保存当前选择为预设</SmallButton>
+      </div>
+    ) : null}
+  </fieldset>;
 }
 
 function BackfillPanel({ rules, value, setValue, busy, onRun }) {
