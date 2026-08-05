@@ -1,0 +1,213 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import ConsoleShell from "../components/ConsoleShell";
+import { Card, PageHeader, Field, inputClass } from "../components/ui";
+
+export default function ComposerPage() {
+  const [loading, setLoading] = useState(true);
+  const [accounts, setAccounts] = useState([]);
+  const [groups, setGroups] = useState([]);
+  const [approvedTargetIds, setApprovedTargetIds] = useState([]);
+  
+  // Form state
+  const [selectedUserId, setSelectedUserId] = useState("");
+  const [selectedTarget, setSelectedTarget] = useState("");
+  const [messageText, setMessageText] = useState("");
+  const [mediaUrl, setMediaUrl] = useState("");
+  
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const [authRes, groupsRes] = await Promise.all([
+          fetch("/api/telegram/user-authorization"),
+          fetch("/api/group-config")
+        ]);
+        
+        const authData = await authRes.json();
+        const groupsData = await groupsRes.json();
+        
+        if (authData.ok) {
+          setAccounts(authData.accounts || []);
+          if (authData.accounts?.length > 0) {
+            setSelectedUserId(authData.accounts[0].userId);
+          }
+          setApprovedTargetIds(authData.publisher?.approvedTargetIds || []);
+        }
+        
+        if (groupsData.ok) {
+          setGroups(groupsData.groups || []);
+        }
+      } catch (err) {
+        console.error("Failed to load composer data", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadData();
+  }, []);
+
+  // Filter topics based on approved targets
+  const targetOptions = [];
+  groups.forEach(group => {
+    if (approvedTargetIds.includes(group.chatId)) {
+      if (group.isForum && group.topics) {
+        group.topics.forEach(topic => {
+          targetOptions.push({
+            id: `${group.chatId}:${topic.threadId || ''}`,
+            label: `${group.title} - ${topic.name}`
+          });
+        });
+      } else {
+        targetOptions.push({
+          id: `${group.chatId}:`,
+          label: group.title
+        });
+      }
+    }
+  });
+
+  async function handleSend(queue = false) {
+    if (!selectedUserId) {
+      setError("请选择发送账号");
+      return;
+    }
+    if (!selectedTarget) {
+      setError("请选择发送目标");
+      return;
+    }
+    if (!messageText.trim() && !mediaUrl.trim()) {
+      setError("请输入消息内容或媒体链接");
+      return;
+    }
+
+    setSending(true);
+    setError("");
+    setSuccess("");
+
+    const [chatId, threadId] = selectedTarget.split(":");
+
+    try {
+      const res = await fetch("/api/composer/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: selectedUserId,
+          chatId,
+          threadId: threadId ? Number(threadId) : null,
+          text: messageText,
+          mediaUrl,
+          queue
+        })
+      });
+      const data = await res.json();
+      
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || "发送失败");
+      }
+      
+      setSuccess(queue ? "消息已加入队列" : "消息发送成功");
+      setMessageText("");
+      setMediaUrl("");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <ConsoleShell>
+      <PageHeader
+        title="消息发布中心"
+        desc="选择账号和目标，编写消息并发送或加入队列。"
+      />
+      
+      <Card className="p-6 max-w-3xl">
+        {loading ? (
+          <p className="text-ops-muted">加载中...</p>
+        ) : (
+          <div className="space-y-5">
+            {error && <div className="p-3 bg-[#fef5f4] text-[#a04a3d] font-bold rounded-lg">{error}</div>}
+            {success && <div className="p-3 bg-[#f3f9f4] text-[#2c7a3f] font-bold rounded-lg">{success}</div>}
+            
+            <Field label="发送账号">
+              <select 
+                className={inputClass}
+                value={selectedUserId}
+                onChange={(e) => setSelectedUserId(e.target.value)}
+                disabled={sending || accounts.length === 0}
+              >
+                <option value="">-- 请选择账号 --</option>
+                {accounts.map(acc => (
+                  <option key={acc.userId} value={acc.userId}>
+                    {acc.firstName} {acc.lastName} (@{acc.username || acc.userId})
+                  </option>
+                ))}
+              </select>
+              {accounts.length === 0 && (
+                <p className="mt-1 text-sm text-[#a04a3d]">暂无已授权账号，请前往“授权页面”添加。</p>
+              )}
+            </Field>
+
+            <Field label="目标群/Topic">
+              <select 
+                className={inputClass}
+                value={selectedTarget}
+                onChange={(e) => setSelectedTarget(e.target.value)}
+                disabled={sending || targetOptions.length === 0}
+              >
+                <option value="">-- 请选择目标 --</option>
+                {targetOptions.map(opt => (
+                  <option key={opt.id} value={opt.id}>{opt.label}</option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label="消息正文 (支持 Markdown)">
+              <textarea 
+                className={`${inputClass} min-h-[150px]`}
+                placeholder="请输入消息内容..."
+                value={messageText}
+                onChange={(e) => setMessageText(e.target.value)}
+                disabled={sending}
+              />
+            </Field>
+
+            <Field label="媒体链接 (可选, 必须是公网可访问的图片/视频 URL)">
+              <input 
+                type="text"
+                className={inputClass}
+                placeholder="https://example.com/image.jpg"
+                value={mediaUrl}
+                onChange={(e) => setMediaUrl(e.target.value)}
+                disabled={sending}
+              />
+            </Field>
+
+            <div className="flex gap-3 pt-2">
+              <button 
+                onClick={() => handleSend(false)} 
+                disabled={sending || !selectedUserId || !selectedTarget || (!messageText && !mediaUrl)}
+                className="rounded-lg bg-ops-accent px-5 py-2 font-black text-white disabled:opacity-50"
+              >
+                {sending ? "处理中..." : "立即发送"}
+              </button>
+              <button 
+                onClick={() => handleSend(true)} 
+                disabled={sending || !selectedUserId || !selectedTarget || (!messageText && !mediaUrl)}
+                className="rounded-lg bg-[#f0f2f5] px-5 py-2 font-black text-ops-muted hover:bg-[#e4e6eb] transition-colors disabled:opacity-50"
+              >
+                加入队列
+              </button>
+            </div>
+          </div>
+        )}
+      </Card>
+    </ConsoleShell>
+  );
+}

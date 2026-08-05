@@ -7,6 +7,7 @@ import { Suspense, useState } from "react";
 const navItems = [
   { href: "/distribution?view=site-analytics", label: "网站数据", view: "site-analytics" },
   { href: "/distribution?view=automation", label: "内容分发中心", view: "automation" },
+  { href: "/composer", label: "手动消息发布" },
   { href: "/group-config", label: "群与 Topic" },
   { href: "/new-group", label: "新群初始化" },
   { href: "/discord", label: "Discord 社区" },
