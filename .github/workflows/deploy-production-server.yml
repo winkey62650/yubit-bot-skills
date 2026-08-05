@@ -23,6 +23,8 @@ jobs:
       - name: Deploy the latest code/academy release
         env:
           SSHPASS: ${{ secrets.YUBIT_SERVER_PASSWORD }}
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
           DESKTOP_PUBLISHER_SECRET: ${{ secrets.DESKTOP_PUBLISHER_SECRET }}
           DISCORD_APP_ID: ${{ secrets.DISCORD_APP_ID }}
           DISCORD_PUBLIC_KEY: ${{ secrets.DISCORD_PUBLIC_KEY }}
@@ -33,6 +35,10 @@ jobs:
         run: |
           if [ -z "$SSHPASS" ]; then
             echo "YUBIT_SERVER_PASSWORD is not configured." >&2
+            exit 1
+          fi
+          if [ -z "$TELEGRAM_API_ID" ] || [ -z "$TELEGRAM_API_HASH" ]; then
+            echo "TELEGRAM_API_ID or TELEGRAM_API_HASH is not configured." >&2
             exit 1
           fi
           if [ -z "$DESKTOP_PUBLISHER_SECRET" ]; then
@@ -58,6 +64,8 @@ jobs:
             exit 1
           fi
           policy_b64="$(printf '%s' "$APPROVED_DISTRIBUTION_TARGETS" | base64 -w0)"
+          telegram_api_id_b64="$(printf '%s' "$TELEGRAM_API_ID" | base64 -w0)"
+          telegram_api_hash_b64="$(printf '%s' "$TELEGRAM_API_HASH" | base64 -w0)"
           desktop_secret_b64="$(printf '%s' "$DESKTOP_PUBLISHER_SECRET" | base64 -w0)"
           discord_app_id_b64="$(printf '%s' "$DISCORD_APP_ID" | base64 -w0)"
           discord_public_key_b64="$(printf '%s' "$DISCORD_PUBLIC_KEY" | base64 -w0)"
@@ -68,10 +76,12 @@ jobs:
             -o ServerAliveInterval=10 \
             -o StrictHostKeyChecking=accept-new \
             ubuntu@152.32.161.174 \
-            "POLICY_B64='$policy_b64' DESKTOP_SECRET_B64='$desktop_secret_b64' DISCORD_APP_ID_B64='$discord_app_id_b64' DISCORD_PUBLIC_KEY_B64='$discord_public_key_b64' DISCORD_BOT_TOKEN_B64='$discord_bot_token_b64' DISCORD_GATEWAY_ENABLED_B64='$discord_gateway_enabled_b64' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'REMOTE'
+            "POLICY_B64='$policy_b64' TELEGRAM_API_ID_B64='$telegram_api_id_b64' TELEGRAM_API_HASH_B64='$telegram_api_hash_b64' DESKTOP_SECRET_B64='$desktop_secret_b64' DISCORD_APP_ID_B64='$discord_app_id_b64' DISCORD_PUBLIC_KEY_B64='$discord_public_key_b64' DISCORD_BOT_TOKEN_B64='$discord_bot_token_b64' DISCORD_GATEWAY_ENABLED_B64='$discord_gateway_enabled_b64' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           env_file=/etc/yubit-academy/production.env
           approved_targets="$(printf '%s' "$POLICY_B64" | base64 -d)"
+          telegram_api_id="$(printf '%s' "$TELEGRAM_API_ID_B64" | base64 -d)"
+          telegram_api_hash="$(printf '%s' "$TELEGRAM_API_HASH_B64" | base64 -d)"
           desktop_publisher_secret="$(printf '%s' "$DESKTOP_SECRET_B64" | base64 -d)"
           discord_app_id="$(printf '%s' "$DISCORD_APP_ID_B64" | base64 -d)"
           discord_public_key="$(printf '%s' "$DISCORD_PUBLIC_KEY_B64" | base64 -d)"
@@ -82,8 +92,10 @@ jobs:
             session_key="$(openssl rand -hex 32)"
           fi
           env_tmp="$(mktemp)"
-          sudo awk '!/^(TELEGRAM_DEMO_ONLY|TELEGRAM_DISTRIBUTION_APPROVED_TARGETS|TRADING_DEMO_ONLY|TELEGRAM_PUBLISHER_MODE|TELEGRAM_BOT_PUBLISHER_USERNAME|TELEGRAM_USER_PUBLISHER_REQUIRED|TELEGRAM_USER_PUBLISHER_TARGETS|TELEGRAM_USER_PUBLISHER_USERNAME|TELEGRAM_USER_SESSION_ENCRYPTION_KEY|TELEGRAM_DESKTOP_PUBLISHER_REQUIRED|DESKTOP_PUBLISHER_SECRET|DISCORD_APP_ID|DISCORD_PUBLIC_KEY|DISCORD_BOT_TOKEN|DISCORD_GATEWAY_ENABLED)=/' "$env_file" >"$env_tmp"
+          sudo awk '!/^(TELEGRAM_API_ID|TELEGRAM_API_HASH|TELEGRAM_DEMO_ONLY|TELEGRAM_DISTRIBUTION_APPROVED_TARGETS|TRADING_DEMO_ONLY|TELEGRAM_PUBLISHER_MODE|TELEGRAM_BOT_PUBLISHER_USERNAME|TELEGRAM_USER_PUBLISHER_REQUIRED|TELEGRAM_USER_PUBLISHER_TARGETS|TELEGRAM_USER_PUBLISHER_USERNAME|TELEGRAM_USER_SESSION_ENCRYPTION_KEY|TELEGRAM_DESKTOP_PUBLISHER_REQUIRED|DESKTOP_PUBLISHER_SECRET|DISCORD_APP_ID|DISCORD_PUBLIC_KEY|DISCORD_BOT_TOKEN|DISCORD_GATEWAY_ENABLED)=/' "$env_file" >"$env_tmp"
           {
+            printf 'TELEGRAM_API_ID=%s\n' "$telegram_api_id"
+            printf 'TELEGRAM_API_HASH=%s\n' "$telegram_api_hash"
             printf 'TELEGRAM_DEMO_ONLY=false\n'
             printf 'TELEGRAM_DISTRIBUTION_APPROVED_TARGETS=%s\n' "$approved_targets"
             printf 'TRADING_DEMO_ONLY=true\n'
