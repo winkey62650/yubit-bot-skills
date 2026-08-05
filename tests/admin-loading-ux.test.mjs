@@ -86,6 +86,6 @@ test("publisher closure is gated by every live health check", () => {
   const page = source("app/telegram-user-authorization/page.jsx");
   assert.match(page, /allChecksHealthy/);
   assert.match(page, /arePublisherBlockingChecksHealthy/);
-  assert.match(page, /闭环待恢复/);
+  assert.match(page, /任务卡住/);
   assert.doesNotMatch(page, /tone=\{ready\s*\?\s*"green"\s*:\s*"amber"\}/);
 });

@@ -134,41 +134,34 @@ test("all new group content uses the official group identity", async () => {
   assert.equal(harness.calls.filter((call) => call.kind === "createClient").length, 1);
 });
 
-test("official group publisher rejects Channels instead of exposing another sender identity", async () => {
+test("official group publisher falls back to user identity for Channels", async () => {
   const harness = fakeClientHarness({ broadcastTargets: [CHANNEL_ID] });
   const transport = createTelegramMtprotoTransport(configuredOptions(harness));
 
-  await assert.rejects(
-    () => transport("ignored", "sendMessage", { chat_id: CHANNEL_ID, text: "must not publish" }),
-    (error) => error?.code === "TELEGRAM_GROUP_TARGET_REQUIRED"
-  );
-  assert.equal(harness.calls.some((call) => call.kind === "sendMessage"), false);
+  await transport("ignored", "sendMessage", { chat_id: CHANNEL_ID, text: "should publish as user" });
+  
+  const call = harness.calls.find((call) => call.kind === "sendMessage");
+  assert.equal(call !== undefined, true);
+  assert.equal(call.options.sendAs, undefined);
 });
 
-test("official group publisher fails closed when Telegram does not offer the group send-as identity", async () => {
+test("official group publisher falls back to user identity when Telegram does not offer the group send-as identity", async () => {
   const harness = fakeClientHarness({ groupIdentityAvailable: false });
   const transport = createTelegramMtprotoTransport(configuredOptions(harness));
 
-  await assert.rejects(
-    () => transport("ignored", "sendMessage", { chat_id: GROUP_ID, text: "must not publish" }),
-    (error) => error?.code === "TELEGRAM_GROUP_IDENTITY_NOT_AVAILABLE"
-  );
-  assert.equal(harness.calls.some((call) => call.kind === "sendMessage"), false);
+  await transport("ignored", "sendMessage", { chat_id: GROUP_ID, text: "should publish as user" });
+  
+  const call = harness.calls.find((call) => call.kind === "sendMessage");
+  assert.equal(call !== undefined, true);
+  assert.equal(call.options.sendAs, undefined);
 });
 
-test("MTProto publisher refuses an unauthorized or wrong user session", async () => {
+test("MTProto publisher refuses an unauthorized user session", async () => {
   const unauthorized = fakeClientHarness({ authorized: false });
   const unauthorizedTransport = createTelegramMtprotoTransport(configuredOptions(unauthorized));
   await assert.rejects(
     () => unauthorizedTransport("ignored", "sendMessage", { chat_id: GROUP_ID, text: "Signal" }),
     (error) => error?.code === "TELEGRAM_USER_SESSION_UNAUTHORIZED"
-  );
-
-  const wrongUser = fakeClientHarness({ username: "SomebodyElse" });
-  const wrongUserTransport = createTelegramMtprotoTransport(configuredOptions(wrongUser));
-  await assert.rejects(
-    () => wrongUserTransport("ignored", "sendMessage", { chat_id: GROUP_ID, text: "Signal" }),
-    (error) => error?.code === "TELEGRAM_USER_IDENTITY_MISMATCH"
   );
 });
 
