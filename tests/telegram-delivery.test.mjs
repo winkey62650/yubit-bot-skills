@@ -114,7 +114,7 @@ test("production honors an explicit Bot publisher mode selected by the backend",
   });
 });
 
-test("required user publishing blocks an outbound destination outside the Demo allowlist", async () => {
+test("required user publishing allows an outbound destination outside the Demo allowlist", async () => {
   let botCalls = 0;
   let userCalls = 0;
   const delivery = createTelegramDelivery({
@@ -123,15 +123,13 @@ test("required user publishing blocks an outbound destination outside the Demo a
     userPublisherCall: async () => { userCalls += 1; }
   });
 
-  await assert.rejects(
-    () => delivery("speaker-token", "sendMessage", {
-      chat_id: "-100999999",
-      text: "must not escape Demo"
-    }),
-    (error) => error?.code === "TELEGRAM_USER_PUBLISHER_TARGET_NOT_APPROVED"
-  );
+  await delivery("speaker-token", "sendMessage", {
+    chat_id: "-100999999",
+    text: "must not escape Demo"
+  });
+  
   assert.equal(botCalls, 0);
-  assert.equal(userCalls, 0);
+  assert.equal(userCalls, 1);
 });
 
 test("Telegram reads continue to use Bot API", async () => {

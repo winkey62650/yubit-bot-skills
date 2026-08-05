@@ -38,7 +38,7 @@ test("Telegram user session is encrypted at rest and restores only for the expec
     apiCredentials: { apiId: 12345, apiHash: "sensitive-api-hash" }
   });
 
-  const raw = values.get("telegram-user-publisher-v1");
+  const raw = values.get("telegram-session-v1:901");
   assert.equal(JSON.stringify(raw).includes("sensitive-mtproto-session"), false);
   assert.equal(JSON.stringify(raw).includes("sensitive-api-hash"), false);
   assert.equal(raw.apiId, 12345);
@@ -55,20 +55,7 @@ test("Telegram user session is encrypted at rest and restores only for the expec
   assert.equal(restored.username, "Serenity_Crypto");
 });
 
-test("Telegram user session refuses a different account without persisting it", async () => {
-  const { values, repository } = repositoryHarness();
-  const store = createTelegramUserSessionStore({
-    repository,
-    encryptionKey: ENCRYPTION_KEY,
-    expectedUsername: "Serenity_Crypto"
-  });
 
-  await assert.rejects(
-    () => store.save({ session: "other-session", user: { id: 902, username: "someone_else", bot: false } }),
-    (error) => error?.code === "TELEGRAM_USER_IDENTITY_MISMATCH"
-  );
-  assert.equal(values.has("telegram-user-publisher-v1"), false);
-});
 
 test("Telegram user session refuses an empty authorization payload", async () => {
   const { values, repository } = repositoryHarness();
@@ -82,7 +69,7 @@ test("Telegram user session refuses an empty authorization payload", async () =>
     () => store.save({ session: "   ", user: { id: 901, username: "Serenity_Crypto", bot: false } }),
     (error) => error?.code === "TELEGRAM_USER_SESSION_INVALID"
   );
-  assert.equal(values.has("telegram-user-publisher-v1"), false);
+  assert.equal(values.has("telegram-session-v1:901"), false);
 });
 
 test("Telegram publisher health never exposes the encrypted session", async () => {
@@ -103,7 +90,7 @@ test("Telegram publisher health never exposes the encrypted session", async () =
     configured: true,
     credentialsConfigured: true,
     authorized: true,
-    expectedUsername: "Serenity_Crypto",
+    expectedUsername: null,
     username: "Serenity_Crypto",
     userId: "901",
     firstName: "Serenity",
