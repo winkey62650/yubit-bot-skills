@@ -28,6 +28,7 @@ function fakeClientHarness({
   authorized = true,
   username = "Serenity_Crypto",
   groupIdentityAvailable = true,
+  getSendAsError = null,
   broadcastTargets = [],
   requireDialogWarmup = false,
   dialogs = null
@@ -91,6 +92,7 @@ function fakeClientHarness({
     },
     async invoke(request) {
       calls.push({ kind: "invoke", request });
+      if (getSendAsError) throw getSendAsError;
       const target = request.peer;
       return {
         peers: groupIdentityAvailable
@@ -244,6 +246,23 @@ test("official group publisher falls back to user identity when Telegram does no
   
   const call = harness.calls.find((call) => call.kind === "sendMessage");
   assert.equal(call !== undefined, true);
+  assert.equal(call.options.sendAs, undefined);
+});
+
+test("official group publisher continues when GetSendAs is unsupported for a normal supergroup", async () => {
+  const error = new Error("The provided peer id is invalid. (caused by channels.GetSendAs)");
+  error.code = "PEER_ID_INVALID";
+  error.name = "PeerIdInvalidError";
+  const harness = fakeClientHarness({ getSendAsError: error });
+  const transport = createTelegramMtprotoTransport(configuredOptions(harness));
+
+  const result = await transport("ignored", "sendMessage", {
+    chat_id: GROUP_ID,
+    text: "normal supergroup"
+  });
+
+  assert.deepEqual(result, { message_id: 777 });
+  const call = harness.calls.find((candidate) => candidate.kind === "sendMessage");
   assert.equal(call.options.sendAs, undefined);
 });
 
