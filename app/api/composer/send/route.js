@@ -112,7 +112,22 @@ export async function POST(req) {
       }
     }
 
-    return NextResponse.json({ ok: true, results, errors });
+    const noTargetsDelivered = results.length === 0;
+    if (errors.length > 0) {
+      const summary = noTargetsDelivered
+        ? `Telegram 未送达任何目标（失败 ${errors.length} 个）`
+        : `部分目标发送失败（成功 ${results.length} 个，失败 ${errors.length} 个）`;
+      const reason = errors[0]?.error ? `：${errors[0].error}` : "";
+      return NextResponse.json({
+        ok: false,
+        partial: !noTargetsDelivered,
+        error: `${summary}${reason}`,
+        results,
+        errors
+      }, { status: noTargetsDelivered ? 502 : 207 });
+    }
+
+    return NextResponse.json({ ok: true, results, errors: [] });
   } catch (err) {
     console.error("Composer send error:", err);
     return NextResponse.json({ ok: false, error: err.message || String(err) }, { status: 500 });

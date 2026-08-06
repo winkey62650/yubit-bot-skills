@@ -1,21 +1,45 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createTelegramMtprotoTransport } from "../lib/telegram-mtproto.mjs";
+import {
+  createTelegramMtprotoTransport,
+  createTelegramSessionLoader
+} from "../lib/telegram-mtproto.mjs";
 
 const GROUP_ID = "-1003710405969";
 const CHANNEL_ID = "-1003862539988";
+
+test("default MTProto session loader preserves the selected Telegram user id", async () => {
+  const calls = [];
+  const loadSession = createTelegramSessionLoader(
+    { TELEGRAM_USER_SESSION_ENCRYPTION_KEY: "test-key" },
+    async (env, userId) => {
+      calls.push({ env, userId });
+      return { userId, session: "selected-session" };
+    }
+  );
+
+  const stored = await loadSession("8749261694");
+
+  assert.equal(stored.userId, "8749261694");
+  assert.equal(calls[0].userId, "8749261694");
+});
 
 function fakeClientHarness({
   authorized = true,
   username = "Serenity_Crypto",
   groupIdentityAvailable = true,
-  broadcastTargets = []
+  broadcastTargets = [],
+  requireDialogWarmup = false
 } = {}) {
   const calls = [];
+  let dialogsLoaded = false;
   const inputEntity = (value) => {
     if (value?.className === "InputPeerChannel") return value;
     if (value?.className === "PeerChannel") {
       return { className: "InputPeerChannel", channelId: value.channelId, accessHash: 22n };
+    }
+    if (value?.className === "Channel") {
+      return { className: "InputPeerChannel", channelId: value.id, accessHash: value.accessHash };
     }
     return {
       className: "InputPeerChannel",
@@ -37,7 +61,26 @@ function fakeClientHarness({
     },
     async getInputEntity(value) {
       calls.push({ kind: "entity", value });
+      if (requireDialogWarmup && typeof value === "string" && !dialogsLoaded) {
+        throw new Error(`Could not find the input entity for ${value}`);
+      }
       return inputEntity(value);
+    },
+    async getDialogs(options) {
+      calls.push({ kind: "getDialogs", options });
+      dialogsLoaded = true;
+      return [{
+        isGroup: true,
+        isChannel: true,
+        title: "DEMO Academy",
+        entity: {
+          className: "Channel",
+          id: 3710405969n,
+          accessHash: 22n,
+          megagroup: true,
+          broadcast: false
+        }
+      }];
     },
     async getEntity(value) {
       calls.push({ kind: "getEntity", value });
@@ -115,6 +158,21 @@ test("MTProto publisher restores the Serenity user session and sends as the Demo
     harness.calls.some((call) => call.kind === "invoke" && call.request.className === "channels.GetSendAs"),
     true
   );
+});
+
+test("MTProto publisher resolves a cold group entity from the selected account dialogs before sending", async () => {
+  const harness = fakeClientHarness({ requireDialogWarmup: true });
+  const transport = createTelegramMtprotoTransport(configuredOptions(harness));
+
+  const result = await transport("ignored", "sendMessage", {
+    chat_id: GROUP_ID,
+    message_thread_id: 14,
+    text: "Cold start"
+  });
+
+  assert.deepEqual(result, { message_id: 777 });
+  assert.equal(harness.calls.filter((call) => call.kind === "getDialogs").length, 1);
+  assert.equal(harness.calls.some((call) => call.kind === "sendMessage"), true);
 });
 
 test("all new group content uses the official group identity", async () => {

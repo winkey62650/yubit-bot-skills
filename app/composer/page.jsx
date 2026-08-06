@@ -90,9 +90,11 @@ export default function ComposerPage() {
   const targetOptions = [];
   groups.forEach(group => {
     if (group.isForum && group.topics && group.topics.length > 0) {
-      group.topics.forEach(topic => {
+      group.topics
+        .filter(topic => topic.threadId !== null && topic.threadId !== undefined && String(topic.threadId).trim() !== "")
+        .forEach(topic => {
         targetOptions.push({
-          id: `${group.chatId}:${topic.threadId || ''}`,
+          id: `${group.chatId}:${topic.threadId}`,
           label: `${group.title} - ${topic.name}`
         });
       });
