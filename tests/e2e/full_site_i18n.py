@@ -57,7 +57,7 @@ with sync_playwright() as playwright:
     }])
     page = context.new_page()
     page.goto(f"{BASE_URL}/group-config", wait_until="domcontentloaded", timeout=15_000)
-    page.wait_for_timeout(750)
+    page.wait_for_load_state("networkidle", timeout=15_000)
 
     toggle = page.get_by_role("button", name="Switch to English").first
     toggle.click()
