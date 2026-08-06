@@ -4,6 +4,8 @@ import { readJson, writeJson } from "../../../../lib/json-store.js";
 import { randomUUID } from "node:crypto";
 import { CustomFile } from "teleproto/client/uploads.js";
 import { assertAccountCanSendToTargets } from "../../../../lib/telegram-composer-targets.mjs";
+import { SESSION_COOKIE, verifySessionToken } from "../../../../lib/session.js";
+import { canQueueComposerMessage } from "../../../../lib/access-control.mjs";
 
 export async function POST(req) {
   try {
@@ -13,6 +15,19 @@ export async function POST(req) {
     const queue = formData.get("queue") === "true";
     const mediaFiles = formData.getAll("media"); // Array of File or null
     const targets = formData.getAll("targets"); // array of "chatId:threadId" or "chatId:"
+
+    if (queue) {
+      const session = await verifySessionToken(
+        req.cookies.get(SESSION_COOKIE)?.value,
+        process.env.AUTH_SECRET
+      );
+      if (!session || !canQueueComposerMessage(session.role)) {
+        return NextResponse.json(
+          { ok: false, error: "当前账号仅允许立即人工发布" },
+          { status: 403 }
+        );
+      }
+    }
 
     if (!userId || targets.length === 0) {
       return NextResponse.json({ ok: false, error: "缺少必要参数 (userId, targets)" }, { status: 400 });

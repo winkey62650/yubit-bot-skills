@@ -1,4 +1,6 @@
 import "./globals.css";
+import { LanguageProvider } from "./components/LanguageProvider";
+import { SessionProvider } from "./components/SessionProvider";
 
 export const metadata = {
   title: "YUBIT Ops Console",
@@ -15,8 +17,8 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="zh-CN">
-      <body>{children}</body>
+    <html lang="zh-CN" suppressHydrationWarning>
+      <body><LanguageProvider><SessionProvider>{children}</SessionProvider></LanguageProvider></body>
     </html>
   );
 }

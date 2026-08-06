@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { createSessionToken, SESSION_COOKIE, SESSION_DURATION_SECONDS } from "../../../../lib/session";
+import { HOME_BY_ROLE, ROLES } from "../../../../lib/access-control.mjs";
 
 const attempts = new Map();
 const WINDOW_MS = 15 * 60 * 1000;
@@ -30,6 +31,8 @@ function currentAttempt(key) {
 export async function POST(request) {
   const username = process.env.AUTH_USERNAME;
   const password = process.env.AUTH_PASSWORD;
+  const manualUsername = process.env.MANUAL_PUBLISHER_USERNAME;
+  const manualPassword = process.env.MANUAL_PUBLISHER_PASSWORD;
   const secret = process.env.AUTH_SECRET;
   if (!username || !password || !secret) {
     return NextResponse.json({ ok: false, error: "登录服务尚未配置" }, { status: 503 });
@@ -42,16 +45,23 @@ export async function POST(request) {
   }
 
   const body = await request.json().catch(() => ({}));
-  if (!sameText(body.username, username) || !sameText(body.password, password)) {
+  const accounts = [
+    { username, password, role: ROLES.ADMIN },
+    ...(manualUsername && manualPassword && manualUsername !== username
+      ? [{ username: manualUsername, password: manualPassword, role: ROLES.MANUAL_PUBLISHER }]
+      : [])
+  ];
+  const account = accounts.find((candidate) => sameText(body.username, candidate.username) && sameText(body.password, candidate.password));
+  if (!account) {
     attempt.count += 1;
     return NextResponse.json({ ok: false, error: "账号或密码错误" }, { status: 401 });
   }
 
   attempts.delete(key);
-  const response = NextResponse.json({ ok: true });
+  const response = NextResponse.json({ ok: true, role: account.role, home: HOME_BY_ROLE[account.role] });
   response.cookies.set({
     name: SESSION_COOKIE,
-    value: await createSessionToken(username, secret),
+    value: await createSessionToken(account.username, secret, account.role),
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",

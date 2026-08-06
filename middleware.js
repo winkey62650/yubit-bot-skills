@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { SESSION_COOKIE, verifySessionToken } from "./lib/session";
+import { HOME_BY_ROLE, canAccessPath } from "./lib/access-control.mjs";
 
 const publicPaths = new Set(["/login", "/api/auth/login"]);
 
@@ -9,7 +10,16 @@ export async function middleware(request) {
 
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   const session = await verifySessionToken(token, process.env.AUTH_SECRET);
-  if (session) return NextResponse.next();
+  if (session) {
+    if (canAccessPath(session.role, pathname, request.method)) return NextResponse.next();
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+    }
+    const homeUrl = request.nextUrl.clone();
+    homeUrl.pathname = HOME_BY_ROLE[session.role] || "/login";
+    homeUrl.search = "";
+    return NextResponse.redirect(homeUrl);
+  }
 
   if (pathname.startsWith("/api/")) {
     return NextResponse.json({ ok: false, error: "登录已失效，请重新登录" }, { status: 401 });

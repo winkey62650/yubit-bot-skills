@@ -10,8 +10,11 @@ function read(pathname) {
 
 test("后台导航提供 Discord 社区入口", () => {
   const shell = read("app/components/ConsoleShell.jsx");
+  const i18n = read("lib/i18n.mjs");
   assert.match(shell, /href:\s*"\/discord"/);
-  assert.match(shell, /Discord 社区/);
+  assert.match(shell, /label:\s*"nav\.discord"/);
+  assert.match(i18n, /"nav\.discord": "Discord 社区"/);
+  assert.match(i18n, /"nav\.discord": "Discord Community"/);
 });
 
 test("Discord 页面覆盖连接、初始化、同步与测试闭环", () => {

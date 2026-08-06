@@ -3,24 +3,27 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
+import { filterNavigationForRole, ROLES } from "../../lib/access-control.mjs";
+import { LanguageToggle, useLanguage } from "./LanguageProvider";
+import { useSession } from "./SessionProvider";
 
 const navItems = [
-  { href: "/distribution?view=site-analytics", label: "网站数据", view: "site-analytics" },
-  { href: "/distribution?view=automation", label: "内容分发中心", view: "automation" },
-  { href: "/composer", label: "手动消息发布" },
-  { href: "/group-config", label: "群与 Topic" },
-  { href: "/new-group", label: "新群初始化" },
-  { href: "/discord", label: "Discord 社区" },
-  { href: "/trading", label: "交易中心" },
-  { href: "/telegram-user-authorization", label: "发布账号状态检测" },
-  { href: "/bots", label: "后台能力" },
-  { href: "/settings", label: "系统设置" }
+  { href: "/distribution?view=site-analytics", label: "nav.analytics", view: "site-analytics", roles: [ROLES.ADMIN] },
+  { href: "/distribution?view=automation", label: "nav.distribution", view: "automation", roles: [ROLES.ADMIN] },
+  { href: "/composer", label: "nav.composer", roles: [ROLES.ADMIN, ROLES.MANUAL_PUBLISHER] },
+  { href: "/group-config", label: "nav.groups", roles: [ROLES.ADMIN] },
+  { href: "/new-group", label: "nav.newGroup", roles: [ROLES.ADMIN] },
+  { href: "/discord", label: "nav.discord", roles: [ROLES.ADMIN] },
+  { href: "/trading", label: "nav.trading", roles: [ROLES.ADMIN] },
+  { href: "/telegram-user-authorization", label: "nav.publisherStatus", roles: [ROLES.ADMIN, ROLES.MANUAL_PUBLISHER] },
+  { href: "/bots", label: "nav.capabilities", roles: [ROLES.ADMIN] },
+  { href: "/settings", label: "nav.settings", roles: [ROLES.ADMIN] }
 ];
 
-function NavigationLinks({ pathname, distributionView }) {
+function NavigationLinks({ pathname, distributionView, role, t }) {
   return (
     <nav className="mt-3 flex gap-2 overflow-x-auto pb-1 lg:mt-0 lg:grid lg:overflow-visible lg:pb-0">
-      {navItems.map((item) => {
+      {filterNavigationForRole(navItems, role).map((item) => {
         const active = item.view
           ? pathname === "/distribution" && distributionView === item.view
           : pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -30,7 +33,7 @@ function NavigationLinks({ pathname, distributionView }) {
             href={item.href}
             key={item.href}
           >
-            {item.label}
+            {t(item.label)}
           </Link>
         );
       })}
@@ -38,15 +41,18 @@ function NavigationLinks({ pathname, distributionView }) {
   );
 }
 
-function ConsoleNavigation({ pathname }) {
+function ConsoleNavigation({ pathname, role, t }) {
   const searchParams = useSearchParams();
   const distributionView = searchParams.get("view") || "automation";
-  return <NavigationLinks distributionView={distributionView} pathname={pathname} />;
+  return <NavigationLinks distributionView={distributionView} pathname={pathname} role={role} t={t} />;
 }
 
 export default function ConsoleShell({ children }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { t } = useLanguage();
+  const { user } = useSession();
+  const role = user?.role || ROLES.MANUAL_PUBLISHER;
   const [loggingOut, setLoggingOut] = useState(false);
 
   async function logout() {
@@ -66,21 +72,25 @@ export default function ConsoleShell({ children }) {
           <span className="grid h-9 w-9 place-items-center rounded-lg bg-ops-accent text-lg font-black text-white">Y</span>
           <strong className="text-xl tracking-tight lg:text-2xl">YUBIT</strong>
         </Link>
+        <div className="flex items-center gap-2 lg:hidden">
+        <LanguageToggle />
         <button
           className="min-h-10 rounded-lg border border-ops-line bg-white px-3 text-xs font-bold text-[#33423b] lg:hidden"
           disabled={loggingOut}
           onClick={logout}
           type="button"
         >
-          {loggingOut ? "退出中…" : "退出"}
+          {loggingOut ? t("common.loggingOut") : t("common.logout")}
         </button>
         </div>
-        <Suspense fallback={<NavigationLinks distributionView="automation" pathname={pathname} />}>
-          <ConsoleNavigation pathname={pathname} />
+        </div>
+        {role === ROLES.MANUAL_PUBLISHER ? <div className="mt-3 rounded-lg bg-ops-soft px-3 py-2 text-xs font-black text-ops-accent lg:mt-[-1.5rem] lg:mb-6">{t("role.manual")}</div> : null}
+        <Suspense fallback={<NavigationLinks distributionView="automation" pathname={pathname} role={role} t={t} />}>
+          <ConsoleNavigation pathname={pathname} role={role} t={t} />
         </Suspense>
         <div className="mt-12 hidden rounded-lg border border-ops-line bg-white p-4 shadow-sm lg:block">
-          <div className="text-sm font-black">帮助与支持</div>
-          <p className="mt-1 text-xs leading-5 text-ops-muted">使用文档 / 常见问题</p>
+          <div className="flex items-start justify-between gap-3"><div><div className="text-sm font-black">{t("help.title")}</div>
+          <p className="mt-1 text-xs leading-5 text-ops-muted">{t("help.desc")}</p></div><LanguageToggle /></div>
         </div>
         <button
           className="mt-4 hidden min-h-11 w-full rounded-lg border border-ops-line bg-white px-4 text-sm font-bold text-[#33423b] transition hover:bg-ops-soft disabled:cursor-wait disabled:opacity-60 lg:block"
@@ -88,7 +98,7 @@ export default function ConsoleShell({ children }) {
           onClick={logout}
           type="button"
         >
-          {loggingOut ? "正在退出…" : "退出登录"}
+          {loggingOut ? t("common.loggingOut") : t("common.logout")}
         </button>
       </aside>
       <main className="min-w-0 max-w-full overflow-x-hidden p-4 sm:p-5 md:p-7 xl:p-8">{children}</main>

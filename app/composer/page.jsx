@@ -3,10 +3,14 @@
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import ConsoleShell from "../components/ConsoleShell";
+import { useLanguage } from "../components/LanguageProvider";
+import { useSession } from "../components/SessionProvider";
 import { Card, PageHeader, Field, inputClass } from "../components/ui";
 import { buildAccountTargetGroups } from "../../lib/telegram-composer-targets.mjs";
 
 export default function ComposerPage() {
+  const { t } = useLanguage();
+  const { user } = useSession();
   const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState([]);
   const [groups, setGroups] = useState([]);
@@ -76,7 +80,7 @@ export default function ComposerPage() {
       const res = await fetch(`/api/telegram/dialogs?userId=${userId}`);
       const data = await res.json();
       if (!res.ok || !data.ok || !Array.isArray(data.groups)) {
-        throw new Error(data.error || "读取账号可发言频道失败");
+        throw new Error(data.error || t("composer.dialogError"));
       }
       if (requestId === dialogRequestRef.current) {
         setGroups(buildAccountTargetGroups(currentConfiguredGroups, data.groups));
@@ -85,7 +89,7 @@ export default function ComposerPage() {
       console.error("Failed to fetch dialogs", err);
       if (requestId === dialogRequestRef.current) {
         setGroups([]);
-        setError(err.message || "读取账号可发言频道失败");
+        setError(err.message || t("composer.dialogError"));
       }
     } finally {
       if (requestId === dialogRequestRef.current) setTargetsLoading(false);
@@ -141,15 +145,15 @@ export default function ComposerPage() {
 
   async function handleSend(queue = false) {
     if (!selectedUserId) {
-      setError("请选择发送账号");
+      setError(t("composer.selectAccountError"));
       return;
     }
     if (selectedTargets.length === 0) {
-      setError("请选择发送目标");
+      setError(t("composer.selectTargetError"));
       return;
     }
     if (!messageText.trim() && selectedFiles.length === 0) {
-      setError("请输入消息内容或选择附件");
+      setError(t("composer.contentError"));
       return;
     }
 
@@ -178,10 +182,10 @@ export default function ComposerPage() {
       const data = await res.json();
       
       if (!res.ok || !data.ok) {
-        throw new Error(data.error || "发送失败");
+        throw new Error(data.error || t("composer.sendError"));
       }
       
-      setSuccess(queue ? "消息已加入队列" : "消息发送成功");
+      setSuccess(queue ? t("composer.queued") : t("composer.sent"));
       setMessageText("");
       setSelectedFiles([]);
       setSelectedTargets([]);
@@ -195,20 +199,20 @@ export default function ComposerPage() {
   return (
     <ConsoleShell>
       <PageHeader
-        title="消息发布中心"
-        desc="选择账号和目标，编写消息并发送或加入队列。"
+        title={t("composer.title")}
+        desc={t("composer.desc")}
       />
       
       <div className="grid gap-6 md:grid-cols-[2fr_1fr] items-start">
         <Card className="p-6">
           {loading ? (
-            <p className="text-ops-muted">加载中...</p>
+            <p className="text-ops-muted">{t("common.loading")}</p>
           ) : (
             <div className="space-y-5">
               {error && <div className="p-3 bg-[#fef5f4] text-[#a04a3d] font-bold rounded-lg">{error}</div>}
               {success && <div className="p-3 bg-[#f3f9f4] text-[#2c7a3f] font-bold rounded-lg">{success}</div>}
               
-              <Field label="发送账号">
+              <Field label={t("composer.account")}>
                 <select 
                   className={inputClass}
                   value={selectedUserId}
@@ -220,7 +224,7 @@ export default function ComposerPage() {
                   }}
                   disabled={sending || accounts.length === 0}
                 >
-                  <option value="">-- 请选择账号 --</option>
+                  <option value="">{t("composer.accountPlaceholder")}</option>
                   {accounts.map(acc => (
                     <option key={acc.userId} value={acc.userId}>
                       {acc.firstName} {acc.lastName} (@{acc.username || acc.userId})
@@ -228,21 +232,21 @@ export default function ComposerPage() {
                   ))}
                 </select>
                 {accounts.length === 0 && (
-                  <p className="mt-1 text-sm text-[#a04a3d]">暂无已授权账号，请前往“授权页面”添加。</p>
+                  <p className="mt-1 text-sm text-[#a04a3d]">{t("composer.noAccount")}</p>
                 )}
               </Field>
 
-              <Field label="消息正文 (支持 Markdown)">
+              <Field label={t("composer.body")}>
                 <textarea 
                   className={`${inputClass} min-h-[150px]`}
-                  placeholder="请输入消息内容..."
+                  placeholder={t("composer.bodyPlaceholder")}
                   value={messageText}
                   onChange={(e) => setMessageText(e.target.value)}
                   disabled={sending}
                 />
               </Field>
 
-              <Field label="附加媒体 / 文件 (支持多选)">
+              <Field label={t("composer.media")}>
                 <div className="flex flex-col gap-3">
                   <input 
                     type="file" 
@@ -258,7 +262,7 @@ export default function ComposerPage() {
                     disabled={sending}
                     accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
                   />
-                  <p className="text-xs text-ops-muted">可选择多张图片/视频作为组图发送。文本将作为整体 Caption 附在下方。</p>
+                  <p className="text-xs text-ops-muted">{t("composer.mediaHint")}</p>
                   
                   {selectedFiles.length > 0 && (
                     <div className="flex flex-col gap-2 mt-2 bg-gray-50 rounded-lg p-3 border border-gray-200">
@@ -270,19 +274,19 @@ export default function ComposerPage() {
                               onClick={() => moveFile(i, "up")} 
                               disabled={i === 0 || sending}
                               className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded disabled:opacity-50"
-                              title="上移"
+                              title={t("common.moveUp")}
                             >↑</button>
                             <button 
                               onClick={() => moveFile(i, "down")} 
                               disabled={i === selectedFiles.length - 1 || sending}
                               className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded disabled:opacity-50"
-                              title="下移"
+                              title={t("common.moveDown")}
                             >↓</button>
                             <button 
                               onClick={() => removeFile(i)} 
                               disabled={sending}
                               className="px-2 py-1 text-xs bg-red-100 text-red-600 hover:bg-red-200 rounded disabled:opacity-50 ml-2"
-                              title="删除"
+                              title={t("common.delete")}
                             >✕</button>
                           </div>
                         </div>
@@ -298,15 +302,17 @@ export default function ComposerPage() {
                   disabled={sending || !selectedUserId || selectedTargets.length === 0 || (!messageText && selectedFiles.length === 0)}
                   className="rounded-lg bg-ops-accent px-5 py-2 font-black text-white disabled:opacity-50"
                 >
-                  {sending ? "处理中..." : "立即发送"}
+                  {sending ? t("composer.processing") : t("composer.send")}
                 </button>
-                <button 
-                  onClick={() => handleSend(true)} 
-                  disabled={sending || !selectedUserId || selectedTargets.length === 0 || (!messageText && selectedFiles.length === 0)}
-                  className="rounded-lg bg-[#f0f2f5] px-5 py-2 font-black text-ops-muted hover:bg-[#e4e6eb] transition-colors disabled:opacity-50"
-                >
-                  加入队列
-                </button>
+                {user?.role === "admin" ? (
+                  <button
+                    onClick={() => handleSend(true)}
+                    disabled={sending || !selectedUserId || selectedTargets.length === 0 || (!messageText && selectedFiles.length === 0)}
+                    className="rounded-lg bg-[#f0f2f5] px-5 py-2 font-black text-ops-muted hover:bg-[#e4e6eb] transition-colors disabled:opacity-50"
+                  >
+                    {t("composer.queue")}
+                  </button>
+                ) : null}
               </div>
             </div>
           )}
@@ -314,23 +320,25 @@ export default function ComposerPage() {
 
         <Card className="p-5">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-black">当前账号可发言的群组/频道</h2>
-            <Link 
-              href="/group-config" 
-              className="text-xs text-ops-accent hover:underline bg-ops-soft px-3 py-1.5 rounded-full font-bold"
-            >
-              群组管理页
-            </Link>
+            <h2 className="text-xl font-black">{t("composer.targets")}</h2>
+            {user?.role === "admin" ? (
+              <Link
+                href="/group-config"
+                className="text-xs text-ops-accent hover:underline bg-ops-soft px-3 py-1.5 rounded-full font-bold"
+              >
+                {t("composer.manageGroups")}
+              </Link>
+            ) : null}
           </div>
           
           {targetsLoading ? (
             <div className="text-sm text-ops-muted p-4 bg-gray-50 rounded-lg text-center">
-              正在读取当前账号的发言权限...
+              {t("composer.loadingTargets")}
             </div>
           ) : targetOptions.length === 0 ? (
             <div className="text-sm text-ops-muted p-4 bg-gray-50 rounded-lg text-center">
-              <p className="font-bold mb-2">当前账号暂无可发言目标</p>
-              <p className="text-xs">这里只显示所选账号能够真实发言的群组和频道。请检查该账号是否已加入并获得发言权限。</p>
+              <p className="font-bold mb-2">{t("composer.noTargets")}</p>
+              <p className="text-xs">{t("composer.noTargetsHint")}</p>
             </div>
           ) : (
             <div className="flex flex-col gap-2 max-h-[500px] overflow-y-auto pr-2">
@@ -348,7 +356,7 @@ export default function ComposerPage() {
                   }}
                   disabled={sending || targetsLoading}
                 />
-                <label htmlFor="selectAll" className="text-sm font-bold cursor-pointer">全选 (包括所有 Topics 和频道)</label>
+                <label htmlFor="selectAll" className="text-sm font-bold cursor-pointer">{t("composer.selectAll")}</label>
               </div>
               
               {targetOptions.map((opt) => (
@@ -367,7 +375,7 @@ export default function ComposerPage() {
               ))}
             </div>
           )}
-          <p className="mt-4 text-xs text-ops-muted">切换发送账号会重新读取权限并清空旧选择。当前已选择: {selectedTargets.length} 个目标</p>
+          <p className="mt-4 text-xs text-ops-muted">{t("composer.selectionHint", { count: selectedTargets.length })}</p>
         </Card>
       </div>
     </ConsoleShell>

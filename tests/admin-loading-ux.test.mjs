@@ -46,10 +46,12 @@ test("settings cannot overwrite cloud configuration before the initial load comp
 test("live capability and publisher pages expose an explicit loading state", () => {
   const bots = source("app/bots/page.jsx");
   const publisher = source("app/telegram-user-authorization/page.jsx");
+  const i18n = source("lib/i18n.mjs");
   assert.match(bots, /hasLiveResult/);
   assert.match(publisher, /PUBLISHER_HEARTBEAT_STALE_MS/);
   assert.match(publisher, /staleAfterMs=\{PUBLISHER_HEARTBEAT_STALE_MS\}/);
-  assert.match(publisher, /loading\s*\?\s*"正在核验"/);
+  assert.match(publisher, /loading\s*\?\s*t\("common\.refreshing"\)/);
+  assert.match(i18n, /"common\.refreshing": "正在核验"/);
 });
 
 test("the console shell prevents mobile horizontal clipping", () => {
@@ -84,8 +86,9 @@ test("new group discovery hides groups that every bot has left", () => {
 
 test("publisher closure is gated by every live health check", () => {
   const page = source("app/telegram-user-authorization/page.jsx");
+  const i18n = source("lib/i18n.mjs");
   assert.match(page, /allChecksHealthy/);
   assert.match(page, /arePublisherBlockingChecksHealthy/);
-  assert.match(page, /任务卡住/);
+  assert.match(i18n, /"publisher\.stalled": "任务卡住"/);
   assert.doesNotMatch(page, /tone=\{ready\s*\?\s*"green"\s*:\s*"amber"\}/);
 });

@@ -20,15 +20,18 @@ test("Telegram user authorization API is protected, node-only, and never returns
 });
 
 test("publisher page reflects the multi-account login workflow", async () => {
-  const [page, navigation] = await Promise.all([
+  const [page, navigation, i18n] = await Promise.all([
     readFile(new URL("app/telegram-user-authorization/page.jsx", root), "utf8"),
-    readFile(new URL("app/components/ConsoleShell.jsx", root), "utf8")
+    readFile(new URL("app/components/ConsoleShell.jsx", root), "utf8"),
+    readFile(new URL("lib/i18n.mjs", root), "utf8")
   ]);
 
   assert.match(page, /\/api\/telegram\/user-authorization/);
   assert.match(page, /添加 Telegram 账号/);
-  assert.match(page, /已授权账号/);
-  assert.match(page, /本机发布桥/);
+  assert.match(page, /t\("publisher\.accounts"\)/);
+  assert.match(page, /t\("publisher\.bridge"\)/);
+  assert.match(i18n, /"publisher\.accounts": "已授权账号"/);
+  assert.match(i18n, /"publisher\.accounts": "Authorized accounts"/);
   assert.match(page, /buildPublisherStatusChecks/);
   assert.match(page, /后台能力组件/);
   assert.match(page, /验证码/);
@@ -38,5 +41,7 @@ test("publisher page reflects the multi-account login workflow", async () => {
   assert.match(page, /群名称和群头像/);
   assert.doesNotMatch(page, /Demo Channel/);
   assert.match(navigation, /\/telegram-user-authorization/);
-  assert.match(navigation, /发布账号状态检测/);
+  assert.match(navigation, /nav\.publisherStatus/);
+  assert.match(i18n, /"nav\.publisherStatus": "发布账号状态检测"/);
+  assert.match(i18n, /"nav\.publisherStatus": "Publisher Status"/);
 });

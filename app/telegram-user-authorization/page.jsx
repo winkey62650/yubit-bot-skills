@@ -3,15 +3,20 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import ConsoleShell from "../components/ConsoleShell";
+import { useLanguage } from "../components/LanguageProvider";
+import { useSession } from "../components/SessionProvider";
 import LiveStatusStamp from "../components/LiveStatusStamp";
 import { useLiveAutoRefresh } from "../hooks/useLiveAutoRefresh";
-import { Card, PageHeader, StatusPill, Field, inputClass } from "../components/ui";
-import { arePublisherBlockingChecksHealthy, buildPublisherStatusChecks } from "../../lib/distribution-ui.mjs";
+import { Card, PageHeader, Field, inputClass } from "../components/ui";
 import { PUBLISHER_HEARTBEAT_STALE_MS } from "../../lib/live-status.mjs";
+import { arePublisherBlockingChecksHealthy, buildPublisherStatusChecks } from "../../lib/distribution-ui.mjs";
 
 const DEMO_CHAT_ID = "-1003710405969";
 
 export default function TelegramUserAuthorizationPage() {
+  const { t } = useLanguage();
+  const { user } = useSession();
+  const readonly = user?.role === "manual_publisher";
   const [publisher, setPublisher] = useState(null);
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -22,58 +27,59 @@ export default function TelegramUserAuthorizationPage() {
     try {
       const response = await fetch("/api/telegram/user-authorization", { cache: "no-store" });
       const data = await response.json();
-      if (!response.ok || !data.ok) throw new Error(data.error || "获取授权信息失败");
+      if (!response.ok || !data.ok) throw new Error(data.error || t("publisher.loadError"));
       setPublisher(data.publisher || null);
       setAccounts(data.accounts || []);
       setError("");
     } catch (nextError) {
-      setError(nextError.message || "发布账号状态检测失败");
+      setError(nextError.message || t("publisher.statusError"));
     } finally {
       if (!silent) setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => { refresh(); }, [refresh]);
   useLiveAutoRefresh(() => refresh({ silent: true }), { enabled: !loading });
 
   const operationalStatus = publisher?.operationalStatus || "offline";
   const ready = publisher?.operationalReady === true;
-  const statusLabel = loading ? "正在核验"
+  const statusLabel = loading ? t("common.refreshing")
     : operationalStatus === "publishing"
-    ? "正在发布"
+    ? t("publisher.publishing")
     : operationalStatus === "stalled"
-      ? "任务卡住"
+      ? t("publisher.stalled")
       : operationalStatus === "degraded"
-        ? "最近发布失败"
+        ? t("publisher.degraded")
         : ready
-          ? "在线"
-          : "离线";
+          ? t("publisher.online")
+          : t("publisher.offline");
   const approvedTargets = publisher?.approvedTargetIds || [];
   const lastSeenAt = publisher?.lastSeenAt || publisher?.lastVerifiedAt || null;
   const checks = buildPublisherStatusChecks(publisher || {});
   const allChecksHealthy = !loading && arePublisherBlockingChecksHealthy(checks);
-
   return (
     <ConsoleShell>
       <PageHeader
-        title="Telegram 账号授权"
-        desc="添加需要发布消息的 Telegram 账号。可以在此添加您的个人账号，用于发送内容。请注意保管好您的账号权限。"
-        action={<Link className="grid min-h-11 place-items-center rounded-lg bg-ops-accent px-5 text-sm font-black text-white" href="/composer">进入发布中心</Link>}
+        title={t("publisher.title")}
+        desc={t("publisher.desc")}
+        action={<Link className="grid min-h-11 place-items-center rounded-lg bg-ops-accent px-5 text-sm font-black text-white" href="/composer">{t("publisher.openComposer")}</Link>}
       />
 
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <LiveStatusStamp generatedAt={lastSeenAt} error={error} refreshing={loading} staleAfterMs={PUBLISHER_HEARTBEAT_STALE_MS} />
         <button className="min-h-11 rounded-lg border border-ops-accent bg-white px-5 text-sm font-black text-ops-accent disabled:opacity-50" disabled={loading} onClick={() => refresh()} type="button">
-          {loading ? "正在核验" : "刷新运行状态"}
+          {loading ? t("common.refreshing") : t("common.refresh")}
         </button>
       </div>
 
       <section className="mb-5 grid overflow-hidden rounded-lg border border-ops-line bg-white shadow-ops sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="已授权账号" value={loading ? "—" : `${accounts.length} 个`} ok={!loading && accounts.length > 0} />
-        <Metric label="本机发布桥" value={statusLabel} ok={ready || operationalStatus === "publishing"} />
-        <Metric label="已授权目标" value={loading ? "—" : `${approvedTargets.length} 个`} ok={!loading && approvedTargets.length > 0} />
-        <Metric label="安全回退" value="禁止匿名" ok />
+        <Metric label={t("publisher.accounts")} value={loading ? "—" : t("publisher.count", { count: accounts.length })} ok={!loading && accounts.length > 0} />
+        <Metric label={t("publisher.bridge")} value={statusLabel} ok={ready || operationalStatus === "publishing"} />
+        <Metric label={t("publisher.targets")} value={loading ? "—" : t("publisher.count", { count: approvedTargets.length })} ok={!loading && approvedTargets.length > 0} />
+        <Metric label={t("publisher.fallback")} value={t("publisher.noAnonymous")} ok />
       </section>
+
+      {readonly ? <div className="mb-5 rounded-lg border border-ops-line bg-ops-soft px-4 py-3 text-sm font-bold text-ops-accent">{t("publisher.readonly")}</div> : null}
 
       {(error || publisher?.operationalError) ? (
         <div className="mb-5 rounded-lg border border-[#e4c88b] bg-[#fff7e6] px-4 py-3 text-sm font-bold text-[#80591c]" role="alert">
@@ -81,11 +87,17 @@ export default function TelegramUserAuthorizationPage() {
         </div>
       ) : null}
 
+      {!loading && !allChecksHealthy ? (
+        <div className="mb-5 rounded-lg border border-[#e4c88b] bg-[#fff7e6] px-4 py-3 text-sm font-bold text-[#80591c]" role="status">
+          {t("publisher.healthPending")}
+        </div>
+      ) : null}
+
       {!loading && (
         <Card className="mb-5 p-6 border-ops-line bg-white">
-          <h2 className="text-xl font-black mb-4">已授权账号</h2>
+          <h2 className="text-xl font-black mb-4">{t("publisher.accounts")}</h2>
           {accounts.length === 0 ? (
-            <p className="text-ops-muted text-sm">暂无已授权的 Telegram 账号，请在下方登录添加。</p>
+            <p className="text-ops-muted text-sm">{t("publisher.none")}</p>
           ) : (
             <div className="grid gap-3">
               {accounts.map(account => (
@@ -94,7 +106,7 @@ export default function TelegramUserAuthorizationPage() {
                     <div className="font-bold">{account.firstName} {account.lastName}</div>
                     <div className="text-sm text-ops-muted">@{account.username || account.userId}</div>
                   </div>
-                  <button
+                  {!readonly ? <button
                     onClick={async () => {
                       if (confirm("确定要移除该账号的授权吗？")) {
                         await fetch(`/api/telegram-auth/session?userId=${account.userId}`, { method: "DELETE" });
@@ -103,8 +115,8 @@ export default function TelegramUserAuthorizationPage() {
                     }}
                     className="text-sm font-bold text-[#a04a3d] hover:underline"
                   >
-                    移除授权
-                  </button>
+                    {t("common.delete")}
+                  </button> : null}
                 </div>
               ))}
             </div>
@@ -112,9 +124,9 @@ export default function TelegramUserAuthorizationPage() {
         </Card>
       )}
 
-      <TelegramLogin onLoginSuccess={() => refresh()} />
+      {!readonly ? <TelegramLogin onLoginSuccess={() => refresh()} /> : null}
 
-      <Card className="mt-5 p-6">
+      {!readonly ? <><Card className="mt-5 p-6">
         <h2 className="text-xl font-black">发布边界</h2>
         <div className="mt-4 grid gap-3 md:grid-cols-3">
           <Scope title="当前验收群" value="Demo Academy Forum" />
@@ -132,22 +144,13 @@ export default function TelegramUserAuthorizationPage() {
           <Scope title="ForwardBot" value="来源群 / Channel 新消息监听" />
         </div>
         <p className="mt-4 text-sm leading-6 text-ops-muted">三个 Bot 是后台能力组件，不是可见发言人。它们保留原功能，但所有获准的出站内容都统一进入 @Serenity_Crypto 发布队列。</p>
-      </Card>
+      </Card></> : null}
     </ConsoleShell>
   );
 }
 
 function Metric({ label, value, ok }) {
   return <div className="border-b border-ops-line p-5 last:border-0 sm:border-r xl:border-b-0"><div className="text-sm font-bold text-ops-muted">{label}</div><div className={`mt-1 text-xl font-black ${ok ? "text-ops-accent" : "text-[#8a5d1a]"}`}>{value}</div></div>;
-}
-
-function StatusCheck({ check }) {
-  const stateClass = check.ok === true ? "text-ops-accent" : check.ok === false ? "text-[#9a5f31]" : "text-ops-muted";
-  return <div className="min-w-0 p-5"><div className="text-xs font-black uppercase tracking-wide text-ops-muted">{check.label}</div><div className={`mt-2 text-lg font-black ${stateClass}`}>{check.status}</div><p className="mt-2 break-words text-xs leading-5 text-ops-muted">{check.detail}</p></div>;
-}
-
-function Step({ number, title, text }) {
-  return <div className="rounded-lg bg-[#f7f9f8] p-4"><span className="grid h-7 w-7 place-items-center rounded-full bg-ops-accent text-xs font-black text-white">{number}</span><h3 className="mt-3 font-black">{title}</h3><p className="mt-1 text-sm leading-6 text-ops-muted">{text}</p></div>;
 }
 
 function Scope({ title, value, mono = false }) {
@@ -287,4 +290,3 @@ function TelegramLogin({ onLoginSuccess }) {
     </Card>
   )
 }
-

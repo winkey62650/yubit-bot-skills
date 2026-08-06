@@ -3,21 +3,31 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("console navigation exposes the trading center after content distribution", async () => {
-  const shell = await readFile(new URL("../app/components/ConsoleShell.jsx", import.meta.url), "utf8");
-  const analytics = shell.indexOf('label: "网站数据"');
-  const distribution = shell.indexOf('label: "内容分发中心"');
-  const trading = shell.indexOf('label: "交易中心"');
-  const bots = shell.indexOf('label: "后台能力"');
+  const [shell, i18n] = await Promise.all([
+    readFile(new URL("../app/components/ConsoleShell.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../lib/i18n.mjs", import.meta.url), "utf8")
+  ]);
+  const analytics = shell.indexOf('label: "nav.analytics"');
+  const distribution = shell.indexOf('label: "nav.distribution"');
+  const trading = shell.indexOf('label: "nav.trading"');
+  const bots = shell.indexOf('label: "nav.capabilities"');
   assert.ok(analytics >= 0 && distribution > analytics && trading > distribution && bots > trading);
   assert.match(shell, /href: ["']\/distribution\?view=site-analytics["']/);
   assert.match(shell, /view: ["']site-analytics["']/);
   assert.match(shell, /href: ["']\/trading["']/);
   assert.doesNotMatch(shell, /label: ["']群数据["']/);
+  assert.match(i18n, /"nav\.trading": "交易中心"/);
+  assert.match(i18n, /"nav\.trading": "Trading Center"/);
 });
 
 test("login page describes the content operations workflow instead of the legacy bot console", async () => {
-  const page = await readFile(new URL("../app/login/page.jsx", import.meta.url), "utf8");
-  assert.match(page, /管理内容发布与群运营/);
+  const [page, i18n] = await Promise.all([
+    readFile(new URL("../app/login/page.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../lib/i18n.mjs", import.meta.url), "utf8")
+  ]);
+  assert.match(page, /t\("login\.subtitle"\)/);
+  assert.match(i18n, /"login\.subtitle": "登录后管理内容发布与群运营"/);
+  assert.match(i18n, /"login\.subtitle": "Manage publishing and community operations"/);
   assert.doesNotMatch(page, /管理机器人与群配置/);
 });
 
