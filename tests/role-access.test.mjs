@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 import {
   HOME_BY_ROLE,
@@ -34,5 +35,13 @@ test("admin retains full access and restricted navigation is filtered", () => {
   assert.deepEqual(
     filterNavigationForRole(items, "manual_publisher").map((item) => item.href),
     ["/composer", "/telegram-user-authorization"]
+  );
+});
+
+test("restricted page redirects use the public application origin behind a proxy", async () => {
+  const middleware = await readFile(new URL("../middleware.js", import.meta.url), "utf8");
+  assert.match(
+    middleware,
+    /process\.env\.APP_BASE_URL \? new URL\(process\.env\.APP_BASE_URL\) : request\.nextUrl\.clone\(\)/
   );
 });

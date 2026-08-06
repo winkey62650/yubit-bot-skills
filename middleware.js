@@ -15,7 +15,7 @@ export async function middleware(request) {
     if (pathname.startsWith("/api/")) {
       return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
     }
-    const homeUrl = request.nextUrl.clone();
+    const homeUrl = process.env.APP_BASE_URL ? new URL(process.env.APP_BASE_URL) : request.nextUrl.clone();
     homeUrl.pathname = HOME_BY_ROLE[session.role] || "/login";
     homeUrl.search = "";
     return NextResponse.redirect(homeUrl);
