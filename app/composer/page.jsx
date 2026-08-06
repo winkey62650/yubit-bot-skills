@@ -4,11 +4,14 @@ import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import ConsoleShell from "../components/ConsoleShell";
 import { Card, PageHeader, Field, inputClass } from "../components/ui";
+import { buildAccountTargetGroups } from "../../lib/telegram-composer-targets.mjs";
 
 export default function ComposerPage() {
   const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState([]);
   const [groups, setGroups] = useState([]);
+  const [configuredGroups, setConfiguredGroups] = useState([]);
+  const [targetsLoading, setTargetsLoading] = useState(false);
   
   // Form state
   const [selectedUserId, setSelectedUserId] = useState("");
@@ -21,6 +24,7 @@ export default function ComposerPage() {
   const [success, setSuccess] = useState("");
   
   const fileInputRef = useRef(null);
+  const dialogRequestRef = useRef(0);
 
   useEffect(() => {
     async function loadData() {
@@ -43,7 +47,8 @@ export default function ComposerPage() {
         }
         
         const savedGroups = groupsData.ok ? (groupsData.groups || []) : [];
-        setGroups(savedGroups);
+        setConfiguredGroups(savedGroups);
+        setGroups([]);
 
         if (initialUserId) {
           await loadUserDialogs(initialUserId, savedGroups);
@@ -57,33 +62,33 @@ export default function ComposerPage() {
     loadData();
   }, []);
 
-  async function loadUserDialogs(userId, currentGroups) {
-    if (!userId) return;
+  async function loadUserDialogs(userId, currentConfiguredGroups = []) {
+    const requestId = ++dialogRequestRef.current;
+    setSelectedTargets([]);
+    setGroups([]);
+    setError("");
+    if (!userId) {
+      setTargetsLoading(false);
+      return;
+    }
+    setTargetsLoading(true);
     try {
       const res = await fetch(`/api/telegram/dialogs?userId=${userId}`);
       const data = await res.json();
-      if (data.ok && Array.isArray(data.groups)) {
-        const existingIds = new Set(currentGroups.map(g => String(g.chatId)));
-        const newGroups = [...currentGroups];
-        for (const d of data.groups) {
-          const cid = String(d.id);
-          if (!cid) continue;
-          if (!existingIds.has(cid)) {
-            newGroups.push({
-              chatId: cid,
-              title: d.title || cid,
-              isForum: d.isForum || false,
-              type: d.type || "supergroup",
-              username: d.username || "",
-              topics: []
-            });
-            existingIds.add(cid);
-          }
-        }
-        setGroups(newGroups);
+      if (!res.ok || !data.ok || !Array.isArray(data.groups)) {
+        throw new Error(data.error || "读取账号可发言频道失败");
+      }
+      if (requestId === dialogRequestRef.current) {
+        setGroups(buildAccountTargetGroups(currentConfiguredGroups, data.groups));
       }
     } catch (err) {
       console.error("Failed to fetch dialogs", err);
+      if (requestId === dialogRequestRef.current) {
+        setGroups([]);
+        setError(err.message || "读取账号可发言频道失败");
+      }
+    } finally {
+      if (requestId === dialogRequestRef.current) setTargetsLoading(false);
     }
   }
 
@@ -210,9 +215,8 @@ export default function ComposerPage() {
                   onChange={(e) => {
                     const newUserId = e.target.value;
                     setSelectedUserId(newUserId);
-                    if (newUserId) {
-                      loadUserDialogs(newUserId, groups);
-                    }
+                    setSuccess("");
+                    loadUserDialogs(newUserId, configuredGroups);
                   }}
                   disabled={sending || accounts.length === 0}
                 >
@@ -310,7 +314,7 @@ export default function ComposerPage() {
 
         <Card className="p-5">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-black">选择目标群组</h2>
+            <h2 className="text-xl font-black">当前账号可发言的群组/频道</h2>
             <Link 
               href="/group-config" 
               className="text-xs text-ops-accent hover:underline bg-ops-soft px-3 py-1.5 rounded-full font-bold"
@@ -319,10 +323,14 @@ export default function ComposerPage() {
             </Link>
           </div>
           
-          {targetOptions.length === 0 ? (
+          {targetsLoading ? (
             <div className="text-sm text-ops-muted p-4 bg-gray-50 rounded-lg text-center">
-              <p className="font-bold mb-2">暂无可用目标群组</p>
-              <p className="text-xs">我们已尝试加载您账号下的所有群组。如果依然为空，请加入一些群组或前往群组管理页检测。</p>
+              正在读取当前账号的发言权限...
+            </div>
+          ) : targetOptions.length === 0 ? (
+            <div className="text-sm text-ops-muted p-4 bg-gray-50 rounded-lg text-center">
+              <p className="font-bold mb-2">当前账号暂无可发言目标</p>
+              <p className="text-xs">这里只显示所选账号能够真实发言的群组和频道。请检查该账号是否已加入并获得发言权限。</p>
             </div>
           ) : (
             <div className="flex flex-col gap-2 max-h-[500px] overflow-y-auto pr-2">
@@ -338,7 +346,7 @@ export default function ComposerPage() {
                       setSelectedTargets([]);
                     }
                   }}
-                  disabled={sending}
+                  disabled={sending || targetsLoading}
                 />
                 <label htmlFor="selectAll" className="text-sm font-bold cursor-pointer">全选 (包括所有 Topics 和频道)</label>
               </div>
@@ -350,7 +358,7 @@ export default function ComposerPage() {
                     className="mt-1"
                     checked={selectedTargets.includes(opt.id)}
                     onChange={() => handleTargetToggle(opt.id)}
-                    disabled={sending}
+                    disabled={sending || targetsLoading}
                   />
                   <div>
                     <div className="text-sm font-bold">{opt.label}</div>
@@ -359,7 +367,7 @@ export default function ComposerPage() {
               ))}
             </div>
           )}
-          <p className="mt-4 text-xs text-ops-muted">当前已选择: {selectedTargets.length} 个目标</p>
+          <p className="mt-4 text-xs text-ops-muted">切换发送账号会重新读取权限并清空旧选择。当前已选择: {selectedTargets.length} 个目标</p>
         </Card>
       </div>
     </ConsoleShell>

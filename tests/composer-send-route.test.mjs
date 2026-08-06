@@ -26,3 +26,24 @@ test("manual composer excludes unresolved forum topics from selectable targets",
   assert.match(source, /topic\.threadId\s*!==\s*null/);
   assert.match(source, /topic\.threadId\s*!==\s*undefined/);
 });
+
+test("manual composer isolates targets when the sending account changes", async () => {
+  const source = await readFile(
+    new URL("../app/composer/page.jsx", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(source, /setSelectedTargets\(\[\]\)/);
+  assert.match(source, /buildAccountTargetGroups/);
+  assert.doesNotMatch(source, /const newGroups = \[\.\.\.currentGroups\]/);
+});
+
+test("manual composer validates targets against the selected account before queueing or sending", async () => {
+  const source = await readFile(
+    new URL("../app/api/composer/send/route.js", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(source, /assertAccountCanSendToTargets/);
+  assert.match(source, /telegramMtprotoCall\(null, "getDialogs"/);
+});

@@ -13,8 +13,10 @@ export async function GET(req) {
 
     const dialogs = await telegramMtprotoCall(null, "getDialogs", { limit: 100 }, { userId });
     
-    // Filter out simple users (DMs), keeping only groups/channels
-    const groups = dialogs.filter(d => d.isGroup || d.isChannel);
+    // Only expose destinations the selected account can actually publish to.
+    const groups = dialogs.filter(
+      (dialog) => (dialog.isGroup || dialog.isChannel) && dialog.canSendMessages === true
+    );
 
     return NextResponse.json({ ok: true, groups });
   } catch (err) {

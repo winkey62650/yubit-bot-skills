@@ -3,6 +3,7 @@ import { telegramMtprotoCall } from "../../../../lib/telegram-mtproto.mjs";
 import { readJson, writeJson } from "../../../../lib/json-store.js";
 import { randomUUID } from "node:crypto";
 import { CustomFile } from "teleproto/client/uploads.js";
+import { assertAccountCanSendToTargets } from "../../../../lib/telegram-composer-targets.mjs";
 
 export async function POST(req) {
   try {
@@ -19,6 +20,10 @@ export async function POST(req) {
     if (!text && mediaFiles.length === 0) {
       return NextResponse.json({ ok: false, error: "消息内容和附件不能同时为空" }, { status: 400 });
     }
+
+    // Re-check on the server so stale UI selections cannot send through another account.
+    const dialogs = await telegramMtprotoCall(null, "getDialogs", {}, { userId });
+    assertAccountCanSendToTargets(dialogs, targets);
 
     const processedFiles = [];
     
@@ -130,6 +135,7 @@ export async function POST(req) {
     return NextResponse.json({ ok: true, results, errors: [] });
   } catch (err) {
     console.error("Composer send error:", err);
-    return NextResponse.json({ ok: false, error: err.message || String(err) }, { status: 500 });
+    const status = err?.code === "TELEGRAM_ACCOUNT_TARGET_FORBIDDEN" ? 403 : 500;
+    return NextResponse.json({ ok: false, error: err.message || String(err) }, { status });
   }
 }

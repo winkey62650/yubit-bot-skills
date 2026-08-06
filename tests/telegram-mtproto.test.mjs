@@ -29,7 +29,8 @@ function fakeClientHarness({
   username = "Serenity_Crypto",
   groupIdentityAvailable = true,
   broadcastTargets = [],
-  requireDialogWarmup = false
+  requireDialogWarmup = false,
+  dialogs = null
 } = {}) {
   const calls = [];
   let dialogsLoaded = false;
@@ -69,7 +70,7 @@ function fakeClientHarness({
     async getDialogs(options) {
       calls.push({ kind: "getDialogs", options });
       dialogsLoaded = true;
-      return [{
+      return dialogs || [{
         isGroup: true,
         isChannel: true,
         title: "DEMO Academy",
@@ -158,6 +159,38 @@ test("MTProto publisher restores the Serenity user session and sends as the Demo
     harness.calls.some((call) => call.kind === "invoke" && call.request.className === "channels.GetSendAs"),
     true
   );
+});
+
+test("getDialogs reports whether the selected account can publish to each dialog", async () => {
+  const harness = fakeClientHarness({
+    dialogs: [
+      {
+        isGroup: true,
+        isChannel: true,
+        title: "Writable Group",
+        entity: { id: 111n, megagroup: true, broadcast: false, creator: true }
+      },
+      {
+        isGroup: false,
+        isChannel: true,
+        title: "Read-only Channel",
+        entity: { id: 222n, megagroup: false, broadcast: true, adminRights: null }
+      },
+      {
+        isGroup: false,
+        isChannel: true,
+        title: "Writable Channel",
+        entity: { id: 333n, megagroup: false, broadcast: true, adminRights: { postMessages: true } }
+      }
+    ]
+  });
+  const transport = createTelegramMtprotoTransport(configuredOptions(harness));
+
+  const dialogs = await transport(null, "getDialogs", {}, { userId: "8749261694" });
+
+  assert.equal(dialogs.find((dialog) => dialog.id === "-100111").canSendMessages, true);
+  assert.equal(dialogs.find((dialog) => dialog.id === "-100222").canSendMessages, false);
+  assert.equal(dialogs.find((dialog) => dialog.id === "-100333").canSendMessages, true);
 });
 
 test("MTProto publisher resolves a cold group entity from the selected account dialogs before sending", async () => {
