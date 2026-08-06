@@ -61,6 +61,19 @@ test("manual composer disables unverified topics and refreshes their live state"
   assert.match(source, /setInterval/);
 });
 
+test("manual composer collapses destinations by group and only selects live writable topics", async () => {
+  const source = await readFile(
+    new URL("../app/composer/page.jsx", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(source, /<details key=\{group\.chatId\}/);
+  assert.match(source, /<summary/);
+  assert.match(source, /group\.options\.map\(\(opt\)/);
+  assert.match(source, /group\.options\.filter\(\(option\) => option\.available\)/);
+  assert.doesNotMatch(source, /id="selectAll"/);
+});
+
 test("queued composer rechecks exact topic availability immediately before delivery", async () => {
   const source = await readFile(
     new URL("../app/api/cron/composer/route.js", import.meta.url),

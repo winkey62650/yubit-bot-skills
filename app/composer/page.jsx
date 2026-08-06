@@ -125,29 +125,34 @@ export default function ComposerPage() {
     return () => window.clearInterval(timer);
   }, [configuredGroups, loadUserDialogs, loading, selectedUserId]);
 
-  const targetOptions = [];
-  groups.forEach(group => {
+  const targetGroups = groups.map(group => {
+    const options = [];
     if (group.isForum && group.topics && group.topics.length > 0) {
       group.topics
         .filter(topic => topic.threadId !== null && topic.threadId !== undefined && String(topic.threadId).trim() !== "")
         .forEach(topic => {
-        targetOptions.push({
+        options.push({
           id: `${group.chatId}:${topic.threadId}`,
-          label: `${group.title} - ${topic.liveName || topic.name}`,
+          label: topic.liveName || topic.name,
           available: topic.canSendMessages === true,
           status: topic.availabilityStatus || "unknown"
         });
       });
     } else {
-      targetOptions.push({
+      options.push({
         id: `${group.chatId}:`,
-        label: group.title,
+        label: t("composer.mainDestination"),
         available: group.canSendMessages === true,
         status: group.canSendMessages === true ? "available" : "unknown"
       });
     }
-  });
-  const availableTargets = targetOptions.filter((option) => option.available);
+    return {
+      chatId: group.chatId,
+      title: group.title,
+      options
+    };
+  }).filter((group) => group.options.length > 0);
+  const targetOptions = targetGroups.flatMap((group) => group.options);
 
   const handleTargetToggle = (id) => {
     if (!targetOptions.find((option) => option.id === id)?.available) return;
@@ -155,6 +160,16 @@ export default function ComposerPage() {
       prev.includes(id) 
         ? prev.filter((t) => t !== id) 
         : [...prev, id]
+    );
+  };
+
+  const handleGroupToggle = (options, checked) => {
+    const writableIds = options
+      .filter((option) => option.available)
+      .map((option) => option.id);
+    setSelectedTargets((prev) => checked
+      ? [...new Set([...prev, ...writableIds])]
+      : prev.filter((id) => !writableIds.includes(id))
     );
   };
 
@@ -387,40 +402,57 @@ export default function ComposerPage() {
             </div>
           ) : (
             <div className="flex flex-col gap-2 max-h-[500px] overflow-y-auto pr-2">
-              <div className="flex items-center gap-2 pb-2 border-b border-ops-line mb-2">
-                <input 
-                  type="checkbox" 
-                  id="selectAll"
-                  checked={selectedTargets.length === availableTargets.length && availableTargets.length > 0}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      setSelectedTargets(availableTargets.map(o => o.id));
-                    } else {
-                      setSelectedTargets([]);
-                    }
-                  }}
-                  disabled={sending || targetsLoading}
-                />
-                <label htmlFor="selectAll" className="text-sm font-bold cursor-pointer">{t("composer.selectAll")}</label>
-              </div>
-              
-              {targetOptions.map((opt) => (
-                <label key={opt.id} className={`flex items-start gap-3 p-2 rounded transition ${opt.available ? "hover:bg-[#f7faf8] cursor-pointer" : "cursor-not-allowed opacity-55"}`}>
-                  <input
-                    type="checkbox"
-                    className="mt-1"
-                    checked={selectedTargets.includes(opt.id)}
-                    onChange={() => handleTargetToggle(opt.id)}
-                    disabled={sending || targetsLoading || !opt.available}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-bold">{opt.label}</div>
-                    <div className={`mt-1 text-xs font-bold ${opt.available ? "text-[#2c7a3f]" : "text-[#a04a3d]"}`}>
-                      {t(`composer.topicStatus.${opt.status}`)}
+              {targetGroups.map((group) => {
+                const groupAvailableTargets = group.options.filter((option) => option.available);
+                const selectedInGroup = groupAvailableTargets.filter((option) => selectedTargets.includes(option.id)).length;
+                const allSelected = groupAvailableTargets.length > 0 && selectedInGroup === groupAvailableTargets.length;
+
+                return (
+                  <details key={group.chatId} className="group rounded-xl border border-ops-line bg-white open:shadow-sm">
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-xl px-3 py-3 hover:bg-[#f7faf8] [&::-webkit-details-marker]:hidden">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-black">{group.title}</div>
+                        <div className="mt-1 text-xs text-ops-muted">
+                          {t("composer.groupAvailability", { available: groupAvailableTargets.length, total: group.options.length })}
+                        </div>
+                      </div>
+                      <span className="shrink-0 text-ops-muted transition-transform group-open:rotate-180" aria-hidden="true">⌄</span>
+                    </summary>
+
+                    <div className="border-t border-ops-line px-3 py-2">
+                      {groupAvailableTargets.length > 1 ? (
+                        <label className="mb-1 flex cursor-pointer items-center gap-3 rounded-lg px-2 py-2 hover:bg-[#f7faf8]">
+                          <input
+                            type="checkbox"
+                            checked={allSelected}
+                            onChange={(event) => handleGroupToggle(group.options, event.target.checked)}
+                            disabled={sending || targetsLoading}
+                          />
+                          <span className="text-xs font-bold">{t("composer.selectGroup")}</span>
+                        </label>
+                      ) : null}
+
+                      {group.options.map((opt) => (
+                        <label key={opt.id} className={`flex items-start gap-3 rounded-lg p-2 transition ${opt.available ? "cursor-pointer hover:bg-[#f7faf8]" : "cursor-not-allowed opacity-55"}`}>
+                          <input
+                            type="checkbox"
+                            className="mt-1"
+                            checked={selectedTargets.includes(opt.id)}
+                            onChange={() => handleTargetToggle(opt.id)}
+                            disabled={sending || targetsLoading || !opt.available}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-bold">{opt.label}</div>
+                            <div className={`mt-1 text-xs font-bold ${opt.available ? "text-[#2c7a3f]" : "text-[#a04a3d]"}`}>
+                              {t(`composer.topicStatus.${opt.status}`)}
+                            </div>
+                          </div>
+                        </label>
+                      ))}
                     </div>
-                  </div>
-                </label>
-              ))}
+                  </details>
+                );
+              })}
             </div>
           )}
           <p className="mt-4 text-xs text-ops-muted">{t("composer.selectionHint", { count: selectedTargets.length })}</p>
