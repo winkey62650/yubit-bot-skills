@@ -3,6 +3,8 @@ import { readJson, writeJson } from "../../../../lib/json-store.js";
 import { telegramMtprotoCall } from "../../../../lib/telegram-mtproto.mjs";
 import { CustomFile } from "teleproto/client/uploads.js";
 import { randomUUID } from "node:crypto";
+import { assertAccountCanSendToTargets } from "../../../../lib/telegram-composer-targets.mjs";
+import { hydrateTelegramTopicAvailability, topicIdsByChatFromTargets } from "../../../../lib/telegram-topic-availability.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -59,6 +61,15 @@ export async function GET(request) {
     if (threadId) payload.message_thread_id = threadId;
 
     try {
+      const target = `${chatId}:${threadId || ""}`;
+      const dialogs = await telegramMtprotoCall(null, "getDialogs", {}, { userId: msg.userId });
+      const verifiedDialogs = await hydrateTelegramTopicAvailability(
+        dialogs,
+        topicIdsByChatFromTargets([target]),
+        { userId: msg.userId }
+      );
+      assertAccountCanSendToTargets(verifiedDialogs, [target]);
+
       let result;
       if (processedFiles.length > 1) {
         payload.media = processedFiles.map((f, i) => ({

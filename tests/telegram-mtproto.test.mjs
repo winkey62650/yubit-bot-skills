@@ -31,7 +31,9 @@ function fakeClientHarness({
   getSendAsError = null,
   broadcastTargets = [],
   requireDialogWarmup = false,
-  dialogs = null
+  dialogs = null,
+  forumTopics = [],
+  forumTopicsError = null
 } = {}) {
   const calls = [];
   let dialogsLoaded = false;
@@ -92,6 +94,10 @@ function fakeClientHarness({
     },
     async invoke(request) {
       calls.push({ kind: "invoke", request });
+      if (request.className === "messages.GetForumTopicsByID") {
+        if (forumTopicsError) throw forumTopicsError;
+        return { topics: forumTopics };
+      }
       if (getSendAsError) throw getSendAsError;
       const target = request.peer;
       return {
@@ -193,6 +199,28 @@ test("getDialogs reports whether the selected account can publish to each dialog
   assert.equal(dialogs.find((dialog) => dialog.id === "-100111").canSendMessages, true);
   assert.equal(dialogs.find((dialog) => dialog.id === "-100222").canSendMessages, false);
   assert.equal(dialogs.find((dialog) => dialog.id === "-100333").canSendMessages, true);
+});
+
+test("getForumTopicsById reports exact open, closed and deleted topic states", async () => {
+  const harness = fakeClientHarness({
+    forumTopics: [
+      { className: "ForumTopic", id: 7, title: "Signals", closed: false },
+      { className: "ForumTopic", id: 8, title: "Archive", closed: true },
+      { className: "ForumTopicDeleted", id: 9 }
+    ]
+  });
+  const transport = createTelegramMtprotoTransport(configuredOptions(harness));
+
+  const topics = await transport(null, "getForumTopicsById", {
+    chat_id: GROUP_ID,
+    thread_ids: [7, 8, 9]
+  }, { userId: "8749261694" });
+
+  assert.deepEqual(topics, [
+    { threadId: 7, name: "Signals", closed: false, deleted: false, canSendMessages: true },
+    { threadId: 8, name: "Archive", closed: true, deleted: false, canSendMessages: false },
+    { threadId: 9, name: "", closed: false, deleted: true, canSendMessages: false }
+  ]);
 });
 
 test("MTProto publisher resolves a cold group entity from the selected account dialogs before sending", async () => {

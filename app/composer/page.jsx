@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import ConsoleShell from "../components/ConsoleShell";
 import { useLanguage } from "../components/LanguageProvider";
@@ -16,6 +16,7 @@ export default function ComposerPage() {
   const [groups, setGroups] = useState([]);
   const [configuredGroups, setConfiguredGroups] = useState([]);
   const [targetsLoading, setTargetsLoading] = useState(false);
+  const [lastCheckedAt, setLastCheckedAt] = useState("");
   
   // Form state
   const [selectedUserId, setSelectedUserId] = useState("");
@@ -29,6 +30,56 @@ export default function ComposerPage() {
   
   const fileInputRef = useRef(null);
   const dialogRequestRef = useRef(0);
+
+  const loadUserDialogs = useCallback(async (
+    userId,
+    currentConfiguredGroups = [],
+    { resetSelection = true, silent = false } = {}
+  ) => {
+    const requestId = ++dialogRequestRef.current;
+    if (resetSelection) setSelectedTargets([]);
+    if (!silent) setGroups([]);
+    setError("");
+    if (!userId) {
+      setTargetsLoading(false);
+      setLastCheckedAt("");
+      return;
+    }
+    if (!silent) setTargetsLoading(true);
+    try {
+      const res = await fetch(`/api/telegram/dialogs?userId=${userId}`);
+      const data = await res.json();
+      if (!res.ok || !data.ok || !Array.isArray(data.groups)) {
+        throw new Error(data.error || t("composer.dialogError"));
+      }
+      if (requestId === dialogRequestRef.current) {
+        const nextGroups = buildAccountTargetGroups(currentConfiguredGroups, data.groups);
+        const writableTargetIds = new Set();
+        for (const group of nextGroups) {
+          if (group.isForum) {
+            for (const topic of group.topics || []) {
+              if (topic.canSendMessages === true) writableTargetIds.add(`${group.chatId}:${topic.threadId}`);
+            }
+          } else if (group.canSendMessages === true) {
+            writableTargetIds.add(`${group.chatId}:`);
+          }
+        }
+        setGroups(nextGroups);
+        setSelectedTargets((current) => current.filter((id) => writableTargetIds.has(id)));
+        setLastCheckedAt(new Date().toISOString());
+      }
+    } catch (err) {
+      console.error("Failed to fetch dialogs", err);
+      if (requestId === dialogRequestRef.current) {
+        setGroups([]);
+        setSelectedTargets([]);
+        setLastCheckedAt("");
+        setError(err.message || t("composer.dialogError"));
+      }
+    } finally {
+      if (requestId === dialogRequestRef.current && !silent) setTargetsLoading(false);
+    }
+  }, [t]);
 
   useEffect(() => {
     async function loadData() {
@@ -64,37 +115,15 @@ export default function ComposerPage() {
       }
     }
     loadData();
-  }, []);
+  }, [loadUserDialogs]);
 
-  async function loadUserDialogs(userId, currentConfiguredGroups = []) {
-    const requestId = ++dialogRequestRef.current;
-    setSelectedTargets([]);
-    setGroups([]);
-    setError("");
-    if (!userId) {
-      setTargetsLoading(false);
-      return;
-    }
-    setTargetsLoading(true);
-    try {
-      const res = await fetch(`/api/telegram/dialogs?userId=${userId}`);
-      const data = await res.json();
-      if (!res.ok || !data.ok || !Array.isArray(data.groups)) {
-        throw new Error(data.error || t("composer.dialogError"));
-      }
-      if (requestId === dialogRequestRef.current) {
-        setGroups(buildAccountTargetGroups(currentConfiguredGroups, data.groups));
-      }
-    } catch (err) {
-      console.error("Failed to fetch dialogs", err);
-      if (requestId === dialogRequestRef.current) {
-        setGroups([]);
-        setError(err.message || t("composer.dialogError"));
-      }
-    } finally {
-      if (requestId === dialogRequestRef.current) setTargetsLoading(false);
-    }
-  }
+  useEffect(() => {
+    if (!selectedUserId || loading) return undefined;
+    const timer = window.setInterval(() => {
+      loadUserDialogs(selectedUserId, configuredGroups, { resetSelection: false, silent: true });
+    }, 30_000);
+    return () => window.clearInterval(timer);
+  }, [configuredGroups, loadUserDialogs, loading, selectedUserId]);
 
   const targetOptions = [];
   groups.forEach(group => {
@@ -104,18 +133,24 @@ export default function ComposerPage() {
         .forEach(topic => {
         targetOptions.push({
           id: `${group.chatId}:${topic.threadId}`,
-          label: `${group.title} - ${topic.name}`
+          label: `${group.title} - ${topic.liveName || topic.name}`,
+          available: topic.canSendMessages === true,
+          status: topic.availabilityStatus || "unknown"
         });
       });
     } else {
       targetOptions.push({
         id: `${group.chatId}:`,
-        label: group.title
+        label: group.title,
+        available: group.canSendMessages === true,
+        status: group.canSendMessages === true ? "available" : "unknown"
       });
     }
   });
+  const availableTargets = targetOptions.filter((option) => option.available);
 
   const handleTargetToggle = (id) => {
+    if (!targetOptions.find((option) => option.id === id)?.available) return;
     setSelectedTargets((prev) => 
       prev.includes(id) 
         ? prev.filter((t) => t !== id) 
@@ -321,14 +356,24 @@ export default function ComposerPage() {
         <Card className="p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-black">{t("composer.targets")}</h2>
-            {user?.role === "admin" ? (
-              <Link
-                href="/group-config"
-                className="text-xs text-ops-accent hover:underline bg-ops-soft px-3 py-1.5 rounded-full font-bold"
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => loadUserDialogs(selectedUserId, configuredGroups, { resetSelection: false })}
+                disabled={!selectedUserId || sending || targetsLoading}
+                className="text-xs text-ops-accent hover:underline bg-ops-soft px-3 py-1.5 rounded-full font-bold disabled:opacity-50"
               >
-                {t("composer.manageGroups")}
-              </Link>
-            ) : null}
+                {targetsLoading ? t("composer.refreshingTargets") : t("composer.refreshTargets")}
+              </button>
+              {user?.role === "admin" ? (
+                <Link
+                  href="/group-config"
+                  className="text-xs text-ops-accent hover:underline bg-ops-soft px-3 py-1.5 rounded-full font-bold"
+                >
+                  {t("composer.manageGroups")}
+                </Link>
+              ) : null}
+            </div>
           </div>
           
           {targetsLoading ? (
@@ -346,10 +391,10 @@ export default function ComposerPage() {
                 <input 
                   type="checkbox" 
                   id="selectAll"
-                  checked={selectedTargets.length === targetOptions.length && targetOptions.length > 0}
+                  checked={selectedTargets.length === availableTargets.length && availableTargets.length > 0}
                   onChange={(e) => {
                     if (e.target.checked) {
-                      setSelectedTargets(targetOptions.map(o => o.id));
+                      setSelectedTargets(availableTargets.map(o => o.id));
                     } else {
                       setSelectedTargets([]);
                     }
@@ -360,22 +405,29 @@ export default function ComposerPage() {
               </div>
               
               {targetOptions.map((opt) => (
-                <label key={opt.id} className="flex items-start gap-3 p-2 hover:bg-[#f7faf8] rounded cursor-pointer transition">
+                <label key={opt.id} className={`flex items-start gap-3 p-2 rounded transition ${opt.available ? "hover:bg-[#f7faf8] cursor-pointer" : "cursor-not-allowed opacity-55"}`}>
                   <input
                     type="checkbox"
                     className="mt-1"
                     checked={selectedTargets.includes(opt.id)}
                     onChange={() => handleTargetToggle(opt.id)}
-                    disabled={sending || targetsLoading}
+                    disabled={sending || targetsLoading || !opt.available}
                   />
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <div className="text-sm font-bold">{opt.label}</div>
+                    <div className={`mt-1 text-xs font-bold ${opt.available ? "text-[#2c7a3f]" : "text-[#a04a3d]"}`}>
+                      {t(`composer.topicStatus.${opt.status}`)}
+                    </div>
                   </div>
                 </label>
               ))}
             </div>
           )}
           <p className="mt-4 text-xs text-ops-muted">{t("composer.selectionHint", { count: selectedTargets.length })}</p>
+          <p className="mt-1 text-xs text-ops-muted">
+            {t("composer.liveCheckHint")}
+            {lastCheckedAt ? ` · ${t("composer.lastChecked", { time: new Date(lastCheckedAt).toLocaleTimeString() })}` : ""}
+          </p>
         </Card>
       </div>
     </ConsoleShell>

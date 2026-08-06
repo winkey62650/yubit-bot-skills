@@ -4,6 +4,7 @@ import { readJson, writeJson } from "../../../../lib/json-store.js";
 import { randomUUID } from "node:crypto";
 import { CustomFile } from "teleproto/client/uploads.js";
 import { assertAccountCanSendToTargets } from "../../../../lib/telegram-composer-targets.mjs";
+import { hydrateTelegramTopicAvailability, topicIdsByChatFromTargets } from "../../../../lib/telegram-topic-availability.mjs";
 import { SESSION_COOKIE, verifySessionToken } from "../../../../lib/session.js";
 import { canQueueComposerMessage } from "../../../../lib/access-control.mjs";
 
@@ -38,7 +39,12 @@ export async function POST(req) {
 
     // Re-check on the server so stale UI selections cannot send through another account.
     const dialogs = await telegramMtprotoCall(null, "getDialogs", {}, { userId });
-    assertAccountCanSendToTargets(dialogs, targets);
+    const verifiedDialogs = await hydrateTelegramTopicAvailability(
+      dialogs,
+      topicIdsByChatFromTargets(targets),
+      { userId }
+    );
+    assertAccountCanSendToTargets(verifiedDialogs, targets);
 
     const processedFiles = [];
     
@@ -150,7 +156,13 @@ export async function POST(req) {
     return NextResponse.json({ ok: true, results, errors: [] });
   } catch (err) {
     console.error("Composer send error:", err);
-    const status = err?.code === "TELEGRAM_ACCOUNT_TARGET_FORBIDDEN" ? 403 : 500;
+    const status = err?.code === "TELEGRAM_ACCOUNT_TARGET_FORBIDDEN"
+      ? 403
+      : err?.code === "TELEGRAM_TOPIC_NOT_WRITABLE"
+        ? 409
+        : err?.code === "TELEGRAM_TOPIC_STATUS_UNAVAILABLE"
+          ? 503
+          : 500;
     return NextResponse.json({ ok: false, error: err.message || String(err) }, { status });
   }
 }

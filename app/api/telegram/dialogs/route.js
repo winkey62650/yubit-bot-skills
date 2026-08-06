@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { telegramMtprotoCall } from "../../../../lib/telegram-mtproto.mjs";
+import { readJson } from "../../../../lib/json-store.js";
+import { hydrateTelegramTopicAvailability, topicIdsByChatFromConfiguredGroups } from "../../../../lib/telegram-topic-availability.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -11,11 +13,19 @@ export async function GET(req) {
       return NextResponse.json({ ok: false, error: "Missing userId parameter" }, { status: 400 });
     }
 
-    const dialogs = await telegramMtprotoCall(null, "getDialogs", { limit: 100 }, { userId });
+    const [dialogs, configured] = await Promise.all([
+      telegramMtprotoCall(null, "getDialogs", { limit: 100 }, { userId }),
+      readJson("group-config.json", { groups: [] })
+    ]);
     
     // Only expose destinations the selected account can actually publish to.
-    const groups = dialogs.filter(
+    const writableDialogs = dialogs.filter(
       (dialog) => (dialog.isGroup || dialog.isChannel) && dialog.canSendMessages === true
+    );
+    const groups = await hydrateTelegramTopicAvailability(
+      writableDialogs,
+      topicIdsByChatFromConfiguredGroups(configured.groups || []),
+      { userId }
     );
 
     return NextResponse.json({ ok: true, groups });

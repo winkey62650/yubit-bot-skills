@@ -46,4 +46,27 @@ test("manual composer validates targets against the selected account before queu
 
   assert.match(source, /assertAccountCanSendToTargets/);
   assert.match(source, /telegramMtprotoCall\(null, "getDialogs"/);
+  assert.match(source, /hydrateTelegramTopicAvailability/);
+  assert.match(source, /topicIdsByChatFromTargets/);
+});
+
+test("manual composer disables unverified topics and refreshes their live state", async () => {
+  const source = await readFile(
+    new URL("../app/composer/page.jsx", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(source, /canSendMessages\s*===\s*true/);
+  assert.match(source, /disabled=\{sending \|\| targetsLoading \|\| !opt\.available\}/);
+  assert.match(source, /setInterval/);
+});
+
+test("queued composer rechecks exact topic availability immediately before delivery", async () => {
+  const source = await readFile(
+    new URL("../app/api/cron/composer/route.js", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(source, /hydrateTelegramTopicAvailability/);
+  assert.match(source, /assertAccountCanSendToTargets/);
 });
