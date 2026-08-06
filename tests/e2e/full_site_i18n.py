@@ -35,10 +35,12 @@ def load_local_auth():
 with sync_playwright() as playwright:
     browser = playwright.chromium.launch(headless=True)
     username, password = load_local_auth()
-    login = requests.post(
+    http = requests.Session()
+    http.trust_env = False
+    login = http.post(
         f"{BASE_URL}/api/auth/login",
         json={"username": username, "password": password},
-        timeout=10,
+        timeout=30,
     )
     login.raise_for_status()
     session = login.cookies["yubit_session"]
