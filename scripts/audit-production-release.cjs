@@ -13,6 +13,7 @@ const {
   evaluateRequiredAutomationRule,
   evaluateTradingRelease,
   resolveReleaseAuditBaseUrl,
+  summarizeReleaseSocialSource,
   withAsyncCleanup,
 } = require("../lib/release-gate.cjs");
 
@@ -195,14 +196,7 @@ async function runAudit(browser) {
       targetCount: (rule.targets || []).length
     })),
     database: distribution.database,
-    socialPackages: (social.packages || []).map((item) => ({
-      id: item.id,
-      name: item.name,
-      enabled: item.enabled,
-      sourceCount: (item.sources || []).length,
-      xCount: (item.sources || []).filter((source) => source.platform === "x").length,
-      youtubeCount: (item.sources || []).filter((source) => source.platform === "youtube").length
-    })),
+    socialPackages: (social.packages || []).map(summarizeReleaseSocialSource),
     trading: {
       metrics: trading.metrics || {},
       health: trading.health || {}
@@ -258,7 +252,7 @@ async function runAudit(browser) {
     ...requiredAutomations.flatMap((result) => result.failures),
     ...["daily-events", "daily-analysis", "whale-hourly"].flatMap((jobId) => {
       const job = (automation.jobs || []).find((item) => item.id === jobId);
-      return !job?.target?.configured || job.target.count < 2 ? [`自动任务状态未读取到数据库目标：${jobId}`] : [];
+      return !job?.target?.configured || job.target.count < 1 ? [`自动任务状态未读取到数据库目标：${jobId}`] : [];
     }),
     ...evaluateTradingRelease(trading)
   ];

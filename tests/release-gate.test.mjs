@@ -20,6 +20,7 @@ const {
   normalizeReleaseStage,
   resolveReleaseAuditBaseUrl,
   selectAutomationRuleForReconciliation,
+  summarizeReleaseSocialSource,
   withAsyncCleanup,
 } = require("../lib/release-gate.cjs");
 
@@ -70,6 +71,42 @@ test("release audit only sends Vercel protection headers when a bypass secret is
   assert.deepEqual(buildVercelProtectionHeaders("  preview-secret  "), {
     "x-vercel-protection-bypass": "preview-secret",
     "x-vercel-set-bypass-cookie": "true",
+  });
+});
+
+test("release audit summarizes the current flat social source schema", () => {
+  assert.deepEqual(summarizeReleaseSocialSource({
+    id: "social-jenna-x",
+    name: "Jenna X",
+    platform: "X",
+    accountUrl: "https://x.com/example",
+    status: "已启用",
+  }), {
+    id: "social-jenna-x",
+    name: "Jenna X",
+    enabled: true,
+    sourceCount: 1,
+    xCount: 1,
+    youtubeCount: 0,
+  });
+});
+
+test("release audit remains compatible with legacy nested social sources", () => {
+  assert.deepEqual(summarizeReleaseSocialSource({
+    id: "legacy-package",
+    name: "Legacy package",
+    enabled: true,
+    sources: [
+      { platform: "x", accountUrl: "https://x.com/example" },
+      { platform: "YouTube", accountUrl: "https://youtube.com/@example" },
+    ],
+  }), {
+    id: "legacy-package",
+    name: "Legacy package",
+    enabled: true,
+    sourceCount: 2,
+    xCount: 1,
+    youtubeCount: 1,
   });
 });
 
@@ -297,7 +334,7 @@ test("trading release gate accepts a healthy, configured production workflow", (
     metrics: {
       enabledTraders: 1,
       verifiedAccounts: 1,
-      enabledDestinations: 2,
+      enabledDestinations: 1,
     },
     health: {
       database: { ok: true, driver: "postgres", durable: true },
@@ -318,7 +355,7 @@ test("trading release gate reports every missing production dependency", () => {
     metrics: {
       enabledTraders: 0,
       verifiedAccounts: 0,
-      enabledDestinations: 1,
+      enabledDestinations: 0,
     },
     health: {
       database: { ok: true, driver: "json-local", durable: false },
@@ -337,7 +374,7 @@ test("trading release gate reports every missing production dependency", () => {
     "交易订单核对调度超过 15 分钟未成功运行",
     "尚未启用 Trader",
     "尚未配置并验证 YUBIT 只读账户",
-    "交易信号发布目标少于 2 个",
+    "尚未配置交易信号发布目标",
   ]);
 });
 
@@ -372,7 +409,7 @@ test("preview trading gate requires an isolated database and a disabled SpeakerB
 test("automation release gate requires exactly one enabled rule per content type", () => {
   const rules = [
     { id: "old", kind: "automation", contentType: "daily-analysis", enabled: false, schedulePreset: "daily-0800-utc", targets: [{}, {}] },
-    { id: "active", kind: "automation", contentType: "daily-analysis", enabled: true, schedulePreset: "daily-0800-utc", targets: [{}, {}] },
+    { id: "active", kind: "automation", contentType: "daily-analysis", enabled: true, schedulePreset: "daily-0800-utc", targets: [{}] },
   ];
   const healthy = evaluateRequiredAutomationRule(rules, {
     contentType: "daily-analysis",

@@ -38,6 +38,31 @@ test("agent updates use the compact platform, date and link template", () => {
   assert.equal(automation.renderAgentUpdateText({ package: { platform: "YouTube" }, publishedAt: "2026-08-03T23:20:00Z", url: "https://youtu.be/demo" }), "YouTube Updated + 2026-08-03\nhttps://youtu.be/demo");
 });
 
+test("agent sync health never reports failed or missing sources as success", () => {
+  assert.deepEqual(
+    automation.evaluateAgentSyncHealth([{ status: "unchanged" }], 0),
+    {
+      status: "success",
+      sourceCount: 1,
+      healthyCount: 1,
+      failedCount: 0,
+      skippedCount: 0,
+      updateCount: 0,
+      message: "已完成抓取，本轮没有新内容。",
+    },
+  );
+  assert.equal(automation.evaluateAgentSyncHealth([{ status: "failed" }], 0).status, "failed");
+  assert.equal(automation.evaluateAgentSyncHealth([{ status: "skipped" }], 0).status, "failed");
+  assert.equal(automation.evaluateAgentSyncHealth([
+    { status: "unchanged" },
+    { status: "failed" },
+  ], 0).status, "partial");
+  assert.equal(automation.evaluateAgentSyncHealth([
+    { status: "updated" },
+    { status: "failed" },
+  ], 1).status, "partial");
+});
+
 test("agent update plans support multiple groups and topics", () => {
   assert.equal(typeof automation.buildAgentUpdateTelegramPlans, "function");
   const targets = [
