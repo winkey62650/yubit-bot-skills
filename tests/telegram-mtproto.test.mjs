@@ -94,7 +94,7 @@ function fakeClientHarness({
     },
     async invoke(request) {
       calls.push({ kind: "invoke", request });
-      if (request.className === "messages.GetForumTopicsByID") {
+      if (request.className === "messages.GetForumTopicsByID" || request.className === "messages.GetForumTopics") {
         if (forumTopicsError) throw forumTopicsError;
         return { topics: forumTopics };
       }
@@ -221,6 +221,28 @@ test("getForumTopicsById reports exact open, closed and deleted topic states", a
     { threadId: 8, name: "Archive", closed: true, deleted: false, canSendMessages: false },
     { threadId: 9, name: "", closed: false, deleted: true, canSendMessages: false }
   ]);
+});
+
+test("getForumTopics discovers topics when a forum is not configured yet", async () => {
+  const harness = fakeClientHarness({
+    forumTopics: [
+      { className: "ForumTopic", id: 4, title: "General", closed: false },
+      { className: "ForumTopic", id: 9, title: "Crypto Analysis", closed: false }
+    ]
+  });
+  const transport = createTelegramMtprotoTransport(configuredOptions(harness));
+
+  const topics = await transport(null, "getForumTopics", { chat_id: GROUP_ID }, { userId: "8749261694" });
+
+  assert.deepEqual(topics.map((topic) => [topic.threadId, topic.name]), [
+    [4, "General"],
+    [9, "Crypto Analysis"]
+  ]);
+  const request = harness.calls.find(
+    (call) => call.kind === "invoke" && call.request.className === "messages.GetForumTopics"
+  ).request;
+  assert.equal(request.limit, 100);
+  assert.equal(request.offsetTopic, 0);
 });
 
 test("MTProto publisher resolves a cold group entity from the selected account dialogs before sending", async () => {

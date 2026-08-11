@@ -158,7 +158,7 @@ export async function POST(req) {
     console.error("Composer send error:", err);
     const status = err?.code === "TELEGRAM_ACCOUNT_TARGET_FORBIDDEN"
       ? 403
-      : err?.code === "TELEGRAM_TOPIC_NOT_WRITABLE"
+      : err?.code === "TELEGRAM_TOPIC_NOT_WRITABLE" || err?.code === "TELEGRAM_FORUM_TOPIC_REQUIRED"
         ? 409
         : err?.code === "TELEGRAM_TOPIC_STATUS_UNAVAILABLE"
           ? 503

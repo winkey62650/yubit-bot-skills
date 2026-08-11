@@ -24,8 +24,8 @@ test("topic availability hydrates open, closed and missing topics for each forum
   );
 
   assert.deepEqual(calls[0], {
-    method: "getForumTopicsById",
-    payload: { chat_id: "-100111", thread_ids: [7, 8, 9] },
+    method: "getForumTopics",
+    payload: { chat_id: "-100111" },
     options: { userId: "42" }
   });
   assert.deepEqual(dialogs[0].topics.map((topic) => [topic.threadId, topic.availabilityStatus, topic.canSendMessages]), [
@@ -46,6 +46,34 @@ test("topic availability fails closed when Telegram cannot verify a forum", asyn
   assert.equal(dialogs[0].topics[0].availabilityStatus, "unknown");
   assert.equal(dialogs[0].topics[0].canSendMessages, false);
   assert.match(dialogs[0].topicStatusError, /network unavailable/);
+});
+
+test("topic availability discovers every live topic for an unconfigured forum", async () => {
+  const calls = [];
+  const dialogs = await hydrateTelegramTopicAvailability(
+    [{ id: "-100222", isForum: true, canSendMessages: true }],
+    new Map(),
+    {
+      userId: "42",
+      call: async (_token, method, payload, options) => {
+        calls.push({ method, payload, options });
+        return [
+          { threadId: 3, name: "General", closed: false, deleted: false, canSendMessages: true },
+          { threadId: 7, name: "Crypto Analysis", closed: false, deleted: false, canSendMessages: true }
+        ];
+      }
+    }
+  );
+
+  assert.deepEqual(calls[0], {
+    method: "getForumTopics",
+    payload: { chat_id: "-100222" },
+    options: { userId: "42" }
+  });
+  assert.deepEqual(dialogs[0].topics.map((topic) => [topic.threadId, topic.name, topic.availabilityStatus]), [
+    [3, "General", "available"],
+    [7, "Crypto Analysis", "available"]
+  ]);
 });
 
 test("topic id collectors normalize configured groups and selected targets", () => {

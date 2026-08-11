@@ -10,6 +10,7 @@ import {
   readFirstPinnedMessages,
   topicDisplayName
 } from "../templates.mjs";
+import { shouldCloseTopicAfterSetup } from "../lib/telegram-topic-policy.mjs";
 
 const dryRun = process.env.DRY_RUN !== "false";
 const chatId = process.env.TELEGRAM_CHAT_ID;
@@ -99,7 +100,7 @@ async function resolveConfigPath() {
       } : {}),
       iconCustomEmojiId: topic.iconCustomEmojiId || "",
       pin: true,
-      close: topic.attribute === "关闭话题" || topic.attribute === "频道禁言"
+      close: shouldCloseTopicAfterSetup(topic)
     };
     })
   };

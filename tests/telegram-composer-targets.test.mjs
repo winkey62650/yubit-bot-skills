@@ -97,3 +97,63 @@ test("composer blocks forum topics whose live status cannot be verified", () => 
     (error) => error?.code === "TELEGRAM_TOPIC_STATUS_UNAVAILABLE"
   );
 });
+
+test("composer requires an explicit verified topic for forum destinations", () => {
+  const dialogs = [{
+    id: "-100111",
+    type: "supergroup",
+    isForum: true,
+    canSendMessages: true,
+    topics: [{ threadId: 7, availabilityStatus: "available", canSendMessages: true }]
+  }];
+
+  assert.throws(
+    () => assertAccountCanSendToTargets(dialogs, ["-100111:"]),
+    (error) => error?.code === "TELEGRAM_FORUM_TOPIC_REQUIRED"
+  );
+});
+
+test("composer still allows a writable channel without a topic", () => {
+  const dialogs = [{
+    id: "-100333",
+    type: "channel",
+    isChannel: true,
+    canSendMessages: true
+  }];
+
+  assert.doesNotThrow(() => assertAccountCanSendToTargets(dialogs, ["-100333:"]));
+});
+
+test("composer exposes live topics from unconfigured forums and appends newly discovered topics", () => {
+  const groups = buildAccountTargetGroups(configuredGroups, [
+    {
+      id: "-100111",
+      title: "Nicholas Academy",
+      isForum: true,
+      canSendMessages: true,
+      topics: [
+        { threadId: 7, name: "Signals Live", availabilityStatus: "available", canSendMessages: true },
+        { threadId: 8, name: "Wins", availabilityStatus: "available", canSendMessages: true }
+      ]
+    },
+    {
+      id: "-100999",
+      title: "BTDcrypto x YUBIT Research",
+      isForum: true,
+      canSendMessages: true,
+      topics: [
+        { threadId: 4, name: "General", availabilityStatus: "available", canSendMessages: true },
+        { threadId: 9, name: "Crypto Analysis", availabilityStatus: "available", canSendMessages: true }
+      ]
+    }
+  ]);
+
+  assert.deepEqual(groups[0].topics.map((topic) => [topic.threadId, topic.liveName]), [
+    [7, "Signals Live"],
+    [8, "Wins"]
+  ]);
+  assert.deepEqual(groups[1].topics.map((topic) => [topic.threadId, topic.liveName]), [
+    [4, "General"],
+    [9, "Crypto Analysis"]
+  ]);
+});
