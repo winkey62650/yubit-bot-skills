@@ -189,6 +189,17 @@ test("getDialogs reports whether the selected account can publish to each dialog
         isChannel: true,
         title: "Writable Channel",
         entity: { id: 333n, megagroup: false, broadcast: true, adminRights: { postMessages: true } }
+      },
+      {
+        isGroup: true,
+        isChannel: true,
+        title: "Media-only Group",
+        entity: {
+          id: 444n,
+          megagroup: true,
+          broadcast: false,
+          defaultBannedRights: { sendPlain: true }
+        }
       }
     ]
   });
@@ -199,6 +210,7 @@ test("getDialogs reports whether the selected account can publish to each dialog
   assert.equal(dialogs.find((dialog) => dialog.id === "-100111").canSendMessages, true);
   assert.equal(dialogs.find((dialog) => dialog.id === "-100222").canSendMessages, false);
   assert.equal(dialogs.find((dialog) => dialog.id === "-100333").canSendMessages, true);
+  assert.equal(dialogs.find((dialog) => dialog.id === "-100444").canSendMessages, false);
 });
 
 test("getForumTopicsById reports exact open, closed and deleted topic states", async () => {
