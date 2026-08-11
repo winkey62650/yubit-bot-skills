@@ -1,50 +1,13 @@
 import { reconcileDistributionRouting } from "../lib/distribution-domain.mjs";
 import { getDistributionRepository } from "../lib/distribution-repository.mjs";
 import { readJson, writeJson } from "../lib/json-store.js";
+import {
+  CANONICAL_TOPIC_ROUTES,
+  repairCanonicalTopicRouting
+} from "../lib/canonical-topic-routing.mjs";
 
-const DEMO_CHAT_ID = String(process.env.DEMO_CHAT_ID || "-1003710405969");
-const EXPECTED_THREAD_IDS = [6, 8, 10, 12, 14, 16, 18];
+const CANONICAL_CHAT_IDS = Object.keys(CANONICAL_TOPIC_ROUTES);
 const dryRun = process.env.DRY_RUN !== "false";
-
-function topicSequence(value) {
-  const match = String(value ?? "").replace(/^[^\p{L}\p{N}]+/gu, "").match(/^(\d+)\s*[.、)]/);
-  return match ? Number(match[1]) : null;
-}
-
-function repairGroupDocument(document) {
-  let changed = false;
-  const groups = (Array.isArray(document?.groups) ? document.groups : []).map((group) => {
-    if (String(group?.chatId ?? group?.id ?? "") !== DEMO_CHAT_ID) return group;
-    const topics = (Array.isArray(group.topics) ? group.topics : []).map((topic) => {
-      const sequence = topicSequence(topic.name ?? topic.title);
-      const expectedThreadId = EXPECTED_THREAD_IDS[sequence - 1];
-      if (!expectedThreadId) return topic;
-      if (Number(topic.threadId ?? topic.topicId ?? topic.id) !== expectedThreadId || topic.verified !== true) changed = true;
-      return {
-        ...topic,
-        id: expectedThreadId,
-        threadId: expectedThreadId,
-        source: "telegram-confirmed",
-        verified: true
-      };
-    });
-    const detectedTopicThreadIds = [...EXPECTED_THREAD_IDS];
-    if (JSON.stringify(group.detectedTopicThreadIds ?? []) !== JSON.stringify(detectedTopicThreadIds)) changed = true;
-    return {
-      ...group,
-      topics,
-      detectedTopicThreadIds,
-      topicCoverage: {
-        knownCount: topics.length,
-        resolvedCount: topics.filter((topic) => Number(topic.threadId) > 0).length,
-        detectedThreadCount: detectedTopicThreadIds.length,
-        complete: topics.length > 0 && topics.every((topic) => Number(topic.threadId) > 0)
-      },
-      source: "telegram-confirmed"
-    };
-  });
-  return { changed, value: { ...document, groups, updatedAt: new Date().toISOString() } };
-}
 
 async function main() {
   const [groupConfig, registry, repository] = await Promise.all([
@@ -52,14 +15,14 @@ async function main() {
     readJson("telegram-group-registry.json", { groups: [] }),
     getDistributionRepository()
   ]);
-  const repairedConfig = repairGroupDocument(groupConfig);
-  const repairedRegistry = repairGroupDocument(registry);
+  const repairedConfig = repairCanonicalTopicRouting(groupConfig);
+  const repairedRegistry = repairCanonicalTopicRouting(registry);
   const rules = await repository.listRules();
   const repairedRules = rules.map((rule) => reconcileDistributionRouting(rule, repairedConfig.value.groups));
   const changedRules = repairedRules.filter((rule, index) => JSON.stringify(rule) !== JSON.stringify(rules[index]));
   const summary = {
     dryRun,
-    demoChatId: DEMO_CHAT_ID,
+    canonicalChatIds: CANONICAL_CHAT_IDS,
     groupConfigChanged: repairedConfig.changed,
     registryChanged: repairedRegistry.changed,
     changedRules: changedRules.map((rule) => ({
@@ -67,7 +30,9 @@ async function main() {
       kind: rule.kind,
       name: rule.name,
       sourceThreadId: rule.source?.threadId ?? null,
-      demoTargetThreadIds: rule.targets.filter((target) => target.chatId === DEMO_CHAT_ID).map((target) => target.threadId)
+      canonicalTargets: rule.targets
+        .filter((target) => CANONICAL_CHAT_IDS.includes(target.chatId))
+        .map((target) => ({ chatId: target.chatId, threadId: target.threadId }))
     }))
   };
 
@@ -78,8 +43,8 @@ async function main() {
       writeJson(`backups/topic-routing-${stamp}-registry.json`, registry),
       repository.setMeta(`topic-routing-backup-${stamp}`, {
         createdAt: new Date().toISOString(),
-        chatId: DEMO_CHAT_ID,
-        rules: rules.filter((rule) => rule.source?.chatId === DEMO_CHAT_ID || rule.targets.some((target) => target.chatId === DEMO_CHAT_ID))
+        chatIds: CANONICAL_CHAT_IDS,
+        rules: rules.filter((rule) => CANONICAL_CHAT_IDS.includes(rule.source?.chatId) || rule.targets.some((target) => CANONICAL_CHAT_IDS.includes(target.chatId)))
       })
     ]);
     await Promise.all([

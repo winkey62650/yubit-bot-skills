@@ -34,7 +34,7 @@ test("topic availability hydrates open, closed and missing topics for each forum
     [9, "missing", false]
   ]);
   assert.equal(typeof dialogs[0].topicStatusCheckedAt, "string");
-  assert.equal(dialogs[0].topics[1].requiresTemporaryReopen, true);
+  assert.equal("requiresTemporaryReopen" in dialogs[0].topics[1], false);
 });
 
 test("closed topics remain unavailable without manage-topics permission", async () => {

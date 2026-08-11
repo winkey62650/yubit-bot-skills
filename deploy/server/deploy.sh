@@ -56,6 +56,15 @@ npm run check
 npm test
 npm run build
 
+# Next.js standalone output omits public/ and static assets. Copy them into the
+# runtime bundle so systemd can run server.js directly.
+rm -rf "$release/.next/standalone/public" "$release/.next/standalone/.next/static"
+if [[ -d "$release/public" ]]; then
+  cp -a "$release/public" "$release/.next/standalone/public"
+fi
+mkdir -p "$release/.next/standalone/.next"
+cp -a "$release/.next/static" "$release/.next/standalone/.next/static"
+
 if [[ -d "$APP_ROOT/current/.runtime" && ! -L "$APP_ROOT/current/.runtime" ]]; then
   sudo cp -an "$APP_ROOT/current/.runtime/." "$STATE_ROOT/"
 fi

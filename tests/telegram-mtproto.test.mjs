@@ -237,26 +237,24 @@ test("topic management permission accepts creators and manage-topics admins only
   assert.equal(telegramEntityCanManageTopics({ creator: true, left: true }), false);
 });
 
-test("MTProto publisher reopens and closes only the requested forum topic", async () => {
+test("MTProto publisher never mutates the requested forum topic state", async () => {
   const harness = fakeClientHarness();
   const transport = createTelegramMtprotoTransport(configuredOptions(harness));
 
-  await transport(null, "reopenForumTopic", {
-    chat_id: GROUP_ID,
-    message_thread_id: 18
-  }, { userId: "8749261694" });
-  await transport(null, "closeForumTopic", {
-    chat_id: GROUP_ID,
-    message_thread_id: 18
-  }, { userId: "8749261694" });
+  for (const method of ["reopenForumTopic", "closeForumTopic"]) {
+    await assert.rejects(
+      () => transport(null, method, {
+        chat_id: GROUP_ID,
+        message_thread_id: 18
+      }, { userId: "8749261694" }),
+      (error) => error?.code === "TELEGRAM_TOPIC_STATE_MUTATION_DISABLED"
+    );
+  }
 
-  const toggles = harness.calls
-    .filter((call) => call.kind === "invoke" && call.request.className === "messages.EditForumTopic")
-    .map((call) => ({ topicId: call.request.topicId, closed: call.request.closed }));
-  assert.deepEqual(toggles, [
-    { topicId: 18, closed: false },
-    { topicId: 18, closed: true }
-  ]);
+  assert.equal(
+    harness.calls.some((call) => call.kind === "invoke" && call.request.className === "messages.EditForumTopic"),
+    false
+  );
 });
 
 test("getForumTopicsById reports exact open, closed and deleted topic states", async () => {
@@ -335,7 +333,7 @@ test("all new group content uses the official group identity", async () => {
   assert.equal(harness.calls.filter((call) => call.kind === "createClient").length, 1);
 });
 
-test("official group publisher falls back to user identity for Channels", async () => {
+test("official publisher uses the native Channel identity for Channels", async () => {
   const harness = fakeClientHarness({ broadcastTargets: [CHANNEL_ID] });
   const transport = createTelegramMtprotoTransport(configuredOptions(harness));
 
@@ -346,32 +344,32 @@ test("official group publisher falls back to user identity for Channels", async 
   assert.equal(call.options.sendAs, undefined);
 });
 
-test("official group publisher falls back to user identity when Telegram does not offer the group send-as identity", async () => {
+test("official group publisher refuses to fall back to user identity when group send-as is unavailable", async () => {
   const harness = fakeClientHarness({ groupIdentityAvailable: false });
   const transport = createTelegramMtprotoTransport(configuredOptions(harness));
 
-  await transport("ignored", "sendMessage", { chat_id: GROUP_ID, text: "should publish as user" });
-  
-  const call = harness.calls.find((call) => call.kind === "sendMessage");
-  assert.equal(call !== undefined, true);
-  assert.equal(call.options.sendAs, undefined);
+  await assert.rejects(
+    () => transport("ignored", "sendMessage", { chat_id: GROUP_ID, text: "must stay official" }),
+    (error) => error?.code === "TELEGRAM_GROUP_IDENTITY_NOT_AVAILABLE"
+  );
+  assert.equal(harness.calls.some((call) => call.kind === "sendMessage"), false);
 });
 
-test("official group publisher continues when GetSendAs is unsupported for a normal supergroup", async () => {
+test("official group publisher refuses personal fallback when GetSendAs fails", async () => {
   const error = new Error("The provided peer id is invalid. (caused by channels.GetSendAs)");
   error.code = "PEER_ID_INVALID";
   error.name = "PeerIdInvalidError";
   const harness = fakeClientHarness({ getSendAsError: error });
   const transport = createTelegramMtprotoTransport(configuredOptions(harness));
 
-  const result = await transport("ignored", "sendMessage", {
-    chat_id: GROUP_ID,
-    text: "normal supergroup"
-  });
-
-  assert.deepEqual(result, { message_id: 777 });
-  const call = harness.calls.find((candidate) => candidate.kind === "sendMessage");
-  assert.equal(call.options.sendAs, undefined);
+  await assert.rejects(
+    () => transport("ignored", "sendMessage", {
+      chat_id: GROUP_ID,
+      text: "must stay official"
+    }),
+    (caught) => caught?.code === "TELEGRAM_GROUP_IDENTITY_NOT_AVAILABLE"
+  );
+  assert.equal(harness.calls.some((call) => call.kind === "sendMessage"), false);
 });
 
 test("MTProto publisher refuses an unauthorized user session", async () => {

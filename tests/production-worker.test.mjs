@@ -82,6 +82,23 @@ test("server deployment restarts both services after changing the current releas
   assert.doesNotMatch(deployScript, /enable --now yubit-academy-(?:web|worker)\.service/);
 });
 
+test("production web service runs the standalone bundle with its static assets", async () => {
+  const unit = await readFile(
+    fileURLToPath(new URL("../deploy/systemd/yubit-academy-web.service", import.meta.url)),
+    "utf8",
+  );
+  const deployScript = await readFile(
+    fileURLToPath(new URL("../deploy/server/deploy.sh", import.meta.url)),
+    "utf8",
+  );
+
+  assert.match(unit, /Environment=HOSTNAME=127\.0\.0\.1/);
+  assert.match(unit, /ExecStart=.*\/\.next\/standalone\/server\.js/);
+  assert.doesNotMatch(unit, /next\/dist\/bin\/next start/);
+  assert.match(deployScript, /\.next\/standalone\/\.next\/static/);
+  assert.match(deployScript, /\.next\/standalone\/public/);
+});
+
 test("server deployment keeps mutable JSON state outside immutable releases", async () => {
   const deployScript = await readFile(
     fileURLToPath(new URL("../deploy/server/deploy.sh", import.meta.url)),
