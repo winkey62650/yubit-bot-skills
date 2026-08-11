@@ -18,6 +18,7 @@ const {
   evaluateTradingRelease,
   normalizeReleaseAuditMode,
   normalizeReleaseStage,
+  resolveReleaseAuditBaseUrl,
   selectAutomationRuleForReconciliation,
   withAsyncCleanup,
 } = require("../lib/release-gate.cjs");
@@ -76,6 +77,28 @@ test("release stage defaults to strict production and rejects unknown values", (
   assert.equal(normalizeReleaseStage(), "production");
   assert.equal(normalizeReleaseStage(" PREVIEW "), "preview");
   assert.throws(() => normalizeReleaseStage("staging"), /RELEASE_STAGE/);
+});
+
+test("release audit always requires an explicit HTTPS target", () => {
+  assert.throws(
+    () => resolveReleaseAuditBaseUrl({ RELEASE_STAGE: "production" }),
+    /生产验收必须显式设置 TEST_BASE_URL/,
+  );
+  assert.throws(
+    () => resolveReleaseAuditBaseUrl({ RELEASE_STAGE: "preview" }),
+    /预览验收必须显式设置 TEST_BASE_URL/,
+  );
+  assert.throws(
+    () => resolveReleaseAuditBaseUrl({
+      RELEASE_STAGE: "production",
+      TEST_BASE_URL: "http://academy.example.com",
+    }),
+    /HTTPS/,
+  );
+  assert.equal(resolveReleaseAuditBaseUrl({
+    RELEASE_STAGE: "production",
+    TEST_BASE_URL: "https://academy.example.com/",
+  }), "https://academy.example.com");
 });
 
 test("release audit is read-only by default and active production validation requires double confirmation", () => {

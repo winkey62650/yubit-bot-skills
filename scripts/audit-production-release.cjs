@@ -12,16 +12,13 @@ const {
   evaluateReleasePage,
   evaluateRequiredAutomationRule,
   evaluateTradingRelease,
+  resolveReleaseAuditBaseUrl,
   withAsyncCleanup,
 } = require("../lib/release-gate.cjs");
 
 const auditPolicy = authorizeReleaseAuditMode(process.env);
 const releaseStage = auditPolicy.stage;
-const configuredBaseUrl = String(process.env.TEST_BASE_URL || "").trim();
-if (releaseStage === "preview" && !configuredBaseUrl) {
-  throw new Error("Preview 主动验收必须显式设置 TEST_BASE_URL，避免误连生产环境");
-}
-const baseUrl = String(process.env.TEST_BASE_URL || "https://yubit-bot-skills-academy.vercel.app").replace(/\/$/, "");
+const baseUrl = resolveReleaseAuditBaseUrl(process.env, { stage: releaseStage });
 const username = process.env.TEST_USERNAME;
 const password = process.env.TEST_PASSWORD;
 const browserChannel = String(process.env.TEST_BROWSER_CHANNEL ?? "chrome").trim();

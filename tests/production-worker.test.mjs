@@ -82,6 +82,23 @@ test("server deployment restarts both services after changing the current releas
   assert.doesNotMatch(deployScript, /enable --now yubit-academy-(?:web|worker)\.service/);
 });
 
+test("server deployment keeps the worker stopped until the web service is ready", async () => {
+  const deployScript = await readFile(
+    fileURLToPath(new URL("../deploy/server/deploy.sh", import.meta.url)),
+    "utf8",
+  );
+
+  const stopWorker = deployScript.indexOf("systemctl stop yubit-academy-worker.service");
+  const restartWeb = deployScript.indexOf("systemctl restart yubit-academy-web.service");
+  const readinessProbe = deployScript.indexOf("http://127.0.0.1:4174/login");
+  const restartWorker = deployScript.indexOf("systemctl restart yubit-academy-worker.service");
+
+  assert.ok(stopWorker >= 0, "deployment must stop the worker before replacing the web process");
+  assert.ok(stopWorker < restartWeb, "worker must stop before the web service restarts");
+  assert.ok(restartWeb < readinessProbe, "web restart must happen before its readiness probe");
+  assert.ok(readinessProbe < restartWorker, "worker must restart only after the web service is ready");
+});
+
 test("production web service runs the standalone bundle with its static assets", async () => {
   const unit = await readFile(
     fileURLToPath(new URL("../deploy/systemd/yubit-academy-web.service", import.meta.url)),

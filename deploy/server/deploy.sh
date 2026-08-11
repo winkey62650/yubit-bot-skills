@@ -107,6 +107,7 @@ sudo nginx -t
 
 sudo systemctl daemon-reload
 sudo systemctl disable --now yubit-bot-skills.service yubit-news-console.service 2>/dev/null || true
+sudo systemctl stop yubit-academy-worker.service 2>/dev/null || true
 sudo systemctl enable yubit-academy-web.service
 sudo systemctl restart yubit-academy-web.service
 
