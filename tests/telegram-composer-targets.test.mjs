@@ -84,6 +84,27 @@ test("composer rejects a closed or missing forum topic before any delivery start
   );
 });
 
+test("composer allows a managed closed topic and preserves its reopen requirement", () => {
+  const dialogs = [{
+    id: "-100111",
+    title: "Nicholas Academy",
+    isForum: true,
+    canSendMessages: true,
+    topics: [{
+      threadId: 7,
+      name: "Signals",
+      availabilityStatus: "managed-closed",
+      canSendMessages: true,
+      requiresTemporaryReopen: true
+    }]
+  }];
+
+  assert.doesNotThrow(() => assertAccountCanSendToTargets(dialogs, ["-100111:7"]));
+  const groups = buildAccountTargetGroups(configuredGroups, dialogs);
+  assert.equal(groups[0].topics[0].availabilityStatus, "managed-closed");
+  assert.equal(groups[0].topics[0].requiresTemporaryReopen, true);
+});
+
 test("composer blocks forum topics whose live status cannot be verified", () => {
   const dialogs = [{
     id: "-100111",

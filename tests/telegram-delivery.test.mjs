@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   createTelegramDelivery,
   isUserPublisherDelivery,
+  sendTelegramPreservingClosedTopic,
   telegramUserPublisherStatus,
   userPublisherTargetIds
 } from "../lib/telegram-delivery.mjs";
@@ -185,4 +186,51 @@ test("publisher target parsing and status are safe for the admin UI", () => {
     username: "@Serenity_Crypto",
     approvedTargetIds: [DEMO_GROUP_ID]
   });
+});
+
+test("closed topics are temporarily reopened, sent to exactly, then closed again", async () => {
+  const calls = [];
+  const call = async (method, payload) => {
+    calls.push({ method, payload });
+    if (method === "sendMessage" && calls.filter((item) => item.method === "sendMessage").length === 1) {
+      throw new Error("This topic was closed, you can't send messages to it anymore.");
+    }
+    return method === "sendMessage" ? { message_id: 903 } : true;
+  };
+
+  const payload = { chat_id: "-100111", message_thread_id: 17, text: "exact topic" };
+  const result = await sendTelegramPreservingClosedTopic(call, "sendMessage", payload);
+
+  assert.deepEqual(result, { message_id: 903 });
+  assert.deepEqual(calls, [
+    { method: "sendMessage", payload },
+    { method: "reopenForumTopic", payload: { chat_id: "-100111", message_thread_id: 17 } },
+    { method: "sendMessage", payload },
+    { method: "closeForumTopic", payload: { chat_id: "-100111", message_thread_id: 17 } }
+  ]);
+});
+
+test("a failed closed-topic retry still restores the closed state", async () => {
+  const methods = [];
+  await assert.rejects(
+    () => sendTelegramPreservingClosedTopic(async (method) => {
+      methods.push(method);
+      if (method === "sendMessage") throw new Error("TOPIC_CLOSED");
+      return true;
+    }, "sendMessage", { chat_id: "-100111", message_thread_id: 17, text: "test" }),
+    /TOPIC_CLOSED/
+  );
+  assert.deepEqual(methods, ["sendMessage", "reopenForumTopic", "sendMessage", "closeForumTopic"]);
+});
+
+test("failure to restore a closed topic is explicit and never treated as success", async () => {
+  let attempts = 0;
+  await assert.rejects(
+    () => sendTelegramPreservingClosedTopic(async (method) => {
+      if (method === "sendMessage" && attempts++ === 0) throw new Error("MESSAGE_THREAD_CLOSED");
+      if (method === "closeForumTopic") throw new Error("restore denied");
+      return { message_id: 904 };
+    }, "sendMessage", { chat_id: "-100111", message_thread_id: 17, text: "test" }),
+    (error) => error?.code === "TELEGRAM_TOPIC_RESTORE_FAILED"
+  );
 });

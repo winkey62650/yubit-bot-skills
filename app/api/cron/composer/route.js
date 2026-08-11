@@ -5,6 +5,7 @@ import { CustomFile } from "teleproto/client/uploads.js";
 import { randomUUID } from "node:crypto";
 import { assertAccountCanSendToTargets } from "../../../../lib/telegram-composer-targets.mjs";
 import { hydrateTelegramTopicAvailability, topicIdsByChatFromTargets } from "../../../../lib/telegram-topic-availability.mjs";
+import { sendTelegramPreservingClosedTopic } from "../../../../lib/telegram-delivery.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -69,6 +70,16 @@ export async function GET(request) {
         { userId: msg.userId }
       );
       assertAccountCanSendToTargets(verifiedDialogs, [target]);
+      const send = (method, nextPayload) => sendTelegramPreservingClosedTopic(
+        (nextMethod, transportPayload) => telegramMtprotoCall(
+          null,
+          nextMethod,
+          transportPayload,
+          { userId: msg.userId }
+        ),
+        method,
+        nextPayload
+      );
 
       let result;
       if (processedFiles.length > 1) {
@@ -76,7 +87,7 @@ export async function GET(request) {
           media: f.customFile,
           caption: i === 0 ? text : ""
         }));
-        result = await telegramMtprotoCall(null, "sendMediaGroup", payload, { userId: msg.userId });
+        result = await send("sendMediaGroup", payload);
       } else if (processedFiles.length === 1) {
         const f = processedFiles[0];
         payload.caption = text;
@@ -85,10 +96,10 @@ export async function GET(request) {
         else if (f.type?.startsWith("video/")) method = "sendVideo";
         else if (f.type === "url") method = "sendPhoto";
         payload[method.slice(4).toLowerCase()] = f.customFile;
-        result = await telegramMtprotoCall(null, method, payload, { userId: msg.userId });
+        result = await send(method, payload);
       } else {
         payload.text = text;
-        result = await telegramMtprotoCall(null, "sendMessage", payload, { userId: msg.userId });
+        result = await send("sendMessage", payload);
       }
       results.push({ id: msg.id, target: `${chatId}:${threadId || ""}`, result });
 

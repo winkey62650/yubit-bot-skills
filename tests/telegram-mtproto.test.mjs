@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createTelegramMtprotoTransport,
-  createTelegramSessionLoader
+  createTelegramSessionLoader,
+  telegramEntityCanManageTopics
 } from "../lib/telegram-mtproto.mjs";
 
 const GROUP_ID = "-1003710405969";
@@ -98,6 +99,7 @@ function fakeClientHarness({
         if (forumTopicsError) throw forumTopicsError;
         return { topics: forumTopics };
       }
+      if (request.className === "messages.EditForumTopic") return { ok: true };
       if (getSendAsError) throw getSendAsError;
       const target = request.peer;
       return {
@@ -200,6 +202,17 @@ test("getDialogs reports whether the selected account can publish to each dialog
           broadcast: false,
           defaultBannedRights: { sendPlain: true }
         }
+      },
+      {
+        isGroup: true,
+        isChannel: true,
+        title: "Topics Admin Group",
+        entity: {
+          id: 555n,
+          megagroup: true,
+          broadcast: false,
+          adminRights: { manageTopics: true }
+        }
       }
     ]
   });
@@ -211,6 +224,39 @@ test("getDialogs reports whether the selected account can publish to each dialog
   assert.equal(dialogs.find((dialog) => dialog.id === "-100222").canSendMessages, false);
   assert.equal(dialogs.find((dialog) => dialog.id === "-100333").canSendMessages, true);
   assert.equal(dialogs.find((dialog) => dialog.id === "-100444").canSendMessages, false);
+  assert.equal(dialogs.find((dialog) => dialog.id === "-100111").canManageTopics, true);
+  assert.equal(dialogs.find((dialog) => dialog.id === "-100222").canManageTopics, false);
+  assert.equal(dialogs.find((dialog) => dialog.id === "-100555").canManageTopics, true);
+});
+
+test("topic management permission accepts creators and manage-topics admins only", () => {
+  assert.equal(telegramEntityCanManageTopics({ creator: true }), true);
+  assert.equal(telegramEntityCanManageTopics({ adminRights: { manageTopics: true } }), true);
+  assert.equal(telegramEntityCanManageTopics({ adminRights: { manage_topics: true } }), true);
+  assert.equal(telegramEntityCanManageTopics({ adminRights: { postMessages: true } }), false);
+  assert.equal(telegramEntityCanManageTopics({ creator: true, left: true }), false);
+});
+
+test("MTProto publisher reopens and closes only the requested forum topic", async () => {
+  const harness = fakeClientHarness();
+  const transport = createTelegramMtprotoTransport(configuredOptions(harness));
+
+  await transport(null, "reopenForumTopic", {
+    chat_id: GROUP_ID,
+    message_thread_id: 18
+  }, { userId: "8749261694" });
+  await transport(null, "closeForumTopic", {
+    chat_id: GROUP_ID,
+    message_thread_id: 18
+  }, { userId: "8749261694" });
+
+  const toggles = harness.calls
+    .filter((call) => call.kind === "invoke" && call.request.className === "messages.EditForumTopic")
+    .map((call) => ({ topicId: call.request.topicId, closed: call.request.closed }));
+  assert.deepEqual(toggles, [
+    { topicId: 18, closed: false },
+    { topicId: 18, closed: true }
+  ]);
 });
 
 test("getForumTopicsById reports exact open, closed and deleted topic states", async () => {

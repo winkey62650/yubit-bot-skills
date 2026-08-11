@@ -48,6 +48,8 @@ test("manual composer validates targets against the selected account before queu
   assert.match(source, /telegramMtprotoCall\(null, "getDialogs"/);
   assert.match(source, /hydrateTelegramTopicAvailability/);
   assert.match(source, /topicIdsByChatFromTargets/);
+  assert.match(source, /expandAutomaticBroadcastTargets/);
+  assert.match(source, /requestedTargets\.map\(composerTargetEndpoint\)/);
 });
 
 test("manual composer disables unverified topics and refreshes their live state", async () => {

@@ -7,6 +7,24 @@ import { assertAccountCanSendToTargets } from "../../../../lib/telegram-composer
 import { hydrateTelegramTopicAvailability, topicIdsByChatFromTargets } from "../../../../lib/telegram-topic-availability.mjs";
 import { SESSION_COOKIE, verifySessionToken } from "../../../../lib/session.js";
 import { canQueueComposerMessage } from "../../../../lib/access-control.mjs";
+import { getDistributionRepository } from "../../../../lib/distribution-repository.mjs";
+import { expandAutomaticBroadcastTargets } from "../../../../lib/distribution-service.mjs";
+import { sendTelegramPreservingClosedTopic } from "../../../../lib/telegram-delivery.mjs";
+
+function composerTargetEndpoint(value, index) {
+  const [chatId, threadId] = String(value).split(":");
+  return {
+    id: `composer:${index}:${chatId}:${threadId || "channel"}`,
+    chatId,
+    threadId: threadId ? Number(threadId) : null,
+    chatType: threadId ? "supergroup" : "channel",
+    enabled: true,
+  };
+}
+
+function composerTargetValue(target) {
+  return `${target.chatId}:${target.chatType === "channel" ? "" : target.threadId}`;
+}
 
 export async function POST(req) {
   try {
@@ -15,7 +33,7 @@ export async function POST(req) {
     const text = formData.get("text") || "";
     const queue = formData.get("queue") === "true";
     const mediaFiles = formData.getAll("media"); // Array of File or null
-    const targets = formData.getAll("targets"); // array of "chatId:threadId" or "chatId:"
+    const requestedTargets = formData.getAll("targets"); // array of "chatId:threadId" or "chatId:"
 
     if (queue) {
       const session = await verifySessionToken(
@@ -30,14 +48,24 @@ export async function POST(req) {
       }
     }
 
-    if (!userId || targets.length === 0) {
+    if (!userId || requestedTargets.length === 0) {
       return NextResponse.json({ ok: false, error: "缺少必要参数 (userId, targets)" }, { status: 400 });
     }
     if (!text && mediaFiles.length === 0) {
       return NextResponse.json({ ok: false, error: "消息内容和附件不能同时为空" }, { status: 400 });
     }
 
-    // Re-check on the server so stale UI selections cannot send through another account.
+    // A bot-authored source message is not delivered to another bot's webhook. Expand
+    // automatic broadcast bindings here so manual publishing and its sync are atomic.
+    const repository = await getDistributionRepository();
+    const expandedTargets = await expandAutomaticBroadcastTargets(
+      repository,
+      requestedTargets.map(composerTargetEndpoint)
+    );
+    const targets = [...new Set(expandedTargets.map(composerTargetValue))];
+
+    // Re-check every expanded destination on the server so stale, deleted, or
+    // unauthorized topics cannot produce a partial source-only publication.
     const dialogs = await telegramMtprotoCall(null, "getDialogs", {}, { userId });
     const verifiedDialogs = await hydrateTelegramTopicAvailability(
       dialogs,
@@ -45,6 +73,16 @@ export async function POST(req) {
       { userId }
     );
     assertAccountCanSendToTargets(verifiedDialogs, targets);
+    const send = (method, payload) => sendTelegramPreservingClosedTopic(
+      (nextMethod, nextPayload) => telegramMtprotoCall(
+        null,
+        nextMethod,
+        nextPayload,
+        { userId }
+      ),
+      method,
+      payload
+    );
 
     const processedFiles = [];
     
@@ -110,7 +148,7 @@ export async function POST(req) {
              media: fileObj.customFile,
              caption: index === 0 ? text : "" // Attach caption to first file
            }));
-           result = await telegramMtprotoCall(null, "sendMediaGroup", payload, { userId });
+           result = await send("sendMediaGroup", payload);
         } else if (processedFiles.length === 1) {
            // Single file
            const fileObj = processedFiles[0];
@@ -125,11 +163,11 @@ export async function POST(req) {
            }
            
            payload[method.slice(4).toLowerCase()] = fileObj.customFile;
-           result = await telegramMtprotoCall(null, method, payload, { userId });
+           result = await send(method, payload);
         } else {
            // Text only
            payload.text = text;
-           result = await telegramMtprotoCall(null, "sendMessage", payload, { userId });
+           result = await send("sendMessage", payload);
         }
         results.push({ target, result });
       } catch (err) {

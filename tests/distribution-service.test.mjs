@@ -13,6 +13,7 @@ import {
   createDistributionEngine,
   desktopPublisherHealth,
   ensureAutomationSchedules,
+  expandAutomaticBroadcastTargets,
   parseBackfillReferences,
   processTelegramWebhookUpdate,
   repairAutomationTargetLabels,
@@ -1442,7 +1443,7 @@ test("production automation execution filters every non-DEMO target until approv
   assert.deepEqual(deliveries.map((item) => item.target.chatId), ["-1001"]);
 });
 
-test("automatic multi-target publishing records broadcast mappings before its source webhook arrives", async () => {
+test("automatic publishing expands enabled broadcast destinations and records mappings without a webhook", async () => {
   const sourceTarget = { id: "target-demo", chatId: "-1001", threadId: 6 };
   const destinationTarget = { id: "target-crypto", chatId: "-2001", threadId: 11 };
   const rule = {
@@ -1450,7 +1451,7 @@ test("automatic multi-target publishing records broadcast mappings before its so
     kind: "automation",
     name: "Daily Analysis",
     contentType: "daily-analysis",
-    targets: [sourceTarget, destinationTarget]
+    targets: [sourceTarget]
   };
   const broadcast = {
     id: "rule-demo-to-crypto",
@@ -1480,10 +1481,13 @@ test("automatic multi-target publishing records broadcast mappings before its so
     async saveMapping(mapping) { mappings.push(mapping); return mapping; }
   };
 
+  let receivedTargets;
   await runDistributionAutomationRule(rule.id, {
     repository,
     now: new Date("2026-07-15T06:36:00.000Z"),
-    runner: async () => ({
+    runner: async (_jobId, options) => {
+      receivedTargets = options.targets;
+      return ({
       status: "success",
       preview: {
         targetResults: [
@@ -1491,8 +1495,10 @@ test("automatic multi-target publishing records broadcast mappings before its so
           { target: destinationTarget, status: "success", messageId: 89 }
         ]
       }
-    })
+    }); }
   });
+
+  assert.deepEqual(receivedTargets, [sourceTarget, destinationTarget]);
 
   assert.deepEqual(mappings, [{
     ruleId: broadcast.id,
@@ -1502,6 +1508,26 @@ test("automatic multi-target publishing records broadcast mappings before its so
     targetThreadId: destinationTarget.threadId,
     targetMessageId: 89
   }]);
+});
+
+test("broadcast expansion is one hop, deduplicated, and never auto-publishes review rules", async () => {
+  const source = { id: "source", chatId: "-1001", threadId: 10 };
+  const destination = { id: "destination", chatId: "-2001", threadId: 17 };
+  const secondHop = { id: "second-hop", chatId: "-3001", threadId: 20 };
+  const repository = {
+    async listRules() {
+      return [
+        { id: "automatic", enabled: true, mode: "automatic", source, targets: [destination, destination] },
+        { id: "review", enabled: true, mode: "review", source, targets: [secondHop] },
+        { id: "recursive", enabled: true, mode: "automatic", source: destination, targets: [secondHop] },
+      ];
+    },
+  };
+
+  assert.deepEqual(
+    await expandAutomaticBroadcastTargets(repository, [source]),
+    [source, destination]
+  );
 });
 
 test("multi-message market briefs map both the poster and full brief to prevent broadcast duplicates", async () => {

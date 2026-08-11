@@ -9,7 +9,7 @@ import {
 test("topic availability hydrates open, closed and missing topics for each forum", async () => {
   const calls = [];
   const dialogs = await hydrateTelegramTopicAvailability(
-    [{ id: "-100111", isForum: true, canSendMessages: true }],
+    [{ id: "-100111", isForum: true, canSendMessages: true, canManageTopics: true }],
     new Map([["-100111", [7, 8, 9]]]),
     {
       userId: "42",
@@ -30,10 +30,23 @@ test("topic availability hydrates open, closed and missing topics for each forum
   });
   assert.deepEqual(dialogs[0].topics.map((topic) => [topic.threadId, topic.availabilityStatus, topic.canSendMessages]), [
     [7, "available", true],
-    [8, "closed", false],
+    [8, "managed-closed", true],
     [9, "missing", false]
   ]);
   assert.equal(typeof dialogs[0].topicStatusCheckedAt, "string");
+  assert.equal(dialogs[0].topics[1].requiresTemporaryReopen, true);
+});
+
+test("closed topics remain unavailable without manage-topics permission", async () => {
+  const dialogs = await hydrateTelegramTopicAvailability(
+    [{ id: "-100111", isForum: true, canSendMessages: true, canManageTopics: false }],
+    new Map([["-100111", [8]]]),
+    { userId: "42", call: async () => [
+      { threadId: 8, name: "Closed", closed: true, deleted: false, canSendMessages: false }
+    ] }
+  );
+  assert.equal(dialogs[0].topics[0].availabilityStatus, "closed");
+  assert.equal(dialogs[0].topics[0].canSendMessages, false);
 });
 
 test("topic availability fails closed when Telegram cannot verify a forum", async () => {
