@@ -136,18 +136,45 @@ function DistributionPageContent() {
   async function loadAll() {
     setLoading(true);
     try {
-      const [overviewResponse, groupsResponse, socialResponse, savedSettings, savedPresets] = await Promise.all([fetch("/api/distribution", { cache: "no-store" }), fetch("/api/group-config", { cache: "no-store" }), fetch("/api/social-packages", { cache: "no-store" }), loadWorkspaceState("settings"), loadWorkspaceState("target-presets")]);
-      const [overview, groupConfig, socialConfig] = await Promise.all([overviewResponse.json(), groupsResponse.json(), socialResponse.json()]);
+      const overviewResponse = await fetch("/api/distribution", { cache: "no-store" });
+      const overview = await overviewResponse.json();
       if (!overviewResponse.ok || !overview.ok) throw new Error(overview.error || "内容分发数据读取失败");
-      if (!groupsResponse.ok || !groupConfig.ok) throw new Error(groupConfig.error || "群与 Topic 数据读取失败");
-      if (!socialResponse.ok || !socialConfig.ok) throw new Error(socialConfig.error || "代理来源读取失败");
+
+      // Rules and delivery history are the primary content of this page. Keep them
+      // visible even when an optional catalogue or a saved UI preference is down.
       setData(overview);
-      setGroups(applyDistributionTopicMappings(groupConfig.groups, overview.rules));
-      setSocialPackages(Array.isArray(socialConfig.packages) ? socialConfig.packages : []);
-      setDeliverySettings({ ...defaultDeliverySettings, ...(savedSettings.state || {}) });
-      setTargetPresets(savedPresets?.state?.presets || []);
       const firstBroadcast = overview.rules?.find((rule) => rule.kind === "broadcast");
       setBackfill((current) => ({ ...current, ruleId: current.ruleId || firstBroadcast?.id || "" }));
+
+      const optionalResults = await Promise.allSettled([
+        (async () => {
+          const groupsResponse = await fetch("/api/group-config", { cache: "no-store" });
+          const groupConfig = await groupsResponse.json();
+          if (!groupsResponse.ok || !groupConfig.ok) throw new Error(groupConfig.error || "群与 Topic 数据读取失败");
+          setGroups(applyDistributionTopicMappings(groupConfig.groups || [], overview.rules || []));
+        })(),
+        (async () => {
+          const socialResponse = await fetch("/api/social-packages", { cache: "no-store" });
+          const socialConfig = await socialResponse.json();
+          if (!socialResponse.ok || !socialConfig.ok) throw new Error(socialConfig.error || "代理来源读取失败");
+          setSocialPackages(Array.isArray(socialConfig.packages) ? socialConfig.packages : []);
+        })(),
+        (async () => {
+          const savedSettings = await loadWorkspaceState("settings");
+          setDeliverySettings({ ...defaultDeliverySettings, ...(savedSettings?.state || {}) });
+        })(),
+        (async () => {
+          const savedPresets = await loadWorkspaceState("target-presets");
+          setTargetPresets(savedPresets?.state?.presets || []);
+        })()
+      ]);
+      const optionalLabels = ["群与 Topic", "代理来源", "发送身份", "目标预设"];
+      const failedOptionalLoads = optionalResults
+        .map((result, index) => result.status === "rejected" ? optionalLabels[index] : "")
+        .filter(Boolean);
+      if (failedOptionalLoads.length > 0) {
+        setNotice(`自动发布和内容同步规则已恢复显示；${failedOptionalLoads.join("、")}暂时读取失败，可稍后刷新重试。`);
+      }
     } catch (error) {
       setNotice(error.message);
     } finally {

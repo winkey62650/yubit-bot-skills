@@ -80,6 +80,13 @@ test("queued desktop publishing is reported as waiting instead of a false failur
   assert.doesNotMatch(pageSource, /result\.result\?\.status !== "success"/);
 });
 
+test("core distribution rules stay visible when optional page data fails to load", () => {
+  assert.match(pageSource, /const overviewResponse = await fetch\("\/api\/distribution"/);
+  assert.match(pageSource, /setData\(overview\);/);
+  assert.match(pageSource, /Promise\.allSettled/);
+  assert.doesNotMatch(pageSource, /\[overviewResponse, groupsResponse, socialResponse, savedSettings, savedPresets\] = await Promise\.all/);
+});
+
 test("desktop publisher status distinguishes online, stalled, degraded and offline states", () => {
   assert.match(pageSource, /operationalStatus === "stalled"/);
   assert.match(pageSource, /发布任务卡住/);
