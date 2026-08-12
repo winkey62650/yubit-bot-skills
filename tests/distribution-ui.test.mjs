@@ -7,6 +7,7 @@ import {
   buildDistributionTargetOptions,
   buildBroadcastRouteSummary,
   buildPublisherStatusChecks,
+  buildSocialSourceRouteReadiness,
   buildSocialSourceReadiness,
   bulkDeleteNotice,
   failedBulkDeleteIds,
@@ -507,6 +508,23 @@ test("social source readiness recognizes X public timeline and YouTube as usable
     limited: 0,
     ready: true
   });
+});
+
+test("every enabled social source must map to a sendable group and topic", () => {
+  assert.deepEqual(buildSocialSourceRouteReadiness([
+    { id: "x", status: "已启用", targets: [{ chatId: "-1001", chatType: "supergroup", threadId: 8 }] },
+    { id: "youtube", status: "已启用", targets: [] },
+    { id: "paused", status: "已暂停", targets: [] }
+  ]), {
+    enabled: 2,
+    mapped: 1,
+    unmappedIds: ["youtube"],
+    ready: false
+  });
+
+  assert.equal(buildSocialSourceRouteReadiness([
+    { id: "x", status: "已启用", targets: [{ chatId: "-1001", chatType: "channel", threadId: null }] }
+  ]).ready, true);
 });
 
 test("each automatic content template recommends the production schedule and real job", () => {

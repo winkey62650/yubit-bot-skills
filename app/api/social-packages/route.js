@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { readJson, writeJson } from "../../../lib/json-store";
 import { previewSocialSource } from "../../../lib/automation-jobs.mjs";
-import { normalizeSocialPackages } from "../../../lib/social-sources.mjs";
+import { normalizeSocialPackages, validateSocialPackageRoutes } from "../../../lib/social-sources.mjs";
 
 const socialPackagesPath = "social-packages.json";
 export const dynamic = "force-dynamic";
@@ -28,6 +28,14 @@ export async function POST(request) {
     return NextResponse.json({ ok: false, error: `不支持的操作：${String(body.action)}` }, { status: 400 });
   }
   const packages = normalizeSocialPackages(body.packages || body);
+  const routeValidation = validateSocialPackageRoutes(packages);
+  if (!routeValidation.ok) {
+    return NextResponse.json({
+      ok: false,
+      error: `以下已启用来源尚未绑定发布群和 Topic：${routeValidation.unmapped.map((item) => item.name).join("、")}`,
+      unmapped: routeValidation.unmapped
+    }, { status: 422 });
+  }
   const config = { packages, updatedAt: new Date().toISOString() };
   await writeJson(socialPackagesPath, config);
   return NextResponse.json({ ok: true, ...config });

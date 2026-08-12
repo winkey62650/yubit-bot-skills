@@ -14,6 +14,7 @@ import {
   buildDistributionSourceOptions,
   buildDistributionTargetOptions,
   buildSocialSourceReadiness,
+  buildSocialSourceRouteReadiness,
   distributionDestinationLabel,
   failedBulkDeleteIds,
   filterBroadcastTargetOptions,
@@ -469,11 +470,16 @@ function AutomationView({ form, setForm, rules, groups, socialPackages, publishe
   const [preview, setPreview] = useState(null);
   const [previewState, setPreviewState] = useState("");
   const sourceReadiness = buildSocialSourceReadiness(socialPackages);
-  const fingerprint = JSON.stringify([form.contentType, form.schedulePreset, [...form.targets].sort(), form.contentType === "agent-sync" ? socialPackages.filter((item) => item.status === "已启用").map((item) => item.id).sort() : []]);
-  const confirmed = confirmedFor === fingerprint;
-  const sourcesReady = form.contentType !== "agent-sync" || sourceReadiness.ready;
-  const canSave = Boolean(form.name.trim() && form.targets.length && sourcesReady && confirmed);
+  const sourceRouteReadiness = buildSocialSourceRouteReadiness(socialPackages);
   const automationTargets = targetOptions(groups);
+  const enabledSourceRoutes = socialPackages
+    .filter((item) => item.status === "已启用")
+    .map((item) => ({ id: String(item.id), targets: (Array.isArray(item.targets) ? item.targets : []).map(targetKey).sort() }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+  const fingerprint = JSON.stringify([form.contentType, form.schedulePreset, [...form.targets].sort(), form.contentType === "agent-sync" ? enabledSourceRoutes : []]);
+  const confirmed = confirmedFor === fingerprint;
+  const sourcesReady = form.contentType !== "agent-sync" || (sourceReadiness.ready && sourceRouteReadiness.ready);
+  const canSave = Boolean(form.name.trim() && form.targets.length && sourcesReady && confirmed);
 
   async function generatePreview() {
     setPreviewState("loading");
@@ -490,9 +496,9 @@ function AutomationView({ form, setForm, rules, groups, socialPackages, publishe
   }
 
   return <div className="grid gap-5">
-    {form.contentType === "agent-sync" ? <SocialSourceManager packages={socialPackages} busy={busy} onPersist={onPersistSocial} onNotice={onNotice} /> : null}
+    {form.contentType === "agent-sync" ? <SocialSourceManager packages={socialPackages} targetOptions={automationTargets} publisherName={publisherName} busy={busy} onPersist={onPersistSocial} onNotice={onNotice} /> : null}
     <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.08fr)_minmax(340px,.92fr)]">
-    <RuleForm title={form.id ? "编辑自动任务" : "新增自动任务"} eyebrow="按发送前确认流程配置" submitLabel="保存自动任务" submitDisabled={!canSave} submitHint={!form.name.trim() ? "请先填写任务名称" : !form.targets.length ? "请至少选择一个 Forum 群 Topic" : !sourcesReady ? "请先添加并启用至少一条代理来源" : !confirmed ? "请确认内容模板、频率和目标" : "已完成发送前确认"} busy={busy} onSubmit={onSave}>
+    <RuleForm title={form.id ? "编辑自动任务" : "新增自动任务"} eyebrow="按发送前确认流程配置" submitLabel="保存自动任务" submitDisabled={!canSave} submitHint={!form.name.trim() ? "请先填写任务名称" : !form.targets.length ? "请至少选择一个 Forum 群 Topic" : form.contentType === "agent-sync" && !sourceReadiness.ready ? "请先添加并启用至少一条代理来源" : form.contentType === "agent-sync" && !sourceRouteReadiness.ready ? `请为 ${sourceRouteReadiness.unmappedIds.length} 条已启用来源绑定发送群和 Topic` : !confirmed ? "请确认内容模板、频率和目标" : "已完成发送前确认"} busy={busy} onSubmit={onSave}>
       <DeliveryIdentitySelector purpose="自动发布身份" value={deliveryMode} botLabel="使用 SpeakerBot" userLabel="使用真人 TG 账号" botDescription="服务器通过 Telegram Bot API 自动发布" userDescription="由本机 Telegram Desktop 发布桥发送" busy={busy} onChange={onDeliveryModeChange} />
       <FormStep number="1" title="选择内容模板" desc="模板决定 Telegram 文案结构、配图和数据来源。" />
       <Field label="任务名称"><input className={inputClass} required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="例如：每日市场事件" /></Field>
@@ -503,7 +509,7 @@ function AutomationView({ form, setForm, rules, groups, socialPackages, publishe
       </div>
       <FormStep number="2" title="确认频率" desc="日更任务按 UTC 运行；监控任务按时间窗口扫描并去重。" />
       <Field label="预设频率"><select className={inputClass} value={form.schedulePreset} disabled={form.contentType === "whale-signals"} onChange={(event) => setForm({ ...form, schedulePreset: event.target.value })}>{schedules.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>{form.contentType === "whale-signals" ? <p className="mt-1 text-xs text-ops-muted">系统每小时检查真实订单簿，仅在异动达到阈值时发布，相同信号冷却期内不重复。</p> : null}</Field>
-      <FormStep number="3" title="选择发布目标" desc={`建议发布到 ${template.destinationHint}；可选择一个或多个已授权的群和 Topic。`} />
+      <FormStep number="3" title="选择发布目标" desc={form.contentType === "agent-sync" ? "每条来源优先使用上方独立绑定；此处任务目标用于兼容旧配置和异常兜底。" : `建议发布到 ${template.destinationHint}；可选择一个或多个已授权的群和 Topic。`} />
       <TargetPicker options={automationTargets} selected={form.targets} onChange={(targets) => setForm({ ...form, targets })} presets={presets} onSavePreset={(name) => onSavePreset(name, form.targets)} onDeletePreset={onDeletePreset} />
       <Toggle checked={form.enabled} label="创建后立即启用" onChange={(enabled) => setForm({ ...form, enabled })} />
       <label className="flex items-start gap-3 rounded-lg border border-ops-line bg-[#fbfcfb] p-3 text-sm font-bold leading-6 text-[#33423b]"><input className="mt-1" checked={confirmed} onChange={(event) => setConfirmedFor(event.target.checked ? fingerprint : "")} type="checkbox" /><span>我已确认发送模板、频率和目标。动态数据会在实际执行时刷新。</span></label>

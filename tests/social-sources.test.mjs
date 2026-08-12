@@ -8,7 +8,8 @@ import {
   parseSocialFeed,
   parseXSyndicationTimeline,
   socialFetchPlan,
-  summarizeSocialSources
+  summarizeSocialSources,
+  validateSocialPackageRoutes
 } from "../lib/social-sources.mjs";
 
 test("social source configuration keeps X and YouTube fields needed by the crawler", () => {
@@ -34,6 +35,40 @@ test("social source configuration keeps X and YouTube fields needed by the crawl
   assert.equal(packages[0].bot, "SpeakerBot");
   assert.equal(packages[1].platform, "YouTube");
   assert.equal(packages[1].frequency, "每小时");
+});
+
+test("social source configuration preserves exact group and topic destinations", () => {
+  const [source] = normalizeSocialPackages([{
+    name: "Wise Advice X",
+    agent: "Wise Advice",
+    platform: "X",
+    accountUrl: "https://x.com/wiseadvice",
+    status: "已启用",
+    targets: [
+      { chatId: "-1001", chatType: "supergroup", threadId: "17", groupName: "Wise Advice Academy", topicName: "2. Trading Zone" },
+      { chatId: "-1001", chatType: "supergroup", threadId: 17, groupName: "Wise Advice Academy", topicName: "2. Trading Zone" },
+      { chatId: "-1002", chatType: "channel", threadId: 99, groupName: "Wise Advice Channel", topicName: "整个频道" },
+      { chatId: "", chatType: "supergroup", threadId: 8 }
+    ]
+  }]);
+
+  assert.deepEqual(source.targets, [
+    { chatId: "-1001", chatType: "supergroup", threadId: 17, groupName: "Wise Advice Academy", topicName: "2. Trading Zone" },
+    { chatId: "-1002", chatType: "channel", threadId: null, groupName: "Wise Advice Channel", topicName: "整个频道" }
+  ]);
+});
+
+test("enabled social sources require an exact destination while paused sources may remain unmapped", () => {
+  const result = validateSocialPackageRoutes([
+    { id: "ready", name: "Ready X", agent: "Ready", platform: "X", accountUrl: "https://x.com/ready", status: "已启用", targets: [{ chatId: "-1001", threadId: 8 }] },
+    { id: "missing", name: "Missing X", agent: "Missing", platform: "X", accountUrl: "https://x.com/missing", status: "已启用" },
+    { id: "paused", name: "Paused X", agent: "Paused", platform: "X", accountUrl: "https://x.com/paused", status: "已暂停" }
+  ]);
+
+  assert.deepEqual(result, {
+    ok: false,
+    unmapped: [{ id: "missing", name: "Missing X" }]
+  });
 });
 
 test("legacy paused sources stay paused instead of becoming active during migration", () => {

@@ -77,6 +77,22 @@ test("agent update plans support multiple groups and topics", () => {
   assert.ok(plans.every((plan) => plan.steps[0].payload.text === "X Updated + 2026-08-04\nhttps://x.com/demo/status/1"));
 });
 
+test("agent updates use source-specific destinations before the legacy default target", () => {
+  assert.equal(typeof automation.buildAgentUpdateAssignments, "function");
+  const sourceTarget = { chatId: "-1001", threadId: 17, chatType: "supergroup", groupName: "Wise Academy", topicName: "Trading Zone" };
+  const fallbackTarget = { chatId: "-1002", threadId: 8, chatType: "supergroup", groupName: "Demo Academy", topicName: "Market Events" };
+  const boundUpdate = { url: "https://x.com/wise/status/1", package: { targets: [sourceTarget] } };
+  const legacyUpdate = { url: "https://x.com/legacy/status/2", package: { targets: [] } };
+
+  const { assignments, unresolved } = automation.buildAgentUpdateAssignments([boundUpdate, legacyUpdate], [fallbackTarget]);
+
+  assert.equal(unresolved.length, 0);
+  assert.deepEqual(assignments, [
+    { key: "-1001:17", target: sourceTarget, updates: [boundUpdate] },
+    { key: "-1002:8", target: fallbackTarget, updates: [legacyUpdate] }
+  ]);
+});
+
 test("legacy automation status resolves every database-backed distribution target", () => {
   assert.equal(typeof automation.distributionTargetsForJob, "function");
   const job = AUTOMATION_JOBS.find((item) => item.id === "daily-analysis");
