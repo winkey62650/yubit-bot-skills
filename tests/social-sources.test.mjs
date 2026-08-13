@@ -58,6 +58,26 @@ test("social source configuration preserves exact group and topic destinations",
   ]);
 });
 
+test("social source configuration supports Telegram and Discord destinations together", () => {
+  const [source] = normalizeSocialPackages([{
+    name: "Wise Advice X",
+    agent: "Wise Advice",
+    platform: "X",
+    accountUrl: "https://x.com/wiseadvice",
+    status: "已启用",
+    targets: [
+      { chatId: "-1001", chatType: "supergroup", threadId: 17, groupName: "Wise Advice Academy", topicName: "2. Trading Zone" },
+      { platform: "discord", guildId: "guild-1", channelId: "channel-2", serverName: "Wise Advice Discord", channelName: "trading-zone" },
+    ],
+  }]);
+
+  assert.deepEqual(source.targets, [
+    { chatId: "-1001", chatType: "supergroup", threadId: 17, groupName: "Wise Advice Academy", topicName: "2. Trading Zone" },
+    { platform: "discord", guildId: "guild-1", channelId: "channel-2", groupName: "Wise Advice Discord", topicName: "trading-zone" },
+  ]);
+  assert.deepEqual(validateSocialPackageRoutes([source]), { ok: true, unmapped: [] });
+});
+
 test("enabled social sources require an exact destination while paused sources may remain unmapped", () => {
   const result = validateSocialPackageRoutes([
     { id: "ready", name: "Ready X", agent: "Ready", platform: "X", accountUrl: "https://x.com/ready", status: "已启用", targets: [{ chatId: "-1001", threadId: 8 }] },

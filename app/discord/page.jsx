@@ -18,6 +18,14 @@ const CHANNEL_TEMPLATES = [
 const initialStatus = {
   configured: false,
   connected: false,
+  credentials: {
+    configured: false,
+    appId: "",
+    publicKey: "",
+    publicKeyConfigured: false,
+    tokenConfigured: false,
+    updatedAt: null,
+  },
   installUrl: "",
   bot: null,
   guilds: [],
@@ -47,6 +55,9 @@ export default function DiscordCommunityPage() {
   const [syncEnabled, setSyncEnabled] = useState(false);
   const [testChannelId, setTestChannelId] = useState("");
   const [testContent, setTestContent] = useState("Discord workflow test · delivery verified");
+  const [appId, setAppId] = useState("");
+  const [publicKey, setPublicKey] = useState("");
+  const [botToken, setBotToken] = useState("");
 
   const applyStatus = useCallback((payload) => {
     const next = {
@@ -56,11 +67,17 @@ export default function DiscordCommunityPage() {
         ...initialStatus.config,
         ...(payload?.config || {}),
       },
+      credentials: {
+        ...initialStatus.credentials,
+        ...(payload?.credentials || {}),
+      },
     };
     setStatus(next);
     setGuildId((current) => current || next.guilds?.[0]?.id || "");
     setDemoGuildId(next.config.demoGuildId || "");
     setSyncEnabled(next.config.syncEnabled === true);
+    setAppId(next.credentials.appId || "");
+    setPublicKey(next.credentials.publicKey || "");
   }, []);
 
   const loadStatus = useCallback(async () => {
@@ -160,6 +177,25 @@ export default function DiscordCommunityPage() {
     }
   }
 
+  async function saveCredentials() {
+    const result = await runAction(
+      "credential-save",
+      { appId, publicKey, botToken },
+      "Discord Bot 凭证已安全保存，Gateway 将自动连接。",
+    );
+    if (result) setBotToken("");
+  }
+
+  async function clearCredentials() {
+    if (!window.confirm("确认清除服务器保存的 Discord Bot 凭证？")) return;
+    const result = await runAction(
+      "credential-clear",
+      {},
+      "Discord Bot 凭证已清除，Gateway 已进入等待状态。",
+    );
+    if (result) setBotToken("");
+  }
+
   async function saveSettings() {
     await runAction(
       "settings",
@@ -180,7 +216,7 @@ export default function DiscordCommunityPage() {
     );
   }
 
-  const gatewayOnline = status.gateway?.status === "online";
+  const gatewayOnline = status.gateway?.online === true;
 
   return (
     <ConsoleShell>
@@ -216,11 +252,13 @@ export default function DiscordCommunityPage() {
           <div className="flex items-center justify-between gap-3">
             <h2 className="font-black">Bot 配置</h2>
             <StatusPill tone={status.configured ? "green" : "amber"}>
-              {status.configured ? "已配置" : "缺少环境变量"}
+              {status.configured ? "已配置" : "待配置"}
             </StatusPill>
           </div>
           <p className="mt-3 text-sm leading-6 text-ops-muted">
-            Token 仅保存在服务器环境变量，不在后台页面显示或保存。
+            {status.credentials.tokenConfigured
+              ? "Token 已加密保存在服务器，后台不会回显。"
+              : "请在下方安全配置 App ID、Public Key 和 Bot Token。"}
           </p>
         </Card>
         <Card className="p-5">
@@ -244,10 +282,67 @@ export default function DiscordCommunityPage() {
             </StatusPill>
           </div>
           <p className="mt-3 text-sm leading-6 text-ops-muted">
-            最近心跳：{formatTime(status.gateway?.heartbeatAt)}
+            最近心跳：{formatTime(status.gateway?.lastHeartbeatAt)}
           </p>
         </Card>
       </div>
+
+      <Card className="mt-5 p-6">
+        <div>
+          <h2 className="text-xl font-black">Discord Bot 安全配置</h2>
+          <p className="mt-2 text-sm leading-6 text-ops-muted">
+            凭证只在服务器端加密保存。Bot Token 永不回显；Token 留空保存时会保留现有 Token。
+          </p>
+        </div>
+        <div className="mt-5 grid gap-4 lg:grid-cols-3">
+          <Field label="App ID">
+            <input
+              className={inputClass}
+              value={appId}
+              onChange={(event) => setAppId(event.target.value)}
+              placeholder="Discord Application ID"
+              autoComplete="off"
+            />
+          </Field>
+          <Field label="Public Key">
+            <input
+              className={inputClass}
+              value={publicKey}
+              onChange={(event) => setPublicKey(event.target.value)}
+              placeholder="Discord Public Key"
+              autoComplete="off"
+            />
+          </Field>
+          <Field label="Bot Token">
+            <input
+              type="password"
+              className={inputClass}
+              value={botToken}
+              onChange={(event) => setBotToken(event.target.value)}
+              placeholder={status.credentials.tokenConfigured ? "已配置；留空保持不变" : "输入新的 Bot Token"}
+              autoComplete="new-password"
+            />
+          </Field>
+        </div>
+        <div className="mt-5 flex flex-wrap gap-3">
+          <button
+            type="button"
+            className="rounded-lg bg-ops-accent px-4 py-2 text-sm font-black text-white disabled:opacity-50"
+            onClick={saveCredentials}
+            disabled={Boolean(busy) || !appId.trim() || !publicKey.trim()}
+          >
+            {busy === "credential-save" ? "保存中…" : "安全保存"}
+          </button>
+          <button
+            type="button"
+            className="rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-black text-red-700 disabled:opacity-50"
+            onClick={clearCredentials}
+            disabled={Boolean(busy) || !status.credentials.configured}
+          >
+            {busy === "credential-clear" ? "清除中…" : "清除凭证"}
+          </button>
+        </div>
+      </Card>
 
       <Card className="mt-5 p-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">

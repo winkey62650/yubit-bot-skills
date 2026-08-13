@@ -6,7 +6,9 @@ import {
   getDiscordStatus,
   initializeDiscordGuild,
   saveDiscordConfig,
+  sendDiscordMessage,
 } from "../lib/discord-service.mjs";
+import { saveDiscordCredentials } from "../lib/discord-credentials.mjs";
 
 function createRepository() {
   const meta = new Map();
@@ -232,8 +234,67 @@ test("Discord guild initialization preserves earlier partial channel selections"
 });
 
 test("Discord service reports an actionable missing-token status", async () => {
-  const result = await getDiscordStatus({ token: "", appId: "app-1" });
+  const result = await getDiscordStatus({
+    token: "",
+    appId: "app-1",
+    repository: createRepository(),
+  });
   assert.equal(result.configured, false);
   assert.equal(result.connected, false);
-  assert.match(result.error, /DISCORD_BOT_TOKEN/);
+  assert.match(result.error, /credentials are not configured/i);
+});
+
+test("Discord service uses encrypted credentials saved from the backend", async () => {
+  const repository = createRepository();
+  const encryptionKey = "11".repeat(32);
+  await saveDiscordCredentials(
+    {
+      appId: "1530060451705262151",
+      publicKey: "bc88ef40090d4cb47bf169363c6ac53689840849954848e24252f2475135c4ff",
+      botToken: "stored-secret-token",
+    },
+    { repository, encryptionKey },
+  );
+
+  const result = await getDiscordStatus({
+    repository,
+    encryptionKey,
+    fetchImpl: async (url) => {
+      if (String(url).endsWith("/users/@me")) {
+        return jsonResponse(200, { id: "bot-1", username: "Academy" });
+      }
+      return jsonResponse(200, []);
+    },
+  });
+
+  assert.equal(result.configured, true);
+  assert.equal(result.connected, true);
+  assert.equal(result.credentials.tokenConfigured, true);
+  assert.equal(JSON.stringify(result).includes("stored-secret-token"), false);
+});
+
+test("Discord message delivery supports text and image embeds", async () => {
+  let request;
+  const result = await sendDiscordMessage(
+    "channel-3",
+    {
+      content: "Daily market update",
+      imageUrl: "https://cdn.example.com/market.png",
+    },
+    {
+      token: "secret",
+      fetchImpl: async (url, options) => {
+        request = { url: String(url), options };
+        return jsonResponse(200, { id: "message-1", channel_id: "channel-3" });
+      },
+    },
+  );
+
+  assert.equal(result.id, "message-1");
+  assert.equal(request.url.endsWith("/channels/channel-3/messages"), true);
+  assert.deepEqual(JSON.parse(request.options.body), {
+    content: "Daily market update",
+    embeds: [{ image: { url: "https://cdn.example.com/market.png" } }],
+    allowed_mentions: { parse: [] },
+  });
 });

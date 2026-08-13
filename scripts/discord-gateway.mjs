@@ -1,96 +1,102 @@
+import { createHash } from "node:crypto";
+
 import {
   Client,
   Events,
   GatewayIntentBits,
 } from "discord.js";
 
+import { createDiscordGatewayRuntime } from "../lib/discord-gateway-runtime.mjs";
 import {
-  relayDiscordMessage,
-  writeDiscordGatewayHeartbeat,
-} from "../lib/discord-gateway.mjs";
+  getDiscordCredentialStatus,
+  loadDiscordCredentials,
+} from "../lib/discord-credentials.mjs";
+import { writeDiscordGatewayStatus } from "../lib/discord-gateway.mjs";
 
-const token = String(process.env.DISCORD_BOT_TOKEN || "").trim();
+const credentialPollMs = 15_000;
+let active = null;
+let activeFingerprint = "";
+let reconciling = false;
+let stopping = false;
 
-if (!token) {
-  console.error("[discord-gateway] DISCORD_BOT_TOKEN is not configured.");
-  process.exit(1);
+function createClient() {
+  return new Client({
+    intents: [
+      GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMessages,
+      GatewayIntentBits.MessageContent,
+    ],
+  });
 }
 
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-  ],
-});
-
-let heartbeatTimer;
-let shuttingDown = false;
-
-async function heartbeat(status = "online", extra = {}) {
-  try {
-    await writeDiscordGatewayHeartbeat({
-      status,
-      botUserId: client.user?.id || "",
-      botUsername: client.user?.username || "",
-      guildCount: client.guilds?.cache?.size || 0,
-      ...extra,
-    });
-  } catch (error) {
-    console.error("[discord-gateway] heartbeat failed:", error?.message || error);
-  }
+async function stopActive(reason) {
+  if (!active) return;
+  const current = active;
+  active = null;
+  activeFingerprint = "";
+  await current.runtime.shutdown(reason);
 }
 
-client.once(Events.ClientReady, async (readyClient) => {
-  console.log(
-    `[discord-gateway] connected as ${readyClient.user.username}; guilds=${readyClient.guilds.cache.size}`,
-  );
-  await heartbeat("online");
-  heartbeatTimer = setInterval(() => {
-    heartbeat("online");
-  }, 30_000);
-  heartbeatTimer.unref?.();
-});
+async function writeWaiting(lastError = null) {
+  await writeDiscordGatewayStatus({
+    state: "waiting",
+    online: false,
+    lastError,
+  });
+}
 
-client.on(Events.MessageCreate, async (message) => {
+async function reconcileCredentials() {
+  if (reconciling || stopping) return;
+  reconciling = true;
   try {
-    const result = await relayDiscordMessage(message);
-    if (result?.relayed > 0) {
-      console.log(
-        `[discord-gateway] relayed source=${message.guildId}/${message.channelId}/${message.id} targets=${result.relayed}`,
-      );
+    const status = await getDiscordCredentialStatus();
+    if (!status.configured) {
+      await stopActive("credentials-cleared");
+      await writeWaiting();
+      return;
+    }
+
+    const credentials = await loadDiscordCredentials();
+    const fingerprint = createHash("sha256")
+      .update(`${credentials.appId}:${credentials.botToken}`)
+      .digest("hex");
+    if (active && fingerprint === activeFingerprint) return;
+
+    await stopActive("credentials-changed");
+    const client = createClient();
+    const runtime = createDiscordGatewayRuntime({ client, token: credentials.botToken });
+    client.once(Events.ClientReady, runtime.handleReady);
+    client.on(Events.MessageCreate, runtime.handleMessage);
+    client.on(Events.Warn, runtime.handleWarn);
+    client.on(Events.Error, runtime.handleError);
+    active = { client, runtime };
+    activeFingerprint = fingerprint;
+
+    try {
+      await client.login(credentials.botToken);
+    } catch (error) {
+      await runtime.handleError(error);
+      await stopActive("login-failed");
+      await writeWaiting(error?.message || "Discord Gateway login failed.");
     }
   } catch (error) {
-    console.error(
-      `[discord-gateway] relay failed source=${message.guildId || "unknown"}/${message.channelId || "unknown"}:`,
-      error?.message || error,
-    );
+    await stopActive("credential-reconcile-failed");
+    await writeWaiting(error?.message || "Discord credential loading failed.");
+  } finally {
+    reconciling = false;
   }
-});
+}
 
-client.on(Events.Warn, (warning) => {
-  console.warn("[discord-gateway] warning:", warning);
-});
-
-client.on(Events.Error, async (error) => {
-  console.error("[discord-gateway] client error:", error?.message || error);
-  await heartbeat("error", { error: error?.message || "Discord Gateway error" });
-});
+await reconcileCredentials();
+const credentialTimer = setInterval(() => void reconcileCredentials(), credentialPollMs);
 
 async function shutdown(signal) {
-  if (shuttingDown) return;
-  shuttingDown = true;
-  if (heartbeatTimer) clearInterval(heartbeatTimer);
-  await heartbeat("offline", { reason: signal });
-  client.destroy();
+  if (stopping) return;
+  stopping = true;
+  clearInterval(credentialTimer);
+  await stopActive(signal);
   process.exit(0);
 }
 
-process.on("SIGTERM", () => shutdown("SIGTERM"));
-process.on("SIGINT", () => shutdown("SIGINT"));
-
-client.login(token).catch(async (error) => {
-  console.error("[discord-gateway] login failed:", error?.message || error);
-  await heartbeat("error", { error: error?.message || "Discord login failed" });
-  process.exit(1);
-});
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
+process.on("SIGINT", () => void shutdown("SIGINT"));

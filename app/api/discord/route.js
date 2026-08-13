@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 
 import {
+  clearDiscordCredentials,
+  saveDiscordCredentials,
+} from "../../../lib/discord-credentials.mjs";
+import {
   getDiscordStatus,
   initializeDiscordGuild,
   sendDiscordTestMessage,
@@ -42,7 +46,17 @@ export async function POST(request) {
     const action = String(body?.action || "").trim();
     let result;
 
-    if (action === "initialize") {
+    if (action === "credential-save") {
+      result = {
+        credentials: await saveDiscordCredentials({
+          appId: body.appId,
+          publicKey: body.publicKey,
+          botToken: body.botToken,
+        }),
+      };
+    } else if (action === "credential-clear") {
+      result = { credentials: await clearDiscordCredentials() };
+    } else if (action === "initialize") {
       const initialized = await initializeDiscordGuild({
         guildId: body.guildId,
         selectedTemplateIds: body.templateIds,

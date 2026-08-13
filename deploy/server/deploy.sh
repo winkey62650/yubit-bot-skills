@@ -23,14 +23,20 @@ fi
 
 sudo install -d -m 0755 -o ubuntu -g ubuntu "$APP_ROOT/releases"
 sudo install -d -m 0750 -o ubuntu -g ubuntu "$STATE_ROOT"
+discord_credentials_key="$(sudo awk -F= '$1 == "DISCORD_CREDENTIALS_ENCRYPTION_KEY" { sub(/^[^=]*=/, ""); print; exit }' "$ENV_FILE")"
+if [[ -z "$discord_credentials_key" ]]; then
+  discord_credentials_key="$(openssl rand -hex 32)"
+fi
 primary_env="$(mktemp)"
-sudo awk '!/^(JSON_STORE_BACKEND|JSON_STORE_DIRECTORY)=/' "$ENV_FILE" >"$primary_env"
+sudo awk '!/^(JSON_STORE_BACKEND|JSON_STORE_DIRECTORY|DISCORD_APP_ID|DISCORD_PUBLIC_KEY|DISCORD_BOT_TOKEN|DISCORD_GATEWAY_ENABLED|DISCORD_CREDENTIALS_ENCRYPTION_KEY)=/' "$ENV_FILE" >"$primary_env"
 {
   printf 'JSON_STORE_BACKEND=local\n'
   printf 'JSON_STORE_DIRECTORY=%s\n' "$STATE_ROOT"
+  printf 'DISCORD_CREDENTIALS_ENCRYPTION_KEY=%s\n' "$discord_credentials_key"
 } >>"$primary_env"
 sudo install -m 0600 -o root -g root "$primary_env" "$ENV_FILE"
 rm -f "$primary_env"
+unset discord_credentials_key
 
 commit="$({ git ls-remote "$REPO_URL" "refs/heads/$BRANCH" || true; } | awk 'NR==1 {print $1}')"
 if [[ -z "$commit" ]]; then
@@ -124,45 +130,8 @@ done
 
 sudo systemctl enable yubit-academy-worker.service
 sudo systemctl restart yubit-academy-worker.service
-discord_gateway_enabled="$(sudo awk -F= '$1 == "DISCORD_GATEWAY_ENABLED" { print tolower($2); exit }' "$ENV_FILE")"
-discord_gateway_enabled="${discord_gateway_enabled:-false}"
-if [[ "$discord_gateway_enabled" == "true" ]]; then
-  sudo systemctl enable yubit-academy-discord.service
-  # Ubuntu hosts with older systemd reject RFC 3339 timestamps containing a
-  # timezone offset in journalctl --since. The local calendar format works on
-  # both old and new journalctl releases.
-  discord_started_at="$(date '+%Y-%m-%d %H:%M:%S')"
-  sudo systemctl restart yubit-academy-discord.service
-
-  discord_ready=0
-  for _ in {1..20}; do
-    if sudo journalctl \
-      -u yubit-academy-discord.service \
-      --since "$discord_started_at" \
-      --no-pager \
-      | grep -Fq "[discord-gateway] connected as"; then
-      discord_ready=1
-      break
-    fi
-
-    sleep 2
-  done
-
-  if [[ "$discord_ready" -ne 1 ]]; then
-    echo "Discord Gateway did not reach the ready state." >&2
-    sudo journalctl \
-      -u yubit-academy-discord.service \
-      --since "$discord_started_at" \
-      --no-pager \
-      | sed -E \
-        -e 's/[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{20,}/[redacted]/g' \
-        -e 's/(DISCORD_BOT_TOKEN=)[^[:space:]]+/\1[redacted]/g' \
-      >&2
-    exit 1
-  fi
-else
-  sudo systemctl disable --now yubit-academy-discord.service 2>/dev/null || true
-fi
+sudo systemctl enable yubit-academy-discord.service
+sudo systemctl restart yubit-academy-discord.service
 sudo systemctl reload nginx
 
 if [[ "$ENABLE_HTTPS" == "1" ]]; then
@@ -188,9 +157,7 @@ if [[ "$ip_location" != "https://$SERVER_NAME/" ]]; then
 fi
 sudo systemctl is-active --quiet yubit-academy-web.service
 sudo systemctl is-active --quiet yubit-academy-worker.service
-if [[ "$discord_gateway_enabled" == "true" ]]; then
-  sudo systemctl is-active --quiet yubit-academy-discord.service
-fi
+sudo systemctl is-active --quiet yubit-academy-discord.service
 
 find "$APP_ROOT/releases" -mindepth 1 -maxdepth 1 -type d ! -path "$release" -printf '%T@ %p\n' \
   | sort -nr | awk 'NR > 2 {sub(/^[^ ]+ /, ""); print}' \

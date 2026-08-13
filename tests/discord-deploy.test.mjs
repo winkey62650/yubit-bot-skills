@@ -15,29 +15,31 @@ test("Discord Gateway 有独立常驻脚本和 npm 启动命令", () => {
   assert.ok(existsSync(new URL("scripts/discord-gateway.mjs", root)));
 });
 
-test("DC 部署包含可选的 Discord systemd 常驻服务", () => {
+test("DC 部署始终保持 Discord systemd 常驻服务在线等待", () => {
   const unit = read("deploy/systemd/yubit-academy-discord.service");
   const deploy = read("deploy/server/deploy.sh");
 
   assert.match(unit, /scripts\/discord-gateway\.mjs/);
   assert.match(unit, /EnvironmentFile=\/etc\/yubit-academy\/production\.env/);
   assert.match(deploy, /yubit-academy-discord\.service/);
-  assert.match(deploy, /DISCORD_GATEWAY_ENABLED/);
-  assert.match(deploy, /if \[\[ "\$discord_gateway_enabled" == "true" \]\]/);
   assert.match(deploy, /enable yubit-academy-discord/);
   assert.match(deploy, /restart yubit-academy-discord/);
-  assert.match(deploy, /disable --now yubit-academy-discord/);
   assert.match(deploy, /is-active --quiet yubit-academy-discord/);
-  assert.match(deploy, /date '\+%Y-%m-%d %H:%M:%S'/);
-  assert.doesNotMatch(deploy, /date --iso-8601=seconds/);
+  assert.doesNotMatch(deploy, /discord_gateway_enabled/);
+  assert.doesNotMatch(deploy, /disable --now yubit-academy-discord/);
+  assert.doesNotMatch(deploy, /Discord Gateway did not reach the ready state/);
 });
 
-test("生产部署只在明确启用 Discord 时要求其凭证", () => {
+test("生产部署清除旧 Discord 凭证并由后台配置新凭证", () => {
   const workflow = read(".github/workflows/deploy-production-server.yml");
+  const deploy = read("deploy/server/deploy.sh");
 
-  assert.match(workflow, /DISCORD_GATEWAY_ENABLED: \$\{\{ vars\.DISCORD_GATEWAY_ENABLED \|\| 'false' \}\}/);
-  assert.match(workflow, /if \[ "\$DISCORD_GATEWAY_ENABLED" = "true" \]/);
-  assert.match(workflow, /DISCORD_GATEWAY_ENABLED=%s/);
+  assert.doesNotMatch(workflow, /secrets\.DISCORD_/);
+  assert.doesNotMatch(workflow, /DISCORD_[A-Z_]+_B64/);
+  assert.doesNotMatch(workflow, /printf 'DISCORD_[A-Z_]+=/);
+  assert.match(deploy, /DISCORD_CREDENTIALS_ENCRYPTION_KEY/);
+  assert.match(deploy, /openssl rand -hex 32/);
+  assert.match(deploy, /DISCORD_APP_ID\|DISCORD_PUBLIC_KEY\|DISCORD_BOT_TOKEN\|DISCORD_GATEWAY_ENABLED/);
 });
 
 test("生产部署从 GitHub 目标提交启动，不调用服务器旧版脚本", () => {

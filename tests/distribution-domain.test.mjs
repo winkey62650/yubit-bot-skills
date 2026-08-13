@@ -191,6 +191,58 @@ test("an automatic job keeps every stable chat and thread target", () => {
   assert.deepEqual(validateDistributionRule(rule), []);
 });
 
+test("an automatic job can publish to Telegram and Discord without changing Telegram targets", () => {
+  const rule = normalizeDistributionRule({
+    id: "dual-platform-events",
+    kind: "automation",
+    name: "Daily Events",
+    contentType: "daily-events",
+    schedulePreset: "daily-0800-utc",
+    targets: [
+      { chatId: "-1001", threadId: 8, groupName: "Telegram Academy", topicName: "3. Market Events" },
+      { platform: "discord", guildId: "guild-1", channelId: "channel-3", serverName: "Discord Academy", channelName: "market-events" },
+    ],
+  });
+
+  assert.deepEqual(rule.targets[0], {
+    id: rule.targets[0].id,
+    chatId: "-1001",
+    chatType: "supergroup",
+    threadId: 8,
+    groupName: "Telegram Academy",
+    topicName: "3. Market Events",
+    enabled: true,
+    order: 0,
+  });
+  assert.deepEqual(rule.targets[1], {
+    platform: "discord",
+    id: rule.targets[1].id,
+    guildId: "guild-1",
+    channelId: "channel-3",
+    groupName: "Discord Academy",
+    topicName: "market-events",
+    enabled: true,
+    order: 1,
+  });
+  assert.deepEqual(validateDistributionRule(rule), []);
+});
+
+test("Telegram broadcast rules ignore Discord destinations", () => {
+  const rule = normalizeDistributionRule({
+    id: "telegram-only-broadcast",
+    kind: "broadcast",
+    name: "Telegram broadcast",
+    source: { chatId: "-1001", threadId: 8 },
+    targets: [
+      { chatId: "-1002", threadId: 9 },
+      { platform: "discord", guildId: "guild-1", channelId: "channel-3" },
+    ],
+  });
+
+  assert.equal(rule.targets.length, 1);
+  assert.equal(rule.targets[0].chatId, "-1002");
+});
+
 test("an automatic job keeps a channel destination without inventing a thread", () => {
   const rule = normalizeDistributionRule({
     id: "channel-events",

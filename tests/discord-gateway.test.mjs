@@ -193,3 +193,21 @@ test("heartbeat records the connected bot without exposing credentials", async (
   assert.equal(status.lastHeartbeatAt, "2026-07-24T01:02:00.000Z");
   assert.doesNotMatch(JSON.stringify(repository.read("discord:gateway")), /super-secret/);
 });
+
+test("heartbeat preserves an explicit runtime state and sanitizes its error", async () => {
+  const repository = createRepository(configured);
+  const status = await writeDiscordGatewayHeartbeat(
+    { user: { id: "bot-1", username: "Academy" }, guilds: { cache: { size: 2 } } },
+    {
+      repository,
+      token: "super-secret",
+      state: "error",
+      lastError: new Error("Gateway rejected super-secret"),
+      now: new Date("2026-07-24T01:03:00.000Z"),
+    },
+  );
+
+  assert.equal(status.state, "error");
+  assert.match(status.lastError, /Gateway rejected/);
+  assert.doesNotMatch(status.lastError, /super-secret/);
+});

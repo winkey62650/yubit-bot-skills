@@ -27,6 +27,10 @@ test("Discord 页面覆盖连接、初始化、同步与测试闭环", () => {
   assert.match(page, /发送测试消息/);
   assert.match(page, /1-read-first-disclaimer/);
   assert.match(page, /7-yubit-updates/);
+  assert.match(page, /status\.gateway\?\.online/);
+  assert.match(page, /status\.gateway\?\.lastHeartbeatAt/);
+  assert.doesNotMatch(page, /status\.gateway\?\.status/);
+  assert.doesNotMatch(page, /status\.gateway\?\.heartbeatAt/);
 });
 
 test("Discord 管理 API 只暴露受控动作", () => {
@@ -38,5 +42,17 @@ test("Discord 管理 API 只暴露受控动作", () => {
   assert.match(route, /initialize/);
   assert.match(route, /settings/);
   assert.match(route, /test-message/);
+  assert.match(route, /credential-save/);
+  assert.match(route, /credential-clear/);
+  assert.match(route, /saveDiscordCredentials/);
+  assert.match(route, /clearDiscordCredentials/);
   assert.match(route, /initialized/i);
+});
+
+test("Discord Bot 凭证可在后台安全配置且不会回显 Token", () => {
+  const page = read("app/discord/page.jsx");
+  assert.match(page, /type="password"/);
+  assert.match(page, /credential-save/);
+  assert.match(page, /credential-clear/);
+  assert.match(page, /tokenConfigured/);
 });
