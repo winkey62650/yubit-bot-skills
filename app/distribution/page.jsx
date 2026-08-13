@@ -228,11 +228,11 @@ function DistributionPageContent() {
     }
   }
 
-  async function saveSocialPackages(packages, successMessage) {
+  async function saveSocialPackages(mutation, successMessage) {
     setBusy("social-packages");
     setNotice("");
     try {
-      const response = await fetch("/api/social-packages", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ packages }) });
+      const response = await fetch("/api/social-packages", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(mutation) });
       const result = await response.json();
       if (!response.ok || !result.ok) throw new Error(result.error || "代理来源保存失败");
       setSocialPackages(result.packages || []);

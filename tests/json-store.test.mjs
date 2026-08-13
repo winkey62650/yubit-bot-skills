@@ -73,6 +73,30 @@ test("a dedicated server release ignores stale Vercel Blob credentials by defaul
   }
 });
 
+test("serialized JSON updates do not lose concurrent changes", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "yubit-json-update-"));
+  const original = {
+    backend: process.env.JSON_STORE_BACKEND,
+    directory: process.env.JSON_STORE_DIRECTORY,
+  };
+
+  process.env.JSON_STORE_BACKEND = "local";
+  process.env.JSON_STORE_DIRECTORY = directory;
+
+  try {
+    await store.writeJson("rules.json", { rules: [] });
+    await Promise.all([
+      store.updateJson("rules.json", (current) => ({ rules: [...current.rules, "a"] }), { rules: [] }),
+      store.updateJson("rules.json", (current) => ({ rules: [...current.rules, "b"] }), { rules: [] }),
+    ]);
+    assert.deepEqual((await store.readJson("rules.json", {})).rules, ["a", "b"]);
+  } finally {
+    restoreEnvironment("JSON_STORE_BACKEND", original.backend);
+    restoreEnvironment("JSON_STORE_DIRECTORY", original.directory);
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 function restoreEnvironment(name, value) {
   if (value === undefined) delete process.env[name];
   else process.env[name] = value;

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  applySocialPackageMutation,
   detectSocialPlatform,
   normalizeSocialPackages,
   parseXReaderTimeline,
@@ -13,6 +14,46 @@ import {
   validateSocialSnapshotOwnership,
   validateSocialPackageRoutes
 } from "../lib/social-sources.mjs";
+
+test("editing one social source preserves newer unrelated rules", () => {
+  const current = normalizeSocialPackages([
+    { id: "jenna-x", agent: "Jenna", platform: "X", accountUrl: "https://x.com/jenna", status: "已启用", targets: [{ chatId: "-1001", threadId: 8 }] },
+    { id: "wise-x", agent: "Wise", platform: "X", accountUrl: "https://x.com/wise", status: "已启用", targets: [{ chatId: "-1002", threadId: 9 }] },
+  ]);
+
+  const updated = applySocialPackageMutation(current, {
+    action: "upsert",
+    source: { id: "jenna-x", agent: "Jenna", platform: "X", accountUrl: "https://x.com/jenna", status: "已暂停", targets: [{ chatId: "-1001", threadId: 10 }] },
+  });
+
+  assert.equal(updated.length, 2);
+  assert.equal(updated.find((item) => item.id === "jenna-x").status, "已暂停");
+  assert.equal(updated.find((item) => item.id === "jenna-x").targets[0].threadId, 10);
+  assert.equal(updated.find((item) => item.id === "wise-x").targets[0].threadId, 9);
+});
+
+test("social source status and deletion mutations only change the selected rule", () => {
+  const current = normalizeSocialPackages([
+    { id: "jenna-x", agent: "Jenna", platform: "X", accountUrl: "https://x.com/jenna", status: "已启用", targets: [{ chatId: "-1001", threadId: 8 }] },
+    { id: "wise-x", agent: "Wise", platform: "X", accountUrl: "https://x.com/wise", status: "已启用", targets: [{ chatId: "-1002", threadId: 9 }] },
+  ]);
+
+  const paused = applySocialPackageMutation(current, { action: "set-status", id: "jenna-x", status: "已暂停" });
+  assert.equal(paused.find((item) => item.id === "jenna-x").status, "已暂停");
+  assert.equal(paused.find((item) => item.id === "wise-x").status, "已启用");
+
+  const deleted = applySocialPackageMutation(paused, { action: "delete", id: "jenna-x" });
+  assert.deepEqual(deleted.map((item) => item.id), ["wise-x"]);
+});
+
+test("generated social source ids remain unique across platforms for the same agent", () => {
+  const packages = normalizeSocialPackages([
+    { agent: "Wise Advice", platform: "X", accountUrl: "https://x.com/wiseadvice" },
+    { agent: "Wise Advice", platform: "YouTube", accountUrl: "https://youtube.com/@wiseadvice" },
+  ]);
+
+  assert.notEqual(packages[0].id, packages[1].id);
+});
 
 test("social source configuration keeps X and YouTube fields needed by the crawler", () => {
   const packages = normalizeSocialPackages([
