@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 REPO_URL="${REPO_URL:-https://github.com/winkey62650/yubit-bot-skills.git}"
 BRANCH="${BRANCH:-code/academy}"
+SOURCE_DIR="${SOURCE_DIR:-}"
 APP_ROOT="${APP_ROOT:-/opt/yubit-academy}"
 STATE_ROOT="${STATE_ROOT:-/var/lib/yubit-academy/runtime}"
 NODE_HOME="${NODE_HOME:-/opt/yubit-node}"
@@ -38,21 +39,46 @@ sudo install -m 0600 -o root -g root "$primary_env" "$ENV_FILE"
 rm -f "$primary_env"
 unset discord_credentials_key
 
-commit="$({ git ls-remote "$REPO_URL" "refs/heads/$BRANCH" || true; } | awk 'NR==1 {print $1}')"
-if [[ -z "$commit" ]]; then
-  echo "Unable to resolve $REPO_URL branch $BRANCH" >&2
-  exit 1
-fi
-if [[ -n "${EXPECTED_COMMIT:-}" && "$commit" != "$EXPECTED_COMMIT" ]]; then
-  echo "Resolved commit $commit does not match requested commit $EXPECTED_COMMIT" >&2
-  exit 1
+if [[ -n "$SOURCE_DIR" ]]; then
+  if [[ ! "${EXPECTED_COMMIT:-}" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "Uploaded releases require a valid EXPECTED_COMMIT." >&2
+    exit 1
+  fi
+  if [[ ! -d "$SOURCE_DIR" || ! -f "$SOURCE_DIR/package.json" ]]; then
+    echo "Uploaded release source is missing or invalid: $SOURCE_DIR" >&2
+    exit 1
+  fi
+  commit="$EXPECTED_COMMIT"
+else
+  commit="$({ git ls-remote "$REPO_URL" "refs/heads/$BRANCH" || true; } | awk 'NR==1 {print $1}')"
+  if [[ -z "$commit" ]]; then
+    echo "Unable to resolve $REPO_URL branch $BRANCH" >&2
+    exit 1
+  fi
+  if [[ -n "${EXPECTED_COMMIT:-}" && "$commit" != "$EXPECTED_COMMIT" ]]; then
+    echo "Resolved commit $commit does not match requested commit $EXPECTED_COMMIT" >&2
+    exit 1
+  fi
 fi
 release="$APP_ROOT/releases/$commit"
+release_marker="$release/.release-commit"
+installed_commit=""
+if [[ -f "$release_marker" ]]; then
+  installed_commit="$(cat "$release_marker")"
+fi
 
-if [[ ! -d "$release/.git" ]]; then
+if [[ "$installed_commit" != "$commit" ]]; then
   tmp_release="${release}.building"
   rm -rf "$tmp_release"
-  git clone --quiet --depth 1 --branch "$BRANCH" "$REPO_URL" "$tmp_release"
+  mkdir -p "$tmp_release"
+  if [[ -n "$SOURCE_DIR" ]]; then
+    cp -a "$SOURCE_DIR/." "$tmp_release/"
+  else
+    rm -rf "$tmp_release"
+    git clone --quiet --depth 1 --branch "$BRANCH" "$REPO_URL" "$tmp_release"
+  fi
+  printf '%s\n' "$commit" >"$tmp_release/.release-commit"
+  rm -rf "$release"
   mv "$tmp_release" "$release"
 fi
 
@@ -158,6 +184,12 @@ fi
 sudo systemctl is-active --quiet yubit-academy-web.service
 sudo systemctl is-active --quiet yubit-academy-worker.service
 sudo systemctl is-active --quiet yubit-academy-discord.service
+if sudo grep -Eq '^(DISCORD_APP_ID|DISCORD_PUBLIC_KEY|DISCORD_BOT_TOKEN|DISCORD_GATEWAY_ENABLED)=' "$ENV_FILE"; then
+  echo "Legacy Discord environment credentials remain configured." >&2
+  exit 1
+fi
+echo "Discord legacy environment credentials: absent"
+echo "Discord gateway service: active"
 
 find "$APP_ROOT/releases" -mindepth 1 -maxdepth 1 -type d ! -path "$release" -printf '%T@ %p\n' \
   | sort -nr | awk 'NR > 2 {sub(/^[^ ]+ /, ""); print}' \

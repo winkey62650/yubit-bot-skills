@@ -15,6 +15,12 @@ jobs:
     runs-on: ubuntu-latest
     environment: Production
     steps:
+      - name: Check out the requested release
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
       - name: Install SSH password helper
         run: |
           sudo apt-get update -qq
@@ -49,6 +55,15 @@ jobs:
             echo "GitHub target commit is invalid." >&2
             exit 1
           fi
+          archive_path="$RUNNER_TEMP/yubit-academy-$DEPLOY_SHA.tar.gz"
+          remote_archive="/tmp/yubit-academy-$DEPLOY_SHA.tar.gz"
+          tar --exclude=".git" -czf "$archive_path" .
+          sshpass -e scp \
+            -o ConnectTimeout=20 \
+            -o ServerAliveInterval=10 \
+            -o StrictHostKeyChecking=accept-new \
+            "$archive_path" \
+            "ubuntu@152.32.161.174:$remote_archive"
           policy_b64="$(printf '%s' "$APPROVED_DISTRIBUTION_TARGETS" | base64 -w0)"
           telegram_api_id_b64="$(printf '%s' "$TELEGRAM_API_ID" | base64 -w0)"
           telegram_api_hash_b64="$(printf '%s' "$TELEGRAM_API_HASH" | base64 -w0)"
@@ -58,8 +73,9 @@ jobs:
             -o ServerAliveInterval=10 \
             -o StrictHostKeyChecking=accept-new \
             ubuntu@152.32.161.174 \
-            "POLICY_B64='$policy_b64' TELEGRAM_API_ID_B64='$telegram_api_id_b64' TELEGRAM_API_HASH_B64='$telegram_api_hash_b64' DESKTOP_SECRET_B64='$desktop_secret_b64' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'REMOTE'
+            "POLICY_B64='$policy_b64' TELEGRAM_API_ID_B64='$telegram_api_id_b64' TELEGRAM_API_HASH_B64='$telegram_api_hash_b64' DESKTOP_SECRET_B64='$desktop_secret_b64' DEPLOY_SHA='$DEPLOY_SHA' REMOTE_ARCHIVE='$remote_archive' bash -s" <<'REMOTE'
           set -Eeuo pipefail
+          trap 'rm -f "$REMOTE_ARCHIVE"' EXIT
           env_file=/etc/yubit-academy/production.env
           approved_targets="$(printf '%s' "$POLICY_B64" | base64 -d)"
           telegram_api_id="$(printf '%s' "$TELEGRAM_API_ID_B64" | base64 -d)"
@@ -88,14 +104,12 @@ jobs:
           sudo install -m 0600 -o root -g root "$env_tmp" "$env_file"
           rm -f "$env_tmp"
           bootstrap_dir="$(mktemp -d)"
-          trap 'rm -rf "$bootstrap_dir"' EXIT
-          git clone --quiet --depth 1 --branch code/academy \
-            https://github.com/winkey62650/yubit-bot-skills.git \
-            "$bootstrap_dir"
-          actual_sha="$(git -C "$bootstrap_dir" rev-parse HEAD)"
-          if [ "$actual_sha" != "$DEPLOY_SHA" ]; then
-            echo "Branch advanced during deployment; expected $DEPLOY_SHA but resolved $actual_sha." >&2
+          trap 'rm -rf "$bootstrap_dir"; rm -f "$REMOTE_ARCHIVE"' EXIT
+          tar -xzf "$REMOTE_ARCHIVE" -C "$bootstrap_dir"
+          rm -f "$REMOTE_ARCHIVE"
+          if [ ! -x "$bootstrap_dir/deploy/server/deploy.sh" ]; then
+            echo "Uploaded release does not contain the deployment script." >&2
             exit 1
           fi
-          EXPECTED_COMMIT="$DEPLOY_SHA" bash "$bootstrap_dir/deploy/server/deploy.sh"
+          SOURCE_DIR="$bootstrap_dir" EXPECTED_COMMIT="$DEPLOY_SHA" bash "$bootstrap_dir/deploy/server/deploy.sh"
           REMOTE

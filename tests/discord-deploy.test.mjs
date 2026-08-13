@@ -42,15 +42,19 @@ test("生产部署清除旧 Discord 凭证并由后台配置新凭证", () => {
   assert.match(deploy, /DISCORD_APP_ID\|DISCORD_PUBLIC_KEY\|DISCORD_BOT_TOKEN\|DISCORD_GATEWAY_ENABLED/);
 });
 
-test("生产部署从 GitHub 目标提交启动，不调用服务器旧版脚本", () => {
+test("生产部署由 GitHub Actions 上传固定提交，不依赖服务器访问 GitHub", () => {
   const workflow = read(".github/workflows/deploy-production-server.yml");
   const deploy = read("deploy/server/deploy.sh");
 
   assert.match(workflow, /DEPLOY_SHA: \$\{\{ github\.sha \}\}/);
-  assert.match(workflow, /git clone --quiet --depth 1 --branch code\/academy/);
-  assert.match(workflow, /actual_sha="\$\(git -C "\$bootstrap_dir" rev-parse HEAD\)"/);
-  assert.match(workflow, /EXPECTED_COMMIT="\$DEPLOY_SHA" bash "\$bootstrap_dir\/deploy\/server\/deploy\.sh"/);
+  assert.match(workflow, /uses: actions\/checkout@v4/);
+  assert.match(workflow, /tar --exclude="\.git" -czf "\$archive_path" \./);
+  assert.match(workflow, /sshpass -e scp/);
+  assert.match(workflow, /tar -xzf "\$REMOTE_ARCHIVE" -C "\$bootstrap_dir"/);
+  assert.match(workflow, /SOURCE_DIR="\$bootstrap_dir" EXPECTED_COMMIT="\$DEPLOY_SHA" bash "\$bootstrap_dir\/deploy\/server\/deploy\.sh"/);
+  assert.doesNotMatch(workflow, /git clone --quiet --depth 1 --branch code\/academy/);
   assert.doesNotMatch(workflow, /cd \/opt\/yubit-academy\/current/);
+  assert.match(deploy, /SOURCE_DIR="\$\{SOURCE_DIR:-\}"/);
   assert.match(deploy, /EXPECTED_COMMIT/);
-  assert.match(deploy, /Resolved commit .* does not match requested commit/);
+  assert.match(deploy, /\.release-commit/);
 });
