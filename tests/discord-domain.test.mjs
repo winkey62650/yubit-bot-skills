@@ -2,9 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  DISCORD_CATEGORY_NAME,
-  DISCORD_CHANNEL_TEMPLATES,
+  DISCORD_DEMO_GUILD_NAME,
   DISCORD_REQUIRED_PERMISSIONS,
+  buildDiscordDemoSnapshot,
   buildDiscordInstallUrl,
   buildDiscordInitializationPlan,
   buildDiscordRelayPayload,
@@ -13,36 +13,116 @@ import {
   normalizeDiscordChannelSelection,
 } from "../lib/discord-domain.mjs";
 
-test("Discord channel template follows the canonical 1-7 order and excludes General Chat", () => {
-  assert.equal(DISCORD_CATEGORY_NAME, "CryptoGuy Academy");
-  assert.deepEqual(
-    DISCORD_CHANNEL_TEMPLATES.map(({ id, name }) => ({ id, name })),
-    [
-      { id: 1, name: "1-read-first-disclaimer" },
-      { id: 2, name: "2-cryptoguy-trading-zone" },
-      { id: 3, name: "3-market-events" },
-      { id: 4, name: "4-market-analysis" },
-      { id: 5, name: "5-community-signal" },
-      { id: 6, name: "6-smart-money-tracker" },
-      { id: 7, name: "7-yubit-updates" },
+test("Discord initialization uses TheMoonShow live categories, channels and readable content", () => {
+  assert.equal(DISCORD_DEMO_GUILD_NAME, "TheMoonShow VIP Community");
+  const snapshot = buildDiscordDemoSnapshot({
+    guild: { id: "demo", name: DISCORD_DEMO_GUILD_NAME },
+    channels: [
+      { id: "cat-2", type: 4, name: "Research", position: 2 },
+      { id: "cat-1", type: 4, name: "Start Here", position: 1 },
+      { id: "ch-2", type: 0, name: "market-insights", parent_id: "cat-2", position: 2, topic: "Daily research" },
+      { id: "ch-1", type: 0, name: "rules", parent_id: "cat-1", position: 1 },
+      { id: "voice", type: 2, name: "Voice", parent_id: "cat-1", position: 3 },
     ],
-  );
-  assert.equal(
-    DISCORD_CHANNEL_TEMPLATES.some((channel) => /general/i.test(channel.name)),
-    false,
-  );
+    messagesByChannel: {
+      "ch-1": [{ id: "m2", content: "Second", timestamp: "2026-08-14T02:00:00.000Z" }, { id: "m1", content: "First", timestamp: "2026-08-14T01:00:00.000Z" }],
+      "ch-2": [{ id: "m3", content: "Chart", attachments: [{ url: "https://cdn.example/chart.png" }] }],
+    },
+    capturedAt: "2026-08-14T03:00:00.000Z",
+  });
+  assert.deepEqual(snapshot.categories.map(({ sourceCategoryId, name }) => ({ sourceCategoryId, name })), [
+    { sourceCategoryId: "cat-1", name: "Start Here" },
+    { sourceCategoryId: "cat-2", name: "Research" },
+  ]);
+  assert.deepEqual(snapshot.channels.map(({ templateKey, name }) => ({ templateKey, name })), [
+    { templateKey: "discord:ch-1", name: "rules" },
+    { templateKey: "discord:ch-2", name: "market-insights" },
+  ]);
+  assert.deepEqual(snapshot.channels[0].messages.map((message) => message.sourceMessageId), ["m1", "m2"]);
+  assert.deepEqual(snapshot.channels[1].messages[0].attachmentUrls, ["https://cdn.example/chart.png"]);
 });
 
-test("Discord channel selection is unique, canonical and rejects unknown values", () => {
-  assert.deepEqual(normalizeDiscordChannelSelection(["7", 2, 2, 1]), [1, 2, 7]);
+test("Discord channel selection is unique, follows Demo order and rejects unknown keys", () => {
+  const template = { channels: [
+    { templateKey: "discord:a" },
+    { templateKey: "discord:b" },
+    { templateKey: "discord:c" },
+  ] };
+  assert.deepEqual(normalizeDiscordChannelSelection(["discord:c", "discord:a", "discord:a"], template), ["discord:a", "discord:c"]);
   assert.throws(
-    () => normalizeDiscordChannelSelection([]),
+    () => normalizeDiscordChannelSelection([], template),
     /at least one Discord channel/i,
   );
   assert.throws(
-    () => normalizeDiscordChannelSelection([1, 8]),
+    () => normalizeDiscordChannelSelection(["discord:a", "discord:missing"], template),
     /unknown Discord channel template/i,
   );
+});
+
+test("dynamic Discord initialization reuses matching categories/channels and preserves Demo order", () => {
+  const plan = buildDiscordInitializationPlan({
+    template: {
+      categories: [
+        { templateKey: "category:cat-a", sourceCategoryId: "cat-a", name: "Start Here", position: 1 },
+        { templateKey: "category:cat-b", sourceCategoryId: "cat-b", name: "Research", position: 2 },
+      ],
+      channels: [
+        { templateKey: "discord:source-a", sourceChannelId: "source-a", sourceCategoryId: "cat-a", name: "rules", position: 1, type: 0, messages: [] },
+        { templateKey: "discord:source-b", sourceChannelId: "source-b", sourceCategoryId: "cat-b", name: "market-insights", position: 2, type: 0, messages: [] },
+      ],
+    },
+    selectedTemplateKeys: ["discord:source-a", "discord:source-b"],
+    existingChannels: [
+      { id: "target-cat-a", type: 4, name: "Start Here" },
+      { id: "target-rules", type: 0, name: "rules", parent_id: "target-cat-a" },
+      { id: "wrong-market", type: 0, name: "market-insights", parent_id: "target-cat-a" },
+    ],
+  });
+
+  assert.deepEqual(plan.categories.map(({ name, action, id }) => ({ name, action, id })), [
+    { name: "Start Here", action: "reuse", id: "target-cat-a" },
+    { name: "Research", action: "create", id: null },
+  ]);
+  assert.deepEqual(plan.channels.map(({ templateKey, action, id }) => ({ templateKey, action, id })), [
+    { templateKey: "discord:source-a", action: "reuse", id: "target-rules" },
+    { templateKey: "discord:source-b", action: "create", id: null },
+  ]);
+});
+
+test("dynamic Discord initialization only reuses uncategorized channels for uncategorized Demo channels", () => {
+  const plan = buildDiscordInitializationPlan({
+    template: {
+      categories: [],
+      channels: [{ templateKey: "discord:lobby", sourceChannelId: "lobby", sourceCategoryId: "", name: "lobby", position: 1, type: 0, messages: [] }],
+    },
+    selectedTemplateKeys: ["discord:lobby"],
+    existingChannels: [
+      { id: "nested-lobby", type: 0, name: "lobby", parent_id: "some-category" },
+      { id: "root-lobby", type: 0, name: "lobby", parent_id: null },
+    ],
+  });
+
+  assert.equal(plan.channels[0].action, "reuse");
+  assert.equal(plan.channels[0].id, "root-lobby");
+});
+
+test("Discord config preserves dynamic template bindings and message checkpoints", () => {
+  const config = normalizeDiscordConfig({
+    demoGuildId: "demo",
+    demoTemplate: { guildId: "demo", guildName: DISCORD_DEMO_GUILD_NAME, categories: [], channels: [], capturedAt: "now" },
+    guilds: {
+      demo: {
+        guildName: "TheMoonShow VIP Community",
+        channels: [
+          { templateKey: "discord:source-a", sourceChannelId: "source-a", channelId: "target-a", name: "rules", seededSourceMessageIds: ["m1", "m1", "m2"] },
+        ],
+      },
+    },
+  });
+
+  assert.equal(config.demoGuildId, "demo");
+  assert.equal(config.demoTemplate.guildName, DISCORD_DEMO_GUILD_NAME);
+  assert.deepEqual(config.guilds.demo.channels[0].seededSourceMessageIds, ["m1", "m2"]);
 });
 
 test("Discord install URL uses official bot/application command scopes and least required permissions", () => {
@@ -58,66 +138,6 @@ test("Discord install URL uses official bot/application command scopes and least
   assert.throws(() => buildDiscordInstallUrl(""), /App ID/i);
 });
 
-test("Discord initialization plan reuses matching resources and creates only missing selections", () => {
-  const plan = buildDiscordInitializationPlan({
-    guildId: "guild-1",
-    selectedTemplateIds: [1, 2, 3],
-    existingChannels: [
-      { id: "category-1", type: 4, name: DISCORD_CATEGORY_NAME },
-      {
-        id: "channel-1",
-        type: 0,
-        name: "1-read-first-disclaimer",
-        parent_id: "category-1",
-      },
-      {
-        id: "wrong-parent",
-        type: 0,
-        name: "2-cryptoguy-trading-zone",
-        parent_id: "another-category",
-      },
-    ],
-  });
-
-  assert.deepEqual(plan.category, {
-    action: "reuse",
-    id: "category-1",
-    name: DISCORD_CATEGORY_NAME,
-  });
-  assert.deepEqual(
-    plan.channels.map(({ templateId, action, id }) => ({
-      templateId,
-      action,
-      id: id ?? null,
-    })),
-    [
-      { templateId: 1, action: "reuse", id: "channel-1" },
-      { templateId: 2, action: "create", id: null },
-      { templateId: 3, action: "create", id: null },
-    ],
-  );
-});
-
-test("Discord initialization plan creates the category once for a new guild", () => {
-  const plan = buildDiscordInitializationPlan({
-    guildId: "guild-2",
-    selectedTemplateIds: [3, 5],
-    existingChannels: [],
-  });
-  assert.deepEqual(plan.category, {
-    action: "create",
-    id: null,
-    name: DISCORD_CATEGORY_NAME,
-  });
-  assert.deepEqual(
-    plan.channels.map((channel) => [channel.templateId, channel.position]),
-    [
-      [3, 2],
-      [5, 4],
-    ],
-  );
-});
-
 test("Discord routes mirror matching Demo channels to every initialized target", () => {
   const config = normalizeDiscordConfig({
     demoGuildId: "demo",
@@ -127,24 +147,24 @@ test("Discord routes mirror matching Demo channels to every initialized target",
         guildId: "demo",
         guildName: "Demo Academy",
         channels: [
-          { templateId: 1, channelId: "demo-1", name: "1-read-first-disclaimer" },
-          { templateId: 3, channelId: "demo-3", name: "3-market-events" },
+          { templateKey: "discord:a", channelId: "demo-1", name: "rules" },
+          { templateKey: "discord:b", channelId: "demo-3", name: "market-events" },
         ],
       },
       targetB: {
         guildId: "targetB",
         guildName: "Target B",
         channels: [
-          { templateId: 1, channelId: "target-b-1", name: "1-read-first-disclaimer" },
-          { templateId: 2, channelId: "target-b-2", name: "2-cryptoguy-trading-zone" },
+          { templateKey: "discord:a", channelId: "target-b-1", name: "rules" },
+          { templateKey: "discord:c", channelId: "target-b-2", name: "signals" },
         ],
       },
       targetA: {
         guildId: "targetA",
         guildName: "Target A",
         channels: [
-          { templateId: 1, channelId: "target-a-1", name: "1-read-first-disclaimer" },
-          { templateId: 3, channelId: "target-a-3", name: "3-market-events" },
+          { templateKey: "discord:a", channelId: "target-a-1", name: "rules" },
+          { templateKey: "discord:b", channelId: "target-a-3", name: "market-events" },
         ],
       },
     },
@@ -155,12 +175,12 @@ test("Discord routes mirror matching Demo channels to every initialized target",
       route.sourceChannelId,
       route.targetGuildId,
       route.targetChannelId,
-      route.templateId,
+      route.templateKey,
     ]),
     [
-      ["demo-1", "targetA", "target-a-1", 1],
-      ["demo-3", "targetA", "target-a-3", 3],
-      ["demo-1", "targetB", "target-b-1", 1],
+      ["demo-1", "targetA", "target-a-1", "discord:a"],
+      ["demo-3", "targetA", "target-a-3", "discord:b"],
+      ["demo-1", "targetB", "target-b-1", "discord:a"],
     ],
   );
 });

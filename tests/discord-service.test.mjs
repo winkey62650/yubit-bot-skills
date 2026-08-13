@@ -6,6 +6,7 @@ import {
   getDiscordConfig,
   getDiscordStatus,
   initializeDiscordGuild,
+  refreshDiscordDemoTemplate,
   saveDiscordConfig,
   sendDiscordManualPublish,
   sendDiscordMessage,
@@ -40,7 +41,13 @@ test("Discord health verifies every initialized channel and applies permission o
         guildId: "guild-1",
         guildName: "Stored Demo",
         channels: [
-          { templateId: 1, channelId: "channel-ok", name: "updates" },
+          {
+            templateKey: "discord:source-updates",
+            sourceChannelId: "source-updates",
+            sourceCategoryId: "source-category",
+            channelId: "channel-ok",
+            name: "updates",
+          },
           { templateId: 2, channelId: "channel-blocked", name: "signals" },
         ],
       },
@@ -73,6 +80,9 @@ test("Discord health verifies every initialized channel and applies permission o
   assert.equal(result.summary.blockedChannels, 1);
   assert.equal(result.guilds[0].guildName, "Live Demo");
   assert.equal(result.guilds[0].channels[0].canSend, true);
+  assert.equal(result.guilds[0].channels[0].templateKey, "discord:source-updates");
+  assert.equal(result.guilds[0].channels[0].sourceChannelId, "source-updates");
+  assert.equal("templateId" in result.guilds[0].channels[0], false);
   assert.equal(result.guilds[0].channels[1].canSend, false);
 });
 
@@ -277,6 +287,127 @@ test("Discord guild initialization preserves earlier partial channel selections"
     ),
     [1, 3],
   );
+});
+
+test("Discord Demo refresh reads TheMoonShow channels and initial content", async () => {
+  const repository = createRepository();
+  const calls = [];
+  const fetchImpl = async (url) => {
+    const pathname = new URL(url).pathname;
+    calls.push(pathname);
+    if (pathname.endsWith("/users/@me/guilds")) return jsonResponse(200, [
+      { id: "other", name: "Other Server" },
+      { id: "moon", name: "TheMoonShow VIP Community" },
+    ]);
+    if (pathname.endsWith("/guilds/moon")) {
+      return jsonResponse(200, { id: "moon", name: "TheMoonShow VIP Community" });
+    }
+    if (pathname.endsWith("/guilds/moon/channels")) return jsonResponse(200, [
+      { id: "cat", name: "VIP", type: 4, position: 1 },
+      { id: "trade", name: "trade-setups", type: 0, parent_id: "cat", position: 2 },
+      { id: "voice", name: "lounge", type: 2, parent_id: "cat", position: 3 },
+    ]);
+    if (pathname.endsWith("/channels/trade/messages")) return jsonResponse(200, [
+      { id: "m2", content: "Second", timestamp: "2026-08-14T02:00:00.000Z", attachments: [] },
+      { id: "m1", content: "First", timestamp: "2026-08-14T01:00:00.000Z", attachments: [{ url: "https://cdn.example/chart.png" }] },
+    ]);
+    throw new Error(`Unexpected Discord request: ${pathname}`);
+  };
+
+  const result = await refreshDiscordDemoTemplate({
+    repository,
+    token: "secret",
+    fetchImpl,
+    now: new Date("2026-08-14T03:00:00.000Z"),
+  });
+
+  assert.equal(result.guildId, "moon");
+  assert.deepEqual(result.channels.map((channel) => channel.name), ["trade-setups"]);
+  assert.deepEqual(result.channels[0].messages.map((message) => message.sourceMessageId), ["m1", "m2"]);
+  assert.equal(calls.includes("/channels/voice/messages"), false);
+  const config = await getDiscordConfig({ repository });
+  assert.equal(config.demoGuildId, "moon");
+  assert.equal(config.demoTemplate.guildName, "TheMoonShow VIP Community");
+  assert.equal(config.guilds.moon.channels[0].templateKey, "discord:trade");
+});
+
+test("dynamic Discord initialization mirrors Demo structure and seeds content only once", async () => {
+  const repository = createRepository();
+  await saveDiscordConfig({
+    demoGuildId: "moon",
+    demoTemplate: {
+      guildId: "moon",
+      guildName: "TheMoonShow VIP Community",
+      capturedAt: "2026-08-14T03:00:00.000Z",
+      categories: [{ templateKey: "category:cat", sourceCategoryId: "cat", name: "VIP", position: 1 }],
+      channels: [{
+        templateKey: "discord:trade",
+        sourceChannelId: "trade",
+        sourceCategoryId: "cat",
+        name: "trade-setups",
+        type: 0,
+        position: 2,
+        topic: "Trade ideas",
+        nsfw: false,
+        rateLimitPerUser: 0,
+        messages: [
+          { sourceMessageId: "m1", content: "First", attachmentUrls: ["https://cdn.example/chart.png"], embeds: [], createdAt: "2026-08-14T01:00:00.000Z" },
+          { sourceMessageId: "m2", content: "Second", attachmentUrls: [], embeds: [], createdAt: "2026-08-14T02:00:00.000Z" },
+        ],
+      }],
+    },
+    guilds: {
+      moon: {
+        guildId: "moon",
+        guildName: "TheMoonShow VIP Community",
+        channels: [{ templateKey: "discord:trade", sourceChannelId: "trade", sourceCategoryId: "cat", channelId: "trade", name: "trade-setups" }],
+      },
+    },
+  }, { repository });
+
+  const liveChannels = [];
+  const mutations = [];
+  let nextId = 1;
+  const fetchImpl = async (url, options = {}) => {
+    const pathname = new URL(url).pathname;
+    if (pathname.endsWith("/guilds/target") && !pathname.endsWith("/channels")) {
+      return jsonResponse(200, { id: "target", name: "Partner Server" });
+    }
+    if (pathname.endsWith("/guilds/target/channels") && !options.method) {
+      return jsonResponse(200, liveChannels);
+    }
+    if (pathname.endsWith("/guilds/target/channels") && options.method === "POST") {
+      const body = JSON.parse(options.body);
+      const created = { id: `new-${nextId++}`, ...body, parent_id: body.parent_id ?? null };
+      liveChannels.push(created);
+      mutations.push({ kind: "channel", body });
+      return jsonResponse(201, created);
+    }
+    if (pathname.endsWith("/channels/new-2/messages") && options.method === "POST") {
+      const body = JSON.parse(options.body);
+      mutations.push({ kind: "message", body });
+      return jsonResponse(201, { id: `sent-${mutations.length}` });
+    }
+    throw new Error(`Unexpected Discord request: ${pathname}`);
+  };
+
+  await initializeDiscordGuild(
+    { guildId: "target", selectedTemplateKeys: ["discord:trade"] },
+    { token: "secret", repository, fetchImpl },
+  );
+  await initializeDiscordGuild(
+    { guildId: "target", selectedTemplateKeys: ["discord:trade"] },
+    { token: "secret", repository, fetchImpl },
+  );
+
+  assert.equal(mutations.filter((item) => item.kind === "channel").length, 2);
+  assert.equal(mutations.filter((item) => item.kind === "message").length, 2);
+  assert.deepEqual(mutations.filter((item) => item.kind === "message").map((item) => item.body.content), [
+    "First\nhttps://cdn.example/chart.png",
+    "Second",
+  ]);
+  const target = (await getDiscordConfig({ repository })).guilds.target;
+  assert.deepEqual(target.channels[0].seededSourceMessageIds, ["m1", "m2"]);
 });
 
 test("Discord service reports an actionable missing-token status", async () => {

@@ -31,6 +31,13 @@ test("Discord 工作台只保留连接和初始化能力", () => {
   assert.match(workspace, /status\.gateway\?\.online/);
   assert.doesNotMatch(workspace, /manual-publish/);
   assert.doesNotMatch(workspace, /Demo.*目标同步规则/s);
+  assert.match(workspace, /TheMoonShow VIP Community/);
+  assert.match(workspace, /template-refresh/);
+  assert.match(workspace, /selectedTemplateKeys/);
+  assert.match(workspace, /channel\.messages\?\.length/);
+  assert.doesNotMatch(workspace, /initialMessages/);
+  assert.doesNotMatch(workspace, /CHANNEL_TEMPLATES/);
+  assert.doesNotMatch(workspace, /1-read-first-disclaimer/);
 });
 
 test("Discord 内容分发中心支持直接发布并独立管理自动发布与同步规则", () => {
@@ -86,6 +93,7 @@ test("Discord 管理 API 只暴露受控动作", () => {
   assert.match(route, /channelIds/);
   assert.match(route, /credential-save/);
   assert.match(route, /credential-clear/);
+  assert.match(route, /template-refresh/);
   assert.match(route, /saveDiscordCredentials/);
   assert.match(route, /clearDiscordCredentials/);
   assert.match(route, /initialized/i);

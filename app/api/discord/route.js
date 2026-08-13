@@ -8,6 +8,7 @@ import {
   checkDiscordHealth,
   getDiscordStatus,
   initializeDiscordGuild,
+  refreshDiscordDemoTemplate,
   sendDiscordManualPublish,
   sendDiscordTestMessage,
   updateDiscordSettings,
@@ -61,11 +62,14 @@ export async function POST(request) {
     } else if (action === "initialize") {
       const initialized = await initializeDiscordGuild({
         guildId: body.guildId,
+        selectedTemplateKeys: body.templateKeys,
         selectedTemplateIds: body.templateIds,
         dryRun: body.dryRun === true,
         markAsDemo: body.markAsDemo === true,
       });
       result = { initialized };
+    } else if (action === "template-refresh") {
+      result = { demoTemplate: await refreshDiscordDemoTemplate() };
     } else if (action === "settings") {
       result = {
         settings: await updateDiscordSettings({

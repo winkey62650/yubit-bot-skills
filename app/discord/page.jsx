@@ -5,15 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import ConsoleShell from "../components/ConsoleShell";
 import { Card, Field, PageHeader, StatusPill, inputClass } from "../components/ui";
 
-const CHANNEL_TEMPLATES = [
-  { id: 1, label: "1. READ FIRST - DISCLAIMER" },
-  { id: 2, label: "2. CryptoGuy Trading Zone" },
-  { id: 3, label: "3. Market Events" },
-  { id: 4, label: "4. Market Analysis - Crypto/Stocks/TradFi" },
-  { id: 5, label: "5. Community Signal" },
-  { id: 6, label: "6. Smart Money Tracker" },
-  { id: 7, label: "7. YUBIT Updates" },
-];
+const DISCORD_DEMO_GUILD_NAME = "TheMoonShow VIP Community";
 
 const initialStatus = {
   configured: false,
@@ -22,7 +14,7 @@ const initialStatus = {
   installUrl: "",
   bot: null,
   guilds: [],
-  config: { guilds: {}, routes: [], demoGuildId: "", syncEnabled: false },
+  config: { guilds: {}, routes: [], demoGuildId: "", syncEnabled: false, demoTemplate: null },
   gateway: null,
 };
 
@@ -39,8 +31,7 @@ export default function DiscordCommunityPage() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [guildId, setGuildId] = useState("");
-  const [selectedTemplateIds, setSelectedTemplateIds] = useState(CHANNEL_TEMPLATES.map(({ id }) => id));
-  const [markAsDemo, setMarkAsDemo] = useState(false);
+  const [selectedTemplateKeys, setSelectedTemplateKeys] = useState([]);
   const [appId, setAppId] = useState("");
   const [publicKey, setPublicKey] = useState("");
   const [botToken, setBotToken] = useState("");
@@ -53,7 +44,17 @@ export default function DiscordCommunityPage() {
       credentials: { ...initialStatus.credentials, ...(payload?.credentials || {}) },
     };
     setStatus(next);
-    setGuildId((current) => current || next.guilds?.[0]?.id || "");
+    const demoChannels = next.config.demoTemplate?.channels || [];
+    const targets = (next.guilds || []).filter((guild) => (
+      String(guild.id) !== String(next.config.demoGuildId || "")
+      && guild.name !== DISCORD_DEMO_GUILD_NAME
+    ));
+    setGuildId((current) => targets.some((guild) => String(guild.id) === String(current)) ? current : targets[0]?.id || "");
+    setSelectedTemplateKeys((current) => {
+      const available = new Set(demoChannels.map(({ templateKey }) => templateKey));
+      const retained = current.filter((key) => available.has(key));
+      return retained.length ? retained : demoChannels.map(({ templateKey }) => templateKey);
+    });
     setAppId(next.credentials.appId || "");
     setPublicKey(next.credentials.publicKey || "");
   }, []);
@@ -113,23 +114,36 @@ export default function DiscordCommunityPage() {
     if (result) setBotToken("");
   }
 
-  function toggleTemplate(templateId) {
-    setSelectedTemplateIds((current) => current.includes(templateId)
-      ? current.filter((id) => id !== templateId)
-      : [...current, templateId].sort((left, right) => left - right));
+  const demoTemplate = status.config.demoTemplate;
+  const targetGuilds = useMemo(() => status.guilds.filter((guild) => (
+    String(guild.id) !== String(status.config.demoGuildId || "")
+    && guild.name !== DISCORD_DEMO_GUILD_NAME
+  )), [status.config.demoGuildId, status.guilds]);
+
+  function toggleTemplate(templateKey) {
+    setSelectedTemplateKeys((current) => current.includes(templateKey)
+      ? current.filter((key) => key !== templateKey)
+      : [...current, templateKey]);
+  }
+
+  async function refreshTemplate() {
+    await runAction("template-refresh", {}, `已重新读取 ${DISCORD_DEMO_GUILD_NAME} 的频道与内容。`);
   }
 
   async function initialize(dryRun) {
     if (!guildId) return setError("请先选择一个 Discord Server。");
-    if (!selectedTemplateIds.length) return setError("请至少选择一个频道模板。");
+    if (!demoTemplate) return setError(`请先读取 ${DISCORD_DEMO_GUILD_NAME}。`);
+    if (!selectedTemplateKeys.length) return setError("请至少选择一个 Demo 频道。");
     const result = await runAction(
       "initialize",
-      { guildId, templateIds: selectedTemplateIds, dryRun, markAsDemo },
+      { guildId, templateKeys: selectedTemplateKeys, dryRun },
       dryRun ? "初始化预览已生成，尚未修改 Server。" : "频道初始化完成。",
     );
     if (dryRun && result?.initialized?.plan) {
       const channels = result.initialized.plan.channels || [];
-      setNotice(`初始化预览：将新建 ${channels.filter(({ action }) => action === "create").length} 个频道，复用 ${channels.filter(({ action }) => action !== "create").length} 个频道。`);
+      const categories = result.initialized.plan.categories || [];
+      const messages = channels.reduce((sum, channel) => sum + Number(channel.initialMessageCount || 0), 0);
+      setNotice(`初始化预览：${categories.length} 个分类、${channels.length} 个频道、${messages} 条可复制内容。`);
     }
   }
 
@@ -176,15 +190,24 @@ export default function DiscordCommunityPage() {
 
       <Card className="mt-6 p-6">
         <h2 className="text-xl font-black">初始化频道</h2>
-        <p className="mt-2 text-sm text-ops-muted">选择 Server 与需要创建的频道；重复执行会复用已有频道。</p>
+        <p className="mt-2 text-sm text-ops-muted">模板只读取 <strong>{DISCORD_DEMO_GUILD_NAME}</strong> 的真实分类、频道顺序和可复制内容，不再使用 Telegram 编号频道。重复执行会复用已有频道，并跳过已复制内容。</p>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <button type="button" disabled={busy === "template-refresh"} onClick={refreshTemplate} className="rounded-lg border border-ops-line px-4 py-2 text-sm font-black disabled:opacity-50">重新读取 Demo</button>
+          <span className="text-xs text-ops-muted">最近读取：{formatTime(demoTemplate?.capturedAt)}</span>
+        </div>
         <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(260px,0.8fr)_minmax(0,1.2fr)]">
           <div className="grid gap-4">
-            <Field label="Discord Server"><select className={inputClass} value={guildId} onChange={(event) => setGuildId(event.target.value)}><option value="">请选择 Server</option>{status.guilds.map((guild) => <option key={guild.id} value={guild.id}>{guild.name}</option>)}</select></Field>
-            <label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={markAsDemo} onChange={(event) => setMarkAsDemo(event.target.checked)} />设为 Discord Demo Server</label>
+            <Field label="目标 Discord Server"><select className={inputClass} value={guildId} onChange={(event) => setGuildId(event.target.value)}><option value="">请选择目标 Server</option>{targetGuilds.map((guild) => <option key={guild.id} value={guild.id}>{guild.name}</option>)}</select></Field>
             {selectedGuild && <div className="rounded-lg bg-ops-soft p-3 text-sm">当前选择：<strong>{selectedGuild.name}</strong></div>}
           </div>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {CHANNEL_TEMPLATES.map((template) => <label key={template.id} className="flex items-center gap-3 rounded-lg border border-ops-line p-3 text-sm font-bold"><input type="checkbox" checked={selectedTemplateIds.includes(template.id)} onChange={() => toggleTemplate(template.id)} />{template.label}</label>)}
+          <div className="grid gap-3">
+            {!demoTemplate?.channels?.length && <div className="rounded-lg border border-dashed border-ops-line p-5 text-sm text-ops-muted">尚未读取 Demo。确认 Bot 已加入 {DISCORD_DEMO_GUILD_NAME} 后点击“重新读取 Demo”。</div>}
+            {(demoTemplate?.categories || []).map((category) => {
+              const channels = demoTemplate.channels.filter((channel) => channel.sourceCategoryId === category.sourceCategoryId);
+              if (!channels.length) return null;
+              return <div key={category.templateKey} className="rounded-xl border border-ops-line p-4"><div className="mb-3 text-sm font-black">{category.name}</div><div className="grid gap-2 sm:grid-cols-2">{channels.map((channel) => <label key={channel.templateKey} className="flex items-start gap-3 rounded-lg bg-ops-soft p-3 text-sm font-bold"><input className="mt-1" type="checkbox" checked={selectedTemplateKeys.includes(channel.templateKey)} onChange={() => toggleTemplate(channel.templateKey)} /><span><span className="block">#{channel.name}</span><span className="mt-1 block text-xs font-normal text-ops-muted">{channel.messages?.length || 0} 条初始内容</span></span></label>)}</div></div>;
+            })}
+            {!!demoTemplate?.channels?.filter((channel) => !channel.sourceCategoryId).length && <div className="rounded-xl border border-ops-line p-4"><div className="mb-3 text-sm font-black">未分类频道</div><div className="grid gap-2 sm:grid-cols-2">{demoTemplate.channels.filter((channel) => !channel.sourceCategoryId).map((channel) => <label key={channel.templateKey} className="flex items-start gap-3 rounded-lg bg-ops-soft p-3 text-sm font-bold"><input className="mt-1" type="checkbox" checked={selectedTemplateKeys.includes(channel.templateKey)} onChange={() => toggleTemplate(channel.templateKey)} /><span>#{channel.name}</span></label>)}</div></div>}
           </div>
         </div>
         <div className="mt-5 flex flex-wrap gap-3">
