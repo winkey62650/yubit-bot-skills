@@ -6,6 +6,7 @@ import {
   getDiscordStatus,
   initializeDiscordGuild,
   saveDiscordConfig,
+  sendDiscordManualPublish,
   sendDiscordMessage,
 } from "../lib/discord-service.mjs";
 import { saveDiscordCredentials } from "../lib/discord-credentials.mjs";
@@ -249,8 +250,8 @@ test("Discord service uses encrypted credentials saved from the backend", async 
   const encryptionKey = "11".repeat(32);
   await saveDiscordCredentials(
     {
-      appId: "1530060451705262151",
-      publicKey: "bc88ef40090d4cb47bf169363c6ac53689840849954848e24252f2475135c4ff",
+      appId: "111111111111111111",
+      publicKey: "a".repeat(64),
       botToken: "stored-secret-token",
     },
     { repository, encryptionKey },
@@ -296,5 +297,101 @@ test("Discord message delivery supports text and image embeds", async () => {
     content: "Daily market update",
     embeds: [{ image: { url: "https://cdn.example.com/market.png" } }],
     allowed_mentions: { parse: [] },
+  });
+});
+
+test("Discord manual publish deduplicates targets and isolates per-target failures", async () => {
+  const repository = createRepository();
+  await saveDiscordConfig(
+    {
+      guilds: {
+        "guild-1": {
+          guildId: "guild-1",
+          guildName: "Demo",
+      channels: [
+        { templateId: 1, channelId: "channel-ok", name: "updates" },
+        { templateId: 2, channelId: "channel-fail", name: "signals" },
+          ],
+        },
+      },
+    },
+    { repository },
+  );
+  const requests = [];
+  const result = await sendDiscordManualPublish(
+    {
+      channelIds: ["channel-ok", "channel-fail", "channel-ok", ""],
+      content: "Manual update",
+      imageUrl: "https://cdn.example.com/manual.png",
+    },
+    {
+      token: "manual-secret-token",
+      repository,
+      fetchImpl: async (url) => {
+        const channelId = String(url).match(/channels\/([^/]+)\/messages/)?.[1];
+        requests.push(channelId);
+        if (channelId === "channel-fail") {
+          throw new Error("Missing Access manual-secret-token");
+        }
+        return jsonResponse(200, { id: `message-${channelId}`, channel_id: channelId });
+      },
+    },
+  );
+
+  assert.deepEqual(requests, ["channel-ok", "channel-fail"]);
+  assert.equal(result.attempted, 2);
+  assert.equal(result.delivered, 1);
+  assert.equal(result.failed, 1);
+  assert.deepEqual(result.results[0], {
+    ok: true,
+    channelId: "channel-ok",
+    messageId: "message-channel-ok",
+  });
+  assert.equal(result.results[1].channelId, "channel-fail");
+  assert.equal(result.results[1].ok, false);
+  assert.match(result.results[1].error, /Missing Access/);
+  assert.doesNotMatch(result.results[1].error, /manual-secret-token/);
+});
+
+test("Discord manual publish rejects channels outside initialized destinations", async () => {
+  const repository = createRepository();
+  await saveDiscordConfig(
+    {
+      guilds: {
+        "guild-1": {
+          guildId: "guild-1",
+          guildName: "Demo",
+      channels: [{ templateId: 1, channelId: "channel-allowed", name: "updates" }],
+        },
+      },
+    },
+    { repository },
+  );
+  const requests = [];
+
+  const result = await sendDiscordManualPublish(
+    {
+      channelIds: ["channel-allowed", "channel-unknown"],
+      content: "Manual update",
+    },
+    {
+      token: "manual-secret-token",
+      repository,
+      fetchImpl: async (url) => {
+        const channelId = String(url).match(/channels\/([^/]+)\/messages/)?.[1];
+        requests.push(channelId);
+        return jsonResponse(200, { id: `message-${channelId}`, channel_id: channelId });
+      },
+    },
+  );
+
+  assert.deepEqual(requests, ["channel-allowed"]);
+  assert.equal(result.attempted, 2);
+  assert.equal(result.delivered, 1);
+  assert.equal(result.failed, 1);
+  assert.deepEqual(result.results[1], {
+    ok: false,
+    channelId: "channel-unknown",
+    error: "Discord channel is not an initialized destination.",
   });
 });

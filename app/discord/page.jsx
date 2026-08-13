@@ -58,6 +58,10 @@ export default function DiscordCommunityPage() {
   const [appId, setAppId] = useState("");
   const [publicKey, setPublicKey] = useState("");
   const [botToken, setBotToken] = useState("");
+  const [manualChannelIds, setManualChannelIds] = useState([]);
+  const [manualContent, setManualContent] = useState("");
+  const [manualImageUrl, setManualImageUrl] = useState("");
+  const [manualResults, setManualResults] = useState([]);
 
   const applyStatus = useCallback((payload) => {
     const next = {
@@ -214,6 +218,46 @@ export default function DiscordCommunityPage() {
       { channelId: testChannelId.trim(), content: testContent },
       "测试消息已发送。",
     );
+  }
+
+  function toggleManualChannel(channelId) {
+    setManualChannelIds((current) => (
+      current.includes(channelId)
+        ? current.filter((id) => id !== channelId)
+        : [...current, channelId]
+    ));
+  }
+
+  function getManualTarget(channelId) {
+    for (const guild of initializedGuilds) {
+      const channel = (guild.channels || []).find((item) => item.channelId === channelId);
+      if (channel) return `${guild.guildName} / #${channel.name}`;
+    }
+    return channelId;
+  }
+
+  async function sendManualMessage() {
+    if (!manualChannelIds.length) {
+      setError("请至少选择一个发布频道。");
+      return;
+    }
+    if (!manualContent.trim() && !manualImageUrl.trim()) {
+      setError("请输入消息内容或图片链接。");
+      return;
+    }
+    const result = await runAction(
+      "manual-publish",
+      {
+        channelIds: manualChannelIds,
+        content: manualContent,
+        imageUrl: manualImageUrl,
+      },
+      "手动消息发送完成。",
+    );
+    const summary = result?.manualPublish;
+    if (!summary) return;
+    setManualResults(summary.results || []);
+    setNotice(`手动发布完成：成功 ${summary.delivered} 个，失败 ${summary.failed} 个。`);
   }
 
   const gatewayOnline = status.gateway?.online === true;
@@ -568,6 +612,95 @@ export default function DiscordCommunityPage() {
           >
             发送测试消息
           </button>
+        </div>
+      </Card>
+
+      <Card className="mt-5 p-6">
+        <h2 className="text-xl font-black">5. 手动多目标发布</h2>
+        <p className="mt-2 text-sm leading-6 text-ops-muted">
+          将同一条文字或图片消息直接发送到多个 Discord 频道。Server 默认折叠，单个目标失败不会影响其他目标。
+        </p>
+
+        <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_1.3fr]">
+          <div className="space-y-3">
+            {initializedGuilds.length ? initializedGuilds.map((guild) => {
+              const selectedCount = (guild.channels || [])
+                .filter((channel) => manualChannelIds.includes(channel.channelId)).length;
+              return (
+                <details key={guild.guildId} className="overflow-hidden rounded-lg border border-ops-line bg-white">
+                  <summary className="cursor-pointer px-4 py-3 font-black">
+                    {guild.guildName}
+                    <span className="ml-2 text-xs font-bold text-ops-muted">
+                      已选 {selectedCount}/{guild.channels?.length || 0}
+                    </span>
+                  </summary>
+                  <div className="border-t border-ops-line px-4 py-2">
+                    {(guild.channels || []).map((channel) => (
+                      <label
+                        key={`${guild.guildId}:${channel.channelId}`}
+                        className="flex cursor-pointer items-center gap-3 border-b border-ops-line py-3 last:border-0"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={manualChannelIds.includes(channel.channelId)}
+                          onChange={() => toggleManualChannel(channel.channelId)}
+                        />
+                        <span className="text-sm font-bold">#{channel.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </details>
+              );
+            }) : (
+              <div className="rounded-lg border border-dashed border-ops-line p-4 text-sm text-ops-muted">
+                请先初始化至少一个 Discord Server。
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-4">
+            <Field label="消息内容">
+              <textarea
+                className={`${inputClass} min-h-36 resize-y`}
+                value={manualContent}
+                maxLength={2000}
+                placeholder="输入需要发布到所选频道的内容"
+                onChange={(event) => setManualContent(event.target.value)}
+              />
+            </Field>
+            <Field label="图片链接（可选）">
+              <input
+                className={inputClass}
+                value={manualImageUrl}
+                placeholder="https://example.com/image.png"
+                onChange={(event) => setManualImageUrl(event.target.value)}
+              />
+            </Field>
+            <button
+              type="button"
+              className="min-h-10 rounded-lg bg-ops-accent px-5 py-2 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={Boolean(busy) || !manualChannelIds.length || (!manualContent.trim() && !manualImageUrl.trim())}
+              onClick={sendManualMessage}
+            >
+              {busy === "manual-publish" ? "发送中…" : `发送到 ${manualChannelIds.length} 个频道`}
+            </button>
+
+            {manualResults.length > 0 && (
+              <div className="overflow-hidden rounded-lg border border-ops-line">
+                {manualResults.map((result) => (
+                  <div
+                    key={result.channelId}
+                    className="flex items-start justify-between gap-4 border-b border-ops-line px-4 py-3 text-sm last:border-0"
+                  >
+                    <span className="font-bold">{getManualTarget(result.channelId)}</span>
+                    <span className={result.ok ? "font-bold text-emerald-700" : "max-w-64 text-right font-bold text-red-700"}>
+                      {result.ok ? "发送成功" : result.error || "发送失败"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </Card>
     </ConsoleShell>

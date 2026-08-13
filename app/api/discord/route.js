@@ -7,6 +7,7 @@ import {
 import {
   getDiscordStatus,
   initializeDiscordGuild,
+  sendDiscordManualPublish,
   sendDiscordTestMessage,
   updateDiscordSettings,
 } from "../../../lib/discord-service.mjs";
@@ -74,6 +75,14 @@ export async function POST(request) {
     } else if (action === "test-message") {
       result = {
         testMessage: await sendDiscordTestMessage(body.channelId, body.content),
+      };
+    } else if (action === "manual-publish") {
+      result = {
+        manualPublish: await sendDiscordManualPublish({
+          channelIds: body.channelIds,
+          content: body.content,
+          imageUrl: body.imageUrl,
+        }),
       };
     } else {
       return json({ ok: false, error: "不支持的 Discord 操作。" }, { status: 400 });

@@ -99,6 +99,44 @@ test("relays a Demo message to every matching initialized target", async () => {
   );
 });
 
+test("does not redeliver the same Discord source event", async () => {
+  const repository = createRepository(configured);
+  const sent = [];
+  const client = {
+    user: { id: "bot-1" },
+    guilds: { cache: { size: 3 } },
+    channels: {
+      async fetch(channelId) {
+        return {
+          async send() {
+            sent.push(channelId);
+            return { id: `sent-${channelId}` };
+          },
+        };
+      },
+    },
+  };
+  const message = {
+    id: "source-message-1",
+    guildId: "demo",
+    channelId: "source-3",
+    content: "Market brief",
+    author: { bot: false },
+    webhookId: null,
+    attachments: new Map(),
+  };
+
+  const first = await relayDiscordMessage(message, { repository, client });
+  const replay = await relayDiscordMessage(message, { repository, client });
+
+  assert.equal(first.delivered, 2);
+  assert.equal(first.skipped, 0);
+  assert.equal(replay.delivered, 0);
+  assert.equal(replay.skipped, 2);
+  assert.equal(replay.failed, 0);
+  assert.deepEqual(sent, ["target-a-3", "target-b-3"]);
+});
+
 test("isolates a failed target and records a sanitized error", async () => {
   const repository = createRepository(configured);
   const client = {

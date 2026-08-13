@@ -25,6 +25,10 @@ test("Discord 页面覆盖连接、初始化、同步与测试闭环", () => {
   assert.match(page, /初始化频道/);
   assert.match(page, /Demo.*目标|同步规则/s);
   assert.match(page, /发送测试消息/);
+  assert.match(page, /manual-publish/);
+  assert.match(page, /manualChannelIds/);
+  assert.match(page, /manualImageUrl/);
+  assert.match(page, /manualResults/);
   assert.match(page, /1-read-first-disclaimer/);
   assert.match(page, /7-yubit-updates/);
   assert.match(page, /status\.gateway\?\.online/);
@@ -39,9 +43,12 @@ test("Discord 管理 API 只暴露受控动作", () => {
   assert.match(route, /initializeDiscordGuild/);
   assert.match(route, /updateDiscordSettings/);
   assert.match(route, /sendDiscordTestMessage/);
+  assert.match(route, /sendDiscordManualPublish/);
   assert.match(route, /initialize/);
   assert.match(route, /settings/);
   assert.match(route, /test-message/);
+  assert.match(route, /manual-publish/);
+  assert.match(route, /channelIds/);
   assert.match(route, /credential-save/);
   assert.match(route, /credential-clear/);
   assert.match(route, /saveDiscordCredentials/);

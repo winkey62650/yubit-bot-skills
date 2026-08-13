@@ -9,6 +9,8 @@ import {
 } from "../lib/discord-credentials.mjs";
 
 const encryptionKey = "11".repeat(32);
+const appId = "111111111111111111";
+const publicKey = "a".repeat(64);
 
 function createRepository() {
   const meta = new Map();
@@ -28,8 +30,8 @@ test("Discord credentials are encrypted at rest and can be loaded server-side", 
   const repository = createRepository();
   await saveDiscordCredentials(
     {
-      appId: "1530060451705262151",
-      publicKey: "bc88ef40090d4cb47bf169363c6ac53689840849954848e24252f2475135c4ff",
+      appId,
+      publicKey,
       botToken: "new-secret-token",
     },
     { repository, encryptionKey },
@@ -38,8 +40,8 @@ test("Discord credentials are encrypted at rest and can be loaded server-side", 
   const stored = JSON.stringify([...repository.meta.values()]);
   assert.equal(stored.includes("new-secret-token"), false);
   assert.deepEqual(await loadDiscordCredentials({ repository, encryptionKey }), {
-    appId: "1530060451705262151",
-    publicKey: "bc88ef40090d4cb47bf169363c6ac53689840849954848e24252f2475135c4ff",
+    appId,
+    publicKey,
     botToken: "new-secret-token",
   });
 });
@@ -48,16 +50,16 @@ test("credential status is safe for the browser and preserves an existing token"
   const repository = createRepository();
   await saveDiscordCredentials(
     {
-      appId: "1530060451705262151",
-      publicKey: "bc88ef40090d4cb47bf169363c6ac53689840849954848e24252f2475135c4ff",
+      appId,
+      publicKey,
       botToken: "new-secret-token",
     },
     { repository, encryptionKey },
   );
   await saveDiscordCredentials(
     {
-      appId: "1530060451705262151",
-      publicKey: "bc88ef40090d4cb47bf169363c6ac53689840849954848e24252f2475135c4ff",
+      appId,
+      publicKey,
       botToken: "",
     },
     { repository, encryptionKey },
@@ -67,7 +69,7 @@ test("credential status is safe for the browser and preserves an existing token"
   assert.equal(status.configured, true);
   assert.equal(
     status.publicKey,
-    "bc88ef40090d4cb47bf169363c6ac53689840849954848e24252f2475135c4ff",
+    publicKey,
   );
   assert.equal(status.tokenConfigured, true);
   assert.equal(JSON.stringify(status).includes("new-secret-token"), false);
@@ -81,8 +83,8 @@ test("Discord credentials can be cleared", async () => {
   const repository = createRepository();
   await saveDiscordCredentials(
     {
-      appId: "1530060451705262151",
-      publicKey: "bc88ef40090d4cb47bf169363c6ac53689840849954848e24252f2475135c4ff",
+      appId,
+      publicKey,
       botToken: "new-secret-token",
     },
     { repository, encryptionKey },
@@ -102,8 +104,8 @@ test("saving a Discord token requires a valid server encryption key", async () =
   await assert.rejects(
     saveDiscordCredentials(
       {
-        appId: "1530060451705262151",
-        publicKey: "bc88ef40090d4cb47bf169363c6ac53689840849954848e24252f2475135c4ff",
+        appId,
+        publicKey,
         botToken: "new-secret-token",
       },
       { repository, encryptionKey: "invalid" },
