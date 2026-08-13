@@ -331,6 +331,45 @@ test("Discord Demo refresh reads TheMoonShow channels and initial content", asyn
   assert.equal(config.guilds.moon.channels[0].templateKey, "discord:trade");
 });
 
+test("Discord Demo refresh keeps channels whose message history is inaccessible", async () => {
+  const repository = createRepository();
+  const fetchImpl = async (url) => {
+    const pathname = new URL(url).pathname;
+    if (pathname.endsWith("/users/@me/guilds")) return jsonResponse(200, [
+      { id: "moon", name: "TheMoonShow VIP Community" },
+    ]);
+    if (pathname.endsWith("/guilds/moon")) {
+      return jsonResponse(200, { id: "moon", name: "TheMoonShow VIP Community" });
+    }
+    if (pathname.endsWith("/guilds/moon/channels")) return jsonResponse(200, [
+      { id: "cat", name: "VIP", type: 4, position: 1 },
+      { id: "public", name: "market-insights", type: 0, parent_id: "cat", position: 2 },
+      { id: "private", name: "private-desk", type: 0, parent_id: "cat", position: 3 },
+    ]);
+    if (pathname.endsWith("/channels/public/messages")) return jsonResponse(200, [
+      { id: "m1", content: "Market update", timestamp: "2026-08-14T01:00:00.000Z", attachments: [] },
+    ]);
+    if (pathname.endsWith("/channels/private/messages")) {
+      return jsonResponse(403, { message: "Missing Access" });
+    }
+    throw new Error(`Unexpected Discord request: ${pathname}`);
+  };
+
+  const result = await refreshDiscordDemoTemplate({
+    repository,
+    token: "secret",
+    fetchImpl,
+    now: new Date("2026-08-14T03:00:00.000Z"),
+  });
+
+  assert.deepEqual(result.channels.map((channel) => channel.name), ["market-insights", "private-desk"]);
+  assert.equal(result.channels[0].contentReadStatus, "ok");
+  assert.equal(result.channels[0].messages.length, 1);
+  assert.equal(result.channels[1].contentReadStatus, "unavailable");
+  assert.deepEqual(result.channels[1].messages, []);
+  assert.equal(result.unavailableContentChannelCount, 1);
+});
+
 test("dynamic Discord initialization mirrors Demo structure and seeds content only once", async () => {
   const repository = createRepository();
   await saveDiscordConfig({
