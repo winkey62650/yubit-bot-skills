@@ -38,6 +38,32 @@ test("admin retains full access and restricted navigation is filtered", () => {
   );
 });
 
+test("nested platform navigation keeps only sections with visible destinations", () => {
+  const sections = [
+    {
+      key: "telegram",
+      roles: ["admin", "manual_publisher"],
+      items: [
+        { href: "/distribution", roles: ["admin"] },
+        { href: "/composer", roles: ["admin", "manual_publisher"] }
+      ]
+    },
+    {
+      key: "discord",
+      roles: ["admin"],
+      items: [{ href: "/discord", roles: ["admin"] }]
+    }
+  ];
+
+  assert.deepEqual(filterNavigationForRole(sections, "manual_publisher"), [
+    {
+      key: "telegram",
+      roles: ["admin", "manual_publisher"],
+      items: [{ href: "/composer", roles: ["admin", "manual_publisher"] }]
+    }
+  ]);
+});
+
 test("restricted page redirects use the public application origin behind a proxy", async () => {
   const middleware = await readFile(new URL("../middleware.js", import.meta.url), "utf8");
   assert.match(

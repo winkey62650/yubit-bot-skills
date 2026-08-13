@@ -7,36 +7,64 @@ import { filterNavigationForRole, ROLES } from "../../lib/access-control.mjs";
 import { LanguageToggle, useLanguage } from "./LanguageProvider";
 import { useSession } from "./SessionProvider";
 
-const navItems = [
-  { href: "/distribution?view=site-analytics", label: "nav.analytics", view: "site-analytics", roles: [ROLES.ADMIN] },
-  { href: "/distribution?view=automation", label: "nav.distribution", view: "automation", roles: [ROLES.ADMIN] },
-  { href: "/composer", label: "nav.composer", roles: [ROLES.ADMIN, ROLES.MANUAL_PUBLISHER] },
-  { href: "/group-config", label: "nav.groups", roles: [ROLES.ADMIN] },
-  { href: "/new-group", label: "nav.newGroup", roles: [ROLES.ADMIN] },
-  { href: "/discord", label: "nav.discord", roles: [ROLES.ADMIN] },
-  { href: "/trading", label: "nav.trading", roles: [ROLES.ADMIN] },
-  { href: "/telegram-user-authorization", label: "nav.publisherStatus", roles: [ROLES.ADMIN, ROLES.MANUAL_PUBLISHER] },
-  { href: "/bots", label: "nav.capabilities", roles: [ROLES.ADMIN] },
-  { href: "/settings", label: "nav.settings", roles: [ROLES.ADMIN] }
+const navSections = [
+  {
+    key: "telegram",
+    label: "nav.telegram",
+    roles: [ROLES.ADMIN, ROLES.MANUAL_PUBLISHER],
+    items: [
+      { href: "/distribution?view=automation", label: "nav.distribution", view: "automation", roles: [ROLES.ADMIN] },
+      { href: "/composer", label: "nav.composer", roles: [ROLES.ADMIN, ROLES.MANUAL_PUBLISHER] },
+      { href: "/group-config", label: "nav.groups", roles: [ROLES.ADMIN] },
+      { href: "/new-group", label: "nav.newGroup", roles: [ROLES.ADMIN] },
+      { href: "/telegram-user-authorization", label: "nav.publisherStatus", roles: [ROLES.ADMIN, ROLES.MANUAL_PUBLISHER] },
+      { href: "/bots", label: "nav.capabilities", roles: [ROLES.ADMIN] }
+    ]
+  },
+  {
+    key: "discord",
+    label: "nav.discord",
+    roles: [ROLES.ADMIN],
+    items: [{ href: "/discord", label: "nav.discordWorkspace", roles: [ROLES.ADMIN] }]
+  },
+  {
+    key: "operations",
+    label: "nav.operations",
+    roles: [ROLES.ADMIN],
+    items: [
+      { href: "/distribution?view=site-analytics", label: "nav.analytics", view: "site-analytics", roles: [ROLES.ADMIN] },
+      { href: "/trading", label: "nav.trading", roles: [ROLES.ADMIN] },
+      { href: "/settings", label: "nav.settings", roles: [ROLES.ADMIN] }
+    ]
+  }
 ];
 
 function NavigationLinks({ pathname, distributionView, role, t }) {
   return (
-    <nav className="mt-3 flex gap-2 overflow-x-auto pb-1 lg:mt-0 lg:grid lg:overflow-visible lg:pb-0">
-      {filterNavigationForRole(navItems, role).map((item) => {
-        const active = item.view
-          ? pathname === "/distribution" && distributionView === item.view
-          : pathname === item.href || pathname.startsWith(`${item.href}/`);
-        return (
-          <Link
-            className={`flex min-h-10 shrink-0 items-center whitespace-nowrap rounded-lg px-3 text-left text-sm font-bold transition lg:min-h-12 ${active ? "bg-[#edf7f2] text-ops-accent shadow-sm" : "text-[#33423b] hover:bg-ops-soft"}`}
-            href={item.href}
-            key={item.href}
-          >
-            {t(item.label)}
-          </Link>
-        );
-      })}
+    <nav className="mt-3 flex items-start gap-4 overflow-x-auto pb-1 lg:mt-0 lg:grid lg:gap-5 lg:overflow-visible lg:pb-0">
+      {filterNavigationForRole(navSections, role).map((section) => (
+        <section className="shrink-0 lg:min-w-0" key={section.key}>
+          <div className="px-3 pb-1 text-[11px] font-black uppercase tracking-[0.12em] text-ops-muted">
+            {t(section.label)}
+          </div>
+          <div className="flex gap-2 lg:grid lg:gap-1">
+            {section.items.map((item) => {
+              const active = item.view
+                ? pathname === "/distribution" && distributionView === item.view
+                : pathname === item.href || pathname.startsWith(`${item.href}/`);
+              return (
+                <Link
+                  className={`flex min-h-10 shrink-0 items-center whitespace-nowrap rounded-lg px-3 text-left text-sm font-bold transition lg:min-h-12 ${active ? "bg-[#edf7f2] text-ops-accent shadow-sm" : "text-[#33423b] hover:bg-ops-soft"}`}
+                  href={item.href}
+                  key={item.href}
+                >
+                  {t(item.label)}
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+      ))}
     </nav>
   );
 }

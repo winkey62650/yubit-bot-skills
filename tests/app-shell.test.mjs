@@ -9,3 +9,13 @@ test("app shell declares an existing favicon instead of triggering /favicon.ico 
   assert.match(layout, /icon:\s*["']\/favicon\.svg["']/);
   await access(new URL("public/favicon.svg", root));
 });
+
+test("console navigation groups Telegram and Discord business areas", async () => {
+  const root = new URL("../", import.meta.url);
+  const shell = await readFile(new URL("app/components/ConsoleShell.jsx", root), "utf8");
+
+  assert.match(shell, /const navSections = \[/);
+  assert.match(shell, /key: "telegram"[\s\S]*label: "nav\.telegram"[\s\S]*href: "\/group-config"/);
+  assert.match(shell, /key: "discord"[\s\S]*label: "nav\.discord"[\s\S]*href: "\/discord"/);
+  assert.ok(shell.indexOf('key: "telegram"') < shell.indexOf('key: "discord"'));
+});

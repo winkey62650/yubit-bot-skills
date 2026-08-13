@@ -2,16 +2,22 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("console navigation exposes the trading center after content distribution", async () => {
+test("console navigation groups Telegram, Discord, and operations destinations", async () => {
   const [shell, i18n] = await Promise.all([
     readFile(new URL("../app/components/ConsoleShell.jsx", import.meta.url), "utf8"),
     readFile(new URL("../lib/i18n.mjs", import.meta.url), "utf8")
   ]);
-  const analytics = shell.indexOf('label: "nav.analytics"');
+  const telegram = shell.indexOf('key: "telegram"');
   const distribution = shell.indexOf('label: "nav.distribution"');
-  const trading = shell.indexOf('label: "nav.trading"');
   const bots = shell.indexOf('label: "nav.capabilities"');
-  assert.ok(analytics >= 0 && distribution > analytics && trading > distribution && bots > trading);
+  const discord = shell.indexOf('key: "discord"');
+  const discordWorkspace = shell.indexOf('label: "nav.discordWorkspace"');
+  const operations = shell.indexOf('key: "operations"');
+  const analytics = shell.indexOf('label: "nav.analytics"');
+  const trading = shell.indexOf('label: "nav.trading"');
+  assert.ok(telegram >= 0 && distribution > telegram && bots > distribution);
+  assert.ok(discord > bots && discordWorkspace > discord);
+  assert.ok(operations > discordWorkspace && analytics > operations && trading > analytics);
   assert.match(shell, /href: ["']\/distribution\?view=site-analytics["']/);
   assert.match(shell, /view: ["']site-analytics["']/);
   assert.match(shell, /href: ["']\/trading["']/);
