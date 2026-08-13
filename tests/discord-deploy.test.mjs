@@ -24,7 +24,9 @@ test("DC 部署始终保持 Discord systemd 常驻服务在线等待", () => {
   assert.match(deploy, /yubit-academy-discord\.service/);
   assert.match(deploy, /enable yubit-academy-discord/);
   assert.match(deploy, /restart yubit-academy-discord/);
-  assert.match(deploy, /is-active --quiet yubit-academy-discord/);
+  assert.match(deploy, /systemctl is-active --quiet "\$service"/);
+  assert.match(deploy, /wait_for_service_active yubit-academy-discord\.service/);
+  assert.match(deploy, /journalctl -u "\$service" -n 100 --no-pager/);
   assert.doesNotMatch(deploy, /discord_gateway_enabled/);
   assert.doesNotMatch(deploy, /disable --now yubit-academy-discord/);
   assert.doesNotMatch(deploy, /Discord Gateway did not reach the ready state/);

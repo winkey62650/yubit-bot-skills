@@ -13,6 +13,25 @@ ENV_FILE="${ENV_FILE:-/etc/yubit-academy/production.env}"
 ENABLE_HTTPS="${ENABLE_HTTPS:-1}"
 PATH="$NODE_HOME/bin:$PATH"
 
+wait_for_service_active() {
+  local service="$1"
+  local attempts="${2:-30}"
+  local attempt
+
+  for ((attempt = 1; attempt <= attempts; attempt += 1)); do
+    if sudo systemctl is-active --quiet "$service"; then
+      echo "$service: active"
+      return 0
+    fi
+    sleep 2
+  done
+
+  echo "$service did not become active after $((attempts * 2)) seconds." >&2
+  sudo systemctl status "$service" --no-pager --full >&2 || true
+  sudo journalctl -u "$service" -n 100 --no-pager >&2 || true
+  return 1
+}
+
 if [[ ! -s "$ENV_FILE" ]]; then
   echo "Missing production environment file: $ENV_FILE" >&2
   exit 1
@@ -158,6 +177,9 @@ sudo systemctl enable yubit-academy-worker.service
 sudo systemctl restart yubit-academy-worker.service
 sudo systemctl enable yubit-academy-discord.service
 sudo systemctl restart yubit-academy-discord.service
+wait_for_service_active yubit-academy-web.service
+wait_for_service_active yubit-academy-worker.service
+wait_for_service_active yubit-academy-discord.service
 sudo systemctl reload nginx
 
 if [[ "$ENABLE_HTTPS" == "1" ]]; then
@@ -181,9 +203,9 @@ if [[ "$ip_location" != "https://$SERVER_NAME/" ]]; then
   echo "Server IP does not redirect to the public HTTPS URL: ${ip_location:-missing}" >&2
   exit 1
 fi
-sudo systemctl is-active --quiet yubit-academy-web.service
-sudo systemctl is-active --quiet yubit-academy-worker.service
-sudo systemctl is-active --quiet yubit-academy-discord.service
+wait_for_service_active yubit-academy-web.service 5
+wait_for_service_active yubit-academy-worker.service 5
+wait_for_service_active yubit-academy-discord.service 5
 if sudo grep -Eq '^(DISCORD_APP_ID|DISCORD_PUBLIC_KEY|DISCORD_BOT_TOKEN|DISCORD_GATEWAY_ENABLED)=' "$ENV_FILE"; then
   echo "Legacy Discord environment credentials remain configured." >&2
   exit 1
