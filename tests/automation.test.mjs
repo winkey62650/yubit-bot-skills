@@ -137,6 +137,59 @@ test("automation target resolution keeps a whole-channel destination", () => {
   assert.equal(target.targets[0].threadId, null);
 });
 
+test("automation target resolution preserves mixed Telegram and Discord destinations", () => {
+  const job = AUTOMATION_JOBS.find((item) => item.id === "daily-analysis");
+  const target = automation.distributionTargetsForJob(job, [{
+    id: "mixed-analysis",
+    kind: "automation",
+    contentType: "daily-analysis",
+    enabled: true,
+    targets: [
+      { platform: "telegram", chatId: "-1001", threadId: 10, groupName: "DEMO Academy", topicName: "4. Market Analysis" },
+      { platform: "discord", guildId: "guild-1", channelId: "channel-1", groupName: "Demo Discord", topicName: "market-analysis" }
+    ]
+  }]);
+
+  assert.equal(target.count, 2);
+  assert.deepEqual(target.targets.map((item) => item.platform), ["telegram", "discord"]);
+  assert.equal(target.targets[1].guildId, "guild-1");
+  assert.equal(target.targets[1].channelId, "channel-1");
+});
+
+test("Discord automation plans preserve the approved editorial message shapes", () => {
+  const target = { platform: "discord", guildId: "guild-1", channelId: "channel-1" };
+  const events = automation.buildAutomationDiscordPlans("daily-events", {
+    fullText: "<b>Market Events</b>\n\n1. Event one"
+  }, [target], "https://example.com/events.png");
+  assert.deepEqual(events[0].steps, [
+    { method: "sendMessage", payload: { imageUrl: "https://example.com/events.png" } },
+    { method: "sendMessage", payload: { content: "**Market Events**\n\n1. Event one" } }
+  ]);
+
+  const analysis = automation.buildAutomationDiscordPlans("daily-analysis", {
+    caption: "<b>Daily Market Analysis</b>\nMarket remains constructive."
+  }, [target], "https://example.com/analysis.png");
+  assert.deepEqual(analysis[0].steps, [{
+    method: "sendMessage",
+    payload: {
+      content: "**Daily Market Analysis**\nMarket remains constructive.",
+      imageUrl: "https://example.com/analysis.png"
+    }
+  }]);
+});
+
+test("Discord agent updates use the same fixed X and YouTube templates", () => {
+  const plans = automation.buildAgentUpdateDiscordPlans([
+    { platform: "X", publishedAt: "2026-08-04T01:20:00Z", url: "https://x.com/demo/status/1" },
+    { platform: "YouTube", publishedAt: "2026-08-04T02:20:00Z", url: "https://youtu.be/demo" }
+  ], [{ platform: "discord", guildId: "guild-1", channelId: "channel-1" }]);
+
+  assert.deepEqual(plans[0].steps.map((step) => step.payload.content), [
+    "X Updated + 2026-08-04\nhttps://x.com/demo/status/1",
+    "YouTube Updated + 2026-08-04\nhttps://youtu.be/demo"
+  ]);
+});
+
 test("whale alert turns a material order-book snapshot into approved English copy", () => {
   assert.equal(typeof automation.buildWhaleAlert, "function");
   const alert = automation.buildWhaleAlert({

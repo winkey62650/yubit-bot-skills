@@ -14,14 +14,16 @@ const tabs = [
 const emptyData = {
   metrics: {}, traders: [], accounts: [], destinations: [], signals: [], deliveries: [], logs: [],
 };
+const emptyDiscordStatus = { configured: false, connected: false, guilds: [], config: { guilds: {} } };
 const emptyTrader = { id: "", displayName: "", telegramUserId: "", telegramUsername: "", status: "enabled" };
 const emptyAccount = { id: "", label: "", apiKey: "", apiSecret: "", traderIds: [], status: "pending" };
-const emptyDestination = { id: "", scopeType: "workspace", scopeId: "", targetKey: "", chatId: "", threadId: "", chatTitle: "", topicTitle: "", enabled: true };
+const emptyDestination = { id: "", platform: "telegram", scopeType: "workspace", scopeId: "", targetKey: "", chatId: "", threadId: "", chatTitle: "", topicTitle: "", guildId: "", channelId: "", guildTitle: "", channelTitle: "", enabled: true };
 
 export default function TradingPage() {
   const [view, setView] = useState("logs");
   const [data, setData] = useState(emptyData);
   const [groups, setGroups] = useState([]);
+  const [discord, setDiscord] = useState(emptyDiscordStatus);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState("");
@@ -40,15 +42,21 @@ export default function TradingPage() {
     if (showLoading) setLoading(true);
     setError("");
     try {
-      const [tradingResponse, groupsResponse] = await Promise.all([
+      const [tradingResponse, groupsResponse, discordResponse] = await Promise.all([
         fetch("/api/trading", { cache: "no-store" }),
         fetch("/api/group-config", { cache: "no-store" }),
+        fetch("/api/discord", { cache: "no-store" }),
       ]);
-      const [overview, groupConfig] = await Promise.all([tradingResponse.json(), groupsResponse.json()]);
+      const [overview, groupConfig, discordStatus] = await Promise.all([
+        tradingResponse.json(),
+        groupsResponse.json(),
+        discordResponse.json().catch(() => emptyDiscordStatus),
+      ]);
       if (!tradingResponse.ok || !overview.ok) throw new Error(overview.error || "交易中心读取失败");
       if (!groupsResponse.ok || groupConfig.ok === false) throw new Error(groupConfig.error || "群与 Topic 读取失败");
       setData({ ...emptyData, ...overview });
       setGroups(Array.isArray(groupConfig.groups) ? groupConfig.groups : []);
+      setDiscord(discordResponse.ok && discordStatus.ok !== false ? { ...emptyDiscordStatus, ...discordStatus } : emptyDiscordStatus);
     } catch (loadError) {
       setError(loadError.message || "交易中心加载失败");
     } finally {
@@ -144,11 +152,6 @@ export default function TradingPage() {
         action={<button className="min-h-11 rounded-lg border border-ops-accent px-5 text-sm font-black text-ops-accent disabled:opacity-50" disabled={loading || Boolean(busy)} onClick={() => loadAll()} type="button">刷新数据</button>}
       />
 
-      <div className="mb-5 rounded-lg border border-[#d9bd73] bg-[#fff9e8] px-4 py-3" role="status">
-        <p className="text-sm font-black text-[#5f4513]">DEMO 验收锁已开启</p>
-        <p className="mt-1 text-xs leading-5 text-[#7b642f]">交易信号、盈利 PNL 和测试消息目前只会发送到 DEMO Academy。只有在你明确批准后，系统才会开放其他群。</p>
-      </div>
-
       {notice ? <div className="mb-5 rounded-lg border border-[#b8dfcd] bg-[#f2faf6] px-4 py-3 text-sm font-bold text-[#285845]" role="status">{notice}</div> : null}
       {error ? <div className="mb-5 rounded-lg border border-[#efc2bd] bg-[#fff6f5] px-4 py-3 text-sm font-bold text-[#9d3128]" role="alert">操作失败：{error}</div> : null}
 
@@ -159,7 +162,7 @@ export default function TradingPage() {
       {loading ? <Card className="p-10 text-center font-bold text-ops-muted">正在读取交易中心…</Card> : null}
       {!loading && view === "logs" ? <TradingLogs data={data} busy={busy} detail={detail} detailLoading={detailLoading} selectedSignal={selectedSignal} onCopy={copyText} onOpen={openSignal} onRefresh={refreshSignal} onRetry={retryDelivery} /> : null}
       {!loading && view === "traders" ? <TraderManagement data={data} busy={busy} traderForm={traderForm} setTraderForm={setTraderForm} accountForm={accountForm} setAccountForm={setAccountForm} verifySymbol={verifySymbol} setVerifySymbol={setVerifySymbol} onPost={post} onCopy={copyText} /> : null}
-      {!loading && view === "destinations" ? <DestinationManagement data={data} groups={groups} busy={busy} form={destinationForm} setForm={setDestinationForm} onPost={post} /> : null}
+      {!loading && view === "destinations" ? <DestinationManagement data={data} groups={groups} discord={discord} busy={busy} form={destinationForm} setForm={setDestinationForm} onPost={post} /> : null}
     </ConsoleShell>
   );
 
@@ -219,7 +222,7 @@ function SignalDetail({ signal, detail, loading, busy, onCopy, onRetry }) {
     {detail.annotations?.length ? <div className="mt-5 rounded-lg border border-ops-line bg-[#fbfcfb] p-4"><h3 className="font-black">Trader 说明</h3>{detail.annotations.map((item) => <p className="mt-2 whitespace-pre-wrap text-sm leading-6" key={item.id}>{item.text || item.content || item.rationale}</p>)}</div> : null}
     <div className="mt-6 grid gap-5 xl:grid-cols-2">
       <div><h3 className="font-black">订单时间线</h3>{!detail.events?.length ? <p className="mt-3 text-sm text-ops-muted">暂无时间线事件。</p> : <div className="mt-3 grid gap-3">{detail.events.map((event) => <div className="border-l-2 border-[#b8dfcd] pl-3 text-sm" key={event.id}><strong>{eventLabel(event.eventType || event.type)}</strong><p className="mt-1 text-xs text-ops-muted">{formatDate(event.createdAt || event.occurredAt)}</p></div>)}</div>}</div>
-      <div><h3 className="font-black">发布结果</h3>{!detail.deliveries?.length ? <p className="mt-3 text-sm text-ops-muted">暂无投递记录。</p> : <div className="mt-3 grid gap-3">{detail.deliveries.map((delivery) => <div className="rounded-lg border border-ops-line p-3" key={delivery.id}><div className="flex items-start justify-between gap-3"><div><strong className="text-sm">{delivery.destination?.chatTitle || delivery.destination?.chatId || "目标群"} / {delivery.destination?.topicTitle || delivery.destination?.threadId || "群聊"}</strong><p className="mt-1 text-xs text-ops-muted">{publicationLabel(delivery.publicationType)} · 尝试 {delivery.attempts || 0} 次</p></div><StatusPill tone={delivery.status === "failed" ? "amber" : "green"}>{deliveryStatus(delivery.status)}</StatusPill></div>{delivery.errorCode ? <p className="mt-2 break-all text-xs text-[#9d3128]">{delivery.errorCode}</p> : null}{delivery.status === "failed" ? <SmallButton className="mt-3" disabled={busy === `retry-${delivery.id}`} onClick={() => onRetry(delivery.id)}>{busy === `retry-${delivery.id}` ? "重试中…" : "单独重试"}</SmallButton> : null}</div>)}</div>}</div>
+      <div><h3 className="font-black">发布结果</h3>{!detail.deliveries?.length ? <p className="mt-3 text-sm text-ops-muted">暂无投递记录。</p> : <div className="mt-3 grid gap-3">{detail.deliveries.map((delivery) => <div className="rounded-lg border border-ops-line p-3" key={delivery.id}><div className="flex items-start justify-between gap-3"><div><strong className="text-sm">{destinationTitle(delivery.destination)} / {destinationChannel(delivery.destination)}</strong><p className="mt-1 text-xs text-ops-muted">{destinationPlatformLabel(delivery.destination)} · {publicationLabel(delivery.publicationType)} · 尝试 {delivery.attempts || 0} 次</p></div><StatusPill tone={delivery.status === "failed" ? "amber" : "green"}>{deliveryStatus(delivery.status)}</StatusPill></div>{delivery.errorCode ? <p className="mt-2 break-all text-xs text-[#9d3128]">{delivery.errorCode}</p> : null}{delivery.status === "failed" ? <SmallButton className="mt-3" disabled={busy === `retry-${delivery.id}`} onClick={() => onRetry(delivery.id)}>{busy === `retry-${delivery.id}` ? "重试中…" : "单独重试"}</SmallButton> : null}</div>)}</div>}</div>
     </div>
   </Card>;
 }
@@ -303,10 +306,11 @@ function ExchangeAccountCard({ account, busy, onCopy, onEdit, onPost, setVerifyS
   </div>;
 }
 
-function DestinationManagement({ data, groups, busy, form, setForm, onPost }) {
-  const options = groupTopicOptions(groups);
+function DestinationManagement({ data, groups, discord, busy, form, setForm, onPost }) {
+  const platform = destinationPlatform(form);
+  const options = platform === "discord" ? discordChannelOptions(discord) : groupTopicOptions(groups);
   const canSaveDestination = Boolean(
-    form.chatId
+    (platform === "discord" ? form.guildId && form.channelId : form.chatId)
     && (form.scopeType !== "trader" || form.scopeId)
   );
 
@@ -314,7 +318,10 @@ function DestinationManagement({ data, groups, busy, form, setForm, onPost }) {
     event.preventDefault();
     const previous = data.destinations.find((item) => item.id === form.id);
     if (previous?.enabled && !form.enabled && !window.confirm("停用后，新的交易信号和盈利 PNL 不再发送到该目标。确认停用？")) return;
-    const result = await onPost({ action: "save-destination", destination: { ...form, id: form.id || undefined, threadId: Number(form.threadId) || null, scopeId: form.scopeType === "trader" ? form.scopeId : null } }, "发布目标已保存");
+    const destination = platform === "discord"
+      ? { ...form, platform, id: form.id || undefined, chatId: "", threadId: null, chatTitle: "", topicTitle: "", scopeId: form.scopeType === "trader" ? form.scopeId : null }
+      : { ...form, platform, id: form.id || undefined, guildId: "", channelId: "", guildTitle: "", channelTitle: "", threadId: Number(form.threadId) || null, scopeId: form.scopeType === "trader" ? form.scopeId : null };
+    const result = await onPost({ action: "save-destination", destination }, "发布目标已保存");
     if (result) setForm(emptyDestination);
   }
 
@@ -324,17 +331,22 @@ function DestinationManagement({ data, groups, busy, form, setForm, onPost }) {
   }
 
   function edit(destination) {
-    setForm({ ...destination, targetKey: `${destination.chatId}:${destination.threadId || 0}`, threadId: destination.threadId || "" });
+    const nextPlatform = destinationPlatform(destination);
+    setForm({ ...emptyDestination, ...destination, platform: nextPlatform, targetKey: destinationTargetKey(destination), threadId: destination.threadId || "" });
   }
 
   async function test(destination) {
-    if (!window.confirm(`将向“${destination.chatTitle || destination.chatId} / ${destination.topicTitle || "群聊"}”发送一条真实 Telegram 测试消息，确认继续？`)) return;
-    await onPost({ action: "test-destination", destinationId: destination.id }, "Telegram 测试消息发送成功");
+    if (!window.confirm(`将向“${destinationTitle(destination)} / ${destinationChannel(destination)}”发送一条真实 ${destinationPlatformLabel(destination)} 测试消息，确认继续？`)) return;
+    await onPost({ action: "test-destination", destinationId: destination.id }, `${destinationPlatformLabel(destination)} 测试消息发送成功`);
+  }
+
+  function changePlatform(nextPlatform) {
+    setForm({ ...form, platform: nextPlatform, targetKey: "", chatId: "", threadId: "", chatTitle: "", topicTitle: "", guildId: "", channelId: "", guildTitle: "", channelTitle: "" });
   }
 
   return <div className="grid items-start gap-5 xl:grid-cols-[minmax(340px,.8fr)_minmax(0,1.2fr)]">
-    <Card className="p-5 md:p-6"><SectionHead title={form.id ? "编辑发布目标" : "新增发布目标"} desc="工作区目标接收所有 Trader；Trader 专属目标只接收指定 Trader。" /><form className="mt-5 grid gap-4" onSubmit={save}><Field label="发布范围"><select className={inputClass} onChange={(event) => setForm({ ...form, scopeType: event.target.value, scopeId: "" })} value={form.scopeType}><option value="workspace">所有 Trader</option><option value="trader">指定 Trader</option></select></Field>{form.scopeType === "trader" ? <Field label="Trader"><select className={inputClass} onChange={(event) => setForm({ ...form, scopeId: event.target.value })} required value={form.scopeId}><option value="">请选择 Trader</option>{data.traders.map((trader) => <option key={trader.id} value={trader.id}>{trader.displayName}</option>)}</select></Field> : null}<Field label="目标群 / Topic"><select className={inputClass} onChange={(event) => chooseTarget(event.target.value)} required value={form.targetKey}><option value="">请选择已识别的群与 Topic</option>{options.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}</select></Field><details className="rounded-lg border border-ops-line p-4"><summary className="cursor-pointer text-sm font-black">手动填写群 ID / Topic ID</summary><div className="mt-4 grid gap-3"><Field label="群 ID"><input className={inputClass} onChange={(event) => setForm({ ...form, chatId: event.target.value })} required value={form.chatId} /></Field><Field label="Topic ID"><input className={inputClass} inputMode="numeric" onChange={(event) => setForm({ ...form, threadId: event.target.value })} value={form.threadId} /></Field><Field label="群名称"><input className={inputClass} onChange={(event) => setForm({ ...form, chatTitle: event.target.value })} value={form.chatTitle || ""} /></Field><Field label="Topic 名称"><input className={inputClass} onChange={(event) => setForm({ ...form, topicTitle: event.target.value })} value={form.topicTitle || ""} /></Field></div></details><label className="flex items-center gap-3 rounded-lg border border-ops-line p-3 text-sm font-bold"><input checked={Boolean(form.enabled)} onChange={(event) => setForm({ ...form, enabled: event.target.checked })} type="checkbox" />保存后立即启用</label><FormActions busy={busy === "save-destination"} disabled={!canSaveDestination} editing={Boolean(form.id)} onCancel={() => setForm(emptyDestination)} /></form></Card>
-    <Card className="p-5 md:p-6"><SectionHead title="发布目标" desc="每个目标独立投递，单个目标失败不会影响其他群。" />{!data.destinations.length ? <Empty text="暂无发布目标。请先选择目标群与 Topic。" /> : <div className="mt-4 grid gap-3">{data.destinations.map((destination) => <div className="rounded-lg border border-ops-line p-4" key={destination.id}><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><strong>{destination.chatTitle || destination.chatId}</strong><StatusPill tone={destination.enabled ? "green" : "amber"}>{destination.enabled ? "已启用" : "已停用"}</StatusPill></div><p className="mt-1 text-sm">{destination.topicTitle || (destination.threadId ? `Topic ${destination.threadId}` : "群聊")}</p><p className="mt-1 break-all font-mono text-xs text-ops-muted">{destination.chatId}:{destination.threadId || 0}</p><p className="mt-2 text-xs text-ops-muted">{destination.scopeType === "trader" ? `仅 ${data.traders.find((trader) => trader.id === destination.scopeId)?.displayName || "指定 Trader"}` : "所有 Trader"} · {destination.lastVerifiedAt ? `已验证 ${formatDate(destination.lastVerifiedAt)}` : "尚未验证"}</p>{destination.lastErrorCode ? <p className="mt-2 break-all text-xs text-[#9d3128]">{destination.lastErrorCode}</p> : null}</div><div className="flex flex-wrap gap-2"><SmallButton onClick={() => edit(destination)}>编辑</SmallButton><SmallButton disabled={busy === "verify-destination"} onClick={() => onPost({ action: "verify-destination", destinationId: destination.id }, "目标权限验证完成")}>验证配置</SmallButton><SmallButton disabled={busy === "test-destination"} onClick={() => test(destination)}>发送测试消息</SmallButton></div></div></div>)}</div>}</Card>
+    <Card className="p-5 md:p-6"><SectionHead title={form.id ? "编辑发布目标" : "新增发布目标"} desc="工作区目标接收所有 Trader；Trader 专属目标只接收指定 Trader。" /><form className="mt-5 grid gap-4" onSubmit={save}><Field label="发布平台"><select className={inputClass} disabled={Boolean(form.id)} onChange={(event) => changePlatform(event.target.value)} value={platform}><option value="telegram">Telegram</option><option value="discord">Discord</option></select></Field><Field label="发布范围"><select className={inputClass} onChange={(event) => setForm({ ...form, scopeType: event.target.value, scopeId: "" })} value={form.scopeType}><option value="workspace">所有 Trader</option><option value="trader">指定 Trader</option></select></Field>{form.scopeType === "trader" ? <Field label="Trader"><select className={inputClass} onChange={(event) => setForm({ ...form, scopeId: event.target.value })} required value={form.scopeId}><option value="">请选择 Trader</option>{data.traders.map((trader) => <option key={trader.id} value={trader.id}>{trader.displayName}</option>)}</select></Field> : null}<Field label={platform === "discord" ? "Server / Channel" : "目标群 / Topic"}><select className={inputClass} onChange={(event) => chooseTarget(event.target.value)} required value={form.targetKey}><option value="">{platform === "discord" ? "请选择已初始化的 Server 与 Channel" : "请选择已识别的群与 Topic"}</option>{options.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}</select></Field>{platform === "discord" && !options.length ? <p className="rounded-lg border border-[#e7c883] bg-[#fff9e9] p-3 text-xs font-bold leading-5 text-[#6f551d]">暂无可用 Discord Channel。请先在“Discord 社区”完成 Server 与 Channel 初始化。</p> : null}<details className="rounded-lg border border-ops-line p-4"><summary className="cursor-pointer text-sm font-black">{platform === "discord" ? "手动填写 Server ID / Channel ID" : "手动填写群 ID / Topic ID"}</summary>{platform === "discord" ? <div className="mt-4 grid gap-3"><Field label="Server ID"><input className={inputClass} onChange={(event) => setForm({ ...form, guildId: event.target.value })} required value={form.guildId || ""} /></Field><Field label="Channel ID"><input className={inputClass} onChange={(event) => setForm({ ...form, channelId: event.target.value })} required value={form.channelId || ""} /></Field><Field label="Server 名称"><input className={inputClass} onChange={(event) => setForm({ ...form, guildTitle: event.target.value })} value={form.guildTitle || ""} /></Field><Field label="Channel 名称"><input className={inputClass} onChange={(event) => setForm({ ...form, channelTitle: event.target.value })} value={form.channelTitle || ""} /></Field></div> : <div className="mt-4 grid gap-3"><Field label="群 ID"><input className={inputClass} onChange={(event) => setForm({ ...form, chatId: event.target.value })} required value={form.chatId} /></Field><Field label="Topic ID"><input className={inputClass} inputMode="numeric" onChange={(event) => setForm({ ...form, threadId: event.target.value })} value={form.threadId} /></Field><Field label="群名称"><input className={inputClass} onChange={(event) => setForm({ ...form, chatTitle: event.target.value })} value={form.chatTitle || ""} /></Field><Field label="Topic 名称"><input className={inputClass} onChange={(event) => setForm({ ...form, topicTitle: event.target.value })} value={form.topicTitle || ""} /></Field></div>}</details><label className="flex items-center gap-3 rounded-lg border border-ops-line p-3 text-sm font-bold"><input checked={Boolean(form.enabled)} onChange={(event) => setForm({ ...form, enabled: event.target.checked })} type="checkbox" />保存后立即启用</label><FormActions busy={busy === "save-destination"} disabled={!canSaveDestination} editing={Boolean(form.id)} onCancel={() => setForm(emptyDestination)} /></form></Card>
+    <Card className="p-5 md:p-6"><SectionHead title="发布目标" desc="Telegram 与 Discord 目标独立投递，单个目标失败不会影响其他目标。" />{!data.destinations.length ? <Empty text="暂无发布目标。请先选择 Telegram Topic 或 Discord Channel。" /> : <div className="mt-4 grid gap-3">{data.destinations.map((destination) => <div className="rounded-lg border border-ops-line p-4" key={destination.id}><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><strong>{destinationTitle(destination)}</strong><StatusPill tone="gray">{destinationPlatformLabel(destination)}</StatusPill><StatusPill tone={destination.enabled ? "green" : "amber"}>{destination.enabled ? "已启用" : "已停用"}</StatusPill></div><p className="mt-1 text-sm">{destinationChannel(destination)}</p><p className="mt-1 break-all font-mono text-xs text-ops-muted">{destinationIdentifier(destination)}</p><p className="mt-2 text-xs text-ops-muted">{destination.scopeType === "trader" ? `仅 ${data.traders.find((trader) => trader.id === destination.scopeId)?.displayName || "指定 Trader"}` : "所有 Trader"} · {destination.lastVerifiedAt ? `已验证 ${formatDate(destination.lastVerifiedAt)}` : "尚未验证"}</p>{destination.lastErrorCode ? <p className="mt-2 break-all text-xs text-[#9d3128]">{destination.lastErrorCode}</p> : null}</div><div className="flex flex-wrap gap-2"><SmallButton onClick={() => edit(destination)}>编辑</SmallButton><SmallButton disabled={busy === "verify-destination"} onClick={() => onPost({ action: "verify-destination", destinationId: destination.id }, "目标权限验证完成")}>验证配置</SmallButton><SmallButton disabled={busy === "test-destination"} onClick={() => test(destination)}>发送测试消息</SmallButton></div></div></div>)}</div>}</Card>
   </div>;
 }
 
@@ -348,10 +360,22 @@ function Td({ children, className = "" }) { return <td className={`px-4 py-3 ali
 
 function groupTopicOptions(groups) {
   return groups.flatMap((group) => normalizeDistributionGroupTopics(group).filter((topic) => Number(topic.threadId || topic.topicId) > 0).map((topic) => {
-    const target = { chatId: String(group.chatId), threadId: Number(topic.threadId || topic.topicId), chatTitle: group.title || group.name || "", topicTitle: topic.name || topic.title || "" };
-    return { key: `${target.chatId}:${target.threadId}`, label: `${target.chatTitle} / ${target.topicTitle}`, target };
+    const target = { platform: "telegram", chatId: String(group.chatId), threadId: Number(topic.threadId || topic.topicId), chatTitle: group.title || group.name || "", topicTitle: topic.name || topic.title || "", guildId: "", channelId: "", guildTitle: "", channelTitle: "" };
+    return { key: `telegram:${target.chatId}:${target.threadId}`, label: `${target.chatTitle} / ${target.topicTitle}`, target };
   }));
 }
+function discordChannelOptions(discord) {
+  return Object.values(discord?.config?.guilds || {}).flatMap((guild) => (guild.channels || []).filter((channel) => channel.channelId).map((channel) => {
+    const target = { platform: "discord", guildId: String(guild.guildId || ""), channelId: String(channel.channelId), guildTitle: guild.guildName || guild.name || "", channelTitle: channel.name || channel.channelName || "", chatId: "", threadId: "", chatTitle: "", topicTitle: "" };
+    return { key: `discord:${target.guildId}:${target.channelId}`, label: `${target.guildTitle || target.guildId} / #${target.channelTitle || target.channelId}`, target };
+  }));
+}
+function destinationPlatform(destination) { return destination?.platform === "discord" ? "discord" : "telegram"; }
+function destinationPlatformLabel(destination) { return destinationPlatform(destination) === "discord" ? "Discord" : "Telegram"; }
+function destinationTitle(destination) { return destinationPlatform(destination) === "discord" ? destination?.guildTitle || destination?.guildId || "Discord Server" : destination?.chatTitle || destination?.chatId || "Telegram 群"; }
+function destinationChannel(destination) { return destinationPlatform(destination) === "discord" ? `#${destination?.channelTitle || destination?.channelId || "Channel"}` : destination?.topicTitle || (destination?.threadId ? `Topic ${destination.threadId}` : "群聊"); }
+function destinationIdentifier(destination) { return destinationPlatform(destination) === "discord" ? `${destination?.guildId || ""}:${destination?.channelId || ""}` : `${destination?.chatId || ""}:${destination?.threadId || 0}`; }
+function destinationTargetKey(destination) { return destinationPlatform(destination) === "discord" ? `discord:${destination?.guildId || ""}:${destination?.channelId || ""}` : `telegram:${destination?.chatId || ""}:${destination?.threadId || 0}`; }
 function toggleValue(values, value) { return values.includes(value) ? values.filter((item) => item !== value) : [...values, value]; }
 function formatDate(value) { if (!value) return "—"; const date = new Date(value); return Number.isNaN(date.getTime()) ? String(value) : new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(date); }
 function money(value) { if (value === null || value === undefined || value === "") return "—"; const number = Number(value); return Number.isFinite(number) ? `${number >= 0 ? "+" : ""}${number.toLocaleString(undefined, { maximumFractionDigits: 4 })} USDT` : "—"; }

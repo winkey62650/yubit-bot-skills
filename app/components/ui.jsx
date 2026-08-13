@@ -30,7 +30,11 @@ export function Field({ label, children }) {
 }
 
 export function StatusPill({ children, tone = "green" }) {
-  const styles = tone === "amber" ? "bg-[#fff4df] text-[#c98118]" : "bg-[#e6f7ef] text-ops-accent";
+  const styles = tone === "amber"
+    ? "bg-[#fff4df] text-[#c98118]"
+    : tone === "gray"
+      ? "bg-[#eef1ef] text-[#526159]"
+      : "bg-[#e6f7ef] text-ops-accent";
   return <span className={`rounded-full px-2 py-1 text-xs font-black ${styles}`}>{children}</span>;
 }
 

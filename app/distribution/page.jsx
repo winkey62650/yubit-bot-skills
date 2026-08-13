@@ -13,6 +13,7 @@ import {
   buildBroadcastRouteSummary,
   buildDistributionSourceOptions,
   buildDistributionTargetOptions,
+  buildDiscordDistributionTargetOptions,
   buildSocialSourceReadiness,
   buildSocialSourceRouteReadiness,
   distributionDestinationLabel,
@@ -105,6 +106,7 @@ function DistributionPageContent() {
   const view = tabs.some(([key]) => key === requestedView) ? requestedView : "automation";
   const [data, setData] = useState({ rules: [], review: [], deliveries: [], database: null, publisher: null, migration: null });
   const [groups, setGroups] = useState([]);
+  const [discordState, setDiscordState] = useState({ guilds: [], config: { guilds: {} } });
   const [socialPackages, setSocialPackages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
@@ -166,9 +168,15 @@ function DistributionPageContent() {
         (async () => {
           const savedPresets = await loadWorkspaceState("target-presets");
           setTargetPresets(savedPresets?.state?.presets || []);
+        })(),
+        (async () => {
+          const response = await fetch("/api/discord", { cache: "no-store" });
+          const discord = await response.json();
+          if (!response.ok || !discord.ok) throw new Error(discord.error || "Discord Server 与 Channel 读取失败");
+          setDiscordState(discord);
         })()
       ]);
-      const optionalLabels = ["群与 Topic", "代理来源", "发送身份", "目标预设"];
+      const optionalLabels = ["群与 Topic", "代理来源", "发送身份", "目标预设", "Discord Server 与 Channel"];
       const failedOptionalLoads = optionalResults
         .map((result, index) => result.status === "rejected" ? optionalLabels[index] : "")
         .filter(Boolean);
@@ -275,7 +283,7 @@ function DistributionPageContent() {
   }
 
   async function saveRule(form, reset) {
-    const rule = { ...form, id: form.id || undefined, targets: resolveTargets(form.targets) };
+    const rule = { ...form, id: form.id || undefined, targets: resolveTargets(form.targets, form.kind) };
     const result = await post({ rule }, "规则已保存，并会在刷新、重新登录及重新部署后保持一致。");
     if (result) reset();
   }
@@ -440,15 +448,16 @@ function DistributionPageContent() {
 
       {analyticsView ? <SiteAnalyticsPanel /> : null}
       {loading && !analyticsView ? <Card className="p-8 text-center font-bold text-ops-muted">正在加载持久化配置…</Card> : null}
-      {!loading && view === "automation" ? <AutomationView form={automationForm} setForm={setAutomationForm} rules={automationRules} groups={groups} socialPackages={socialPackages} publisherName={automaticPublisherName} deliveryMode={deliverySettings.telegramPublishMode} onDeliveryModeChange={(value) => saveDeliveryIdentity("telegramPublishMode", value)} busy={busy} selected={selectedAutomationRules} setSelected={setSelectedAutomationRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedAutomationRules, "自动任务")} onSave={() => saveRule(automationForm, () => setAutomationForm(emptyAutomation))} onEdit={setAutomationForm} onAction={post} onValidate={validate} onPersistSocial={saveSocialPackages} onNotice={setNotice} presets={targetPresets} onSavePreset={savePreset} onDeletePreset={deletePreset} /> : null}
+      {!loading && view === "automation" ? <AutomationView form={automationForm} setForm={setAutomationForm} rules={automationRules} groups={groups} discordState={discordState} socialPackages={socialPackages} publisherName={automaticPublisherName} deliveryMode={deliverySettings.telegramPublishMode} onDeliveryModeChange={(value) => saveDeliveryIdentity("telegramPublishMode", value)} busy={busy} selected={selectedAutomationRules} setSelected={setSelectedAutomationRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedAutomationRules, "自动任务")} onSave={() => saveRule(automationForm, () => setAutomationForm(emptyAutomation))} onEdit={setAutomationForm} onAction={post} onValidate={validate} onPersistSocial={saveSocialPackages} onNotice={setNotice} presets={targetPresets} onSavePreset={savePreset} onDeletePreset={deletePreset} /> : null}
       {!loading && view === "broadcast" ? <BroadcastView form={broadcastForm} setForm={setBroadcastForm} rules={broadcastRules} groups={groups} approvedTargetIds={data.publisher?.approvedTargetIds} publisherName={forwardPublisherName} deliveryMode={deliverySettings.telegramForwardMode} onDeliveryModeChange={(value) => saveDeliveryIdentity("telegramForwardMode", value)} busy={busy} selected={selectedBroadcastRules} setSelected={setSelectedBroadcastRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedBroadcastRules, "内容同步规则")} backfill={backfill} setBackfill={setBackfill} onBackfill={previewBackfill} onSave={() => saveRule(broadcastForm, () => setBroadcastForm(emptyBroadcast))} onEdit={setBroadcastForm} onAction={post} onValidate={validate} presets={targetPresets} onSavePreset={savePreset} onDeletePreset={deletePreset} /> : null}
       {!loading && view === "review" ? <ReviewView events={data.review} selected={selectedReviews} setSelected={setSelectedReviews} busy={busy} onAction={reviewAction} /> : null}
       {!loading && view === "logs" ? <LogsView deliveries={data.deliveries} busy={busy} onRetry={async (id) => { setBusy("retry"); try { const response = await fetch("/api/distribution/logs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "retry", deliveryId: id }) }); const result = await response.json(); if (!response.ok || !result.ok) throw new Error(result.error); setNotice("失败目标已单独重试，不影响其他目标。"); await loadAll(); } catch (error) { setNotice(error.message); } finally { setBusy(""); } }} /> : null}
     </ConsoleShell>
   );
 
-  function resolveTargets(keys) {
-    return (Array.isArray(keys) ? keys : []).map((key) => targetOptions(groups).find((option) => option.key === key)?.target).filter(Boolean);
+  function resolveTargets(keys, kind) {
+    const options = kind === "automation" ? automationTargetOptions(groups, discordState) : targetOptions(groups);
+    return (Array.isArray(keys) ? keys : []).map((key) => options.find((option) => option.key === key)?.target).filter(Boolean);
   }
 }
 
@@ -491,14 +500,14 @@ function OfficialPublishingWorkflow({ status, detail, ready, deliveryMode, busy,
   </Card>;
 }
 
-function AutomationView({ form, setForm, rules, groups, socialPackages, publisherName, deliveryMode, onDeliveryModeChange, busy, selected, setSelected, onDeleteMany, onSave, onEdit, onAction, onValidate, onPersistSocial, onNotice, presets, onSavePreset, onDeletePreset }) {
+function AutomationView({ form, setForm, rules, groups, discordState, socialPackages, publisherName, deliveryMode, onDeliveryModeChange, busy, selected, setSelected, onDeleteMany, onSave, onEdit, onAction, onValidate, onPersistSocial, onNotice, presets, onSavePreset, onDeletePreset }) {
   const template = getContentTemplate(form.contentType);
   const [confirmedFor, setConfirmedFor] = useState("");
   const [preview, setPreview] = useState(null);
   const [previewState, setPreviewState] = useState("");
   const sourceReadiness = buildSocialSourceReadiness(socialPackages);
   const sourceRouteReadiness = buildSocialSourceRouteReadiness(socialPackages);
-  const automationTargets = targetOptions(groups);
+  const automationTargets = automationTargetOptions(groups, discordState);
   const enabledSourceRoutes = socialPackages
     .filter((item) => item.status === "已启用")
     .map((item) => ({ id: String(item.id), targets: (Array.isArray(item.targets) ? item.targets : []).map(targetKey).sort() }))
@@ -525,7 +534,7 @@ function AutomationView({ form, setForm, rules, groups, socialPackages, publishe
   return <div className="grid gap-5">
     {form.contentType === "agent-sync" ? <SocialSourceManager packages={socialPackages} targetOptions={automationTargets} publisherName={publisherName} busy={busy} onPersist={onPersistSocial} onNotice={onNotice} /> : null}
     <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.08fr)_minmax(340px,.92fr)]">
-    <RuleForm title={form.id ? "编辑自动任务" : "新增自动任务"} eyebrow="按发送前确认流程配置" submitLabel="保存自动任务" submitDisabled={!canSave} submitHint={!form.name.trim() ? "请先填写任务名称" : !form.targets.length ? "请至少选择一个 Forum 群 Topic" : form.contentType === "agent-sync" && !sourceReadiness.ready ? "请先添加并启用至少一条代理来源" : form.contentType === "agent-sync" && !sourceRouteReadiness.ready ? `请为 ${sourceRouteReadiness.unmappedIds.length} 条已启用来源绑定发送群和 Topic` : !confirmed ? "请确认内容模板、频率和目标" : "已完成发送前确认"} busy={busy} onSubmit={onSave}>
+    <RuleForm title={form.id ? "编辑自动任务" : "新增自动任务"} eyebrow="按发送前确认流程配置" submitLabel="保存自动任务" submitDisabled={!canSave} submitHint={!form.name.trim() ? "请先填写任务名称" : !form.targets.length ? "请至少选择一个 Telegram Topic 或 Discord Channel" : form.contentType === "agent-sync" && !sourceReadiness.ready ? "请先添加并启用至少一条代理来源" : form.contentType === "agent-sync" && !sourceRouteReadiness.ready ? `请为 ${sourceRouteReadiness.unmappedIds.length} 条已启用来源绑定发送群和 Topic` : !confirmed ? "请确认内容模板、频率和目标" : "已完成发送前确认"} busy={busy} onSubmit={onSave}>
       <DeliveryIdentitySelector purpose="自动发布身份" value={deliveryMode} botLabel="使用 SpeakerBot" userLabel="使用真人 TG 账号" botDescription="服务器通过 Telegram Bot API 自动发布" userDescription="由本机 Telegram Desktop 发布桥发送" busy={busy} onChange={onDeliveryModeChange} />
       <FormStep number="1" title="选择内容模板" desc="模板决定 Telegram 文案结构、配图和数据来源。" />
       <Field label="任务名称"><input className={inputClass} required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="例如：每日市场事件" /></Field>
@@ -671,7 +680,7 @@ function RuleList({ rules, empty, busy, kindLabel, selected, setSelected, onDele
 
   return <Card className="overflow-hidden">
     <div className="flex flex-col gap-4 border-b border-ops-line p-5 lg:flex-row lg:items-center lg:justify-between">
-      <div><h2 className="text-xl font-black">现有规则</h2><p className="mt-1 text-sm text-ops-muted">稳定键使用 Chat ID + 类型 + 可选 Thread ID，改名不会让规则失效。</p></div>
+      <div><h2 className="text-xl font-black">现有规则</h2><p className="mt-1 text-sm text-ops-muted">Telegram 使用 Chat ID + Thread ID；Discord 使用 Guild ID + Channel ID，改名不会让规则失效。</p></div>
       <div className="flex flex-wrap items-center gap-2">
         <label className="flex min-h-9 items-center gap-2 rounded-lg border border-ops-line px-3 text-xs font-black text-[#33423b]">
           <input aria-label="选择当前列表全部规则" checked={allSelected} disabled={!rules.length || Boolean(busy)} onChange={(event) => setSelected(event.target.checked ? ruleIds : [])} ref={selectAllRef} type="checkbox" />
@@ -690,7 +699,7 @@ function RuleList({ rules, empty, busy, kindLabel, selected, setSelected, onDele
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2"><h3 className="font-black">{rule.name}</h3><StatusPill tone={rule.enabled ? "green" : "amber"}>{rule.runOnce ? rule.status === "completed" ? "已执行" : rule.status === "failed" ? "执行失败" : rule.status === "running" ? "执行中" : "等待执行" : rule.enabled ? "已启用" : "已暂停"}</StatusPill>{rule.runOnce ? <StatusPill tone="amber">一次性</StatusPill> : null}{rule.status === "pending-confirmation" ? <StatusPill tone="amber">待确认</StatusPill> : null}</div>
               <p className="mt-2 text-sm text-ops-muted">{rule.kind === "automation" ? rule.runOnce ? `${labelFor(contentTypes, rule.contentType)} · 一次性执行 · ${rule.status === "completed" ? "已完成" : rule.status === "failed" ? "失败（可在运行记录中查看原因）" : rule.status === "running" ? "正在执行" : formatTime(rule.nextRunAt)}` : `${labelFor(contentTypes, rule.contentType)} · ${labelFor(schedules, rule.schedulePreset)} · 下次 ${formatTime(rule.nextRunAt)}` : `${rule.mode === "review" ? "审核模式" : "自动模式"} · 来源 ${rule.source?.chatId}:${destinationLabel(rule.source)}`}</p>
-              <p className="mt-1 text-xs text-ops-muted">{rule.targets.length} 个目标 · {rule.targets.map((target) => `${target.groupName || target.chatId}/${destinationLabel(target)}`).join("、")}</p>
+              <p className="mt-1 text-xs text-ops-muted">{rule.targets.length} 个目标 · {rule.targets.map((target) => `${target.groupName || target.guildId || target.chatId}/${destinationLabel(target)}`).join("、")}</p>
             </div>
             <div className="flex flex-wrap gap-2">
               {rule.runOnce ? null : <SmallButton disabled={Boolean(busy)} onClick={() => onEdit(rule)}>编辑</SmallButton>}
@@ -708,7 +717,8 @@ function RuleList({ rules, empty, busy, kindLabel, selected, setSelected, onDele
 
 function TargetPicker({ options, selected, onChange, presets = [], onSavePreset, onDeletePreset }) {
   const [presetName, setPresetName] = useState("");
-  return <fieldset className="grid gap-2"><legend className="mb-1 text-sm font-bold text-ops-muted">目标 Forum 群 / Topic（可多选）</legend>
+  const optionGroups = groupDistributionTargetOptions(options);
+  return <fieldset className="grid gap-2"><legend className="mb-1 text-sm font-bold text-ops-muted">发布目标（Telegram Topic / Discord Channel，可多选）</legend>
     {presets.length > 0 ? (
        <div className="mb-2 flex flex-wrap gap-2">
          {presets.map(p => (
@@ -719,7 +729,16 @@ function TargetPicker({ options, selected, onChange, presets = [], onSavePreset,
          ))}
        </div>
     ) : null}
-    <div className="max-h-52 overflow-y-auto rounded-lg border border-ops-line p-2">{options.length ? options.map((option) => <label className="flex min-h-10 items-center gap-3 rounded-md px-2 text-sm hover:bg-ops-soft" key={option.key}><input checked={selected.includes(option.key)} onChange={() => onChange(selected.includes(option.key) ? selected.filter((key) => key !== option.key) : [...selected, option.key])} type="checkbox" /><span>{option.label}</span></label>) : <p className="p-2 text-sm text-ops-muted">暂未识别到可发布的 Forum 群 Topic，请先刷新群与 Topic。</p>}</div>
+    <div className="max-h-72 space-y-2 overflow-y-auto rounded-lg border border-ops-line p-2">{optionGroups.length ? optionGroups.map((group) => {
+      const selectedCount = group.options.filter((option) => selected.includes(option.key)).length;
+      return <details className="overflow-hidden rounded-lg border border-ops-line bg-white" key={group.key}>
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 text-sm font-black hover:bg-ops-soft">
+          <span className="flex min-w-0 items-center gap-2"><StatusPill tone={group.platform === "discord" ? "amber" : "green"}>{group.platform === "discord" ? "Discord" : "Telegram"}</StatusPill><span className="truncate">{group.label}</span></span>
+          <span className="shrink-0 text-xs font-bold text-ops-muted">{selectedCount}/{group.options.length}</span>
+        </summary>
+        <div className="border-t border-ops-line p-1">{group.options.map((option) => <label className="flex min-h-10 items-center gap-3 rounded-md px-2 text-sm hover:bg-ops-soft" key={option.key}><input checked={selected.includes(option.key)} onChange={() => onChange(selected.includes(option.key) ? selected.filter((key) => key !== option.key) : [...selected, option.key])} type="checkbox" /><span>{destinationLabel(option.target)}</span></label>)}</div>
+      </details>;
+    }) : <p className="p-2 text-sm text-ops-muted">暂未识别到可发布的 Telegram Topic 或 Discord Channel，请先刷新社区配置。</p>}</div>
     {onSavePreset ? (
       <div className="mt-2 flex gap-2">
         <input className={inputClass + " flex-1"} placeholder="预设名称..." value={presetName} onChange={e => setPresetName(e.target.value)} />
@@ -727,6 +746,18 @@ function TargetPicker({ options, selected, onChange, presets = [], onSavePreset,
       </div>
     ) : null}
   </fieldset>;
+}
+
+function groupDistributionTargetOptions(options = []) {
+  const groups = new Map();
+  for (const option of options) {
+    const platform = option.target?.platform === "discord" ? "discord" : "telegram";
+    const destinationId = platform === "discord" ? option.target?.guildId : option.target?.chatId;
+    const key = `${platform}:${destinationId || "unknown"}`;
+    if (!groups.has(key)) groups.set(key, { key, platform, label: option.groupLabel || option.target?.groupName || destinationId || "未命名群组", options: [] });
+    groups.get(key).options.push(option);
+  }
+  return [...groups.values()];
 }
 
 function BackfillPanel({ rules, value, setValue, busy, onRun }) {
@@ -738,7 +769,7 @@ function ReviewView({ events, selected, setSelected, busy, onAction }) {
 }
 
 function LogsView({ deliveries, busy, onRetry }) {
-  return <Card className="overflow-hidden"><div className="border-b border-ops-line p-5"><h2 className="text-xl font-black">逐目标运行记录</h2><p className="mt-1 text-sm text-ops-muted">默认保留 30 天；单个目标失败不会影响其他目标，可精确重试。官方群发布会逐步回写检查点，中断后从未完成步骤继续。</p></div><div className="overflow-x-auto"><table className="w-full min-w-[940px] text-left text-sm"><thead className="bg-[#f9fbfa] text-xs uppercase text-ops-muted"><tr><th className="px-5 py-3">时间</th><th className="px-5 py-3">规则 / 目标</th><th className="px-5 py-3">状态</th><th className="px-5 py-3">重试</th><th className="px-5 py-3">发布检查点</th><th className="px-5 py-3">Telegram 消息</th><th className="px-5 py-3">错误</th><th className="px-5 py-3">操作</th></tr></thead><tbody>{deliveries.length ? deliveries.map((row) => <tr className="border-t border-ops-line align-top" key={row.id}><td className="px-5 py-4 text-xs">{formatTime(row.createdAt)}</td><td className="px-5 py-4"><div className="font-mono text-xs">{row.ruleId}</div><div className="mt-1 text-xs text-ops-muted">{row.target?.groupName || row.target?.chatId} / {destinationLabel(row.target)}</div></td><td className="px-5 py-4"><StatusPill tone={row.status === "success" ? "green" : "amber"}>{statusLabel(row.status)}</StatusPill></td><td className="px-5 py-4">{row.attempts}</td><td className="px-5 py-4 text-xs">{row.publisherProgress?.length ? `已回写 ${row.publisherProgress.length} 步` : "—"}</td><td className="px-5 py-4 font-mono text-xs">{row.targetMessageIds?.length ? row.targetMessageIds.join(", ") : row.targetMessageId || "—"}</td><td className="max-w-64 break-words px-5 py-4 text-xs text-[#a04a3d]">{row.error || "—"}</td><td className="px-5 py-4">{row.status === "failed" ? <SmallButton disabled={Boolean(busy)} onClick={() => onRetry(row.id)}>重试目标</SmallButton> : "—"}</td></tr>) : <tr><td className="px-5 py-8 text-center font-bold text-ops-muted" colSpan={8}>暂无运行记录。</td></tr>}</tbody></table></div></Card>;
+  return <Card className="overflow-hidden"><div className="border-b border-ops-line p-5"><h2 className="text-xl font-black">逐目标运行记录</h2><p className="mt-1 text-sm leading-6 text-ops-muted">默认保留 30 天；单个目标失败不会影响其他目标，可精确重试。官方群发布会逐步回写检查点，中断后从未完成步骤继续。</p></div><div className="overflow-x-auto"><table className="w-full min-w-[940px] text-left text-sm"><thead className="bg-[#f9fbfa] text-xs uppercase text-ops-muted"><tr><th className="px-5 py-3">时间</th><th className="px-5 py-3">规则 / 目标</th><th className="px-5 py-3">状态</th><th className="px-5 py-3">重试</th><th className="px-5 py-3">发布检查点</th><th className="px-5 py-3">平台消息</th><th className="px-5 py-3">错误</th><th className="px-5 py-3">操作</th></tr></thead><tbody>{deliveries.length ? deliveries.map((row) => <tr className="border-t border-ops-line align-top" key={row.id}><td className="px-5 py-4 text-xs">{formatTime(row.createdAt)}</td><td className="px-5 py-4"><div className="font-mono text-xs">{row.ruleId}</div><div className="mt-1 text-xs text-ops-muted">{row.target?.groupName || row.target?.guildId || row.target?.chatId} / {destinationLabel(row.target)}</div></td><td className="px-5 py-4"><StatusPill tone={row.status === "success" ? "green" : "amber"}>{statusLabel(row.status)}</StatusPill></td><td className="px-5 py-4">{row.attempts}</td><td className="px-5 py-4 text-xs">{row.publisherProgress?.length ? `已回写 ${row.publisherProgress.length} 步` : "—"}</td><td className="px-5 py-4 font-mono text-xs">{row.targetMessageIds?.length ? row.targetMessageIds.join(", ") : row.targetMessageId || "—"}</td><td className="max-w-64 break-words px-5 py-4 text-xs text-[#a04a3d]">{row.error || "—"}</td><td className="px-5 py-4">{row.status === "failed" ? <SmallButton disabled={Boolean(busy)} onClick={() => onRetry(row.id)}>重试目标</SmallButton> : "—"}</td></tr>) : <tr><td className="px-5 py-8 text-center font-bold text-ops-muted" colSpan={8}>暂无运行记录。</td></tr>}</tbody></table></div></Card>;
 }
 
 function ValidationPanel({ result, onClose }) { return <Card className="mb-5 p-5"><div className="flex items-center justify-between"><h2 className="text-lg font-black">配置验证 · {result.ok ? "通过" : "存在问题"}</h2><SmallButton onClick={onClose}>关闭</SmallButton></div><div className="mt-3 grid gap-2 md:grid-cols-2">{result.checks?.map((check) => <div className="flex gap-2 rounded-lg bg-[#f7f9f8] p-3 text-sm" key={check.key}><span>{check.ok ? "✅" : "❌"}</span><div><strong>{check.key}</strong><p className="mt-1 text-ops-muted">{check.message}</p></div></div>)}</div></Card>; }
@@ -746,11 +777,14 @@ function Summary({ label, value, detail }) { return <Card className="p-4"><div c
 function Toggle({ checked, label, onChange }) { return <label className="flex min-h-10 items-center gap-3 text-sm font-bold"><input checked={checked} onChange={(event) => onChange(event.target.checked)} type="checkbox" />{label}</label>; }
 function SmallButton({ children, danger = false, disabled = false, onClick }) { return <button className={`min-h-9 rounded-lg border px-3 text-xs font-black disabled:opacity-40 ${danger ? "border-[#d85f5f] text-[#b94141]" : "border-ops-line text-[#33423b]"}`} disabled={disabled} onClick={onClick} type="button">{children}</button>; }
 
+function automationTargetOptions(groups, discordState) {
+  return [...targetOptions(groups), ...buildDiscordDistributionTargetOptions(discordState)];
+}
 function targetOptions(groups) {
   return buildDistributionTargetOptions(groups).filter((option) => option.target?.chatType !== "channel");
 }
 function sourceOptions(groups) { return buildDistributionSourceOptions(groups); }
-function targetKey(value) { return value?.chatType === "channel" ? `${value.chatId}:channel` : `${value.chatId}:${Number(value.threadId || 0)}`; }
+function targetKey(value) { return value?.platform === "discord" ? `discord:${value.guildId}:${value.channelId}` : value?.chatType === "channel" ? `${value.chatId}:channel` : `${value.chatId}:${Number(value.threadId || 0)}`; }
 function sourceKey(value) { return !value?.chatId ? "" : value.chatType === "channel" ? `${value.chatId}:channel` : `${value.chatId}:${Number(value.threadId || 0)}`; }
 function destinationLabel(value) { return distributionDestinationLabel(value); }
 function labelFor(options, value) { return options.find(([key]) => key === value)?.[1] || value || "未配置"; }

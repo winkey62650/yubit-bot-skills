@@ -1587,7 +1587,7 @@ test("production deployment defaults to Bot while retaining the optional authori
   assert.match(workflow, /\(\[1-9\]\[0-9\]\*\|channel\)/);
   assert.match(workflow, /TELEGRAM_DEMO_ONLY=false/);
   assert.match(workflow, /TELEGRAM_DISTRIBUTION_APPROVED_TARGETS=%s/);
-  assert.match(workflow, /TRADING_DEMO_ONLY=true/);
+  assert.match(workflow, /TRADING_DEMO_ONLY=false/);
   assert.match(workflow, /TELEGRAM_PUBLISHER_MODE=bot/);
   assert.match(workflow, /TELEGRAM_USER_PUBLISHER_USERNAME=Serenity_Crypto/);
   assert.match(workflow, /TELEGRAM_USER_PUBLISHER_REQUIRED=false/);

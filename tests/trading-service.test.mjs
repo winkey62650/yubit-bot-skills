@@ -251,6 +251,51 @@ test("destination management prevents duplicates, validates permissions, and sen
   assert.ok(calls.every((call) => call.botToken === SPEAKER_TOKEN));
 });
 
+test("Discord destinations validate initialized channels and send without a Telegram token", async () => {
+  const { repository } = memoryRepository();
+  const destination = await saveTradingDestination({
+    platform: "discord",
+    scopeType: "workspace",
+    guildId: "guild-1",
+    channelId: "channel-1",
+    guildTitle: "Demo Discord",
+    channelTitle: "trading-signals",
+  }, dependencies(repository));
+  const calls = [];
+  const deps = dependencies(repository, {
+    env: { SPEAKER_BOT_TOKEN: "" },
+    discordStatus: async () => ({
+      configured: true,
+      connected: true,
+      bot: { username: "academy-bot" },
+      guilds: [{ id: "guild-1", name: "Demo Discord" }],
+      config: {
+        guilds: {
+          "guild-1": {
+            channels: [{ channelId: "channel-1", name: "trading-signals" }],
+          },
+        },
+      },
+    }),
+    discord: async (channelId, payload) => {
+      calls.push({ channelId, payload });
+      return { id: "discord-message-1" };
+    },
+  });
+
+  const verified = await verifyTradingDestination(destination.id, deps);
+  assert.equal(verified.ok, true);
+  assert.equal(verified.destination.guildTitle, "Demo Discord");
+  assert.equal(verified.destination.channelTitle, "trading-signals");
+
+  const sent = await testTradingDestination(destination.id, deps);
+  assert.equal(sent.platformMessageId, "discord-message-1");
+  assert.equal(sent.telegramMessageId, null);
+  assert.equal(calls[0].channelId, "channel-1");
+  assert.match(calls[0].payload.content, /\*\*Symbol : BTC\/USDT\*\*/);
+  assert.doesNotMatch(calls[0].payload.content, /<b>/);
+});
+
 test("production test messages are blocked outside the configured DEMO group", async () => {
   const { repository } = memoryRepository();
   const destination = await saveTradingDestination({

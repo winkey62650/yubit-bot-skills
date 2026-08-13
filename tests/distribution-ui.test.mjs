@@ -5,6 +5,7 @@ import {
   arePublisherBlockingChecksHealthy,
   buildDistributionSourceOptions,
   buildDistributionTargetOptions,
+  buildDiscordDistributionTargetOptions,
   buildBroadcastRouteSummary,
   buildPublisherStatusChecks,
   buildSocialSourceRouteReadiness,
@@ -471,6 +472,42 @@ test("private channels are selectable as whole destinations without a fake Topic
       topicName: "整个频道"
     }
   }]);
+});
+
+test("configured Discord channels are selectable and grouped by server", () => {
+  assert.deepEqual(buildDiscordDistributionTargetOptions({
+    guilds: [{ id: "guild-1", name: "Demo Discord" }],
+    config: {
+      guilds: {
+        "guild-1": {
+          name: "Saved fallback name",
+          channels: [
+            { channelId: "channel-1", name: "market-analysis" },
+            { channelId: "", name: "not-ready" }
+          ]
+        }
+      }
+    }
+  }), [{
+    key: "discord:guild-1:channel-1",
+    label: "#market-analysis",
+    groupLabel: "Demo Discord",
+    platform: "discord",
+    target: {
+      platform: "discord",
+      guildId: "guild-1",
+      channelId: "channel-1",
+      groupName: "Demo Discord",
+      topicName: "market-analysis"
+    }
+  }]);
+
+  assert.equal(distributionDestinationLabel({
+    platform: "discord",
+    guildId: "guild-1",
+    channelId: "channel-1",
+    topicName: "market-analysis"
+  }), "#market-analysis");
 });
 
 test("every SpeakerBot content type points to its semantic numbered Topic", () => {

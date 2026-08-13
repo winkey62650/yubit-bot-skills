@@ -14,7 +14,7 @@ test("distribution summaries stay neutral while live data is loading", () => {
   assert.doesNotMatch(page, /socialReadiness\.enabledCount|socialReadiness\.stableCount/);
   assert.match(page, /approvedTargetCount/);
   assert.match(page, /可选择一个或多个已授权的群和 Topic/);
-  assert.match(page, /const automationTargets = targetOptions\(groups\)/);
+  assert.match(page, /const automationTargets = automationTargetOptions\(groups, discordState\)/);
   assert.doesNotMatch(page, /当前生产白名单只允许 Demo Academy Forum/);
   assert.match(page, /自动发布标准路由/);
 });

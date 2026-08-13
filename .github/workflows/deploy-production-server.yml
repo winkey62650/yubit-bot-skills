@@ -92,7 +92,7 @@ jobs:
             printf 'TELEGRAM_API_HASH=%s\n' "$telegram_api_hash"
             printf 'TELEGRAM_DEMO_ONLY=false\n'
             printf 'TELEGRAM_DISTRIBUTION_APPROVED_TARGETS=%s\n' "$approved_targets"
-            printf 'TRADING_DEMO_ONLY=true\n'
+            printf 'TRADING_DEMO_ONLY=false\n'
             printf 'TELEGRAM_PUBLISHER_MODE=bot\n'
             printf 'TELEGRAM_USER_PUBLISHER_REQUIRED=false\n'
             printf 'TELEGRAM_USER_PUBLISHER_TARGETS=-1003710405969,-1004378187866,-1003332783916\n'

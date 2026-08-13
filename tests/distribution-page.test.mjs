@@ -22,7 +22,7 @@ test("content sync clearly configures where the selected Bot or human account co
   assert.match(pageSource, /使用真人 TG 账号/);
   assert.match(pageSource, /ForwardBot 通过 Bot API 复制到目标 Topic/);
   assert.match(pageSource, /来源群 \/ 频道 \/ Topic/);
-  assert.match(pageSource, /目标 Forum 群 \/ Topic（可多选）/);
+  assert.match(pageSource, /发布目标（Telegram Topic \/ Discord Channel，可多选）/);
   assert.match(pageSource, /Bot API 发布已启用/);
   assert.match(pageSource, /内容同步发布器/);
   assert.match(pageSource, /Forum 群必须选择具体来源 Topic/);
