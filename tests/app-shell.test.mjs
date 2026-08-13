@@ -19,3 +19,17 @@ test("console navigation groups Telegram and Discord business areas", async () =
   assert.match(shell, /key: "discord"[\s\S]*label: "nav\.discord"[\s\S]*href: "\/discord"/);
   assert.ok(shell.indexOf('key: "telegram"') < shell.indexOf('key: "discord"'));
 });
+
+test("Telegram and Discord navigation lists can independently expand and collapse", async () => {
+  const root = new URL("../", import.meta.url);
+  const shell = await readFile(new URL("app/components/ConsoleShell.jsx", root), "utf8");
+
+  assert.match(shell, /key: "telegram"[\s\S]*?collapsible: true/);
+  assert.match(shell, /key: "discord"[\s\S]*?collapsible: true/);
+  assert.match(shell, /useState\(\{ telegram: true, discord: true \}\)/);
+  assert.match(shell, /aria-expanded=\{expanded\}/);
+  assert.match(shell, /aria-controls=\{panelId\}/);
+  assert.match(shell, /hidden=\{section\.collapsible && !expanded\}/);
+  assert.match(shell, /toggleNavigationSection\(section\.key\)/);
+  assert.match(shell, /yubit-console-navigation-sections/);
+});

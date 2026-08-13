@@ -2,14 +2,17 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { filterNavigationForRole, ROLES } from "../../lib/access-control.mjs";
 import { LanguageToggle, useLanguage } from "./LanguageProvider";
 import { useSession } from "./SessionProvider";
 
+const NAVIGATION_STORAGE_KEY = "yubit-console-navigation-sections";
+
 const navSections = [
   {
     key: "telegram",
+    collapsible: true,
     label: "nav.telegram",
     roles: [ROLES.ADMIN, ROLES.MANUAL_PUBLISHER],
     items: [
@@ -23,6 +26,7 @@ const navSections = [
   },
   {
     key: "discord",
+    collapsible: true,
     label: "nav.discord",
     roles: [ROLES.ADMIN],
     items: [{ href: "/discord", label: "nav.discordWorkspace", roles: [ROLES.ADMIN] }]
@@ -40,31 +44,83 @@ const navSections = [
 ];
 
 function NavigationLinks({ pathname, distributionView, role, t }) {
+  const [expandedSections, setExpandedSections] = useState({ telegram: true, discord: true });
+
+  useEffect(() => {
+    try {
+      const savedSections = JSON.parse(window.localStorage.getItem(NAVIGATION_STORAGE_KEY) || "{}");
+      setExpandedSections((current) => ({
+        telegram: typeof savedSections.telegram === "boolean" ? savedSections.telegram : current.telegram,
+        discord: typeof savedSections.discord === "boolean" ? savedSections.discord : current.discord
+      }));
+    } catch {
+      // Invalid or unavailable local preferences should not block navigation.
+    }
+  }, []);
+
+  function toggleNavigationSection(sectionKey) {
+    setExpandedSections((current) => {
+      const next = { ...current, [sectionKey]: !current[sectionKey] };
+      try {
+        window.localStorage.setItem(NAVIGATION_STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        // Navigation remains usable when storage is unavailable.
+      }
+      return next;
+    });
+  }
+
   return (
     <nav className="mt-3 flex items-start gap-4 overflow-x-auto pb-1 lg:mt-0 lg:grid lg:gap-5 lg:overflow-visible lg:pb-0">
-      {filterNavigationForRole(navSections, role).map((section) => (
-        <section className="shrink-0 lg:min-w-0" key={section.key}>
-          <div className="px-3 pb-1 text-[11px] font-black uppercase tracking-[0.12em] text-ops-muted">
-            {t(section.label)}
-          </div>
-          <div className="flex gap-2 lg:grid lg:gap-1">
-            {section.items.map((item) => {
-              const active = item.view
-                ? pathname === "/distribution" && distributionView === item.view
-                : pathname === item.href || pathname.startsWith(`${item.href}/`);
-              return (
-                <Link
-                  className={`flex min-h-10 shrink-0 items-center whitespace-nowrap rounded-lg px-3 text-left text-sm font-bold transition lg:min-h-12 ${active ? "bg-[#edf7f2] text-ops-accent shadow-sm" : "text-[#33423b] hover:bg-ops-soft"}`}
-                  href={item.href}
-                  key={item.href}
+      {filterNavigationForRole(navSections, role).map((section) => {
+        const expanded = !section.collapsible || expandedSections[section.key] !== false;
+        const panelId = `console-navigation-${section.key}`;
+        return (
+          <section className="shrink-0 lg:min-w-0" key={section.key}>
+            {section.collapsible ? (
+              <button
+                aria-controls={panelId}
+                aria-expanded={expanded}
+                className="flex min-h-8 w-full items-center justify-between gap-3 rounded-md px-3 pb-1 text-left text-[11px] font-black uppercase tracking-[0.12em] text-ops-muted transition hover:bg-ops-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ops-accent"
+                onClick={() => toggleNavigationSection(section.key)}
+                type="button"
+              >
+                <span>{t(section.label)}</span>
+                <span
+                  aria-hidden="true"
+                  className={`text-sm leading-none transition-transform ${expanded ? "rotate-180" : ""}`}
                 >
-                  {t(item.label)}
-                </Link>
-              );
-            })}
-          </div>
-        </section>
-      ))}
+                  ▾
+                </span>
+              </button>
+            ) : (
+              <div className="px-3 pb-1 text-[11px] font-black uppercase tracking-[0.12em] text-ops-muted">
+                {t(section.label)}
+              </div>
+            )}
+            <div
+              className="flex gap-2 lg:grid lg:gap-1"
+              hidden={section.collapsible && !expanded}
+              id={panelId}
+            >
+              {section.items.map((item) => {
+                const active = item.view
+                  ? pathname === "/distribution" && distributionView === item.view
+                  : pathname === item.href || pathname.startsWith(`${item.href}/`);
+                return (
+                  <Link
+                    className={`flex min-h-10 shrink-0 items-center whitespace-nowrap rounded-lg px-3 text-left text-sm font-bold transition lg:min-h-12 ${active ? "bg-[#edf7f2] text-ops-accent shadow-sm" : "text-[#33423b] hover:bg-ops-soft"}`}
+                    href={item.href}
+                    key={item.href}
+                  >
+                    {t(item.label)}
+                  </Link>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })}
     </nav>
   );
 }
