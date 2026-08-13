@@ -29,7 +29,12 @@ const navSections = [
     collapsible: true,
     label: "nav.discord",
     roles: [ROLES.ADMIN],
-    items: [{ href: "/discord", label: "nav.discordWorkspace", roles: [ROLES.ADMIN] }]
+    items: [
+      { href: "/discord", label: "nav.discordWorkspace", roles: [ROLES.ADMIN] },
+      { href: "/discord/distribution", label: "nav.discordDistribution", roles: [ROLES.ADMIN] },
+      { href: "/discord/manual", label: "nav.discordManual", roles: [ROLES.ADMIN] },
+      { href: "/discord/health", label: "nav.discordHealth", roles: [ROLES.ADMIN] }
+    ]
   },
   {
     key: "operations",
@@ -107,7 +112,7 @@ function NavigationLinks({ pathname, distributionView, role, t }) {
               {section.items.map((item) => {
                 const active = item.view
                   ? pathname === "/distribution" && distributionView === item.view
-                  : pathname === item.href || pathname.startsWith(`${item.href}/`);
+                  : pathname === item.href || (item.href !== "/discord" && pathname.startsWith(`${item.href}/`));
                 return (
                   <Link
                     className={`flex min-h-10 shrink-0 items-center whitespace-nowrap rounded-lg px-3 text-left text-sm font-bold transition lg:min-h-12 ${active ? "bg-[#edf7f2] text-ops-accent shadow-sm" : "text-[#33423b] hover:bg-ops-soft"}`}

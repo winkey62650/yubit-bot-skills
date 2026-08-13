@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  checkDiscordHealth,
   getDiscordConfig,
   getDiscordStatus,
   initializeDiscordGuild,
@@ -30,6 +31,50 @@ function jsonResponse(status, value) {
     headers: { "content-type": "application/json" },
   });
 }
+
+test("Discord health verifies every initialized channel and applies permission overwrites", async () => {
+  const repository = createRepository();
+  await saveDiscordConfig({
+    guilds: {
+      "guild-1": {
+        guildId: "guild-1",
+        guildName: "Stored Demo",
+        channels: [
+          { templateId: 1, channelId: "channel-ok", name: "updates" },
+          { templateId: 2, channelId: "channel-blocked", name: "signals" },
+        ],
+      },
+    },
+  }, { repository });
+
+  const result = await checkDiscordHealth({
+    repository,
+    token: "secret-token",
+    fetchImpl: async (url) => {
+      const path = String(url).replace("https://discord.com/api/v10", "");
+      if (path === "/users/@me") return jsonResponse(200, { id: "bot-1", username: "Academy" });
+      if (path === "/guilds/guild-1") return jsonResponse(200, { id: "guild-1", name: "Live Demo" });
+      if (path === "/guilds/guild-1/channels") return jsonResponse(200, [
+        { id: "channel-ok", name: "updates", type: 0, permission_overwrites: [] },
+        { id: "channel-blocked", name: "signals", type: 0, permission_overwrites: [
+          { id: "guild-1", type: 0, allow: "0", deny: "2048" },
+        ] },
+      ]);
+      if (path === "/guilds/guild-1/roles") return jsonResponse(200, [
+        { id: "guild-1", permissions: "52224" },
+      ]);
+      if (path === "/guilds/guild-1/members/bot-1") return jsonResponse(200, { roles: [] });
+      return jsonResponse(404, { message: "Not found" });
+    },
+  });
+
+  assert.equal(result.summary.totalChannels, 2);
+  assert.equal(result.summary.sendableChannels, 1);
+  assert.equal(result.summary.blockedChannels, 1);
+  assert.equal(result.guilds[0].guildName, "Live Demo");
+  assert.equal(result.guilds[0].channels[0].canSend, true);
+  assert.equal(result.guilds[0].channels[1].canSend, false);
+});
 
 test("Discord status verifies the bot and lists guilds without exposing the token", async () => {
   const requests = [];

@@ -5,6 +5,7 @@ import {
   saveDiscordCredentials,
 } from "../../../lib/discord-credentials.mjs";
 import {
+  checkDiscordHealth,
   getDiscordStatus,
   initializeDiscordGuild,
   sendDiscordManualPublish,
@@ -72,6 +73,8 @@ export async function POST(request) {
           syncEnabled: body.syncEnabled,
         }),
       };
+    } else if (action === "health-check") {
+      result = { health: await checkDiscordHealth() };
     } else if (action === "test-message") {
       result = {
         testMessage: await sendDiscordTestMessage(body.channelId, body.content),
