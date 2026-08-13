@@ -33,10 +33,17 @@ test("Discord 工作台只保留连接和初始化能力", () => {
   assert.doesNotMatch(workspace, /Demo.*目标同步规则/s);
 });
 
-test("Discord 内容分发中心独立管理模板、自动发布与同步规则", () => {
+test("Discord 内容分发中心支持直接发布并独立管理自动发布与同步规则", () => {
   const page = read("app/discord/distribution/page.jsx");
   assert.match(page, /内容分发中心/);
   assert.match(page, /\/api\/discord/);
+  assert.match(page, /直接发布到任意 Server \/ Channel/);
+  assert.match(page, /direct-publish/);
+  assert.match(page, /directChannelIds/);
+  assert.match(page, /directContent/);
+  assert.match(page, /directResults/);
+  assert.match(page, /<details/);
+  assert.match(page, /无需经过 Demo/);
   assert.match(page, /\/distribution\?view=automation&platform=discord/);
   assert.match(page, /Demo.*目标同步规则/s);
   assert.match(page, /Daily Events/);
@@ -74,6 +81,7 @@ test("Discord 管理 API 只暴露受控动作", () => {
   assert.match(route, /settings/);
   assert.match(route, /test-message/);
   assert.match(route, /manual-publish/);
+  assert.match(route, /direct-publish/);
   assert.match(route, /health-check/);
   assert.match(route, /channelIds/);
   assert.match(route, /credential-save/);

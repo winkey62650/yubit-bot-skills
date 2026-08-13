@@ -79,9 +79,9 @@ export async function POST(request) {
       result = {
         testMessage: await sendDiscordTestMessage(body.channelId, body.content),
       };
-    } else if (action === "manual-publish") {
+    } else if (action === "manual-publish" || action === "direct-publish") {
       result = {
-        manualPublish: await sendDiscordManualPublish({
+        [action === "direct-publish" ? "directPublish" : "manualPublish"]: await sendDiscordManualPublish({
           channelIds: body.channelIds,
           content: body.content,
           imageUrl: body.imageUrl,

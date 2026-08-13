@@ -20,6 +20,12 @@ export default function DiscordDistributionPage() {
   const [error, setError] = useState("");
   const [demoGuildId, setDemoGuildId] = useState("");
   const [syncEnabled, setSyncEnabled] = useState(false);
+  const [health, setHealth] = useState({ checkedAt: null, summary: {}, guilds: [] });
+  const [checkingHealth, setCheckingHealth] = useState(true);
+  const [directChannelIds, setDirectChannelIds] = useState([]);
+  const [directContent, setDirectContent] = useState("");
+  const [directImageUrl, setDirectImageUrl] = useState("");
+  const [directResults, setDirectResults] = useState([]);
 
   const applyStatus = useCallback((payload) => {
     const config = { guilds: {}, routes: [], demoGuildId: "", syncEnabled: false, ...(payload?.config || {}) };
@@ -42,11 +48,66 @@ export default function DiscordDistributionPage() {
     }
   }, [applyStatus]);
 
-  useEffect(() => { load(); }, [load]);
+  const checkHealth = useCallback(async () => {
+    setCheckingHealth(true);
+    setError("");
+    try {
+      const response = await fetch("/api/discord", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "health-check" }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "频道健康检查失败。");
+      const next = payload.result?.health || { checkedAt: null, summary: {}, guilds: [] };
+      setHealth(next);
+      const sendable = new Set(next.guilds.flatMap((guild) => guild.channels || []).filter((channel) => channel.canSend).map((channel) => channel.channelId));
+      setDirectChannelIds((current) => current.filter((channelId) => sendable.has(channelId)));
+    } catch (requestError) {
+      setError(requestError.message || "频道健康检查失败。");
+    } finally {
+      setCheckingHealth(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+    checkHealth();
+  }, [checkHealth, load]);
 
   const guilds = useMemo(() => Object.values(status.config.guilds || {}).sort(
     (left, right) => String(left.guildName).localeCompare(String(right.guildName)),
   ), [status.config.guilds]);
+  const healthyCount = useMemo(() => health.guilds.flatMap((guild) => guild.channels || []).filter((channel) => channel.canSend).length, [health.guilds]);
+
+  function toggleDirectChannel(channelId) {
+    setDirectChannelIds((current) => current.includes(channelId) ? current.filter((id) => id !== channelId) : [...current, channelId]);
+  }
+
+  async function directPublish() {
+    if (!directChannelIds.length) return setError("请至少选择一个健康且可发送的频道。");
+    if (!directContent.trim() && !directImageUrl.trim()) return setError("请输入发布内容或图片链接。");
+    setBusy(true);
+    setError("");
+    setNotice("");
+    setDirectResults([]);
+    try {
+      const response = await fetch("/api/discord", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "direct-publish", channelIds: directChannelIds, content: directContent, imageUrl: directImageUrl }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "内容直接发布失败。");
+      const result = payload.result?.directPublish || { delivered: 0, failed: 0, results: [] };
+      setDirectResults(result.results || []);
+      setNotice(`直接发布完成：成功 ${result.delivered} 个，失败 ${result.failed} 个。`);
+    } catch (requestError) {
+      setError(requestError.message || "内容直接发布失败。");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function saveSettings() {
     setBusy(true);
@@ -73,14 +134,39 @@ export default function DiscordDistributionPage() {
     <ConsoleShell>
       <PageHeader
         title="Discord 内容分发中心"
-        desc="统一管理 Discord 自动发布模板与 Demo → 目标同步规则；Telegram 规则不会在这里混入。"
+        desc="支持内容直接发布、自动发布和 Demo → 目标同步；直接发布无需经过 Demo。"
         action={<Link href="/distribution?view=automation&platform=discord" className="rounded-lg bg-ops-ink px-4 py-2 text-sm font-black text-white">管理自动发布任务</Link>}
       />
       {loading && <div className="mb-4 text-sm text-ops-muted">正在读取分发配置…</div>}
       {notice && <div className="mb-4 rounded-lg bg-[#e6f7ef] px-4 py-3 text-sm font-bold text-ops-accent">{notice}</div>}
       {error && <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{error}</div>}
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <Card className="p-6">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div><h2 className="text-xl font-black">直接发布到任意 Server / Channel</h2><p className="mt-2 text-sm text-ops-muted">无需经过 Demo：填写内容，展开 Server 并选择一个或多个可发送 Channel 即可直接分发。</p></div>
+          <button type="button" onClick={checkHealth} disabled={checkingHealth || busy} className="rounded-lg border border-ops-line bg-white px-4 py-2 text-sm font-black disabled:opacity-50">{checkingHealth ? "正在检测…" : "重新实时检测"}</button>
+        </div>
+        <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(320px,0.8fr)_minmax(0,1.2fr)]">
+          <div>
+            <div className="flex items-center justify-between"><h3 className="font-black">发布频道</h3><StatusPill tone={healthyCount ? "green" : "amber"}>{healthyCount} 个可发送</StatusPill></div>
+            <div className="mt-4 grid gap-3">
+              {health.guilds.map((guild) => <details key={guild.guildId} className="rounded-lg border border-ops-line"><summary className="cursor-pointer list-none px-4 py-3 font-black">{guild.guildName} <span className="ml-2 text-xs text-ops-muted">{(guild.channels || []).filter((channel) => channel.canSend).length}/{(guild.channels || []).length}</span></summary><div className="border-t border-ops-line p-3">{(guild.channels || []).map((channel) => <label key={channel.channelId} className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm ${channel.canSend ? "hover:bg-ops-soft" : "opacity-50"}`}><span className="flex items-center gap-2"><input type="checkbox" disabled={!channel.canSend} checked={directChannelIds.includes(channel.channelId)} onChange={() => toggleDirectChannel(channel.channelId)} />#{channel.name}</span><StatusPill tone={channel.canSend ? "green" : "gray"}>{channel.canSend ? "可发送" : channel.error || "无权限"}</StatusPill></label>)}</div></details>)}
+              {!checkingHealth && health.guilds.length === 0 && <div className="rounded-lg border border-dashed border-ops-line p-4 text-sm text-ops-muted">暂无已初始化且可检测的 Discord Server。</div>}
+            </div>
+          </div>
+          <div>
+            <h3 className="font-black">选择发布内容</h3>
+            <div className="mt-4 grid gap-4">
+              <Field label="正文"><textarea rows={9} className={`${inputClass} py-3`} value={directContent} onChange={(event) => setDirectContent(event.target.value)} placeholder="输入要直接发布的完整内容" /></Field>
+              <Field label="图片链接（可选）"><input className={inputClass} value={directImageUrl} onChange={(event) => setDirectImageUrl(event.target.value)} placeholder="https://…" /></Field>
+            </div>
+            <button type="button" disabled={busy || directChannelIds.length === 0} onClick={directPublish} className="mt-5 rounded-lg bg-ops-accent px-5 py-2.5 text-sm font-black text-white disabled:opacity-50">直接发送到 {directChannelIds.length} 个频道</button>
+            {directResults.length > 0 && <div className="mt-6 grid gap-2"><h3 className="font-black">逐目标发布结果</h3>{directResults.map((result, index) => <div key={`${result.channelId}-${index}`} className="flex items-center justify-between rounded-lg border border-ops-line px-3 py-2 text-sm"><span>#{result.channelName || result.channelId}</span><StatusPill tone={result.ok ? "green" : "amber"}>{result.ok ? "成功" : result.error || "失败"}</StatusPill></div>)}</div>}
+          </div>
+        </div>
+      </Card>
+
+      <div className="mt-6 grid gap-4 lg:grid-cols-3">
         {TASKS.map((task) => <Card key={task.name} className="p-5"><div className="flex items-center justify-between gap-3"><h2 className="font-black">{task.name}</h2><StatusPill tone="green">模板共用</StatusPill></div><p className="mt-3 text-sm leading-6 text-ops-muted">{task.detail}</p><Link href="/distribution?view=automation&platform=discord" className="mt-4 inline-flex text-sm font-black text-ops-accent">查看模板与目标 →</Link></Card>)}
       </div>
 
