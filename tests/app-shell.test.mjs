@@ -29,7 +29,8 @@ test("Telegram and Discord navigation lists can independently expand and collaps
   assert.match(shell, /useState\(\{ telegram: true, discord: true \}\)/);
   assert.match(shell, /aria-expanded=\{expanded\}/);
   assert.match(shell, /aria-controls=\{panelId\}/);
-  assert.match(shell, /hidden=\{section\.collapsible && !expanded\}/);
+  assert.match(shell, /section\.collapsible && !expanded \? "hidden" : "flex lg:grid"/);
+  assert.doesNotMatch(shell, /className="flex gap-2 lg:grid lg:gap-1"[\s\S]*?hidden=\{/);
   assert.match(shell, /toggleNavigationSection\(section\.key\)/);
   assert.match(shell, /yubit-console-navigation-sections/);
 });

@@ -99,8 +99,9 @@ function NavigationLinks({ pathname, distributionView, role, t }) {
               </div>
             )}
             <div
-              className="flex gap-2 lg:grid lg:gap-1"
-              hidden={section.collapsible && !expanded}
+              className={`gap-2 lg:gap-1 ${
+                section.collapsible && !expanded ? "hidden" : "flex lg:grid"
+              }`}
               id={panelId}
             >
               {section.items.map((item) => {
