@@ -64,6 +64,10 @@ test("Gateway supervisor waits for backend credentials and ignores legacy token 
     "utf8",
   );
   assert.match(script, /loadDiscordCredentials/);
+  assert.match(
+    script,
+    /import \{ writeDiscordGatewayStatus \} from "\.\.\/lib\/discord-service\.mjs";/,
+  );
   assert.match(script, /waiting/);
   assert.doesNotMatch(script, /DISCORD_BOT_TOKEN/);
   assert.doesNotMatch(script, /process\.exit\(1\)/);

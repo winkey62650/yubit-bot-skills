@@ -11,7 +11,7 @@ import {
   getDiscordCredentialStatus,
   loadDiscordCredentials,
 } from "../lib/discord-credentials.mjs";
-import { writeDiscordGatewayStatus } from "../lib/discord-gateway.mjs";
+import { writeDiscordGatewayStatus } from "../lib/discord-service.mjs";
 
 const credentialPollMs = 15_000;
 let active = null;
