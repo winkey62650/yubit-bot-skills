@@ -9,6 +9,8 @@ import {
   parseXSyndicationTimeline,
   socialFetchPlan,
   summarizeSocialSources,
+  validateChangedSocialPackageRoutes,
+  validateSocialSnapshotOwnership,
   validateSocialPackageRoutes
 } from "../lib/social-sources.mjs";
 
@@ -266,4 +268,95 @@ test("source summary exposes enabled, X and YouTube counts for the UI", () => {
     { status: "已暂停", platform: "X" }
   ]);
   assert.deepEqual(summary, { total: 3, enabled: 2, x: 2, youtube: 1 });
+});
+
+test("X snapshots must belong to the configured account", () => {
+  const source = {
+    platform: "X",
+    accountUrl: "https://x.com/JennaXCrypto"
+  };
+
+  assert.deepEqual(
+    validateSocialSnapshotOwnership(source, {
+      url: "https://x.com/JennaXCrypto/status/123"
+    }),
+    {
+      ok: true,
+      expectedHandle: "JennaXCrypto",
+      observedHandle: "JennaXCrypto"
+    }
+  );
+
+  assert.deepEqual(
+    validateSocialSnapshotOwnership(source, {
+      url: "https://x.com/wiseadvice/status/456"
+    }),
+    {
+      ok: false,
+      expectedHandle: "JennaXCrypto",
+      observedHandle: "wiseadvice"
+    }
+  );
+
+  assert.deepEqual(
+    validateSocialSnapshotOwnership(source, {
+      url: "https://feeds.example.com/item/789"
+    }),
+    {
+      ok: false,
+      expectedHandle: "JennaXCrypto",
+      observedHandle: ""
+    }
+  );
+});
+
+test("saving one source target is not blocked by unrelated legacy routes", () => {
+  const previous = [
+    {
+      id: "wise",
+      name: "Wise Advice",
+      agent: "Wise Advice",
+      platform: "X",
+      accountUrl: "https://x.com/wiseadvice",
+      status: "已启用",
+      targets: []
+    },
+    {
+      id: "jenna",
+      name: "JennaX",
+      agent: "JennaX",
+      platform: "X",
+      accountUrl: "https://x.com/JennaXCrypto",
+      status: "已启用",
+      targets: []
+    }
+  ];
+  const next = structuredClone(previous);
+  next[1].targets = [
+    {
+      chatId: "-1001",
+      threadId: "8",
+      groupName: "JennaX Trading Academy",
+      topicName: "JennaX Trading Zone"
+    }
+  ];
+
+  assert.deepEqual(validateChangedSocialPackageRoutes(previous, next), {
+    ok: true,
+    unmapped: []
+  });
+
+  const withNewInvalidSource = next.concat({
+    id: "new-source",
+    name: "New source",
+    agent: "New agent",
+    platform: "X",
+    accountUrl: "https://x.com/newsource",
+    status: "已启用",
+    targets: []
+  });
+  assert.equal(
+    validateChangedSocialPackageRoutes(next, withNewInvalidSource).ok,
+    false
+  );
 });

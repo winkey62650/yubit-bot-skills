@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { readJson, writeJson } from "../../../lib/json-store";
 import { previewSocialSource } from "../../../lib/automation-jobs.mjs";
-import { normalizeSocialPackages, validateSocialPackageRoutes } from "../../../lib/social-sources.mjs";
+import {
+  normalizeSocialPackages,
+  validateChangedSocialPackageRoutes,
+  validateSocialPackageRoutes
+} from "../../../lib/social-sources.mjs";
 
 const socialPackagesPath = "social-packages.json";
 export const dynamic = "force-dynamic";
@@ -28,7 +32,11 @@ export async function POST(request) {
     return NextResponse.json({ ok: false, error: `不支持的操作：${String(body.action)}` }, { status: 400 });
   }
   const packages = normalizeSocialPackages(body.packages || body);
-  const routeValidation = validateSocialPackageRoutes(packages);
+  const currentConfig = await readJson(socialPackagesPath, { packages: [] });
+  const routeValidation = validateChangedSocialPackageRoutes(
+    currentConfig.packages || currentConfig,
+    packages
+  );
   if (!routeValidation.ok) {
     return NextResponse.json({
       ok: false,
@@ -38,5 +46,9 @@ export async function POST(request) {
   }
   const config = { packages, updatedAt: new Date().toISOString() };
   await writeJson(socialPackagesPath, config);
-  return NextResponse.json({ ok: true, ...config });
+  return NextResponse.json({
+    ok: true,
+    ...config,
+    warnings: validateSocialPackageRoutes(packages).unmapped
+  });
 }
