@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { buildSocialSourceReadiness, buildSocialSourceRouteReadiness } from "../../lib/distribution-ui.mjs";
+import { formatDiscordTargetLabel } from "../../lib/discord-distribution-ui.mjs";
 import { Card, Field, StatusPill, inputClass } from "../components/ui";
 
 function createEmptySource() {
@@ -134,7 +135,7 @@ function groupTargetOptions(options) {
 }
 
 function routeLabel(target) {
-  if (target.platform === "discord") return `${target.groupName || target.guildId} / ${target.topicName || target.channelName || target.channelId}`;
+  if (target.platform === "discord") return formatDiscordTargetLabel(target);
   if (target.chatType === "channel") return target.groupName || target.chatId;
   return `${target.groupName || target.chatId} / ${target.topicName || `Topic ${target.threadId}`}`;
 }

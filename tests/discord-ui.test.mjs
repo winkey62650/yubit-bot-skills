@@ -66,11 +66,19 @@ test("Discord 内容分发中心通过模板、定时和目标频道创建自动
   assert.match(page, /\/api\/social-packages/);
   assert.match(page, /SocialSourceManager/);
   assert.match(page, /buildDiscordSocialTargetOptions/);
+  assert.match(page, /formatDiscordTargetLabel/);
+  assert.match(page, /发布目标/);
   assert.match(page, /discoveryAuthoritative:\s*status\.connected === true/);
   assert.doesNotMatch(page, /value:\s*"agent-sync"/);
   assert.doesNotMatch(page, /directContent/);
   assert.doesNotMatch(page, /direct-publish/);
   assert.doesNotMatch(page, /<textarea/);
+});
+
+test("代理社媒来源逐项显示 Discord Server 与 Channel", () => {
+  const manager = read("app/distribution/SocialSourceManager.jsx");
+  assert.match(manager, /formatDiscordTargetLabel/);
+  assert.match(manager, /routeLabel/);
 });
 
 test("Discord Trader 手动信息发布可输入正文和图片并直接发布到可发送频道", () => {

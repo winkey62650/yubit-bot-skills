@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import ConsoleShell from "../../components/ConsoleShell";
 import { Card, Field, PageHeader, StatusPill, inputClass } from "../../components/ui";
 import SocialSourceManager from "../../distribution/SocialSourceManager";
-import { buildDiscordSocialTargetOptions, extractDistributionOverview } from "../../../lib/discord-distribution-ui.mjs";
+import { buildDiscordSocialTargetOptions, extractDistributionOverview, formatDiscordTargetLabel } from "../../../lib/discord-distribution-ui.mjs";
 import { mergeDiscordGuilds } from "../../../lib/discord-guild-list.mjs";
 
 const TEMPLATES = [
@@ -189,7 +189,26 @@ export default function DiscordDistributionPage() {
       </Card>
     </div>
 
-    <Card className="mt-6 p-6"><h2 className="text-xl font-black">已保存的 Discord 自动任务</h2><div className="mt-4 grid gap-3">{discordRules.map((rule) => <div key={rule.id} className="flex flex-col gap-2 rounded-lg border border-ops-line p-4 md:flex-row md:items-center md:justify-between"><div><div className="font-black">{rule.name}</div><div className="mt-1 text-xs text-ops-muted">{rule.contentType} · {rule.schedulePreset} · {(rule.targets || []).filter((target) => target.platform === "discord").length} 个目标</div></div><StatusPill tone={rule.enabled === false ? "gray" : "green"}>{rule.enabled === false ? "已暂停" : "运行中"}</StatusPill></div>)}{!discordRules.length && <div className="rounded-lg border border-dashed border-ops-line p-4 text-sm text-ops-muted">暂无 Discord 自动发布任务。</div>}</div></Card>
+    <Card className="mt-6 p-6">
+      <h2 className="text-xl font-black">已保存的 Discord 自动任务</h2>
+      <div className="mt-4 grid gap-3">
+        {discordRules.map((rule) => {
+          const targets = (rule.targets || []).filter((target) => target.platform === "discord");
+          return <div key={rule.id} className="flex flex-col gap-3 rounded-lg border border-ops-line p-4 md:flex-row md:items-start md:justify-between">
+            <div className="min-w-0">
+              <div className="font-black">{rule.name}</div>
+              <div className="mt-1 text-xs text-ops-muted">{rule.contentType} · {rule.schedulePreset} · {targets.length} 个目标</div>
+              <div className="mt-3 grid gap-1.5">
+                <div className="text-xs font-black text-ops-muted">发布目标</div>
+                {targets.map((target) => <div className="rounded-md bg-ops-soft px-3 py-2 text-xs font-bold text-[#41564d]" key={`${rule.id}:${target.guildId}:${target.channelId}`}>{formatDiscordTargetLabel(target)}</div>)}
+              </div>
+            </div>
+            <StatusPill tone={rule.enabled === false ? "gray" : "green"}>{rule.enabled === false ? "已暂停" : "运行中"}</StatusPill>
+          </div>;
+        })}
+        {!discordRules.length && <div className="rounded-lg border border-dashed border-ops-line p-4 text-sm text-ops-muted">暂无 Discord 自动发布任务。</div>}
+      </div>
+    </Card>
 
     <div className="mt-6">
       <SocialSourceManager

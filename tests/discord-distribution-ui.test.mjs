@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildDiscordSocialTargetOptions,
   extractDistributionOverview,
+  formatDiscordTargetLabel,
 } from "../lib/discord-distribution-ui.mjs";
 
 test("reads saved distribution records from the current top-level API response", () => {
@@ -52,4 +53,18 @@ test("builds explicit agent social targets only from writable Discord channels",
       },
     },
   ]);
+});
+
+test("formats every Discord target with explicit Server and Channel labels", () => {
+  assert.equal(
+    formatDiscordTargetLabel({
+      groupName: "TheMoonShow VIP Community",
+      topicName: "market-insights",
+    }),
+    "Discord Server：TheMoonShow VIP Community → Channel：#market-insights",
+  );
+  assert.equal(
+    formatDiscordTargetLabel({ guildId: "guild-1", channelId: "channel-1" }),
+    "Discord Server：guild-1 → Channel：#channel-1",
+  );
 });
