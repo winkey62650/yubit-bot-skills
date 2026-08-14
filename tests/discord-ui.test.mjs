@@ -44,42 +44,52 @@ test("Discord 工作台只保留连接和初始化能力", () => {
   assert.doesNotMatch(workspace, /1-read-first-disclaimer/);
 });
 
-test("Discord 内容分发中心支持直接发布并独立管理自动发布与同步规则", () => {
+test("Discord 内容分发中心通过模板、定时和目标频道创建自动任务", () => {
   const page = read("app/discord/distribution/page.jsx");
   assert.match(page, /内容分发中心/);
-  assert.match(page, /\/api\/discord/);
-  assert.match(page, /直接发布到任意 Server \/ Channel/);
-  assert.match(page, /direct-publish/);
-  assert.match(page, /directChannelIds/);
-  assert.match(page, /directContent/);
-  assert.match(page, /directResults/);
+  assert.match(page, /\/api\/distribution/);
+  assert.match(page, /contentType/);
+  assert.match(page, /schedulePreset/);
+  assert.match(page, /selectedChannelIds/);
   assert.match(page, /<details/);
-  assert.match(page, /无需经过 Demo/);
-  assert.match(page, /\/distribution\?view=automation&platform=discord/);
+  assert.match(page, /选择内容模板/);
+  assert.match(page, /选择目标 Server \/ Channel/);
   assert.match(page, /Demo.*目标同步规则/s);
   assert.match(page, /Daily Events/);
   assert.match(page, /Daily Analysis/);
   assert.match(page, /Whale Signals/);
+  assert.doesNotMatch(page, /directContent/);
+  assert.doesNotMatch(page, /direct-publish/);
+  assert.doesNotMatch(page, /<textarea/);
 });
 
-test("Discord 手动信息发布独立支持折叠 Server、多选 Channel 和逐目标结果", () => {
+test("Discord 手动信息发布选择现有模板并直接发布到可发送频道", () => {
   const page = read("app/discord/manual/page.jsx");
-  assert.match(page, /manual-publish/);
+  assert.match(page, /template-publish/);
+  assert.match(page, /selectedTemplate/);
   assert.match(page, /manualChannelIds/);
-  assert.match(page, /manualImageUrl/);
   assert.match(page, /manualResults/);
   assert.match(page, /<details/);
   assert.match(page, /发送到.*个频道/);
   assert.match(page, /guildSearch/);
   assert.match(page, /filteredGuilds/);
   assert.match(page, /搜索 Server 或 Channel/);
+  assert.doesNotMatch(page, /manualContent/);
+  assert.doesNotMatch(page, /manualImageUrl/);
+  assert.doesNotMatch(page, /<textarea/);
 });
 
-test("Discord 健康页实时检查每个 Server 与 Channel 的发送权限", () => {
+test("Discord 健康页实时检查完整权限并提供逐 Server 修复入口", () => {
   const page = read("app/discord/health/page.jsx");
   assert.match(page, /health-check/);
   assert.match(page, /实时检测/);
   assert.match(page, /canSend/);
+  assert.match(page, /canManageChannels/);
+  assert.match(page, /canReadHistory/);
+  assert.match(page, /missingPermissions/);
+  assert.match(page, /reauthorizeUrl/);
+  assert.match(page, /sendableChannels/);
+  assert.match(page, /blockedChannels/);
   assert.match(page, /checkedAt/);
 });
 
@@ -90,6 +100,7 @@ test("Discord 管理 API 只暴露受控动作", () => {
   assert.match(route, /updateDiscordSettings/);
   assert.match(route, /sendDiscordTestMessage/);
   assert.match(route, /sendDiscordManualPublish/);
+  assert.match(route, /publishDiscordTemplate/);
   assert.match(route, /checkDiscordHealth/);
   assert.match(route, /initialize/);
   assert.match(route, /settings/);
@@ -97,6 +108,7 @@ test("Discord 管理 API 只暴露受控动作", () => {
   assert.match(route, /manual-publish/);
   assert.match(route, /direct-publish/);
   assert.match(route, /health-check/);
+  assert.match(route, /template-publish/);
   assert.match(route, /channelIds/);
   assert.match(route, /credential-save/);
   assert.match(route, /credential-clear/);

@@ -148,6 +148,13 @@ test("Discord install URL uses official bot/application command scopes and least
   assert.throws(() => buildDiscordInstallUrl(""), /App ID/i);
 });
 
+test("Discord permission repair URL is locked to the selected Server", () => {
+  const url = new URL(buildDiscordInstallUrl("1530060451705262151", { guildId: "987654321" }));
+  assert.equal(url.searchParams.get("guild_id"), "987654321");
+  assert.equal(url.searchParams.get("disable_guild_select"), "true");
+  assert.equal(url.searchParams.get("permissions"), String(DISCORD_REQUIRED_PERMISSIONS));
+});
+
 test("Discord routes mirror matching Demo channels to every initialized target", () => {
   const config = normalizeDiscordConfig({
     demoGuildId: "demo",
