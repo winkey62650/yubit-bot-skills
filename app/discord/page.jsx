@@ -30,6 +30,7 @@ export default function DiscordCommunityPage() {
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [demoGuildId, setDemoGuildId] = useState("");
   const [guildId, setGuildId] = useState("");
   const [selectedTemplateKeys, setSelectedTemplateKeys] = useState([]);
   const [appId, setAppId] = useState("");
@@ -45,10 +46,12 @@ export default function DiscordCommunityPage() {
     };
     setStatus(next);
     const demoChannels = next.config.demoTemplate?.channels || [];
-    const targets = (next.guilds || []).filter((guild) => (
-      String(guild.id) !== String(next.config.demoGuildId || "")
-      && guild.name !== DISCORD_DEMO_GUILD_NAME
-    ));
+    const preferredDemo = (next.guilds || []).find((guild) => String(guild.id) === String(next.config.demoGuildId || ""))
+      || (next.guilds || []).find((guild) => guild.name === DISCORD_DEMO_GUILD_NAME)
+      || next.guilds?.[0];
+    const preferredDemoId = String(preferredDemo?.id || "");
+    setDemoGuildId(preferredDemoId);
+    const targets = (next.guilds || []).filter((guild) => String(guild.id) !== preferredDemoId);
     setGuildId((current) => targets.some((guild) => String(guild.id) === String(current)) ? current : targets[0]?.id || "");
     setSelectedTemplateKeys((current) => {
       const available = new Set(demoChannels.map(({ templateKey }) => templateKey));
@@ -78,6 +81,10 @@ export default function DiscordCommunityPage() {
   const selectedGuild = useMemo(
     () => status.guilds.find((guild) => String(guild.id) === String(guildId)),
     [guildId, status.guilds],
+  );
+  const selectedDemoGuild = useMemo(
+    () => status.guilds.find((guild) => String(guild.id) === String(demoGuildId)),
+    [demoGuildId, status.guilds],
   );
 
   async function runAction(action, body, successMessage) {
@@ -115,10 +122,16 @@ export default function DiscordCommunityPage() {
   }
 
   const demoTemplate = status.config.demoTemplate;
-  const targetGuilds = useMemo(() => status.guilds.filter((guild) => (
-    String(guild.id) !== String(status.config.demoGuildId || "")
-    && guild.name !== DISCORD_DEMO_GUILD_NAME
-  )), [status.config.demoGuildId, status.guilds]);
+  const targetGuilds = useMemo(
+    () => status.guilds.filter((guild) => String(guild.id) !== String(demoGuildId)),
+    [demoGuildId, status.guilds],
+  );
+
+  useEffect(() => {
+    setGuildId((current) => targetGuilds.some((guild) => String(guild.id) === String(current))
+      ? current
+      : String(targetGuilds[0]?.id || ""));
+  }, [targetGuilds]);
 
   function toggleTemplate(templateKey) {
     setSelectedTemplateKeys((current) => current.includes(templateKey)
@@ -127,12 +140,13 @@ export default function DiscordCommunityPage() {
   }
 
   async function refreshTemplate() {
-    await runAction("template-refresh", {}, `已重新读取 ${DISCORD_DEMO_GUILD_NAME} 的频道与内容。`);
+    if (!demoGuildId) return setError("请先选择初始化 Demo Server。");
+    await runAction("template-refresh", { guildId: demoGuildId }, `已重新读取 ${selectedDemoGuild?.name || "Demo Server"} 的频道与内容。`);
   }
 
   async function initialize(dryRun) {
     if (!guildId) return setError("请先选择一个 Discord Server。");
-    if (!demoTemplate) return setError(`请先读取 ${DISCORD_DEMO_GUILD_NAME}。`);
+    if (!demoTemplate) return setError("请先读取初始化 Demo Server。");
     if (!selectedTemplateKeys.length) return setError("请至少选择一个 Demo 频道。");
     const result = await runAction(
       "initialize",
@@ -190,18 +204,19 @@ export default function DiscordCommunityPage() {
 
       <Card className="mt-6 p-6">
         <h2 className="text-xl font-black">初始化频道</h2>
-        <p className="mt-2 text-sm text-ops-muted">模板只读取 <strong>{DISCORD_DEMO_GUILD_NAME}</strong> 的真实分类、频道顺序和可复制内容，不再使用 Telegram 编号频道。重复执行会复用已有频道，并跳过已复制内容。</p>
+        <p className="mt-2 text-sm text-ops-muted">从已安装 Bot 的 Server 中手动选择 Demo 与目标；模板读取 Demo 的真实分类、频道顺序和可复制内容。重复执行会复用已有频道，并跳过已复制内容。</p>
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button type="button" disabled={busy === "template-refresh"} onClick={refreshTemplate} className="rounded-lg border border-ops-line px-4 py-2 text-sm font-black disabled:opacity-50">重新读取 Demo</button>
           <span className="text-xs text-ops-muted">最近读取：{formatTime(demoTemplate?.capturedAt)}</span>
         </div>
         <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(260px,0.8fr)_minmax(0,1.2fr)]">
           <div className="grid gap-4">
-            <Field label="目标 Discord Server"><select className={inputClass} value={guildId} onChange={(event) => setGuildId(event.target.value)}><option value="">请选择目标 Server</option>{targetGuilds.map((guild) => <option key={guild.id} value={guild.id}>{guild.name}</option>)}</select></Field>
+            <Field label="初始化 Demo Server"><select className={inputClass} value={demoGuildId} onChange={(event) => setDemoGuildId(event.target.value)}><option value="">请选择 Demo Server</option>{status.guilds.map((guild) => <option key={guild.id} value={guild.id}>{guild.name}</option>)}</select></Field>
+            <Field label="初始化目标 Server"><select className={inputClass} value={guildId} onChange={(event) => setGuildId(event.target.value)}><option value="">请选择目标 Server</option>{targetGuilds.map((guild) => <option key={guild.id} value={guild.id}>{guild.name}</option>)}</select></Field>
             {selectedGuild && <div className="rounded-lg bg-ops-soft p-3 text-sm">当前选择：<strong>{selectedGuild.name}</strong></div>}
           </div>
           <div className="grid gap-3">
-            {!demoTemplate?.channels?.length && <div className="rounded-lg border border-dashed border-ops-line p-5 text-sm text-ops-muted">尚未读取 Demo。确认 Bot 已加入 {DISCORD_DEMO_GUILD_NAME} 后点击“重新读取 Demo”。</div>}
+            {!demoTemplate?.channels?.length && <div className="rounded-lg border border-dashed border-ops-line p-5 text-sm text-ops-muted">尚未读取 Demo。选择一个 Bot 已加入且有权限的 Server 后点击“重新读取 Demo”。</div>}
             {(demoTemplate?.categories || []).map((category) => {
               const channels = demoTemplate.channels.filter((channel) => channel.sourceCategoryId === category.sourceCategoryId);
               if (!channels.length) return null;

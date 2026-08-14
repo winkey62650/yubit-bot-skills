@@ -69,7 +69,7 @@ export async function POST(request) {
       });
       result = { initialized };
     } else if (action === "template-refresh") {
-      result = { demoTemplate: await refreshDiscordDemoTemplate() };
+      result = { demoTemplate: await refreshDiscordDemoTemplate({ guildId: body.guildId }) };
     } else if (action === "settings") {
       result = {
         settings: await updateDiscordSettings({

@@ -60,6 +60,7 @@ test("Discord health verifies every initialized channel and applies permission o
     fetchImpl: async (url) => {
       const path = String(url).replace("https://discord.com/api/v10", "");
       if (path === "/users/@me") return jsonResponse(200, { id: "bot-1", username: "Academy" });
+      if (path === "/users/@me/guilds") return jsonResponse(200, [{ id: "guild-1", name: "Live Demo" }]);
       if (path === "/guilds/guild-1") return jsonResponse(200, { id: "guild-1", name: "Live Demo" });
       if (path === "/guilds/guild-1/channels") return jsonResponse(200, [
         { id: "channel-ok", name: "updates", type: 0, permission_overwrites: [] },
@@ -84,6 +85,44 @@ test("Discord health verifies every initialized channel and applies permission o
   assert.equal(result.guilds[0].channels[0].sourceChannelId, "source-updates");
   assert.equal("templateId" in result.guilds[0].channels[0], false);
   assert.equal(result.guilds[0].channels[1].canSend, false);
+});
+
+test("Discord health discovers newly joined Servers and their live channels before initialization", async () => {
+  const repository = createRepository();
+  await saveDiscordConfig({
+    guilds: {
+      "guild-1": { guildId: "guild-1", guildName: "Stored One", channels: [] },
+    },
+  }, { repository });
+
+  const fetchImpl = async (url) => {
+    const path = String(url).replace("https://discord.com/api/v10", "");
+    if (path === "/users/@me") return jsonResponse(200, { id: "bot-1", username: "Academy" });
+    if (path === "/users/@me/guilds") return jsonResponse(200, [
+      { id: "guild-1", name: "Live One" },
+      { id: "guild-2", name: "Newly Joined" },
+    ]);
+    if (path === "/guilds/guild-1") return jsonResponse(200, { id: "guild-1", name: "Live One" });
+    if (path === "/guilds/guild-2") return jsonResponse(200, { id: "guild-2", name: "Newly Joined" });
+    if (path === "/guilds/guild-1/channels") return jsonResponse(200, [
+      { id: "one-general", name: "general", type: 0, permission_overwrites: [] },
+    ]);
+    if (path === "/guilds/guild-2/channels") return jsonResponse(200, [
+      { id: "two-trades", name: "trade-setups", type: 0, permission_overwrites: [] },
+      { id: "two-voice", name: "voice", type: 2, permission_overwrites: [] },
+    ]);
+    if (path.endsWith("/roles")) return jsonResponse(200, [
+      { id: path.split("/")[2], permissions: "52224" },
+    ]);
+    if (path.endsWith("/members/bot-1")) return jsonResponse(200, { roles: [] });
+    return jsonResponse(404, { message: "Not found" });
+  };
+
+  const result = await checkDiscordHealth({ repository, token: "secret", fetchImpl });
+
+  assert.deepEqual(result.guilds.map((guild) => guild.guildName), ["Live One", "Newly Joined"]);
+  assert.deepEqual(result.guilds[1].channels.map((channel) => channel.name), ["trade-setups"]);
+  assert.equal(result.guilds[1].channels[0].canSend, true);
 });
 
 test("Discord status verifies the bot and lists guilds without exposing the token", async () => {
@@ -331,6 +370,34 @@ test("Discord Demo refresh reads TheMoonShow channels and initial content", asyn
   assert.equal(config.guilds.moon.channels[0].templateKey, "discord:trade");
 });
 
+test("Discord Demo refresh uses the Server explicitly selected by the operator", async () => {
+  const repository = createRepository();
+  const fetchImpl = async (url) => {
+    const pathname = new URL(url).pathname;
+    if (pathname.endsWith("/users/@me/guilds")) return jsonResponse(200, [
+      { id: "moon", name: "TheMoonShow VIP Community" },
+      { id: "custom", name: "Custom Demo" },
+    ]);
+    if (pathname.endsWith("/guilds/custom")) return jsonResponse(200, { id: "custom", name: "Custom Demo" });
+    if (pathname.endsWith("/guilds/custom/channels")) return jsonResponse(200, [
+      { id: "custom-news", name: "market-news", type: 0, position: 1 },
+    ]);
+    if (pathname.endsWith("/channels/custom-news/messages")) return jsonResponse(200, []);
+    throw new Error(`Unexpected Discord request: ${pathname}`);
+  };
+
+  const result = await refreshDiscordDemoTemplate({
+    guildId: "custom",
+    repository,
+    token: "secret",
+    fetchImpl,
+  });
+
+  assert.equal(result.guildId, "custom");
+  assert.equal(result.guildName, "Custom Demo");
+  assert.equal((await getDiscordConfig({ repository })).demoGuildId, "custom");
+});
+
 test("Discord Demo refresh keeps channels whose message history is inaccessible", async () => {
   const repository = createRepository();
   const fetchImpl = async (url) => {
@@ -544,7 +611,7 @@ test("Discord manual publish deduplicates targets and isolates per-target failur
       repository,
       fetchImpl: async (url) => {
         const channelId = String(url).match(/channels\/([^/]+)\/messages/)?.[1];
-        requests.push(channelId);
+        if (channelId) requests.push(channelId);
         if (channelId === "channel-fail") {
           throw new Error("Missing Access manual-secret-token");
         }
@@ -594,7 +661,7 @@ test("Discord manual publish rejects channels outside initialized destinations",
       repository,
       fetchImpl: async (url) => {
         const channelId = String(url).match(/channels\/([^/]+)\/messages/)?.[1];
-        requests.push(channelId);
+        if (channelId) requests.push(channelId);
         return jsonResponse(200, { id: `message-${channelId}`, channel_id: channelId });
       },
     },
@@ -609,4 +676,37 @@ test("Discord manual publish rejects channels outside initialized destinations",
     channelId: "channel-unknown",
     error: "Discord channel is not an initialized destination.",
   });
+});
+
+test("Discord manual publish accepts a newly discovered channel when live permissions allow sending", async () => {
+  const repository = createRepository();
+  const requests = [];
+  const result = await sendDiscordManualPublish(
+    {
+      channelIds: ["channel-live"],
+      content: "Live destination update",
+    },
+    {
+      token: "manual-secret-token",
+      repository,
+      fetchImpl: async (url) => {
+        const pathname = new URL(String(url)).pathname;
+        if (pathname.endsWith("/users/@me")) return jsonResponse(200, { id: "bot-1" });
+        if (pathname.endsWith("/users/@me/guilds")) return jsonResponse(200, [{ id: "guild-live", name: "New Server" }]);
+        if (pathname.endsWith("/guilds/guild-live")) return jsonResponse(200, { id: "guild-live", name: "New Server", owner_id: "owner-1" });
+        if (pathname.endsWith("/guilds/guild-live/channels")) return jsonResponse(200, [{ id: "channel-live", name: "updates", type: 0, position: 1, permission_overwrites: [] }]);
+        if (pathname.endsWith("/guilds/guild-live/roles")) return jsonResponse(200, [{ id: "guild-live", permissions: String((1n << 10n) | (1n << 11n) | (1n << 14n) | (1n << 15n)) }]);
+        if (pathname.endsWith("/guilds/guild-live/members/bot-1")) return jsonResponse(200, { roles: [] });
+        if (pathname.endsWith("/channels/channel-live/messages")) {
+          requests.push("channel-live");
+          return jsonResponse(200, { id: "message-live", channel_id: "channel-live" });
+        }
+        return jsonResponse(404, { message: "not found" });
+      },
+    },
+  );
+
+  assert.deepEqual(requests, ["channel-live"]);
+  assert.equal(result.delivered, 1);
+  assert.equal(result.results[0].messageId, "message-live");
 });

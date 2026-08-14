@@ -33,6 +33,10 @@ test("Discord 工作台只保留连接和初始化能力", () => {
   assert.doesNotMatch(workspace, /Demo.*目标同步规则/s);
   assert.match(workspace, /TheMoonShow VIP Community/);
   assert.match(workspace, /template-refresh/);
+  assert.match(workspace, /demoGuildId/);
+  assert.match(workspace, /guildId:\s*demoGuildId/);
+  assert.match(workspace, /初始化 Demo Server/);
+  assert.match(workspace, /初始化目标 Server/);
   assert.match(workspace, /selectedTemplateKeys/);
   assert.match(workspace, /channel\.messages\?\.length/);
   assert.doesNotMatch(workspace, /initialMessages/);
@@ -66,6 +70,9 @@ test("Discord 手动信息发布独立支持折叠 Server、多选 Channel 和�
   assert.match(page, /manualResults/);
   assert.match(page, /<details/);
   assert.match(page, /发送到.*个频道/);
+  assert.match(page, /guildSearch/);
+  assert.match(page, /filteredGuilds/);
+  assert.match(page, /搜索 Server 或 Channel/);
 });
 
 test("Discord 健康页实时检查每个 Server 与 Channel 的发送权限", () => {

@@ -11,6 +11,7 @@ export default function DiscordManualPage() {
   const [manualContent, setManualContent] = useState("");
   const [manualImageUrl, setManualImageUrl] = useState("");
   const [manualResults, setManualResults] = useState([]);
+  const [guildSearch, setGuildSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -40,6 +41,14 @@ export default function DiscordManualPage() {
   useEffect(() => { checkHealth(); }, [checkHealth]);
 
   const healthyCount = useMemo(() => health.guilds.flatMap((guild) => guild.channels || []).filter((channel) => channel.canSend).length, [health.guilds]);
+  const filteredGuilds = useMemo(() => {
+    const keyword = guildSearch.trim().toLocaleLowerCase();
+    if (!keyword) return health.guilds;
+    return health.guilds.filter((guild) => (
+      String(guild.guildName || "").toLocaleLowerCase().includes(keyword)
+      || (guild.channels || []).some((channel) => String(channel.name || "").toLocaleLowerCase().includes(keyword))
+    ));
+  }, [guildSearch, health.guilds]);
 
   function toggleChannel(channelId) {
     setManualChannelIds((current) => current.includes(channelId) ? current.filter((id) => id !== channelId) : [...current, channelId]);
@@ -80,8 +89,10 @@ export default function DiscordManualPage() {
         <Card className="p-6">
           <div className="flex items-center justify-between"><h2 className="text-xl font-black">发布目标</h2><StatusPill tone={healthyCount ? "green" : "amber"}>{healthyCount} 个可发送</StatusPill></div>
           <div className="mt-5 grid gap-3">
-            {health.guilds.map((guild) => <details key={guild.guildId} className="rounded-lg border border-ops-line"><summary className="cursor-pointer list-none px-4 py-3 font-black">{guild.guildName} <span className="ml-2 text-xs text-ops-muted">{(guild.channels || []).filter((channel) => channel.canSend).length}/{(guild.channels || []).length}</span></summary><div className="border-t border-ops-line p-3">{(guild.channels || []).map((channel) => <label key={channel.channelId} className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm ${channel.canSend ? "hover:bg-ops-soft" : "opacity-50"}`}><span className="flex items-center gap-2"><input type="checkbox" disabled={!channel.canSend} checked={manualChannelIds.includes(channel.channelId)} onChange={() => toggleChannel(channel.channelId)} />#{channel.name}</span><StatusPill tone={channel.canSend ? "green" : "gray"}>{channel.canSend ? "可发送" : channel.error || "无权限"}</StatusPill></label>)}</div></details>)}
-            {!loading && health.guilds.length === 0 && <div className="rounded-lg border border-dashed border-ops-line p-4 text-sm text-ops-muted">暂无已初始化的 Discord Server。</div>}
+            <Field label="搜索 Server 或 Channel"><input className={inputClass} value={guildSearch} onChange={(event) => setGuildSearch(event.target.value)} placeholder="输入群组或频道名称" /></Field>
+            {filteredGuilds.map((guild) => <details key={guild.guildId} className="rounded-lg border border-ops-line"><summary className="cursor-pointer list-none px-4 py-3 font-black">{guild.guildName} <span className="ml-2 text-xs text-ops-muted">{(guild.channels || []).filter((channel) => channel.canSend).length}/{(guild.channels || []).length}</span></summary><div className="border-t border-ops-line p-3">{(guild.channels || []).map((channel) => <label key={channel.channelId} className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm ${channel.canSend ? "hover:bg-ops-soft" : "opacity-50"}`}><span className="flex items-center gap-2"><input type="checkbox" disabled={!channel.canSend} checked={manualChannelIds.includes(channel.channelId)} onChange={() => toggleChannel(channel.channelId)} />#{channel.name}</span><StatusPill tone={channel.canSend ? "green" : "gray"}>{channel.canSend ? "可发送" : channel.error || "无权限"}</StatusPill></label>)}</div></details>)}
+            {!loading && health.guilds.length === 0 && <div className="rounded-lg border border-dashed border-ops-line p-4 text-sm text-ops-muted">暂无 Bot 可见的 Discord Server。</div>}
+            {!loading && health.guilds.length > 0 && filteredGuilds.length === 0 && <div className="rounded-lg border border-dashed border-ops-line p-4 text-sm text-ops-muted">没有匹配的 Server 或 Channel。</div>}
           </div>
         </Card>
 

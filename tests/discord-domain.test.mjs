@@ -42,6 +42,16 @@ test("Discord initialization uses TheMoonShow live categories, channels and read
   assert.deepEqual(snapshot.channels[1].messages[0].attachmentUrls, ["https://cdn.example/chart.png"]);
 });
 
+test("Discord Demo snapshot accepts a Server selected by the operator", () => {
+  const snapshot = buildDiscordDemoSnapshot({
+    guild: { id: "custom-demo", name: "Operator Selected Demo" },
+    channels: [],
+  });
+
+  assert.equal(snapshot.guildId, "custom-demo");
+  assert.equal(snapshot.guildName, "Operator Selected Demo");
+});
+
 test("Discord channel selection is unique, follows Demo order and rejects unknown keys", () => {
   const template = { channels: [
     { templateKey: "discord:a" },
