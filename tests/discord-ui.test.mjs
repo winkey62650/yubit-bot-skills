@@ -58,15 +58,20 @@ test("Discord 内容分发中心通过模板、定时和目标频道创建自动
   assert.match(page, /Daily Events/);
   assert.match(page, /Daily Analysis/);
   assert.match(page, /Whale Signals/);
+  assert.match(page, /mergeDiscordGuilds/);
+  assert.match(page, /availableGuilds/);
+  assert.match(page, /discoveredGuilds:\s*status\.guilds/);
+  assert.match(page, /configuredGuilds:\s*Object\.values\(status\.config\.guilds/);
   assert.doesNotMatch(page, /directContent/);
   assert.doesNotMatch(page, /direct-publish/);
   assert.doesNotMatch(page, /<textarea/);
 });
 
-test("Discord 手动信息发布选择现有模板并直接发布到可发送频道", () => {
+test("Discord Trader 手动信息发布可输入正文和图片并直接发布到可发送频道", () => {
   const page = read("app/discord/manual/page.jsx");
-  assert.match(page, /template-publish/);
-  assert.match(page, /selectedTemplate/);
+  assert.match(page, /\/api\/discord\/manual/);
+  assert.match(page, /manualContent/);
+  assert.match(page, /manualImageUrl/);
   assert.match(page, /manualChannelIds/);
   assert.match(page, /manualResults/);
   assert.match(page, /<details/);
@@ -76,9 +81,19 @@ test("Discord 手动信息发布选择现有模板并直接发布到可发送频
   assert.match(page, /filterDiscordGuildChannels/);
   assert.match(page, /搜索可发言频道/);
   assert.match(page, /open=\{guildSearch\.trim\(\) \? true : undefined\}/);
-  assert.doesNotMatch(page, /manualContent/);
-  assert.doesNotMatch(page, /manualImageUrl/);
-  assert.doesNotMatch(page, /<textarea/);
+  assert.match(page, /<textarea/);
+  assert.doesNotMatch(page, /template-publish/);
+  assert.doesNotMatch(page, /selectedTemplate/);
+  assert.doesNotMatch(page, /TEMPLATE_OPTIONS/);
+});
+
+test("Discord Trader 手动发布使用独立的最小权限 API", () => {
+  const route = read("app/api/discord/manual/route.js");
+  assert.match(route, /getDiscordStatus/);
+  assert.match(route, /checkDiscordHealth/);
+  assert.match(route, /sendDiscordManualPublish/);
+  assert.doesNotMatch(route, /saveDiscordCredentials/);
+  assert.doesNotMatch(route, /initializeDiscordGuild/);
 });
 
 test("Discord 健康页实时检查完整权限并提供逐 Server 修复入口", () => {

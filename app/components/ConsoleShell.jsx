@@ -28,11 +28,11 @@ const navSections = [
     key: "discord",
     collapsible: true,
     label: "nav.discord",
-    roles: [ROLES.ADMIN],
+    roles: [ROLES.ADMIN, ROLES.MANUAL_PUBLISHER],
     items: [
       { href: "/discord", label: "nav.discordWorkspace", roles: [ROLES.ADMIN] },
       { href: "/discord/distribution", label: "nav.discordDistribution", roles: [ROLES.ADMIN] },
-      { href: "/discord/manual", label: "nav.discordManual", roles: [ROLES.ADMIN] },
+      { href: "/discord/manual", label: "nav.discordManual", roles: [ROLES.ADMIN, ROLES.MANUAL_PUBLISHER] },
       { href: "/discord/health", label: "nav.discordHealth", roles: [ROLES.ADMIN] }
     ]
   },

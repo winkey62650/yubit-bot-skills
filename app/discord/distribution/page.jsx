@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import ConsoleShell from "../../components/ConsoleShell";
 import { Card, Field, PageHeader, StatusPill, inputClass } from "../../components/ui";
+import { mergeDiscordGuilds } from "../../../lib/discord-guild-list.mjs";
 
 const TEMPLATES = [
   { value: "daily-events", label: "Daily Events", detail: "独立海报 + 英文正文" },
@@ -22,7 +23,7 @@ const SCHEDULES = [
 ];
 
 export default function DiscordDistributionPage() {
-  const [status, setStatus] = useState({ config: { guilds: {}, routes: [], demoGuildId: "", syncEnabled: false } });
+  const [status, setStatus] = useState({ guilds: [], config: { guilds: {}, routes: [], demoGuildId: "", syncEnabled: false } });
   const [overview, setOverview] = useState({ rules: [] });
   const [health, setHealth] = useState({ summary: {}, guilds: [] });
   const [contentType, setContentType] = useState("daily-events");
@@ -79,9 +80,14 @@ export default function DiscordDistributionPage() {
 
   useEffect(() => { load(); checkHealth(); }, [checkHealth, load]);
 
-  const channelMap = useMemo(() => new Map(health.guilds.flatMap((guild) => (guild.channels || []).map((channel) => [channel.channelId, { guild, channel }]))), [health.guilds]);
+  const availableGuilds = useMemo(() => mergeDiscordGuilds({
+    healthGuilds: health.guilds,
+    discoveredGuilds: status.guilds,
+    configuredGuilds: Object.values(status.config.guilds || {}),
+  }), [health.guilds, status.config.guilds, status.guilds]);
+  const channelMap = useMemo(() => new Map(availableGuilds.flatMap((guild) => (guild.channels || []).map((channel) => [channel.channelId, { guild, channel }]))), [availableGuilds]);
   const discordRules = useMemo(() => (overview.rules || []).filter((rule) => rule.kind === "automation" && (rule.targets || []).some((target) => target.platform === "discord")), [overview.rules]);
-  const configuredGuilds = useMemo(() => Object.values(status.config.guilds || {}).sort((a, b) => String(a.guildName).localeCompare(String(b.guildName))), [status.config.guilds]);
+  const configuredGuilds = availableGuilds;
 
   function toggleChannel(channelId) {
     setSelectedChannelIds((current) => current.includes(channelId) ? current.filter((id) => id !== channelId) : [...current, channelId]);
@@ -139,8 +145,8 @@ export default function DiscordDistributionPage() {
       <Card className="p-6">
         <div className="flex items-center justify-between"><h2 className="text-xl font-black">选择目标 Server / Channel</h2><StatusPill tone={health.summary?.sendableChannels ? "green" : "amber"}>{health.summary?.sendableChannels || 0} 个可发送</StatusPill></div>
         <div className="mt-5 grid gap-3">
-          {health.guilds.map((guild) => <details key={guild.guildId} className="rounded-lg border border-ops-line"><summary className="cursor-pointer list-none px-4 py-3 font-black">{guild.guildName} <span className="ml-2 text-xs text-ops-muted">{(guild.channels || []).filter((channel) => channel.permissionsOk).length}/{(guild.channels || []).length}</span></summary><div className="border-t border-ops-line p-3">{(guild.channels || []).map((channel) => <label key={channel.channelId} className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm ${channel.permissionsOk ? "hover:bg-ops-soft" : "opacity-50"}`}><span className="flex items-center gap-2"><input type="checkbox" disabled={!channel.permissionsOk} checked={selectedChannelIds.includes(channel.channelId)} onChange={() => toggleChannel(channel.channelId)} />#{channel.name}</span><StatusPill tone={channel.permissionsOk ? "green" : "gray"}>{channel.permissionsOk ? "可发送" : "权限不足"}</StatusPill></label>)}</div></details>)}
-          {!loading && health.guilds.length === 0 && <div className="rounded-lg border border-dashed border-ops-line p-4 text-sm text-ops-muted">暂无 Bot 可见的 Discord Server。</div>}
+          {availableGuilds.map((guild) => <details key={guild.guildId} className="rounded-lg border border-ops-line"><summary className="cursor-pointer list-none px-4 py-3 font-black">{guild.guildName} <span className="ml-2 text-xs text-ops-muted">{(guild.channels || []).filter((channel) => channel.permissionsOk).length}/{(guild.channels || []).length}</span></summary><div className="border-t border-ops-line p-3">{(guild.channels || []).map((channel) => <label key={channel.channelId} className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm ${channel.permissionsOk ? "hover:bg-ops-soft" : "opacity-50"}`}><span className="flex items-center gap-2"><input type="checkbox" disabled={!channel.permissionsOk} checked={selectedChannelIds.includes(channel.channelId)} onChange={() => toggleChannel(channel.channelId)} />#{channel.name}</span><StatusPill tone={channel.permissionsOk ? "green" : "gray"}>{channel.permissionsOk ? "可发送" : "等待实时检测"}</StatusPill></label>)}</div></details>)}
+          {!loading && availableGuilds.length === 0 && <div className="rounded-lg border border-dashed border-ops-line p-4 text-sm text-ops-muted">暂无 Bot 可见的 Discord Server。</div>}
         </div>
         <button type="button" disabled={busy || !selectedChannelIds.length} onClick={saveAutomation} className="mt-5 rounded-lg bg-ops-accent px-5 py-2.5 text-sm font-black text-white disabled:opacity-50">保存自动发布任务（{selectedChannelIds.length} 个目标）</button>
       </Card>

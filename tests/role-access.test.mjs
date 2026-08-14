@@ -17,6 +17,11 @@ test("manual publisher only sees manual publishing and readonly publisher status
   assert.equal(canAccessPath("manual_publisher", "/api/telegram/dialogs", "GET"), true);
   assert.equal(canAccessPath("manual_publisher", "/api/telegram/user-authorization", "GET"), true);
   assert.equal(canAccessPath("manual_publisher", "/api/telegram/user-authorization", "POST"), false);
+  assert.equal(canAccessPath("manual_publisher", "/discord/manual", "GET"), true);
+  assert.equal(canAccessPath("manual_publisher", "/api/discord/manual", "GET"), true);
+  assert.equal(canAccessPath("manual_publisher", "/api/discord/manual", "POST"), true);
+  assert.equal(canAccessPath("manual_publisher", "/api/discord", "GET"), false);
+  assert.equal(canAccessPath("manual_publisher", "/api/discord", "POST"), false);
   assert.equal(canAccessPath("manual_publisher", "/api/telegram-auth/session", "DELETE"), false);
   assert.equal(canAccessPath("manual_publisher", "/distribution", "GET"), false);
   assert.equal(canAccessPath("manual_publisher", "/api/distribution", "GET"), false);
@@ -50,8 +55,11 @@ test("nested platform navigation keeps only sections with visible destinations",
     },
     {
       key: "discord",
-      roles: ["admin"],
-      items: [{ href: "/discord", roles: ["admin"] }]
+      roles: ["admin", "manual_publisher"],
+      items: [
+        { href: "/discord", roles: ["admin"] },
+        { href: "/discord/manual", roles: ["admin", "manual_publisher"] }
+      ]
     }
   ];
 
@@ -60,6 +68,11 @@ test("nested platform navigation keeps only sections with visible destinations",
       key: "telegram",
       roles: ["admin", "manual_publisher"],
       items: [{ href: "/composer", roles: ["admin", "manual_publisher"] }]
+    },
+    {
+      key: "discord",
+      roles: ["admin", "manual_publisher"],
+      items: [{ href: "/discord/manual", roles: ["admin", "manual_publisher"] }]
     }
   ]);
 });
