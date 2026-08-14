@@ -125,6 +125,43 @@ test("Discord health discovers newly joined Servers and their live channels befo
   assert.equal(result.guilds[1].channels[0].canSend, true);
 });
 
+test("Discord health checks multiple Servers concurrently", async () => {
+  const repository = createRepository();
+  const activeGuilds = new Set();
+  const activeRequestsByGuild = new Map();
+  let maxConcurrentGuilds = 0;
+
+  const fetchImpl = async (url) => {
+    const path = String(url).replace("https://discord.com/api/v10", "");
+    if (path === "/users/@me") return jsonResponse(200, { id: "bot-1", username: "Academy" });
+    if (path === "/users/@me/guilds") return jsonResponse(200, [
+      { id: "guild-1", name: "One" },
+      { id: "guild-2", name: "Two" },
+    ]);
+
+    const guildId = path.match(/^\/guilds\/([^/]+)/)?.[1];
+    if (!guildId) return jsonResponse(404, { message: "Not found" });
+    activeRequestsByGuild.set(guildId, (activeRequestsByGuild.get(guildId) || 0) + 1);
+    activeGuilds.add(guildId);
+    maxConcurrentGuilds = Math.max(maxConcurrentGuilds, activeGuilds.size);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const remaining = (activeRequestsByGuild.get(guildId) || 1) - 1;
+    activeRequestsByGuild.set(guildId, remaining);
+    if (remaining === 0) activeGuilds.delete(guildId);
+
+    if (path.endsWith("/channels")) return jsonResponse(200, []);
+    if (path.endsWith("/roles")) return jsonResponse(200, [{ id: guildId, permissions: "52224" }]);
+    if (path.endsWith("/members/bot-1")) return jsonResponse(200, { roles: [] });
+    return jsonResponse(200, { id: guildId, name: guildId === "guild-1" ? "One" : "Two" });
+  };
+
+  const result = await checkDiscordHealth({ repository, token: "secret", fetchImpl });
+
+  assert.equal(result.guilds.length, 2);
+  assert.equal(maxConcurrentGuilds, 2);
+});
+
 test("Discord status verifies the bot and lists guilds without exposing the token", async () => {
   const requests = [];
   const fetchImpl = async (url, options) => {
@@ -368,6 +405,37 @@ test("Discord Demo refresh reads TheMoonShow channels and initial content", asyn
   assert.equal(config.demoGuildId, "moon");
   assert.equal(config.demoTemplate.guildName, "TheMoonShow VIP Community");
   assert.equal(config.guilds.moon.channels[0].templateKey, "discord:trade");
+});
+
+test("Discord Demo refresh reads multiple channel histories concurrently", async () => {
+  const repository = createRepository();
+  const activeChannels = new Set();
+  let maxConcurrentChannels = 0;
+  const fetchImpl = async (url) => {
+    const pathname = new URL(url).pathname;
+    if (pathname.endsWith("/users/@me/guilds")) return jsonResponse(200, [
+      { id: "moon", name: "TheMoonShow VIP Community" },
+    ]);
+    if (pathname.endsWith("/guilds/moon")) return jsonResponse(200, { id: "moon", name: "TheMoonShow VIP Community" });
+    if (pathname.endsWith("/guilds/moon/channels")) return jsonResponse(200, [
+      { id: "one", name: "one", type: 0, position: 1 },
+      { id: "two", name: "two", type: 0, position: 2 },
+    ]);
+    const channelId = pathname.match(/^\/api\/v10\/channels\/([^/]+)\/messages$/)?.[1]
+      || pathname.match(/^\/channels\/([^/]+)\/messages$/)?.[1];
+    if (channelId) {
+      activeChannels.add(channelId);
+      maxConcurrentChannels = Math.max(maxConcurrentChannels, activeChannels.size);
+      await new Promise((resolve) => setImmediate(resolve));
+      activeChannels.delete(channelId);
+      return jsonResponse(200, []);
+    }
+    throw new Error(`Unexpected Discord request: ${pathname}`);
+  };
+
+  await refreshDiscordDemoTemplate({ repository, token: "secret", fetchImpl });
+
+  assert.equal(maxConcurrentChannels, 2);
 });
 
 test("Discord Demo refresh uses the Server explicitly selected by the operator", async () => {
@@ -664,6 +732,45 @@ test("Discord manual publish deduplicates targets and isolates per-target failur
   assert.equal(result.results[1].ok, false);
   assert.match(result.results[1].error, /Missing Access/);
   assert.doesNotMatch(result.results[1].error, /manual-secret-token/);
+});
+
+test("Discord manual publish sends independent targets concurrently", async () => {
+  const repository = createRepository();
+  await saveDiscordConfig({
+    guilds: {
+      "guild-1": {
+        guildId: "guild-1",
+        guildName: "Demo",
+        channels: [
+          { templateKey: "discord:one", channelId: "channel-one", name: "one" },
+          { templateKey: "discord:two", channelId: "channel-two", name: "two" },
+        ],
+      },
+    },
+  }, { repository });
+  const activeChannels = new Set();
+  let maxConcurrentChannels = 0;
+
+  const result = await sendDiscordManualPublish({
+    channelIds: ["channel-one", "channel-two"],
+    content: "Fast publish",
+  }, {
+    token: "secret",
+    repository,
+    fetchImpl: async (url) => {
+      const pathname = new URL(String(url)).pathname;
+      const channelId = pathname.match(/\/channels\/([^/]+)\/messages$/)?.[1];
+      if (!channelId) throw new Error("Health inspection unavailable");
+      activeChannels.add(channelId);
+      maxConcurrentChannels = Math.max(maxConcurrentChannels, activeChannels.size);
+      await new Promise((resolve) => setImmediate(resolve));
+      activeChannels.delete(channelId);
+      return jsonResponse(200, { id: `message-${channelId}`, channel_id: channelId });
+    },
+  });
+
+  assert.equal(result.delivered, 2);
+  assert.equal(maxConcurrentChannels, 2);
 });
 
 test("Discord manual publish rejects channels outside initialized destinations", async () => {

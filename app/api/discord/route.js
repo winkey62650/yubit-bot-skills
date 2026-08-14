@@ -79,7 +79,8 @@ export async function POST(request) {
         }),
       };
     } else if (action === "health-check") {
-      result = { health: await checkDiscordHealth() };
+      const health = await checkDiscordHealth();
+      return json({ ok: true, result: { health } });
     } else if (action === "test-message") {
       result = {
         testMessage: await sendDiscordTestMessage(body.channelId, body.content),

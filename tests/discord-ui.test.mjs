@@ -141,6 +141,14 @@ test("Discord 管理 API 只暴露受控动作", () => {
   assert.match(route, /initialized/i);
 });
 
+test("Discord 健康检查不会在完成后重复刷新 Bot 与 Server 状态", () => {
+  const route = read("app/api/discord/route.js");
+  assert.match(
+    route,
+    /action === "health-check"\) \{\s*const health = await checkDiscordHealth\(\);\s*return json\(\{ ok: true, result: \{ health \} \}\);/,
+  );
+});
+
 test("Discord Bot 凭证可在后台安全配置且不会回显 Token", () => {
   const page = read("app/discord/page.jsx");
   assert.match(page, /type="password"/);
