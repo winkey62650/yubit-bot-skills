@@ -72,6 +72,10 @@ test("Discord Trader 手动信息发布可输入正文和图片并直接发布�
   assert.match(page, /\/api\/discord\/manual/);
   assert.match(page, /manualContent/);
   assert.match(page, /manualImageUrl/);
+  assert.match(page, /manualImageFile/);
+  assert.match(page, /type="file"/);
+  assert.match(page, /accept="image\//);
+  assert.match(page, /new FormData/);
   assert.match(page, /manualChannelIds/);
   assert.match(page, /manualResults/);
   assert.match(page, /<details/);
@@ -92,6 +96,8 @@ test("Discord Trader 手动发布使用独立的最小权限 API", () => {
   assert.match(route, /getDiscordStatus/);
   assert.match(route, /checkDiscordHealth/);
   assert.match(route, /sendDiscordManualPublish/);
+  assert.match(route, /request\.formData/);
+  assert.match(route, /arrayBuffer/);
   assert.doesNotMatch(route, /saveDiscordCredentials/);
   assert.doesNotMatch(route, /initializeDiscordGuild/);
 });

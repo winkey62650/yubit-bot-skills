@@ -37,3 +37,21 @@ test("prefers the latest health name and channel permissions for the same Server
   assert.equal(guilds[0].guildName, "TheMoonShow VIP Community");
   assert.deepEqual(guilds[0].channels, [{ channelId: "live-channel", permissionsOk: true }]);
 });
+
+test("keeps discovered channels when a transient health response contains zero channels", () => {
+  const guilds = mergeDiscordGuilds({
+    configuredGuilds: [
+      { guildId: "guild-1", guildName: "Configured", channels: [{ channelId: "configured-channel" }] },
+    ],
+    discoveredGuilds: [
+      { id: "guild-1", name: "Discovered", channels: [{ id: "live-channel", name: "updates" }] },
+    ],
+    healthGuilds: [
+      { guildId: "guild-1", guildName: "Live Server", channels: [], error: "temporary failure" },
+    ],
+  });
+
+  assert.equal(guilds[0].guildName, "Live Server");
+  assert.equal(guilds[0].channels.length, 1);
+  assert.equal(guilds[0].channels[0].channelId, "live-channel");
+});

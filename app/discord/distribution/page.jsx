@@ -22,6 +22,17 @@ const SCHEDULES = [
   { value: "every-5-minutes", label: "每 5 分钟" },
 ];
 
+function canDistributeTo(channel) {
+  return Boolean(channel?.permissionsOk) && channel?.canEmbed !== false;
+}
+
+function distributionStatus(channel) {
+  if (channel?.available === false || channel?.canView === false) return channel?.error || "缺少 View Channel";
+  if (channel?.canSend === false) return "缺少 Send Messages";
+  if (channel?.canEmbed === false) return "缺少 Embed Links";
+  return canDistributeTo(channel) ? "可自动分发" : "等待实时检测";
+}
+
 export default function DiscordDistributionPage() {
   const [status, setStatus] = useState({ guilds: [], config: { guilds: {}, routes: [], demoGuildId: "", syncEnabled: false } });
   const [overview, setOverview] = useState({ rules: [] });
@@ -71,7 +82,7 @@ export default function DiscordDistributionPage() {
       if (!response.ok || !payload.ok) throw new Error(payload.error || "频道实时检测失败。");
       const next = payload.result?.health || { summary: {}, guilds: [] };
       setHealth(next);
-      const sendable = new Set(next.guilds.flatMap((guild) => guild.channels || []).filter((channel) => channel.permissionsOk).map((channel) => channel.channelId));
+      const sendable = new Set(next.guilds.flatMap((guild) => guild.channels || []).filter(canDistributeTo).map((channel) => channel.channelId));
       setSelectedChannelIds((current) => current.filter((id) => sendable.has(id)));
     } catch (requestError) {
       setError(requestError.message || "频道实时检测失败。");
@@ -86,6 +97,7 @@ export default function DiscordDistributionPage() {
     configuredGuilds: Object.values(status.config.guilds || {}),
   }), [health.guilds, status.config.guilds, status.guilds]);
   const channelMap = useMemo(() => new Map(availableGuilds.flatMap((guild) => (guild.channels || []).map((channel) => [channel.channelId, { guild, channel }]))), [availableGuilds]);
+  const sendableCount = useMemo(() => availableGuilds.flatMap((guild) => guild.channels || []).filter(canDistributeTo).length, [availableGuilds]);
   const discordRules = useMemo(() => (overview.rules || []).filter((rule) => rule.kind === "automation" && (rule.targets || []).some((target) => target.platform === "discord")), [overview.rules]);
   const configuredGuilds = availableGuilds;
 
@@ -143,9 +155,10 @@ export default function DiscordDistributionPage() {
         </div>
       </Card>
       <Card className="p-6">
-        <div className="flex items-center justify-between"><h2 className="text-xl font-black">选择目标 Server / Channel</h2><StatusPill tone={health.summary?.sendableChannels ? "green" : "amber"}>{health.summary?.sendableChannels || 0} 个可发送</StatusPill></div>
+        <div className="flex items-center justify-between"><h2 className="text-xl font-black">选择目标 Server / Channel</h2><StatusPill tone={sendableCount ? "green" : "amber"}>{sendableCount} 个可发送</StatusPill></div>
+        <div className="mt-4 rounded-lg bg-ops-soft px-4 py-3 text-sm text-ops-muted">数字表示“可自动分发 / Bot 当前可见”的 Channel 数量。要让全部 Channel 可选，请为 Bot 开启 View Channel、Send Messages 和 Embed Links；若 Channel 有单独权限覆盖，也需取消对应的拒绝权限。修改后点击“重新实时检测”。</div>
         <div className="mt-5 grid gap-3">
-          {availableGuilds.map((guild) => <details key={guild.guildId} className="rounded-lg border border-ops-line"><summary className="cursor-pointer list-none px-4 py-3 font-black">{guild.guildName} <span className="ml-2 text-xs text-ops-muted">{(guild.channels || []).filter((channel) => channel.permissionsOk).length}/{(guild.channels || []).length}</span></summary><div className="border-t border-ops-line p-3">{(guild.channels || []).map((channel) => <label key={channel.channelId} className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm ${channel.permissionsOk ? "hover:bg-ops-soft" : "opacity-50"}`}><span className="flex items-center gap-2"><input type="checkbox" disabled={!channel.permissionsOk} checked={selectedChannelIds.includes(channel.channelId)} onChange={() => toggleChannel(channel.channelId)} />#{channel.name}</span><StatusPill tone={channel.permissionsOk ? "green" : "gray"}>{channel.permissionsOk ? "可发送" : "等待实时检测"}</StatusPill></label>)}</div></details>)}
+          {availableGuilds.map((guild) => <details key={guild.guildId} className="rounded-lg border border-ops-line"><summary className="cursor-pointer list-none px-4 py-3 font-black">{guild.guildName} <span className="ml-2 text-xs text-ops-muted">{(guild.channels || []).filter(canDistributeTo).length}/{(guild.channels || []).length}</span></summary><div className="border-t border-ops-line p-3">{(guild.channels || []).map((channel) => { const selectable = canDistributeTo(channel); return <label key={channel.channelId} className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm ${selectable ? "hover:bg-ops-soft" : "opacity-50"}`}><span className="flex items-center gap-2"><input type="checkbox" disabled={!selectable} checked={selectedChannelIds.includes(channel.channelId)} onChange={() => toggleChannel(channel.channelId)} />#{channel.name}</span><StatusPill tone={selectable ? "green" : "gray"}>{distributionStatus(channel)}</StatusPill></label>; })}</div></details>)}
           {!loading && availableGuilds.length === 0 && <div className="rounded-lg border border-dashed border-ops-line p-4 text-sm text-ops-muted">暂无 Bot 可见的 Discord Server。</div>}
         </div>
         <button type="button" disabled={busy || !selectedChannelIds.length} onClick={saveAutomation} className="mt-5 rounded-lg bg-ops-accent px-5 py-2.5 text-sm font-black text-white disabled:opacity-50">保存自动发布任务（{selectedChannelIds.length} 个目标）</button>

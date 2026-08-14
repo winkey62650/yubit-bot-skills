@@ -582,6 +582,37 @@ test("Discord message delivery supports text and image embeds", async () => {
   });
 });
 
+test("Discord message delivery uploads a local image as a multipart attachment", async () => {
+  let request;
+  const result = await sendDiscordMessage(
+    "channel-photo",
+    {
+      content: "Trader update",
+      attachment: {
+        data: Buffer.from("image-bytes"),
+        filename: "signal.png",
+        contentType: "image/png",
+      },
+    },
+    {
+      token: "secret",
+      fetchImpl: async (url, options) => {
+        request = { url: String(url), options };
+        return jsonResponse(200, { id: "message-photo", channel_id: "channel-photo" });
+      },
+    },
+  );
+
+  assert.equal(result.id, "message-photo");
+  assert.equal(request.options.body instanceof FormData, true);
+  assert.equal(request.options.headers["Content-Type"], undefined);
+  assert.deepEqual(JSON.parse(request.options.body.get("payload_json")), {
+    content: "Trader update",
+    allowed_mentions: { parse: [] },
+  });
+  assert.equal(request.options.body.get("files[0]").name, "signal.png");
+});
+
 test("Discord manual publish deduplicates targets and isolates per-target failures", async () => {
   const repository = createRepository();
   await saveDiscordConfig(
