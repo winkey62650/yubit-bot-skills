@@ -42,7 +42,7 @@ export default function SocialSourceManager({ packages, targetOptions = [], publ
       const result = await response.json();
       if (!response.ok || !result.ok) throw new Error(result.error || "抓取测试失败");
       setPreview(result.preview);
-      onNotice("抓取测试通过；下面显示当前识别到的最新内容，不会发送到 Telegram。");
+      onNotice("抓取测试通过；下面显示当前识别到的最新内容，不会发送到任何社区。");
     } catch (error) {
       onNotice(error.message);
     } finally {
@@ -81,7 +81,7 @@ export default function SocialSourceManager({ packages, targetOptions = [], publ
         <Field label="账号主页"><input className={inputClass} type="url" value={form.accountUrl} onChange={(event) => setForm({ ...form, accountUrl: event.target.value })} placeholder={form.platform === "YouTube" ? "https://www.youtube.com/@handle" : "https://x.com/username"} /></Field>
         <Field label="Feed 地址（可选）"><input className={inputClass} type="url" value={form.feedUrl} onChange={(event) => setForm({ ...form, feedUrl: event.target.value })} placeholder="RSS / Atom / JSON Feed" /></Field>
         <div className="grid gap-2">
-          <div><p className="text-sm font-black">发送目标（群 / Topic）</p><p className="mt-1 text-xs leading-5 text-ops-muted">这条来源抓到新内容后，只会发送到下方选中的目标。群组默认折叠，展开后选择 Topic。</p></div>
+          <div><p className="text-sm font-black">发送目标（Server / Channel 或群 / Topic）</p><p className="mt-1 text-xs leading-5 text-ops-muted">这条来源抓到新内容后，只会发送到下方选中的目标。社区默认折叠，展开后选择具体 Channel 或 Topic。</p></div>
           <div className="max-h-72 overflow-y-auto rounded-lg border border-ops-line bg-white">
             {groupedTargets.length ? groupedTargets.map((group) => {
               const selectedCount = group.options.filter((option) => selectedTargetKeys.has(socialTargetKey(option.target))).length;
@@ -89,7 +89,7 @@ export default function SocialSourceManager({ packages, targetOptions = [], publ
                 <summary className="cursor-pointer list-none px-3 py-3 text-sm font-black">{group.groupName}<span className="ml-2 text-xs font-bold text-ops-muted">{selectedCount}/{group.options.length} 已选</span></summary>
                 <div className="grid gap-1 border-t border-ops-line bg-[#fbfcfb] p-2">{group.options.map((option) => <label className="flex min-h-10 items-center gap-3 rounded-md px-2 text-sm font-bold hover:bg-white" key={option.key}><input checked={selectedTargetKeys.has(socialTargetKey(option.target))} onChange={(event) => toggleTarget(option.target, event.target.checked)} type="checkbox" /><span>{targetChildLabel(option.target)}</span></label>)}</div>
               </details>;
-            }) : <p className="p-4 text-sm font-bold text-ops-muted">暂无可发送的群和 Topic，请先在群配置中完成识别与授权。</p>}
+            }) : <p className="p-4 text-sm font-bold text-ops-muted">暂无可发送目标，请先完成社区识别与授权。</p>}
           </div>
           {form.targets.length ? <div className="flex flex-wrap gap-2">{form.targets.map((target) => <span className="rounded-full bg-[#eaf6f0] px-3 py-1 text-xs font-black text-[#315b49]" key={socialTargetKey(target)}>{routeLabel(target)}</span>)}</div> : <p className="text-xs font-bold text-[#a04a3d]">必须至少选择一个发送目标。</p>}
         </div>
@@ -105,7 +105,7 @@ export default function SocialSourceManager({ packages, targetOptions = [], publ
           const sourceLabel = item.feedUrl ? "自定义 Feed" : item.platform === "YouTube" ? "官方 Feed" : item.platform === "X" ? "公开时间线" : "有限检测";
           const usable = sourceLabel !== "有限检测";
           const targets = Array.isArray(item.targets) ? item.targets : [];
-          return <article className="p-4" key={item.id}><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><strong>{item.name}</strong><StatusPill tone={item.status === "已启用" ? "green" : "amber"}>{item.status}</StatusPill><StatusPill tone={usable ? "green" : "amber"}>{sourceLabel}</StatusPill><StatusPill tone={targets.length ? "green" : "amber"}>{targets.length ? `${targets.length} 个目标` : "未绑定目标"}</StatusPill></div><p className="mt-2 text-sm text-ops-muted">{item.agent} · {item.platform} · 每小时</p><p className="mt-1 truncate text-xs text-ops-muted">{item.feedUrl || item.accountUrl || "未填写地址"}</p><div className="mt-3 grid gap-1 text-xs font-bold text-[#41564d]">{targets.length ? targets.map((target) => <p key={socialTargetKey(target)}>{item.platform} @{item.agent} → {publisherName} → {routeLabel(target)}</p>) : <p className="text-[#a04a3d]">未设置群 / Topic，启用后也不会进入发送队列。</p>}</div></div><div className="flex shrink-0 flex-wrap gap-2"><SourceButton onClick={() => { setForm({ ...item, targets: targets.map((target) => ({ ...target })) }); setPreview(null); }}>编辑</SourceButton><SourceButton disabled={item.status !== "已启用" && !targets.length} onClick={() => persistMutation({ action: "set-status", id: item.id, status: item.status === "已启用" ? "已暂停" : "已启用" }, item.status === "已启用" ? "代理来源已暂停。" : "代理来源已启用。")}>{item.status === "已启用" ? "暂停" : "启用"}</SourceButton><SourceButton danger onClick={() => window.confirm("确认删除这条代理来源？") && persistMutation({ action: "delete", id: item.id }, "代理来源已删除。")}>删除</SourceButton></div></div></article>;
+          return <article className="p-4" key={item.id}><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><strong>{item.name}</strong><StatusPill tone={item.status === "已启用" ? "green" : "amber"}>{item.status}</StatusPill><StatusPill tone={usable ? "green" : "amber"}>{sourceLabel}</StatusPill><StatusPill tone={targets.length ? "green" : "amber"}>{targets.length ? `${targets.length} 个目标` : "未绑定目标"}</StatusPill></div><p className="mt-2 text-sm text-ops-muted">{item.agent} · {item.platform} · 每小时</p><p className="mt-1 truncate text-xs text-ops-muted">{item.feedUrl || item.accountUrl || "未填写地址"}</p><div className="mt-3 grid gap-1 text-xs font-bold text-[#41564d]">{targets.length ? targets.map((target) => <p key={socialTargetKey(target)}>{item.platform} @{item.agent} → {publisherName} → {routeLabel(target)}</p>) : <p className="text-[#a04a3d]">未设置发送目标，启用后也不会进入发送队列。</p>}</div></div><div className="flex shrink-0 flex-wrap gap-2"><SourceButton onClick={() => { setForm({ ...item, targets: targets.map((target) => ({ ...target })) }); setPreview(null); }}>编辑</SourceButton><SourceButton disabled={item.status !== "已启用" && !targets.length} onClick={() => persistMutation({ action: "set-status", id: item.id, status: item.status === "已启用" ? "已暂停" : "已启用" }, item.status === "已启用" ? "代理来源已暂停。" : "代理来源已启用。")}>{item.status === "已启用" ? "暂停" : "启用"}</SourceButton><SourceButton danger onClick={() => window.confirm("确认删除这条代理来源？") && persistMutation({ action: "delete", id: item.id }, "代理来源已删除。")}>删除</SourceButton></div></div></article>;
         }) : <div className="p-8 text-center text-sm font-bold text-ops-muted">之前的入口已恢复。现在还没有来源，请先在左侧添加代理的 X 或 YouTube。</div>}</div>
       </div>
     </div>

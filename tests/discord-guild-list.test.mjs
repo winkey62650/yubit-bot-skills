@@ -55,3 +55,31 @@ test("keeps discovered channels when a transient health response contains zero c
   assert.equal(guilds[0].channels.length, 1);
   assert.equal(guilds[0].channels[0].channelId, "live-channel");
 });
+
+test("hides a removed configured Server after authoritative discovery", () => {
+  const guilds = mergeDiscordGuilds({
+    configuredGuilds: [
+      { guildId: "live", guildName: "Live Server" },
+      { guildId: "removed", guildName: "Removed Server" },
+    ],
+    discoveredGuilds: [{ id: "live", name: "Live Server" }],
+    healthGuilds: [
+      { guildId: "live", guildName: "Live Server", available: true },
+      { guildId: "removed", guildName: "Removed Server", available: false },
+    ],
+    discoveryAuthoritative: true,
+  });
+
+  assert.deepEqual(guilds.map((guild) => guild.guildId), ["live"]);
+});
+
+test("keeps configured Servers when live discovery is unavailable", () => {
+  const guilds = mergeDiscordGuilds({
+    configuredGuilds: [{ guildId: "configured", guildName: "Configured Server" }],
+    discoveredGuilds: [],
+    healthGuilds: [],
+    discoveryAuthoritative: false,
+  });
+
+  assert.deepEqual(guilds.map((guild) => guild.guildId), ["configured"]);
+});

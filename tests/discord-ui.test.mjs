@@ -62,6 +62,12 @@ test("Discord 内容分发中心通过模板、定时和目标频道创建自动
   assert.match(page, /availableGuilds/);
   assert.match(page, /discoveredGuilds:\s*status\.guilds/);
   assert.match(page, /configuredGuilds:\s*Object\.values\(status\.config\.guilds/);
+  assert.match(page, /extractDistributionOverview/);
+  assert.match(page, /\/api\/social-packages/);
+  assert.match(page, /SocialSourceManager/);
+  assert.match(page, /buildDiscordSocialTargetOptions/);
+  assert.match(page, /discoveryAuthoritative:\s*status\.connected === true/);
+  assert.doesNotMatch(page, /value:\s*"agent-sync"/);
   assert.doesNotMatch(page, /directContent/);
   assert.doesNotMatch(page, /direct-publish/);
   assert.doesNotMatch(page, /<textarea/);
@@ -85,6 +91,7 @@ test("Discord Trader 手动信息发布可输入正文和图片并直接发布�
   assert.match(page, /filterDiscordGuildChannels/);
   assert.match(page, /搜索可发言频道/);
   assert.match(page, /open=\{guildSearch\.trim\(\) \? true : undefined\}/);
+  assert.match(page, /discoveryAuthoritative:\s*status\.connected === true/);
   assert.match(page, /<textarea/);
   assert.doesNotMatch(page, /template-publish/);
   assert.doesNotMatch(page, /selectedTemplate/);

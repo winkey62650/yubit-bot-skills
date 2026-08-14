@@ -59,7 +59,8 @@ export default function DiscordManualPage() {
     healthGuilds: health.guilds,
     discoveredGuilds: status.guilds,
     configuredGuilds: Object.values(status.config?.guilds || {}),
-  }), [health.guilds, status.config?.guilds, status.guilds]);
+    discoveryAuthoritative: status.connected === true,
+  }), [health.guilds, status.config?.guilds, status.connected, status.guilds]);
   const capabilityOptions = useMemo(() => ({ hasLocalImage: Boolean(manualImageFile), hasImageUrl: Boolean(manualImageUrl.trim()) }), [manualImageFile, manualImageUrl]);
   const channelMap = useMemo(() => new Map(availableGuilds.flatMap((guild) => (guild.channels || []).map((channel) => [channel.channelId, channel]))), [availableGuilds]);
   const healthyCount = useMemo(() => availableGuilds.flatMap((guild) => guild.channels || []).filter((channel) => canSendManual(channel, capabilityOptions)).length, [availableGuilds, capabilityOptions]);

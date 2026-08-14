@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import ConsoleShell from "../../components/ConsoleShell";
 import { Card, Field, PageHeader, StatusPill, inputClass } from "../../components/ui";
+import SocialSourceManager from "../../distribution/SocialSourceManager";
+import { buildDiscordSocialTargetOptions, extractDistributionOverview } from "../../../lib/discord-distribution-ui.mjs";
 import { mergeDiscordGuilds } from "../../../lib/discord-guild-list.mjs";
 
 const TEMPLATES = [
@@ -11,7 +13,6 @@ const TEMPLATES = [
   { value: "daily-analysis", label: "Daily Analysis", detail: "每日行情图文分析" },
   { value: "whale-signals", label: "Whale Signals", detail: "巨鲸与大户挂单英文图文" },
   { value: "news", label: "News Feed", detail: "市场新闻自动整理" },
-  { value: "agent-sync", label: "Agent Social Updates", detail: "代理 X / YouTube 更新" },
 ];
 
 const SCHEDULES = [
@@ -36,6 +37,7 @@ function distributionStatus(channel) {
 export default function DiscordDistributionPage() {
   const [status, setStatus] = useState({ guilds: [], config: { guilds: {}, routes: [], demoGuildId: "", syncEnabled: false } });
   const [overview, setOverview] = useState({ rules: [] });
+  const [socialPackages, setSocialPackages] = useState([]);
   const [health, setHealth] = useState({ summary: {}, guilds: [] });
   const [contentType, setContentType] = useState("daily-events");
   const [schedulePreset, setSchedulePreset] = useState("daily-0800-utc");
@@ -59,15 +61,18 @@ export default function DiscordDistributionPage() {
   const load = useCallback(async () => {
     setError("");
     try {
-      const [discordResponse, distributionResponse] = await Promise.all([
+      const [discordResponse, distributionResponse, socialResponse] = await Promise.all([
         fetch("/api/discord", { cache: "no-store" }),
         fetch("/api/distribution", { cache: "no-store" }),
+        fetch("/api/social-packages", { cache: "no-store" }),
       ]);
-      const [discordPayload, distributionPayload] = await Promise.all([discordResponse.json(), distributionResponse.json()]);
+      const [discordPayload, distributionPayload, socialPayload] = await Promise.all([discordResponse.json(), distributionResponse.json(), socialResponse.json()]);
       if (!discordResponse.ok || !discordPayload.ok) throw new Error(discordPayload.error || "Discord 配置读取失败。");
       if (!distributionResponse.ok || !distributionPayload.ok) throw new Error(distributionPayload.error || "自动发布任务读取失败。");
+      if (!socialResponse.ok || !socialPayload.ok) throw new Error(socialPayload.error || "代理社媒来源读取失败。");
       applyStatus(discordPayload);
-      setOverview(distributionPayload.overview || distributionPayload.result?.overview || { rules: [] });
+      setOverview(extractDistributionOverview(distributionPayload));
+      setSocialPackages(Array.isArray(socialPayload.packages) ? socialPayload.packages : []);
     } catch (requestError) {
       setError(requestError.message || "内容分发配置读取失败。");
     } finally {
@@ -95,11 +100,13 @@ export default function DiscordDistributionPage() {
     healthGuilds: health.guilds,
     discoveredGuilds: status.guilds,
     configuredGuilds: Object.values(status.config.guilds || {}),
-  }), [health.guilds, status.config.guilds, status.guilds]);
+    discoveryAuthoritative: status.connected === true,
+  }), [health.guilds, status.config.guilds, status.connected, status.guilds]);
   const channelMap = useMemo(() => new Map(availableGuilds.flatMap((guild) => (guild.channels || []).map((channel) => [channel.channelId, { guild, channel }]))), [availableGuilds]);
   const sendableCount = useMemo(() => availableGuilds.flatMap((guild) => guild.channels || []).filter(canDistributeTo).length, [availableGuilds]);
   const discordRules = useMemo(() => (overview.rules || []).filter((rule) => rule.kind === "automation" && (rule.targets || []).some((target) => target.platform === "discord")), [overview.rules]);
   const configuredGuilds = availableGuilds;
+  const discordSocialTargetOptions = useMemo(() => buildDiscordSocialTargetOptions(availableGuilds), [availableGuilds]);
 
   function toggleChannel(channelId) {
     setSelectedChannelIds((current) => current.includes(channelId) ? current.filter((id) => id !== channelId) : [...current, channelId]);
@@ -138,6 +145,23 @@ export default function DiscordDistributionPage() {
     finally { setBusy(false); }
   }
 
+  async function persistSocial(mutation, successMessage) {
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const response = await fetch("/api/social-packages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(mutation) });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "代理社媒来源保存失败。");
+      setSocialPackages(Array.isArray(payload.packages) ? payload.packages : []);
+      setNotice(successMessage);
+      return payload;
+    } catch (requestError) {
+      setError(requestError.message || "代理社媒来源保存失败。");
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return <ConsoleShell>
     <PageHeader title="Discord 内容分发中心" desc="选择内容模板、目标 Server / Channel 和频率；系统到点自动读取并生成内容，无需手动输入正文。" action={<button type="button" onClick={checkHealth} className="rounded-lg border border-ops-line bg-white px-4 py-2 text-sm font-black">重新实时检测</button>} />
     {loading && <div className="mb-4 text-sm text-ops-muted">正在读取分发配置…</div>}
@@ -166,6 +190,17 @@ export default function DiscordDistributionPage() {
     </div>
 
     <Card className="mt-6 p-6"><h2 className="text-xl font-black">已保存的 Discord 自动任务</h2><div className="mt-4 grid gap-3">{discordRules.map((rule) => <div key={rule.id} className="flex flex-col gap-2 rounded-lg border border-ops-line p-4 md:flex-row md:items-center md:justify-between"><div><div className="font-black">{rule.name}</div><div className="mt-1 text-xs text-ops-muted">{rule.contentType} · {rule.schedulePreset} · {(rule.targets || []).filter((target) => target.platform === "discord").length} 个目标</div></div><StatusPill tone={rule.enabled === false ? "gray" : "green"}>{rule.enabled === false ? "已暂停" : "运行中"}</StatusPill></div>)}{!discordRules.length && <div className="rounded-lg border border-dashed border-ops-line p-4 text-sm text-ops-muted">暂无 Discord 自动发布任务。</div>}</div></Card>
+
+    <div className="mt-6">
+      <SocialSourceManager
+        packages={socialPackages}
+        targetOptions={discordSocialTargetOptions}
+        publisherName="Discord Bot"
+        busy={busy}
+        onPersist={persistSocial}
+        onNotice={(message) => { setNotice(message); setError(""); }}
+      />
+    </div>
 
     <Card className="mt-6 p-6">
       <h2 className="text-xl font-black">Demo → 目标同步规则</h2><p className="mt-2 text-sm text-ops-muted">同步与自动分发相互独立；路由按稳定的 Server ID + Channel ID 保存。</p>
