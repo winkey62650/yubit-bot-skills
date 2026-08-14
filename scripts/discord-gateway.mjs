@@ -7,6 +7,7 @@ import {
 } from "discord.js";
 
 import { createDiscordGatewayRuntime } from "../lib/discord-gateway-runtime.mjs";
+import { getDiscordGatewayRetryAt } from "../lib/discord-gateway-retry.mjs";
 import {
   getDiscordCredentialStatus,
   loadDiscordCredentials,
@@ -18,6 +19,8 @@ let active = null;
 let activeFingerprint = "";
 let reconciling = false;
 let stopping = false;
+let retryNotBeforeMs = 0;
+let retryFingerprint = "";
 
 function createClient() {
   return new Client({
@@ -61,6 +64,11 @@ async function reconcileCredentials() {
       .update(`${credentials.appId}:${credentials.botToken}`)
       .digest("hex");
     if (active && fingerprint === activeFingerprint) return;
+    if (fingerprint !== retryFingerprint) {
+      retryFingerprint = fingerprint;
+      retryNotBeforeMs = 0;
+    }
+    if (Date.now() < retryNotBeforeMs) return;
 
     await stopActive("credentials-changed");
     const client = createClient();
@@ -75,9 +83,12 @@ async function reconcileCredentials() {
     try {
       await client.login(credentials.botToken);
     } catch (error) {
+      retryNotBeforeMs = getDiscordGatewayRetryAt(error).getTime();
       await runtime.handleError(error);
       await stopActive("login-failed");
-      await writeWaiting(error?.message || "Discord Gateway login failed.");
+      await writeWaiting(
+        `${error?.message || "Discord Gateway login failed."} Next retry: ${new Date(retryNotBeforeMs).toISOString()}`,
+      );
     }
   } catch (error) {
     await stopActive("credential-reconcile-failed");
