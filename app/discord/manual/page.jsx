@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import ConsoleShell from "../../components/ConsoleShell";
 import { Card, Field, PageHeader, StatusPill, inputClass } from "../../components/ui";
+import { filterDiscordGuildChannels } from "../../../lib/discord-channel-search.mjs";
 
 const TEMPLATE_OPTIONS = [
   { value: "daily-events", label: "Daily Market Events", hint: "每日市场事件：独立海报 + 英文正文" },
@@ -48,14 +49,7 @@ export default function DiscordManualPage() {
   useEffect(() => { checkHealth(); }, [checkHealth]);
 
   const healthyCount = useMemo(() => health.guilds.flatMap((guild) => guild.channels || []).filter((channel) => channel.permissionsOk).length, [health.guilds]);
-  const filteredGuilds = useMemo(() => {
-    const keyword = guildSearch.trim().toLocaleLowerCase();
-    if (!keyword) return health.guilds;
-    return health.guilds.filter((guild) => (
-      String(guild.guildName || "").toLocaleLowerCase().includes(keyword)
-      || (guild.channels || []).some((channel) => String(channel.name || "").toLocaleLowerCase().includes(keyword))
-    ));
-  }, [guildSearch, health.guilds]);
+  const filteredGuilds = useMemo(() => filterDiscordGuildChannels(health.guilds, guildSearch), [guildSearch, health.guilds]);
 
   function toggleChannel(channelId) {
     setManualChannelIds((current) => current.includes(channelId) ? current.filter((id) => id !== channelId) : [...current, channelId]);
@@ -97,8 +91,8 @@ export default function DiscordManualPage() {
         <Card className="p-6">
           <div className="flex items-center justify-between"><h2 className="text-xl font-black">发布目标</h2><StatusPill tone={healthyCount ? "green" : "amber"}>{healthyCount} 个可发送</StatusPill></div>
           <div className="mt-5 grid gap-3">
-            <Field label="搜索 Server 或 Channel"><input className={inputClass} value={guildSearch} onChange={(event) => setGuildSearch(event.target.value)} placeholder="输入群组或频道名称" /></Field>
-            {filteredGuilds.map((guild) => <details key={guild.guildId} className="rounded-lg border border-ops-line"><summary className="cursor-pointer list-none px-4 py-3 font-black">{guild.guildName} <span className="ml-2 text-xs text-ops-muted">{(guild.channels || []).filter((channel) => channel.permissionsOk).length}/{(guild.channels || []).length}</span></summary><div className="border-t border-ops-line p-3">{(guild.channels || []).map((channel) => <label key={channel.channelId} className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm ${channel.permissionsOk ? "hover:bg-ops-soft" : "opacity-50"}`}><span className="flex items-center gap-2"><input type="checkbox" disabled={!channel.permissionsOk} checked={manualChannelIds.includes(channel.channelId)} onChange={() => toggleChannel(channel.channelId)} />#{channel.name}</span><StatusPill tone={channel.permissionsOk ? "green" : "gray"}>{channel.permissionsOk ? "可发送" : channel.error || "权限不完整"}</StatusPill></label>)}</div></details>)}
+            <Field label="搜索可发言频道"><input type="search" className={inputClass} value={guildSearch} onChange={(event) => setGuildSearch(event.target.value)} placeholder="搜索 Server 或 Channel 名称" /></Field>
+            {filteredGuilds.map((guild) => <details key={guild.guildId} open={guildSearch.trim() ? true : undefined} className="rounded-lg border border-ops-line"><summary className="cursor-pointer list-none px-4 py-3 font-black">{guild.guildName} <span className="ml-2 text-xs text-ops-muted">{(guild.channels || []).filter((channel) => channel.permissionsOk).length}/{(guild.channels || []).length}</span></summary><div className="border-t border-ops-line p-3">{(guild.channels || []).map((channel) => <label key={channel.channelId} className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm ${channel.permissionsOk ? "hover:bg-ops-soft" : "opacity-50"}`}><span className="flex items-center gap-2"><input type="checkbox" disabled={!channel.permissionsOk} checked={manualChannelIds.includes(channel.channelId)} onChange={() => toggleChannel(channel.channelId)} />#{channel.name}</span><StatusPill tone={channel.permissionsOk ? "green" : "gray"}>{channel.permissionsOk ? "可发送" : channel.error || "权限不完整"}</StatusPill></label>)}</div></details>)}
             {!loading && health.guilds.length === 0 && <div className="rounded-lg border border-dashed border-ops-line p-4 text-sm text-ops-muted">暂无 Bot 可见的 Discord Server。</div>}
             {!loading && health.guilds.length > 0 && filteredGuilds.length === 0 && <div className="rounded-lg border border-dashed border-ops-line p-4 text-sm text-ops-muted">没有匹配的 Server 或 Channel。</div>}
           </div>

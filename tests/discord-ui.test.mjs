@@ -73,7 +73,9 @@ test("Discord 手动信息发布选择现有模板并直接发布到可发送频
   assert.match(page, /发送到.*个频道/);
   assert.match(page, /guildSearch/);
   assert.match(page, /filteredGuilds/);
-  assert.match(page, /搜索 Server 或 Channel/);
+  assert.match(page, /filterDiscordGuildChannels/);
+  assert.match(page, /搜索可发言频道/);
+  assert.match(page, /open=\{guildSearch\.trim\(\) \? true : undefined\}/);
   assert.doesNotMatch(page, /manualContent/);
   assert.doesNotMatch(page, /manualImageUrl/);
   assert.doesNotMatch(page, /<textarea/);
