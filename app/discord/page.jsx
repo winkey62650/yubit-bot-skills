@@ -87,8 +87,9 @@ export default function DiscordCommunityPage() {
     [demoGuildId, status.guilds],
   );
 
-  async function runAction(action, body, successMessage) {
-    setBusy(action);
+  async function runAction(action, body, successMessage, busyKey) {
+    const effectiveBusyKey = busyKey || action;
+    setBusy(effectiveBusyKey);
     setError("");
     setNotice("");
     try {
@@ -144,20 +145,31 @@ export default function DiscordCommunityPage() {
     await runAction("template-refresh", { guildId: demoGuildId }, `已重新读取 ${selectedDemoGuild?.name || "Demo Server"} 的频道与内容。`);
   }
 
-  async function initialize(dryRun) {
-    if (!guildId) return setError("请先选择一个 Discord Server。");
-    if (!demoTemplate) return setError("请先读取初始化 Demo Server。");
-    if (!selectedTemplateKeys.length) return setError("请至少选择一个 Demo 频道。");
+  async function initialize({ isDemo, dryRun }) {
+    const targetId = isDemo ? demoGuildId : guildId;
+    if (!targetId) return setError(isDemo ? "请先选择 Demo Server。" : "请先选择一个目标 Discord Server。");
+    const payload = {
+      guildId: targetId,
+      dryRun,
+      markAsDemo: Boolean(isDemo),
+    };
+    if (selectedTemplateKeys.length) {
+      payload.templateKeys = selectedTemplateKeys;
+    }
     const result = await runAction(
       "initialize",
-      { guildId, templateKeys: selectedTemplateKeys, dryRun },
-      dryRun ? "初始化预览已生成，尚未修改 Server。" : "频道初始化完成。",
+      payload,
+      dryRun
+        ? `初始化预览已生成（${isDemo ? "Demo" : "目标"} Server），尚未修改 Server。`
+        : `${isDemo ? "Demo Server" : "目标 Server"} 初始化完成。`,
+      isDemo ? "initialize-demo" : "initialize-target",
     );
     if (dryRun && result?.initialized?.plan) {
       const channels = result.initialized.plan.channels || [];
       const categories = result.initialized.plan.categories || [];
       const messages = channels.reduce((sum, channel) => sum + Number(channel.initialMessageCount || 0), 0);
-      setNotice(`初始化预览：${categories.length} 个分类、${channels.length} 个频道、${messages} 条可复制内容。`);
+      const targetText = isDemo ? "Demo Server" : "目标 Server";
+      setNotice(`${targetText} 初始化预览：${categories.length} 个分类、${channels.length} 个频道、${messages} 条可复制内容。`);
     }
   }
 
@@ -226,8 +238,38 @@ export default function DiscordCommunityPage() {
           </div>
         </div>
         <div className="mt-5 flex flex-wrap gap-3">
-          <button type="button" disabled={busy === "initialize"} onClick={() => initialize(true)} className="rounded-lg border border-ops-line px-4 py-2 text-sm font-black">预览初始化</button>
-          <button type="button" disabled={busy === "initialize"} onClick={() => initialize(false)} className="rounded-lg bg-ops-accent px-4 py-2 text-sm font-black text-white">一键初始化</button>
+          <button
+            type="button"
+            disabled={busy === "initialize-demo"}
+            onClick={() => initialize({ isDemo: true, dryRun: true })}
+            className="rounded-lg border border-ops-line px-4 py-2 text-sm font-black"
+          >
+            预览 Demo Server 初始化
+          </button>
+          <button
+            type="button"
+            disabled={busy === "initialize-demo"}
+            onClick={() => initialize({ isDemo: true, dryRun: false })}
+            className="rounded-lg bg-ops-accent px-4 py-2 text-sm font-black text-white"
+          >
+            一键初始化 Demo Server
+          </button>
+          <button
+            type="button"
+            disabled={busy === "initialize-target"}
+            onClick={() => initialize({ isDemo: false, dryRun: true })}
+            className="rounded-lg border border-ops-line px-4 py-2 text-sm font-black"
+          >
+            预览目标 Server 初始化
+          </button>
+          <button
+            type="button"
+            disabled={busy === "initialize-target"}
+            onClick={() => initialize({ isDemo: false, dryRun: false })}
+            className="rounded-lg bg-ops-accent px-4 py-2 text-sm font-black text-white"
+          >
+            一键初始化目标 Server
+          </button>
         </div>
       </Card>
     </ConsoleShell>
