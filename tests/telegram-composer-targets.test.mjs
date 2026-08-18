@@ -1,10 +1,32 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  accountCanSendToTarget,
   assertAccountCanSendToTargets,
   buildAccountTargetGroups,
   filterTelegramComposerTargets
 } from "../lib/telegram-composer-targets.mjs";
+
+test("composer can skip an unavailable automatic destination without rejecting the selected source", () => {
+  const dialogs = [
+    {
+      id: "-100-source",
+      isForum: true,
+      canSendMessages: true,
+      topics: [{ threadId: 12, availabilityStatus: "available", canSendMessages: true }]
+    },
+    {
+      id: "-100-downstream",
+      isForum: true,
+      canSendMessages: true,
+      topics: [{ threadId: 25, availabilityStatus: "closed", canSendMessages: false }]
+    }
+  ];
+
+  assert.equal(accountCanSendToTarget(dialogs, "-100-source:12"), true);
+  assert.equal(accountCanSendToTarget(dialogs, "-100-downstream:25"), false);
+  assert.doesNotThrow(() => assertAccountCanSendToTargets(dialogs, ["-100-source:12"]));
+});
 
 const configuredGroups = [
   {

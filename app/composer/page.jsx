@@ -243,7 +243,7 @@ export default function ComposerPage() {
         throw new Error(data.error || t("composer.sendError"));
       }
       
-      setSuccess(queue ? t("composer.queued") : t("composer.sent"));
+      setSuccess(data.warning || (queue ? t("composer.queued") : t("composer.sent")));
       setMessageText("");
       setSelectedFiles([]);
       setSelectedTargets([]);

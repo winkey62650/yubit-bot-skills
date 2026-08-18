@@ -100,6 +100,8 @@ test("manual composer loads destination CTA instead of accepting a transient CTA
   assert.doesNotMatch(page, /formData\.append\("ctaUrl"/);
   assert.match(route, /composeManualMessage/);
   assert.match(route, /hydrateDestinationCtas/);
+  assert.match(route, /accountCanSendToTarget/);
+  assert.match(route, /skippedAutomaticTargets/);
   assert.doesNotMatch(route, /formData\.get\("ctaText"\)/);
   assert.doesNotMatch(route, /formData\.get\("ctaUrl"\)/);
 });

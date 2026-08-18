@@ -3,7 +3,7 @@ import { telegramMtprotoCall } from "../../../../lib/telegram-mtproto.mjs";
 import { readJson, writeJson } from "../../../../lib/json-store.js";
 import { randomUUID } from "node:crypto";
 import { CustomFile } from "teleproto/client/uploads.js";
-import { assertAccountCanSendToTargets } from "../../../../lib/telegram-composer-targets.mjs";
+import { accountCanSendToTarget, assertAccountCanSendToTargets } from "../../../../lib/telegram-composer-targets.mjs";
 import { hydrateTelegramTopicAvailability, topicIdsByChatFromTargets } from "../../../../lib/telegram-topic-availability.mjs";
 import { SESSION_COOKIE, verifySessionToken } from "../../../../lib/session.js";
 import { canQueueComposerMessage } from "../../../../lib/access-control.mjs";
@@ -57,25 +57,32 @@ export async function POST(req) {
       return NextResponse.json({ ok: false, error: "消息内容和附件不能同时为空" }, { status: 400 });
     }
 
-    // A bot-authored source message is not delivered to another bot's webhook. Expand
-    // automatic broadcast bindings here so manual publishing and its sync are atomic.
+    // A bot-authored source message is not delivered to another bot's webhook, so
+    // expand automatic broadcast bindings here and deliver every currently writable target.
     const repository = await getDistributionRepository();
     const expandedTargets = await expandAutomaticBroadcastTargets(
       repository,
       requestedTargets.map(composerTargetEndpoint)
     );
     const hydratedTargets = await hydrateDestinationCtas(repository, expandedTargets);
-    const targets = [...new Map(hydratedTargets.map((target) => [composerTargetValue(target), target])).entries()];
+    const allTargets = [...new Map(hydratedTargets.map((target) => [composerTargetValue(target), target])).entries()];
+    const requestedTargetSet = new Set(requestedTargets.map(String));
 
-    // Re-check every expanded destination on the server so stale, deleted, or
-    // unauthorized topics cannot produce a partial source-only publication.
+    // User-selected targets remain strict. Stale automatic destinations are skipped so
+    // they cannot block the manual publication that the operator explicitly requested.
     const dialogs = await telegramMtprotoCall(null, "getDialogs", {}, { userId });
     const verifiedDialogs = await hydrateTelegramTopicAvailability(
       dialogs,
-      topicIdsByChatFromTargets(targets.map(([value]) => value)),
+      topicIdsByChatFromTargets(allTargets.map(([value]) => value)),
       { userId }
     );
-    assertAccountCanSendToTargets(verifiedDialogs, targets.map(([value]) => value));
+    assertAccountCanSendToTargets(verifiedDialogs, [...requestedTargetSet]);
+    const skippedAutomaticTargets = allTargets
+      .filter(([value]) => !requestedTargetSet.has(value) && !accountCanSendToTarget(verifiedDialogs, value))
+      .map(([target]) => ({ target, error: "自动绑定目标当前不可发送，已跳过" }));
+    const targets = allTargets.filter(
+      ([value]) => requestedTargetSet.has(value) || accountCanSendToTarget(verifiedDialogs, value)
+    );
     const send = (method, payload) => sendTelegramPreservingClosedTopic(
       (nextMethod, nextPayload) => telegramMtprotoCall(
         null,
@@ -130,7 +137,15 @@ export async function POST(req) {
         });
       }
       await writeJson(queueFile, data);
-      return NextResponse.json({ ok: true, queued: true, results: targets.map(([value]) => value) });
+      return NextResponse.json({
+        ok: true,
+        queued: true,
+        results: targets.map(([value]) => value),
+        skippedAutomaticTargets,
+        warning: skippedAutomaticTargets.length
+          ? `已加入队列；${skippedAutomaticTargets.length} 个不可用的自动绑定目标已跳过。`
+          : ""
+      });
     }
 
     // Send immediately
@@ -182,7 +197,8 @@ export async function POST(req) {
     }
 
     const noTargetsDelivered = results.length === 0;
-    if (errors.length > 0) {
+    const requestedErrors = errors.filter(({ target }) => requestedTargetSet.has(target));
+    if ((errors.length > 0 && requestedErrors.length > 0) || results.length === 0) {
       const summary = noTargetsDelivered
         ? `Telegram 未送达任何目标（失败 ${errors.length} 个）`
         : `部分目标发送失败（成功 ${results.length} 个，失败 ${errors.length} 个）`;
@@ -196,7 +212,16 @@ export async function POST(req) {
       }, { status: noTargetsDelivered ? 502 : 207 });
     }
 
-    return NextResponse.json({ ok: true, results, errors: [] });
+    const automaticWarnings = [...skippedAutomaticTargets, ...errors];
+    return NextResponse.json({
+      ok: true,
+      results,
+      errors: [],
+      skippedAutomaticTargets: automaticWarnings,
+      warning: automaticWarnings.length
+        ? `发布成功；${automaticWarnings.length} 个不可用的自动绑定目标已跳过。`
+        : ""
+    });
   } catch (err) {
     console.error("Composer send error:", err);
     const status = err?.code === "TELEGRAM_ACCOUNT_TARGET_FORBIDDEN"
