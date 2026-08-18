@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { readJson, writeJson } from "../../../lib/json-store";
-import { resolveDiscoveredGroups } from "../../../lib/group-config-policy.mjs";
+import { removeTelegramGroupRecords, resolveDiscoveredGroups } from "../../../lib/group-config-policy.mjs";
 import {
   mergeExpectedForumTopics,
   orderTopicsByTemplate,
@@ -11,6 +11,7 @@ import { defaultTopicTemplate, topicDisplayName } from "../../../templates.mjs";
 export const dynamic = "force-dynamic";
 
 const groupConfigPath = "group-config.json";
+const telegramRegistryPath = "telegram-group-registry.json";
 const legacySeedBindingIds = new Set(["news-market-events", "signal-market-analysis", "broadcast-market-events", "ricky-social", "official-updates"]);
 const expectedForumTopics = defaultTopicTemplate.map((topic) => ({ id: String(topic.id || ""), name: topicDisplayName(topic) }));
 
@@ -22,6 +23,37 @@ export async function GET() {
 export async function POST(request) {
   const body = await request.json().catch(() => ({}));
   const existingConfig = normalizeGroupConfig(await readJson(groupConfigPath, {}));
+
+  if (body.action === "delete") {
+    const chatIds = [...new Set((Array.isArray(body.chatIds) ? body.chatIds : [body.chatId])
+      .map((chatId) => String(chatId || "").trim())
+      .filter(Boolean))];
+    if (!chatIds.length || chatIds.some((chatId) => !/^-100\d+$/.test(chatId))) {
+      return NextResponse.json({ ok: false, error: "请提供有效的 Telegram Chat ID" }, { status: 400 });
+    }
+
+    const existingRegistry = await readJson(telegramRegistryPath, { schemaVersion: 1, groups: [] });
+    const deletion = removeTelegramGroupRecords(existingConfig, existingRegistry, chatIds);
+    const updatedAt = new Date().toISOString();
+    const backupKey = `backups/group-removals/${updatedAt.replace(/[:.]/g, "-")}.json`;
+    await writeJson(backupKey, {
+      action: "delete-telegram-group-records",
+      chatIds,
+      groupConfig: existingConfig,
+      telegramRegistry: existingRegistry,
+      createdAt: updatedAt
+    });
+    await writeJson(groupConfigPath, { ...deletion.groupConfig, updatedAt });
+    await writeJson(telegramRegistryPath, { ...deletion.registry, updatedAt });
+
+    return NextResponse.json({
+      ok: true,
+      chatIds,
+      removed: deletion.removed,
+      backupKey,
+      ...normalizeGroupConfig({ ...deletion.groupConfig, updatedAt })
+    });
+  }
 
   if (Array.isArray(body.groups)) {
     const incomingGroups = normalizeGroups(body.groups);

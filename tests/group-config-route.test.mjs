@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { resolveDiscoveredGroups } from "../lib/group-config-policy.mjs";
+import { removeTelegramGroupRecords, resolveDiscoveredGroups } from "../lib/group-config-policy.mjs";
 
 test("group config reads are always dynamic so saved topic counts do not go stale", async () => {
   const source = await readFile(new URL("../app/api/group-config/route.js", import.meta.url), "utf8");
@@ -90,4 +90,47 @@ test("a membership refresh cannot erase previously verified Topic thread IDs", (
     }],
     preservedExisting: false
   });
+});
+
+test("deleting Telegram destinations removes exact chat ids from saved config and discovery cache", () => {
+  const chatIds = ["-1003862539988", "-1004499214183"];
+  const groupConfig = {
+    schemaVersion: 2,
+    groups: [
+      { chatId: "-1003710405969", title: "DEMO Academy", type: "supergroup" },
+      { chatId: "-1003862539988", title: "DEMO Academy", type: "channel" },
+      { chatId: "-1004499214183", title: "-test", type: "supergroup" }
+    ],
+    bindings: [{ id: "keep", group: "Other Group", topic: "News", config: "x" }]
+  };
+  const registry = {
+    schemaVersion: 1,
+    groups: [
+      { chatId: "-1003710405969", title: "DEMO Academy" },
+      { chatId: "-1003862539988", title: "DEMO Academy" },
+      { chatId: "-1004499214183", title: "-test" }
+    ]
+  };
+
+  assert.deepEqual(removeTelegramGroupRecords(groupConfig, registry, chatIds), {
+    groupConfig: {
+      ...groupConfig,
+      groups: [{ chatId: "-1003710405969", title: "DEMO Academy", type: "supergroup" }]
+    },
+    registry: {
+      ...registry,
+      groups: [{ chatId: "-1003710405969", title: "DEMO Academy" }]
+    },
+    removed: {
+      groupConfig: ["-1003862539988", "-1004499214183"],
+      registry: ["-1003862539988", "-1004499214183"]
+    }
+  });
+});
+
+test("group config route exposes an exact-id deletion action", async () => {
+  const source = await readFile(new URL("../app/api/group-config/route.js", import.meta.url), "utf8");
+  assert.match(source, /body\.action === ["']delete["']/);
+  assert.match(source, /removeTelegramGroupRecords/);
+  assert.match(source, /telegram-group-registry\.json/);
 });
