@@ -22,6 +22,9 @@ test("distribution center provides persistent destination CTA configuration", ()
   assert.match(pageSource, /saveDestinationCtas/);
   assert.match(pageSource, /CTA 文案/);
   assert.match(pageSource, /CTA 链接/);
+  assert.match(pageSource, /保存此频道/);
+  assert.match(pageSource, /onSaveOne/);
+  assert.match(pageSource, /target\.chatId \|\| target\.guildId/);
   assert.doesNotMatch(pageSource, /<TargetCtaEditor/);
 });
 

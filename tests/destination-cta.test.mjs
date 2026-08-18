@@ -5,6 +5,7 @@ import {
   destinationCtaKey,
   hydrateDestinationCtas,
   loadDestinationCtaRegistry,
+  saveDestinationCtaConfig,
   saveDestinationCtaRegistry,
 } from "../lib/destination-cta.mjs";
 import { composeManualMessage } from "../lib/manual-cta.mjs";
@@ -47,6 +48,28 @@ test("one saved group or server CTA is applied without changing topic or channel
   assert.equal(targets[1].threadId, 24);
   assert.equal(targets[2].channelId, "c9");
   assert.equal(targets[3].channelId, "c10");
+  assert.equal(composeManualMessage("Manual body", targets[0]), "Manual body\n\nJoin Group\nhttps://example.com/group");
+  assert.equal(composeManualMessage("Discord body", targets[2]), "Discord body\n\nJoin Discord\nhttps://example.com/d");
+});
+
+test("saving one destination CTA preserves CTA configs for other groups and servers", async () => {
+  const repo = repository();
+  await saveDestinationCtaRegistry(repo, [
+    { platform: "telegram", chatId: "-1001", ctaEnabled: true, ctaText: "Group One", ctaUrl: "https://example.com/one" },
+    { platform: "discord", guildId: "g1", ctaEnabled: true, ctaText: "Discord One", ctaUrl: "https://example.com/d" },
+  ]);
+
+  const registry = await saveDestinationCtaConfig(repo, {
+    platform: "telegram",
+    chatId: "-1002",
+    ctaEnabled: true,
+    ctaText: "Group Two",
+    ctaUrl: "https://example.com/two",
+  });
+
+  assert.equal(registry["telegram:-1001"].ctaText, "Group One");
+  assert.equal(registry["telegram:-1002"].ctaText, "Group Two");
+  assert.equal(registry["discord:g1"].ctaText, "Discord One");
 });
 
 test("an explicitly disabled Telegram group overrides legacy rule CTA for every topic", async () => {

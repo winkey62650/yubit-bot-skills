@@ -284,6 +284,27 @@ function DistributionPageContent() {
     }
   }
 
+  async function saveDestinationCta(config) {
+    const key = destinationCtaConfigKey(config);
+    setBusy(`destination-cta:${key}`);
+    setNotice("");
+    try {
+      const response = await fetch("/api/destination-cta", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ config })
+      });
+      const result = await response.json();
+      if (!response.ok || !result.ok) throw new Error(result.error || "频道 CTA 保存失败");
+      setDestinationCtas(result.registry || {});
+      setNotice(`频道 CTA 已保存：${config.groupName || config.guildName || config.chatId || config.guildId}。后续手动和自动分发都会在发送前读取。`);
+    } catch (error) {
+      setNotice(`频道 CTA 保存失败：${error.message}`);
+    } finally {
+      setBusy("");
+    }
+  }
+
   async function post(body, successMessage, refresh = true) {
     setBusy(body.action || "save");
     setNotice("");
@@ -487,7 +508,7 @@ function DistributionPageContent() {
       {analyticsView ? <SiteAnalyticsPanel /> : null}
       {loading && !analyticsView ? <Card className="p-8 text-center font-bold text-ops-muted">正在加载持久化配置…</Card> : null}
       {!loading && view === "automation" ? <AutomationView form={automationForm} setForm={setAutomationForm} rules={automationRules} groups={groups} discordState={discordState} socialPackages={socialPackages} publisherName={automaticPublisherName} deliveryMode={deliverySettings.telegramPublishMode} onDeliveryModeChange={(value) => saveDeliveryIdentity("telegramPublishMode", value)} busy={busy} selected={selectedAutomationRules} setSelected={setSelectedAutomationRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedAutomationRules, "自动任务")} onSave={() => saveRule(automationForm, () => setAutomationForm(emptyAutomation))} onEdit={setAutomationForm} onAction={post} onValidate={validate} onPersistSocial={saveSocialPackages} onNotice={setNotice} presets={targetPresets} onSavePreset={savePreset} onDeletePreset={deletePreset} /> : null}
-      {!loading && view === "destination-cta" ? <DestinationCtaView options={destinationCtaTargetOptions(groups, discordState)} registry={destinationCtas} setRegistry={setDestinationCtas} busy={busy} onSave={saveDestinationCtas} /> : null}
+      {!loading && view === "destination-cta" ? <DestinationCtaView options={destinationCtaTargetOptions(groups, discordState)} registry={destinationCtas} setRegistry={setDestinationCtas} busy={busy} onSave={saveDestinationCtas} onSaveOne={saveDestinationCta} /> : null}
       {!loading && view === "broadcast" ? <BroadcastView form={broadcastForm} setForm={setBroadcastForm} rules={broadcastRules} groups={groups} approvedTargetIds={data.publisher?.approvedTargetIds} publisherName={forwardPublisherName} deliveryMode={deliverySettings.telegramForwardMode} onDeliveryModeChange={(value) => saveDeliveryIdentity("telegramForwardMode", value)} busy={busy} selected={selectedBroadcastRules} setSelected={setSelectedBroadcastRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedBroadcastRules, "内容同步规则")} backfill={backfill} setBackfill={setBackfill} onBackfill={previewBackfill} onSave={() => saveRule(broadcastForm, () => setBroadcastForm(emptyBroadcast))} onEdit={setBroadcastForm} onAction={post} onValidate={validate} presets={targetPresets} onSavePreset={savePreset} onDeletePreset={deletePreset} /> : null}
       {!loading && view === "review" ? <ReviewView events={data.review} selected={selectedReviews} setSelected={setSelectedReviews} busy={busy} onAction={reviewAction} /> : null}
       {!loading && view === "logs" ? <LogsView deliveries={data.deliveries} busy={busy} onRetry={async (id) => { setBusy("retry"); try { const response = await fetch("/api/distribution/logs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "retry", deliveryId: id }) }); const result = await response.json(); if (!response.ok || !result.ok) throw new Error(result.error); setNotice("失败目标已单独重试，不影响其他目标。"); await loadAll(); } catch (error) { setNotice(error.message); } finally { setBusy(""); } }} /> : null}
@@ -789,7 +810,7 @@ function TargetPicker({ options, selected, onChange, presets = [], onSavePreset,
   </fieldset>;
 }
 
-function DestinationCtaView({ options, registry, setRegistry, busy, onSave }) {
+function DestinationCtaView({ options, registry, setRegistry, busy, onSave, onSaveOne }) {
   const [search, setSearch] = useState("");
   const normalizedSearch = search.trim().toLocaleLowerCase();
   const filteredOptions = options.filter((option) => {
@@ -800,18 +821,21 @@ function DestinationCtaView({ options, registry, setRegistry, busy, onSave }) {
   const optionGroups = groupDistributionTargetOptions(filteredOptions);
 
   function configFor(target) {
-    return registry[destinationCtaConfigKey(target)] || {
+    return {
       ...target,
       ctaEnabled: false,
       ctaText: "",
-      ctaUrl: ""
+      ctaUrl: "",
+      ...(registry[destinationCtaConfigKey(target)] || {})
     };
   }
 
   function update(target, patch) {
     const key = destinationCtaConfigKey(target);
-    const current = configFor(target);
-    setRegistry({ ...registry, [key]: { ...current, ...target, ...patch } });
+    setRegistry((currentRegistry) => {
+      const current = { ...target, ...(currentRegistry[key] || {}) };
+      return { ...currentRegistry, [key]: { ...current, ...target, ...patch } };
+    });
   }
 
   return <div className="grid gap-5">
@@ -831,11 +855,12 @@ function DestinationCtaView({ options, registry, setRegistry, busy, onSave }) {
       <div className="divide-y divide-ops-line">{group.options.map((option) => {
         const target = option.target;
         const cta = configFor(target);
+        const rowBusy = busy === `destination-cta:${destinationCtaConfigKey(target)}`;
         return <div className="grid gap-3 p-4 lg:grid-cols-[minmax(180px,.8fr)_minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end" key={destinationCtaConfigKey(target)}>
-          <div><p className="text-xs font-bold text-ops-muted">目标</p><p className="mt-2 text-sm font-black">{option.label}</p></div>
+          <div><p className="text-xs font-bold text-ops-muted">目标</p><p className="mt-2 text-sm font-black">{option.label}</p><p className="mt-1 break-all font-mono text-[11px] text-ops-muted">{target.chatId || target.guildId}</p></div>
           <Field label="CTA 文案"><input className={inputClass} onChange={(event) => update(target, { ctaText: event.target.value, ctaEnabled: true })} placeholder="例如：立即加入 YUBIT" value={cta.ctaText || ""} /></Field>
           <Field label="CTA 链接"><input className={inputClass} onChange={(event) => update(target, { ctaUrl: event.target.value, ctaEnabled: true })} placeholder="https://…" type="url" value={cta.ctaUrl || ""} /></Field>
-          <Toggle checked={cta.ctaEnabled === true} label="启用 CTA" onChange={(ctaEnabled) => update(target, { ctaEnabled })} />
+          <div className="grid gap-2"><Toggle checked={cta.ctaEnabled === true} label="启用 CTA" onChange={(ctaEnabled) => update(target, { ctaEnabled })} /><button className="min-h-10 rounded-lg border border-ops-accent px-3 text-xs font-black text-ops-accent disabled:opacity-40" disabled={Boolean(busy)} onClick={() => onSaveOne(cta)} type="button">{rowBusy ? "保存中…" : "保存此频道"}</button></div>
         </div>;
       })}</div>
     </Card>) : <Card className="p-8 text-center text-sm font-bold text-ops-muted">没有匹配的 Telegram 群组/频道或 Discord Server。</Card>}
