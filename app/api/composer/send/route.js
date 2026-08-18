@@ -11,6 +11,7 @@ import { getDistributionRepository } from "../../../../lib/distribution-reposito
 import { expandAutomaticBroadcastTargets } from "../../../../lib/distribution-service.mjs";
 import { sendTelegramPreservingClosedTopic } from "../../../../lib/telegram-delivery.mjs";
 import { composeManualMessage } from "../../../../lib/manual-cta.mjs";
+import { hydrateDestinationCtas } from "../../../../lib/destination-cta.mjs";
 
 function composerTargetEndpoint(value, index) {
   const [chatId, threadId] = String(value).split(":");
@@ -32,8 +33,6 @@ export async function POST(req) {
     const formData = await req.formData();
     const userId = formData.get("userId");
     const text = String(formData.get("text") || "");
-    const ctaText = String(formData.get("ctaText") || "");
-    const ctaUrl = String(formData.get("ctaUrl") || "");
     const queue = formData.get("queue") === "true";
     const mediaFiles = formData.getAll("media"); // Array of File or null
     const requestedTargets = formData.getAll("targets"); // array of "chatId:threadId" or "chatId:"
@@ -54,10 +53,7 @@ export async function POST(req) {
     if (!userId || requestedTargets.length === 0) {
       return NextResponse.json({ ok: false, error: "缺少必要参数 (userId, targets)" }, { status: 400 });
     }
-    const composedText = composeManualMessage(text, { ctaText, ctaUrl }, {
-      limit: mediaFiles.length > 0 ? 1024 : 4096,
-    });
-    if (!composedText && mediaFiles.length === 0) {
+    if (!text.trim() && mediaFiles.length === 0) {
       return NextResponse.json({ ok: false, error: "消息内容和附件不能同时为空" }, { status: 400 });
     }
 
@@ -68,17 +64,18 @@ export async function POST(req) {
       repository,
       requestedTargets.map(composerTargetEndpoint)
     );
-    const targets = [...new Set(expandedTargets.map(composerTargetValue))];
+    const hydratedTargets = await hydrateDestinationCtas(repository, expandedTargets);
+    const targets = [...new Map(hydratedTargets.map((target) => [composerTargetValue(target), target])).entries()];
 
     // Re-check every expanded destination on the server so stale, deleted, or
     // unauthorized topics cannot produce a partial source-only publication.
     const dialogs = await telegramMtprotoCall(null, "getDialogs", {}, { userId });
     const verifiedDialogs = await hydrateTelegramTopicAvailability(
       dialogs,
-      topicIdsByChatFromTargets(targets),
+      topicIdsByChatFromTargets(targets.map(([value]) => value)),
       { userId }
     );
-    assertAccountCanSendToTargets(verifiedDialogs, targets);
+    assertAccountCanSendToTargets(verifiedDialogs, targets.map(([value]) => value));
     const send = (method, payload) => sendTelegramPreservingClosedTopic(
       (nextMethod, nextPayload) => telegramMtprotoCall(
         null,
@@ -118,8 +115,9 @@ export async function POST(req) {
     if (queue) {
       const queueFile = "composer-queue.json";
       const data = await readJson(queueFile, { messages: [] });
-      for (const target of targets) {
+      for (const [target, targetConfig] of targets) {
         const [chatId, threadId] = target.split(":");
+        const composedText = composeManualMessage(text, targetConfig, { limit: mediaFiles.length > 0 ? 1024 : 4096 });
         data.messages.push({
           id: randomUUID(),
           userId,
@@ -132,15 +130,16 @@ export async function POST(req) {
         });
       }
       await writeJson(queueFile, data);
-      return NextResponse.json({ ok: true, queued: true, results: targets });
+      return NextResponse.json({ ok: true, queued: true, results: targets.map(([value]) => value) });
     }
 
     // Send immediately
     const results = [];
     const errors = [];
 
-    for (const target of targets) {
+    for (const [target, targetConfig] of targets) {
       const [chatId, threadId] = target.split(":");
+      const composedText = composeManualMessage(text, targetConfig, { limit: mediaFiles.length > 0 ? 1024 : 4096 });
       const payload = { chat_id: chatId };
       if (threadId) {
         payload.message_thread_id = Number(threadId);

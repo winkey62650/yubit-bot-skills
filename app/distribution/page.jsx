@@ -27,6 +27,7 @@ import {
 const tabs = [
   ["site-analytics", "网站数据"],
   ["automation", "自动发布"],
+  ["destination-cta", "频道 CTA"],
   ["broadcast", "内容同步"],
   ["review", "待审核"],
   ["logs", "运行记录"]
@@ -120,6 +121,7 @@ function DistributionPageContent() {
   const [backfill, setBackfill] = useState({ ruleId: "", references: "", preview: null });
   const [deliverySettings, setDeliverySettings] = useState(defaultDeliverySettings);
   const [targetPresets, setTargetPresets] = useState([]);
+  const [destinationCtas, setDestinationCtas] = useState({});
 
   useEffect(() => {
     loadAll();
@@ -174,9 +176,15 @@ function DistributionPageContent() {
           const discord = await response.json();
           if (!response.ok || !discord.ok) throw new Error(discord.error || "Discord Server 与 Channel 读取失败");
           setDiscordState(discord);
+        })(),
+        (async () => {
+          const response = await fetch("/api/destination-cta", { cache: "no-store" });
+          const result = await response.json();
+          if (!response.ok || !result.ok) throw new Error(result.error || "频道 CTA 读取失败");
+          setDestinationCtas(result.registry || {});
         })()
       ]);
-      const optionalLabels = ["群与 Topic", "代理来源", "发送身份", "目标预设", "Discord Server 与 Channel"];
+      const optionalLabels = ["群与 Topic", "代理来源", "发送身份", "目标预设", "Discord Server 与 Channel", "频道 CTA"];
       const failedOptionalLoads = optionalResults
         .map((result, index) => result.status === "rejected" ? optionalLabels[index] : "")
         .filter(Boolean);
@@ -249,6 +257,26 @@ function DistributionPageContent() {
     } catch (error) {
       setNotice(error.message);
       return null;
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function saveDestinationCtas(configs) {
+    setBusy("destination-cta");
+    setNotice("");
+    try {
+      const response = await fetch("/api/destination-cta", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ configs })
+      });
+      const result = await response.json();
+      if (!response.ok || !result.ok) throw new Error(result.error || "频道 CTA 保存失败");
+      setDestinationCtas(result.registry || {});
+      setNotice("频道 CTA 已保存；后续手动和自动分发会按每个目标自动读取。");
+    } catch (error) {
+      setNotice(error.message);
     } finally {
       setBusy("");
     }
@@ -457,6 +485,7 @@ function DistributionPageContent() {
       {analyticsView ? <SiteAnalyticsPanel /> : null}
       {loading && !analyticsView ? <Card className="p-8 text-center font-bold text-ops-muted">正在加载持久化配置…</Card> : null}
       {!loading && view === "automation" ? <AutomationView form={automationForm} setForm={setAutomationForm} rules={automationRules} groups={groups} discordState={discordState} socialPackages={socialPackages} publisherName={automaticPublisherName} deliveryMode={deliverySettings.telegramPublishMode} onDeliveryModeChange={(value) => saveDeliveryIdentity("telegramPublishMode", value)} busy={busy} selected={selectedAutomationRules} setSelected={setSelectedAutomationRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedAutomationRules, "自动任务")} onSave={() => saveRule(automationForm, () => setAutomationForm(emptyAutomation))} onEdit={setAutomationForm} onAction={post} onValidate={validate} onPersistSocial={saveSocialPackages} onNotice={setNotice} presets={targetPresets} onSavePreset={savePreset} onDeletePreset={deletePreset} /> : null}
+      {!loading && view === "destination-cta" ? <DestinationCtaView options={destinationCtaTargetOptions(groups, discordState)} registry={destinationCtas} setRegistry={setDestinationCtas} busy={busy} onSave={saveDestinationCtas} /> : null}
       {!loading && view === "broadcast" ? <BroadcastView form={broadcastForm} setForm={setBroadcastForm} rules={broadcastRules} groups={groups} approvedTargetIds={data.publisher?.approvedTargetIds} publisherName={forwardPublisherName} deliveryMode={deliverySettings.telegramForwardMode} onDeliveryModeChange={(value) => saveDeliveryIdentity("telegramForwardMode", value)} busy={busy} selected={selectedBroadcastRules} setSelected={setSelectedBroadcastRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedBroadcastRules, "内容同步规则")} backfill={backfill} setBackfill={setBackfill} onBackfill={previewBackfill} onSave={() => saveRule(broadcastForm, () => setBroadcastForm(emptyBroadcast))} onEdit={setBroadcastForm} onAction={post} onValidate={validate} presets={targetPresets} onSavePreset={savePreset} onDeletePreset={deletePreset} /> : null}
       {!loading && view === "review" ? <ReviewView events={data.review} selected={selectedReviews} setSelected={setSelectedReviews} busy={busy} onAction={reviewAction} /> : null}
       {!loading && view === "logs" ? <LogsView deliveries={data.deliveries} busy={busy} onRetry={async (id) => { setBusy("retry"); try { const response = await fetch("/api/distribution/logs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "retry", deliveryId: id }) }); const result = await response.json(); if (!response.ok || !result.ok) throw new Error(result.error); setNotice("失败目标已单独重试，不影响其他目标。"); await loadAll(); } catch (error) { setNotice(error.message); } finally { setBusy(""); } }} /> : null}
@@ -555,7 +584,7 @@ function AutomationView({ form, setForm, rules, groups, discordState, socialPack
       <Field label="预设频率"><select className={inputClass} value={form.schedulePreset} disabled={form.contentType === "whale-signals"} onChange={(event) => setForm({ ...form, schedulePreset: event.target.value })}>{schedules.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>{form.contentType === "whale-signals" ? <p className="mt-1 text-xs text-ops-muted">系统每小时检查真实订单簿，仅在异动达到阈值时发布，相同信号冷却期内不重复。</p> : null}</Field>
       <FormStep number="3" title="选择发布目标" desc={form.contentType === "agent-sync" ? "每条来源优先使用上方独立绑定；此处任务目标用于兼容旧配置和异常兜底。" : `建议发布到 ${template.destinationHint}；可选择一个或多个已授权的群和 Topic。`} />
       <TargetPicker options={automationTargets} selected={form.targets} onChange={(targets) => setForm({ ...form, targets, targetCtas: retainTargetCtas(form.targetCtas, targets) })} presets={presets} onSavePreset={(name) => onSavePreset(name, form.targets)} onDeletePreset={onDeletePreset} />
-      <TargetCtaEditor options={automationTargets} selected={form.targets} value={form.targetCtas || {}} onChange={(targetCtas) => setForm({ ...form, targetCtas })} />
+      <p className="rounded-lg border border-[#cae5da] bg-[#f2faf6] p-3 text-xs leading-5 text-[#41564d]">所选目标的 CTA 由「频道 CTA」统一维护，任务执行到每个频道或 Topic 前会自动读取。</p>
       <Toggle checked={form.enabled} label="创建后立即启用" onChange={(enabled) => setForm({ ...form, enabled })} />
       <label className="flex items-start gap-3 rounded-lg border border-ops-line bg-[#fbfcfb] p-3 text-sm font-bold leading-6 text-[#33423b]"><input className="mt-1" checked={confirmed} onChange={(event) => setConfirmedFor(event.target.checked ? fingerprint : "")} type="checkbox" /><span>我已确认发送模板、频率和目标。动态数据会在实际执行时刷新。</span></label>
     </RuleForm>
@@ -758,46 +787,56 @@ function TargetPicker({ options, selected, onChange, presets = [], onSavePreset,
   </fieldset>;
 }
 
-function TargetCtaEditor({ options, selected, value = {}, onChange }) {
-  const selectedOptions = selected.map((key) => options.find((option) => option.key === key)).filter(Boolean);
-  if (!selectedOptions.length) return null;
+function DestinationCtaView({ options, registry, setRegistry, busy, onSave }) {
+  const [search, setSearch] = useState("");
+  const normalizedSearch = search.trim().toLocaleLowerCase();
+  const filteredOptions = options.filter((option) => {
+    const target = option.target || {};
+    const haystack = [option.groupLabel, target.groupName, target.guildName, target.topicName, target.channelName, target.chatId, target.channelId].join(" ").toLocaleLowerCase();
+    return !normalizedSearch || haystack.includes(normalizedSearch);
+  });
+  const optionGroups = groupDistributionTargetOptions(filteredOptions);
 
-  function update(key, patch) {
-    const next = { ...(value || {}) };
-    const current = normalizeFormTargetCta(next[key]);
-    const merged = normalizeFormTargetCta({ ...current, ...patch });
-    if (!merged.ctaEnabled && !merged.ctaText && !merged.ctaUrl) delete next[key];
-    else next[key] = merged;
-    onChange(next);
+  function configFor(target) {
+    return registry[destinationCtaConfigKey(target)] || {
+      ...target,
+      ctaEnabled: false,
+      ctaText: "",
+      ctaUrl: ""
+    };
   }
 
-  return <div className="rounded-lg border border-[#cae5da] bg-[#f7fcf9] p-4">
-    <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
-      <div>
-        <h3 className="text-sm font-black text-[#173f31]">按频道追加 CTA 与链接</h3>
-        <p className="mt-1 text-xs leading-5 text-[#51665d]">每个目标可单独追加行动文案和链接；未启用的目标保持原模板不变。</p>
+  function update(target, patch) {
+    const key = destinationCtaConfigKey(target);
+    const current = configFor(target);
+    setRegistry({ ...registry, [key]: { ...current, ...target, ...patch } });
+  }
+
+  return <div className="grid gap-5">
+    <Card className="p-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h2 className="text-xl font-black">频道与 Topic CTA 配置</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-ops-muted">CTA 与固定目标绑定。Telegram 按群组 + Topic，Discord 按 Channel 保存；内容分发到每个目标时会在发送前自动读取，并分别追加到消息末尾。</p>
+        </div>
+        <button className="min-h-11 rounded-lg bg-ops-accent px-5 text-sm font-black text-white disabled:opacity-50" disabled={Boolean(busy)} onClick={() => onSave(Object.values(registry))} type="button">{busy === "destination-cta" ? "保存中…" : "保存全部配置"}</button>
       </div>
-      <StatusPill tone="green">{selectedOptions.length} 个目标</StatusPill>
-    </div>
-    <div className="mt-3 grid gap-3">
-      {selectedOptions.map((option) => {
-        const key = option.key;
-        const cta = normalizeFormTargetCta(value[key]);
-        return <div className="rounded-lg border border-ops-line bg-white p-3" key={key}>
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div className="min-w-0">
-              <div className="text-xs font-bold text-ops-muted">{option.groupLabel || option.target?.groupName || option.target?.guildName || option.target?.guildId || option.target?.chatId}</div>
-              <div className="mt-1 truncate text-sm font-black text-[#24362f]">{destinationLabel(option.target)}</div>
-            </div>
-            <Toggle checked={cta.ctaEnabled} label="启用 CTA" onChange={(ctaEnabled) => update(key, { ctaEnabled })} />
-          </div>
-          {cta.ctaEnabled ? <div className="mt-3 grid gap-2 md:grid-cols-2">
-            <Field label="CTA 文案"><input className={inputClass} value={cta.ctaText} onChange={(event) => update(key, { ctaText: event.target.value, ctaEnabled: true })} placeholder="例如：Join the VIP desk" /></Field>
-            <Field label="CTA 链接"><input className={inputClass} value={cta.ctaUrl} onChange={(event) => update(key, { ctaUrl: event.target.value, ctaEnabled: true })} placeholder="https://..." /></Field>
-          </div> : null}
+      <div className="mt-5"><Field label="搜索频道或 Topic"><input className={inputClass} onChange={(event) => setSearch(event.target.value)} placeholder="输入群组、Server、Topic 或 Channel 名称" type="search" value={search} /></Field></div>
+    </Card>
+
+    {optionGroups.length ? optionGroups.map((group) => <Card className="overflow-hidden" key={group.key}>
+      <div className="flex items-center justify-between border-b border-ops-line p-4"><div className="flex items-center gap-2"><StatusPill tone={group.platform === "discord" ? "amber" : "green"}>{group.platform === "discord" ? "Discord" : "Telegram"}</StatusPill><h3 className="font-black">{group.label}</h3></div><span className="text-xs font-bold text-ops-muted">{group.options.length} 个目标</span></div>
+      <div className="divide-y divide-ops-line">{group.options.map((option) => {
+        const target = option.target;
+        const cta = configFor(target);
+        return <div className="grid gap-3 p-4 lg:grid-cols-[minmax(180px,.8fr)_minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end" key={destinationCtaConfigKey(target)}>
+          <div><p className="text-xs font-bold text-ops-muted">目标</p><p className="mt-2 text-sm font-black">{destinationLabel(target)}</p></div>
+          <Field label="CTA 文案"><input className={inputClass} onChange={(event) => update(target, { ctaText: event.target.value, ctaEnabled: true })} placeholder="例如：立即加入 YUBIT" value={cta.ctaText || ""} /></Field>
+          <Field label="CTA 链接"><input className={inputClass} onChange={(event) => update(target, { ctaUrl: event.target.value, ctaEnabled: true })} placeholder="https://…" type="url" value={cta.ctaUrl || ""} /></Field>
+          <Toggle checked={cta.ctaEnabled === true} label="启用 CTA" onChange={(ctaEnabled) => update(target, { ctaEnabled })} />
         </div>;
-      })}
-    </div>
+      })}</div>
+    </Card>) : <Card className="p-8 text-center text-sm font-bold text-ops-muted">没有匹配的 Telegram Topic 或 Discord Channel。</Card>}
   </div>;
 }
 
@@ -833,11 +872,15 @@ function SmallButton({ children, danger = false, disabled = false, onClick }) { 
 function automationTargetOptions(groups, discordState) {
   return [...targetOptions(groups), ...buildDiscordDistributionTargetOptions(discordState)];
 }
+function destinationCtaTargetOptions(groups, discordState) {
+  return [...buildDistributionTargetOptions(groups), ...buildDiscordDistributionTargetOptions(discordState)];
+}
 function targetOptions(groups) {
   return buildDistributionTargetOptions(groups).filter((option) => option.target?.chatType !== "channel");
 }
 function sourceOptions(groups) { return buildDistributionSourceOptions(groups); }
 function targetKey(value) { return value?.platform === "discord" ? `discord:${value.guildId}:${value.channelId}` : value?.chatType === "channel" ? `${value.chatId}:channel` : `${value.chatId}:${Number(value.threadId || 0)}`; }
+function destinationCtaConfigKey(value) { return value?.platform === "discord" ? `discord:${value.channelId}` : value?.chatType === "channel" ? `telegram:${value.chatId}:channel` : `telegram:${value.chatId}:${Number(value.threadId || 0)}`; }
 function normalizeFormTargetCta(input = {}) {
   const ctaText = String(input?.ctaText ?? input?.text ?? "").trim();
   const ctaUrl = String(input?.ctaUrl ?? input?.url ?? "").trim();

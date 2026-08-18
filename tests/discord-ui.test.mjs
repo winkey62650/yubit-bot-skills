@@ -81,16 +81,16 @@ test("代理社媒来源逐项显示 Discord Server 与 Channel", () => {
   assert.match(manager, /routeLabel/);
 });
 
-test("Discord Trader 手动信息发布可输入正文和图片并直接发布到可发送频道", () => {
+test("Discord Trader 手动信息发布使用频道级 CTA 配置并直接发布到可发送频道", () => {
   const page = read("app/discord/manual/page.jsx");
   assert.match(page, /\/api\/discord\/manual/);
   assert.match(page, /manualContent/);
   assert.match(page, /manualImageUrl/);
   assert.match(page, /manualImageFile/);
-  assert.match(page, /manualCtaText/);
-  assert.match(page, /manualCtaUrl/);
-  assert.match(page, /CTA 文案/);
-  assert.match(page, /CTA 链接/);
+  assert.match(page, /频道 CTA 配置/);
+  assert.match(page, /\/distribution\?view=destination-cta/);
+  assert.doesNotMatch(page, /manualCtaText/);
+  assert.doesNotMatch(page, /manualCtaUrl/);
   assert.match(page, /type="file"/);
   assert.match(page, /accept="image\//);
   assert.match(page, /new FormData/);
@@ -110,15 +110,15 @@ test("Discord Trader 手动信息发布可输入正文和图片并直接发布�
   assert.doesNotMatch(page, /TEMPLATE_OPTIONS/);
 });
 
-test("Discord Trader 手动发布使用独立的最小权限 API", () => {
+test("Discord Trader 手动发布使用独立的最小权限 API 且不接收临时 CTA", () => {
   const route = read("app/api/discord/manual/route.js");
   assert.match(route, /getDiscordStatus/);
   assert.match(route, /checkDiscordHealth/);
   assert.match(route, /sendDiscordManualPublish/);
   assert.match(route, /request\.formData/);
   assert.match(route, /arrayBuffer/);
-  assert.match(route, /ctaText/);
-  assert.match(route, /ctaUrl/);
+  assert.doesNotMatch(route, /ctaText/);
+  assert.doesNotMatch(route, /ctaUrl/);
   assert.doesNotMatch(route, /saveDiscordCredentials/);
   assert.doesNotMatch(route, /initializeDiscordGuild/);
 });

@@ -12,6 +12,7 @@ import {
   sendDiscordMessage,
 } from "../lib/discord-service.mjs";
 import { saveDiscordCredentials } from "../lib/discord-credentials.mjs";
+import { saveDestinationCtaRegistry } from "../lib/destination-cta.mjs";
 
 function createRepository() {
   const meta = new Map();
@@ -734,7 +735,7 @@ test("Discord manual publish deduplicates targets and isolates per-target failur
   assert.doesNotMatch(result.results[1].error, /manual-secret-token/);
 });
 
-test("Discord manual publish appends the operator CTA to the outgoing content", async () => {
+test("Discord manual publish loads and appends the destination channel CTA", async () => {
   const repository = createRepository();
   await saveDiscordConfig({
     guilds: {
@@ -745,13 +746,19 @@ test("Discord manual publish appends the operator CTA to the outgoing content", 
       },
     },
   }, { repository });
+  await saveDestinationCtaRegistry(repository, [{
+    platform: "discord",
+    guildId: "guild-1",
+    channelId: "channel-ok",
+    ctaEnabled: true,
+    ctaText: "Join YUBIT",
+    ctaUrl: "https://yubit.com/join",
+  }]);
   const messageBodies = [];
 
   const result = await sendDiscordManualPublish({
     channelIds: ["channel-ok"],
     content: "Market update",
-    ctaText: "Join YUBIT",
-    ctaUrl: "https://yubit.com/join",
   }, {
     token: "secret-token",
     repository,
