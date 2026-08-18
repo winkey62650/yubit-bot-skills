@@ -276,7 +276,7 @@ function DistributionPageContent() {
       const result = await response.json();
       if (!response.ok || !result.ok) throw new Error(result.error || "频道 CTA 保存失败");
       setDestinationCtas(result.registry || {});
-      setNotice("频道 CTA 已保存；Telegram 群内所有 Topic、Discord Server 内所有 Channel 将各自共用一份 CTA。");
+      setNotice("频道 CTA 已持久化保存；未出现在当前页面状态中的频道配置不会被清空。Telegram 群内所有 Topic、Discord Server 内所有 Channel 将各自共用一份 CTA。");
     } catch (error) {
       setNotice(error.message);
     } finally {

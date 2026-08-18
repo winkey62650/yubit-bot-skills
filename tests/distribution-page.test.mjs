@@ -24,6 +24,7 @@ test("distribution center provides persistent destination CTA configuration", ()
   assert.match(pageSource, /CTA 链接/);
   assert.match(pageSource, /保存此频道/);
   assert.match(pageSource, /onSaveOne/);
+  assert.match(pageSource, /未出现在当前页面状态中的频道配置不会被清空/);
   assert.match(pageSource, /target\.chatId \|\| target\.guildId/);
   assert.doesNotMatch(pageSource, /<TargetCtaEditor/);
 });

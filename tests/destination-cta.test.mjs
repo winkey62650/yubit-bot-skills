@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
   destinationCtaKey,
   hydrateDestinationCtas,
   loadDestinationCtaRegistry,
+  mergeDestinationCtaConfigs,
   saveDestinationCtaConfig,
   saveDestinationCtaRegistry,
 } from "../lib/destination-cta.mjs";
@@ -17,6 +19,12 @@ function repository() {
     async setMeta(key, value) { meta.set(key, structuredClone(value)); return value; },
   };
 }
+
+test("destination CTA API bulk saves merge instead of replacing the registry", async () => {
+  const routeSource = await readFile(new URL("../app/api/destination-cta/route.js", import.meta.url), "utf8");
+  assert.match(routeSource, /mergeDestinationCtaConfigs\(repository, body\.configs\)/);
+  assert.doesNotMatch(routeSource, /saveDestinationCtaRegistry\(repository, body\.configs\)/);
+});
 
 test("destination CTA is keyed by Telegram group or Discord server", () => {
   assert.equal(destinationCtaKey({ platform: "telegram", chatId: "-1001", threadId: 23 }), "telegram:-1001");
@@ -70,6 +78,38 @@ test("saving one destination CTA preserves CTA configs for other groups and serv
   assert.equal(registry["telegram:-1001"].ctaText, "Group One");
   assert.equal(registry["telegram:-1002"].ctaText, "Group Two");
   assert.equal(registry["discord:g1"].ctaText, "Discord One");
+});
+
+test("bulk CTA save merges drafts and cannot erase a previously saved channel", async () => {
+  const repo = repository();
+  await saveDestinationCtaConfig(repo, {
+    platform: "telegram",
+    chatId: "-1001",
+    ctaEnabled: true,
+    ctaText: "Demo CTA",
+    ctaUrl: "https://example.com/demo",
+  });
+
+  await mergeDestinationCtaConfigs(repo, []);
+  await mergeDestinationCtaConfigs(repo, [{
+    platform: "discord",
+    guildId: "g1",
+    ctaEnabled: true,
+    ctaText: "Discord CTA",
+    ctaUrl: "https://example.com/discord",
+  }]);
+
+  const registry = await loadDestinationCtaRegistry(repo);
+  assert.equal(registry["telegram:-1001"].ctaText, "Demo CTA");
+  assert.equal(registry["discord:g1"].ctaText, "Discord CTA");
+
+  const [target] = await hydrateDestinationCtas(repo, [
+    { platform: "telegram", chatId: "-1001", threadId: 23 },
+  ]);
+  assert.equal(
+    composeManualMessage("Manual body", target),
+    "Manual body\n\nDemo CTA\nhttps://example.com/demo"
+  );
 });
 
 test("an explicitly disabled Telegram group overrides legacy rule CTA for every topic", async () => {
