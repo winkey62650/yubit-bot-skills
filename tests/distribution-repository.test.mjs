@@ -23,11 +23,20 @@ test("Postgres rules persist and claim one due automation with a recoverable lea
     enabled: true,
     runOnce: true,
     nextRunAt: "2026-07-17T12:00:00.000Z",
-    targets: [{ chatId: "-1001", threadId: 8 }],
+    targets: [{
+      chatId: "-1001",
+      threadId: 8,
+      ctaEnabled: true,
+      ctaText: "Open the report",
+      ctaUrl: "https://example.com/report"
+    }],
   });
 
   assert.match(calls[0].sql, /run_once/);
   assert.equal(calls[0].params[8], true);
+  const targetInsert = calls.find((call) => /INSERT INTO distribution_targets/.test(call.sql));
+  assert.match(targetInsert.sql, /cta_enabled,cta_text,cta_url/);
+  assert.deepEqual(targetInsert.params.slice(10, 13), [true, "Open the report", "https://example.com/report"]);
 
   calls.length = 0;
   await repository.claimDueAutomationRules(new Date("2026-07-17T12:02:00.000Z"), { limit: 1, leaseMs: 240000 });
@@ -41,6 +50,57 @@ test("Postgres rules persist and claim one due automation with a recoverable lea
     1,
     "2026-07-17T12:06:00.000Z"
   ]);
+});
+
+test("Postgres target migrations and reads preserve per-target CTA fields", async () => {
+  const repository = Object.create(PostgresDistributionRepository.prototype);
+  const calls = [];
+  repository.sql = {
+    async query(sql) {
+      calls.push(sql);
+      if (/SELECT \* FROM distribution_rules WHERE id/.test(sql)) {
+        return [{
+          id: "cta-rule",
+          kind: "automation",
+          name: "CTA rule",
+          content_type: "daily-analysis",
+          schedule_preset: "daily-0800-utc",
+          mode: "automatic",
+          source: {},
+          enabled: true,
+          run_once: false,
+          status: "ready"
+        }];
+      }
+      if (/SELECT \* FROM distribution_targets WHERE rule_id/.test(sql)) {
+        return [{
+          id: "cta-target",
+          platform: "telegram",
+          chat_id: "-1001",
+          chat_type: "supergroup",
+          thread_id: 10,
+          group_name: "DEMO Academy",
+          topic_name: "4. Market Analysis",
+          cta_enabled: true,
+          cta_text: "Read more",
+          cta_url: "https://example.com/analysis",
+          enabled: true,
+          sort_order: 0
+        }];
+      }
+      return [];
+    }
+  };
+
+  await repository.initialize();
+  assert.ok(calls.some((sql) => /ADD COLUMN IF NOT EXISTS cta_enabled/.test(sql)));
+  assert.ok(calls.some((sql) => /ADD COLUMN IF NOT EXISTS cta_text/.test(sql)));
+  assert.ok(calls.some((sql) => /ADD COLUMN IF NOT EXISTS cta_url/.test(sql)));
+
+  const rule = await repository.getRule("cta-rule");
+  assert.equal(rule.targets[0].ctaEnabled, true);
+  assert.equal(rule.targets[0].ctaText, "Read more");
+  assert.equal(rule.targets[0].ctaUrl, "https://example.com/analysis");
 });
 
 test("Postgres delivery records preserve every Telegram message id", async () => {
