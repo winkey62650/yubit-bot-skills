@@ -216,6 +216,34 @@ test("automation plans append target-specific CTA blocks", () => {
   assert.match(discord[0].steps[0].payload.content, /\*\*Open VIP Desk\*\*\nhttps:\/\/example\.com\/vip/);
 });
 
+test("Telegram plans reserve space for each target CTA when generated content reaches platform limits", () => {
+  const target = {
+    chatId: "-1001",
+    threadId: 8,
+    chatType: "supergroup",
+    ctaEnabled: true,
+    ctaText: "Join Channel Alpha",
+    ctaUrl: "https://example.com/alpha"
+  };
+  const longBody = Array.from({ length: 40 }, (_, index) => (
+    `<b>Story ${index + 1}</b>\n${"Verified market context. ".repeat(12)}`
+  )).join("\n\n");
+
+  const events = automation.buildAutomationTelegramPlans("daily-events", {
+    fullText: longBody
+  }, [target], "https://example.com/events.png");
+  const eventsText = events[0].steps[1].payload.text;
+  assert.ok(eventsText.length <= 4096);
+  assert.match(eventsText, /<b>Join Channel Alpha<\/b>\nhttps:\/\/example\.com\/alpha$/);
+
+  const analysis = automation.buildAutomationTelegramPlans("daily-analysis", {
+    caption: longBody
+  }, [target], "https://example.com/analysis.png");
+  const analysisCaption = analysis[0].steps[0].payload.caption;
+  assert.ok(analysisCaption.length <= 1024);
+  assert.match(analysisCaption, /<b>Join Channel Alpha<\/b>\nhttps:\/\/example\.com\/alpha$/);
+});
+
 test("Discord agent updates use the same fixed X and YouTube templates", () => {
   const plans = automation.buildAgentUpdateDiscordPlans([
     { platform: "X", publishedAt: "2026-08-04T01:20:00Z", url: "https://x.com/demo/status/1" },
