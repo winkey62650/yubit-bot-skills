@@ -20,8 +20,19 @@ async function json(response, label) {
   return payload;
 }
 
+function decodeTelegramHtml(value) {
+  return String(value || "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
 function textsOf(plan) {
-  return (plan?.steps || []).map((step) => String(step?.payload?.text || step?.payload?.caption || step?.payload?.content || "")).join("\n");
+  return (plan?.steps || [])
+    .map((step) => decodeTelegramHtml(step?.payload?.text || step?.payload?.caption || step?.payload?.content || ""))
+    .join("\n");
 }
 
 (async () => {

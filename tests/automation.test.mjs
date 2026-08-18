@@ -223,7 +223,7 @@ test("Telegram plans reserve space for each target CTA when generated content re
     chatType: "supergroup",
     ctaEnabled: true,
     ctaText: "Join Channel Alpha",
-    ctaUrl: "https://example.com/alpha"
+    ctaUrl: "https://example.com/alpha?source=demo&topic=events"
   };
   const longBody = Array.from({ length: 40 }, (_, index) => (
     `<b>Story ${index + 1}</b>\n${"Verified market context. ".repeat(12)}`
@@ -234,14 +234,14 @@ test("Telegram plans reserve space for each target CTA when generated content re
   }, [target], "https://example.com/events.png");
   const eventsText = events[0].steps[1].payload.text;
   assert.ok(eventsText.length <= 4096);
-  assert.match(eventsText, /<b>Join Channel Alpha<\/b>\nhttps:\/\/example\.com\/alpha$/);
+  assert.match(eventsText, /<b>Join Channel Alpha<\/b>\nhttps:\/\/example\.com\/alpha\?source=demo&amp;topic=events$/);
 
   const analysis = automation.buildAutomationTelegramPlans("daily-analysis", {
     caption: longBody
   }, [target], "https://example.com/analysis.png");
   const analysisCaption = analysis[0].steps[0].payload.caption;
   assert.ok(analysisCaption.length <= 1024);
-  assert.match(analysisCaption, /<b>Join Channel Alpha<\/b>\nhttps:\/\/example\.com\/alpha$/);
+  assert.match(analysisCaption, /<b>Join Channel Alpha<\/b>\nhttps:\/\/example\.com\/alpha\?source=demo&amp;topic=events$/);
 });
 
 test("Discord agent updates use the same fixed X and YouTube templates", () => {
