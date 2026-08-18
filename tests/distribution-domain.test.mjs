@@ -243,6 +243,32 @@ test("Telegram broadcast rules ignore Discord destinations", () => {
   assert.equal(rule.targets[0].chatId, "-1002");
 });
 
+test("automation targets preserve per-channel CTA and validate CTA URLs", () => {
+  const valid = normalizeDistributionRule({
+    kind: "automation",
+    name: "Daily CTA",
+    contentType: "daily-analysis",
+    schedulePreset: "daily-0800-utc",
+    targets: [
+      { chatId: "-1001", threadId: 10, ctaText: "Join VIP", ctaUrl: "https://example.com/vip" },
+      { platform: "discord", guildId: "guild-1", channelId: "channel-1", cta: { enabled: true, text: "Open Desk", url: "https://example.com/desk" } }
+    ]
+  });
+
+  assert.equal(valid.targets[0].ctaEnabled, true);
+  assert.equal(valid.targets[0].ctaText, "Join VIP");
+  assert.equal(valid.targets[1].ctaUrl, "https://example.com/desk");
+
+  const errors = validateDistributionRule({
+    kind: "automation",
+    name: "Bad CTA",
+    contentType: "daily-analysis",
+    schedulePreset: "daily-0800-utc",
+    targets: [{ chatId: "-1001", threadId: 10, ctaText: "Join", ctaUrl: "ftp://example.com" }]
+  });
+  assert.ok(errors.some((error) => error.field === "targets.ctaUrl"));
+});
+
 test("an automatic job keeps a channel destination without inventing a thread", () => {
   const rule = normalizeDistributionRule({
     id: "channel-events",

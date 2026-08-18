@@ -89,7 +89,7 @@ const officialPublishingContracts = [
   }
 ];
 
-const emptyAutomation = { id: "", kind: "automation", name: "", contentType: "daily-events", schedulePreset: "daily-0800-utc", enabled: true, targets: [] };
+const emptyAutomation = { id: "", kind: "automation", name: "", contentType: "daily-events", schedulePreset: "daily-0800-utc", enabled: true, targets: [], targetCtas: {} };
 const emptyBroadcast = { id: "", kind: "broadcast", name: "", mode: "automatic", enabled: true, source: { chatId: "", chatType: "supergroup", threadId: "", groupName: "", topicName: "" }, targets: [] };
 
 export default function DistributionPage() {
@@ -283,7 +283,15 @@ function DistributionPageContent() {
   }
 
   async function saveRule(form, reset) {
-    const rule = { ...form, id: form.id || undefined, targets: resolveTargets(form.targets, form.kind) };
+    const resolvedTargets = resolveTargets(form.targets, form.kind);
+    const targets = form.kind === "automation"
+      ? resolvedTargets.map((target) => {
+        const cta = normalizeFormTargetCta(form.targetCtas?.[targetKey(target)]);
+        return cta.ctaEnabled || cta.ctaText || cta.ctaUrl ? { ...target, ...cta } : target;
+      })
+      : resolvedTargets;
+    const { targetCtas, ...formWithoutTargetCtas } = form;
+    const rule = { ...formWithoutTargetCtas, id: form.id || undefined, targets };
     const result = await post({ rule }, "规则已保存，并会在刷新、重新登录及重新部署后保持一致。");
     if (result) reset();
   }
@@ -512,7 +520,7 @@ function AutomationView({ form, setForm, rules, groups, discordState, socialPack
     .filter((item) => item.status === "已启用")
     .map((item) => ({ id: String(item.id), targets: (Array.isArray(item.targets) ? item.targets : []).map(targetKey).sort() }))
     .sort((left, right) => left.id.localeCompare(right.id));
-  const fingerprint = JSON.stringify([form.contentType, form.schedulePreset, [...form.targets].sort(), form.contentType === "agent-sync" ? enabledSourceRoutes : []]);
+  const fingerprint = JSON.stringify([form.contentType, form.schedulePreset, [...form.targets].sort(), form.targetCtas || {}, form.contentType === "agent-sync" ? enabledSourceRoutes : []]);
   const confirmed = confirmedFor === fingerprint;
   const sourcesReady = form.contentType !== "agent-sync" || (sourceReadiness.ready && sourceRouteReadiness.ready);
   const canSave = Boolean(form.name.trim() && form.targets.length && sourcesReady && confirmed);
@@ -546,13 +554,14 @@ function AutomationView({ form, setForm, rules, groups, discordState, socialPack
       <FormStep number="2" title="确认频率" desc="日更任务按 UTC 运行；监控任务按时间窗口扫描并去重。" />
       <Field label="预设频率"><select className={inputClass} value={form.schedulePreset} disabled={form.contentType === "whale-signals"} onChange={(event) => setForm({ ...form, schedulePreset: event.target.value })}>{schedules.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>{form.contentType === "whale-signals" ? <p className="mt-1 text-xs text-ops-muted">系统每小时检查真实订单簿，仅在异动达到阈值时发布，相同信号冷却期内不重复。</p> : null}</Field>
       <FormStep number="3" title="选择发布目标" desc={form.contentType === "agent-sync" ? "每条来源优先使用上方独立绑定；此处任务目标用于兼容旧配置和异常兜底。" : `建议发布到 ${template.destinationHint}；可选择一个或多个已授权的群和 Topic。`} />
-      <TargetPicker options={automationTargets} selected={form.targets} onChange={(targets) => setForm({ ...form, targets })} presets={presets} onSavePreset={(name) => onSavePreset(name, form.targets)} onDeletePreset={onDeletePreset} />
+      <TargetPicker options={automationTargets} selected={form.targets} onChange={(targets) => setForm({ ...form, targets, targetCtas: retainTargetCtas(form.targetCtas, targets) })} presets={presets} onSavePreset={(name) => onSavePreset(name, form.targets)} onDeletePreset={onDeletePreset} />
+      <TargetCtaEditor options={automationTargets} selected={form.targets} value={form.targetCtas || {}} onChange={(targetCtas) => setForm({ ...form, targetCtas })} />
       <Toggle checked={form.enabled} label="创建后立即启用" onChange={(enabled) => setForm({ ...form, enabled })} />
       <label className="flex items-start gap-3 rounded-lg border border-ops-line bg-[#fbfcfb] p-3 text-sm font-bold leading-6 text-[#33423b]"><input className="mt-1" checked={confirmed} onChange={(event) => setConfirmedFor(event.target.checked ? fingerprint : "")} type="checkbox" /><span>我已确认发送模板、频率和目标。动态数据会在实际执行时刷新。</span></label>
     </RuleForm>
     <TelegramTemplatePreview form={form} template={template} publisherName={publisherName} preview={preview} previewState={previewState} onGenerate={generatePreview} />
     </div>
-    <RuleList busy={busy} empty="暂无自动任务。" kindLabel="自动任务" rules={rules} selected={selected} setSelected={setSelected} onDeleteMany={onDeleteMany} onEdit={(rule) => onEdit({ ...rule, targets: rule.targets.map(targetKey) })} onAction={onAction} onValidate={onValidate} />
+    <RuleList busy={busy} empty="暂无自动任务。" kindLabel="自动任务" rules={rules} selected={selected} setSelected={setSelected} onDeleteMany={onDeleteMany} onEdit={(rule) => onEdit({ ...rule, targets: rule.targets.map(targetKey), targetCtas: targetCtasFromTargets(rule.targets) })} onAction={onAction} onValidate={onValidate} />
   </div>;
 }
 
@@ -700,6 +709,7 @@ function RuleList({ rules, empty, busy, kindLabel, selected, setSelected, onDele
               <div className="flex flex-wrap items-center gap-2"><h3 className="font-black">{rule.name}</h3><StatusPill tone={rule.enabled ? "green" : "amber"}>{rule.runOnce ? rule.status === "completed" ? "已执行" : rule.status === "failed" ? "执行失败" : rule.status === "running" ? "执行中" : "等待执行" : rule.enabled ? "已启用" : "已暂停"}</StatusPill>{rule.runOnce ? <StatusPill tone="amber">一次性</StatusPill> : null}{rule.status === "pending-confirmation" ? <StatusPill tone="amber">待确认</StatusPill> : null}</div>
               <p className="mt-2 text-sm text-ops-muted">{rule.kind === "automation" ? rule.runOnce ? `${labelFor(contentTypes, rule.contentType)} · 一次性执行 · ${rule.status === "completed" ? "已完成" : rule.status === "failed" ? "失败（可在运行记录中查看原因）" : rule.status === "running" ? "正在执行" : formatTime(rule.nextRunAt)}` : `${labelFor(contentTypes, rule.contentType)} · ${labelFor(schedules, rule.schedulePreset)} · 下次 ${formatTime(rule.nextRunAt)}` : `${rule.mode === "review" ? "审核模式" : "自动模式"} · 来源 ${rule.source?.chatId}:${destinationLabel(rule.source)}`}</p>
               <p className="mt-1 text-xs text-ops-muted">{rule.targets.length} 个目标 · {rule.targets.map((target) => `${target.groupName || target.guildId || target.chatId}/${destinationLabel(target)}`).join("、")}</p>
+              {rule.kind === "automation" && targetCtaCount(rule.targets) ? <p className="mt-1 text-xs font-bold text-[#317a58]">{targetCtaCount(rule.targets)} 个目标已配置 CTA</p> : null}
             </div>
             <div className="flex flex-wrap gap-2">
               {rule.runOnce ? null : <SmallButton disabled={Boolean(busy)} onClick={() => onEdit(rule)}>编辑</SmallButton>}
@@ -748,6 +758,49 @@ function TargetPicker({ options, selected, onChange, presets = [], onSavePreset,
   </fieldset>;
 }
 
+function TargetCtaEditor({ options, selected, value = {}, onChange }) {
+  const selectedOptions = selected.map((key) => options.find((option) => option.key === key)).filter(Boolean);
+  if (!selectedOptions.length) return null;
+
+  function update(key, patch) {
+    const next = { ...(value || {}) };
+    const current = normalizeFormTargetCta(next[key]);
+    const merged = normalizeFormTargetCta({ ...current, ...patch });
+    if (!merged.ctaEnabled && !merged.ctaText && !merged.ctaUrl) delete next[key];
+    else next[key] = merged;
+    onChange(next);
+  }
+
+  return <div className="rounded-lg border border-[#cae5da] bg-[#f7fcf9] p-4">
+    <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+      <div>
+        <h3 className="text-sm font-black text-[#173f31]">按频道追加 CTA 与链接</h3>
+        <p className="mt-1 text-xs leading-5 text-[#51665d]">每个目标可单独追加行动文案和链接；未启用的目标保持原模板不变。</p>
+      </div>
+      <StatusPill tone="green">{selectedOptions.length} 个目标</StatusPill>
+    </div>
+    <div className="mt-3 grid gap-3">
+      {selectedOptions.map((option) => {
+        const key = option.key;
+        const cta = normalizeFormTargetCta(value[key]);
+        return <div className="rounded-lg border border-ops-line bg-white p-3" key={key}>
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div className="min-w-0">
+              <div className="text-xs font-bold text-ops-muted">{option.groupLabel || option.target?.groupName || option.target?.guildName || option.target?.guildId || option.target?.chatId}</div>
+              <div className="mt-1 truncate text-sm font-black text-[#24362f]">{destinationLabel(option.target)}</div>
+            </div>
+            <Toggle checked={cta.ctaEnabled} label="启用 CTA" onChange={(ctaEnabled) => update(key, { ctaEnabled })} />
+          </div>
+          {cta.ctaEnabled ? <div className="mt-3 grid gap-2 md:grid-cols-2">
+            <Field label="CTA 文案"><input className={inputClass} value={cta.ctaText} onChange={(event) => update(key, { ctaText: event.target.value, ctaEnabled: true })} placeholder="例如：Join the VIP desk" /></Field>
+            <Field label="CTA 链接"><input className={inputClass} value={cta.ctaUrl} onChange={(event) => update(key, { ctaUrl: event.target.value, ctaEnabled: true })} placeholder="https://..." /></Field>
+          </div> : null}
+        </div>;
+      })}
+    </div>
+  </div>;
+}
+
 function groupDistributionTargetOptions(options = []) {
   const groups = new Map();
   for (const option of options) {
@@ -785,6 +838,28 @@ function targetOptions(groups) {
 }
 function sourceOptions(groups) { return buildDistributionSourceOptions(groups); }
 function targetKey(value) { return value?.platform === "discord" ? `discord:${value.guildId}:${value.channelId}` : value?.chatType === "channel" ? `${value.chatId}:channel` : `${value.chatId}:${Number(value.threadId || 0)}`; }
+function normalizeFormTargetCta(input = {}) {
+  const ctaText = String(input?.ctaText ?? input?.text ?? "").trim();
+  const ctaUrl = String(input?.ctaUrl ?? input?.url ?? "").trim();
+  const rawEnabled = input?.ctaEnabled ?? input?.enabled;
+  const ctaEnabled = rawEnabled === true || (rawEnabled !== false && Boolean(ctaText || ctaUrl));
+  return { ctaEnabled, ctaText, ctaUrl };
+}
+function retainTargetCtas(value = {}, selected = []) {
+  const allowed = new Set(selected);
+  return Object.fromEntries(Object.entries(value || {}).filter(([key]) => allowed.has(key)));
+}
+function targetCtasFromTargets(targets = []) {
+  return Object.fromEntries((targets || [])
+    .map((target) => [targetKey(target), normalizeFormTargetCta(target)])
+    .filter(([, cta]) => cta.ctaEnabled || cta.ctaText || cta.ctaUrl));
+}
+function targetCtaCount(targets = []) {
+  return (targets || []).filter((target) => {
+    const cta = normalizeFormTargetCta(target);
+    return cta.ctaEnabled && (cta.ctaText || cta.ctaUrl);
+  }).length;
+}
 function sourceKey(value) { return !value?.chatId ? "" : value.chatType === "channel" ? `${value.chatId}:channel` : `${value.chatId}:${Number(value.threadId || 0)}`; }
 function destinationLabel(value) { return distributionDestinationLabel(value); }
 function labelFor(options, value) { return options.find(([key]) => key === value)?.[1] || value || "未配置"; }

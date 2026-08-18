@@ -178,6 +178,44 @@ test("Discord automation plans preserve the approved editorial message shapes", 
   }]);
 });
 
+test("automation plans append target-specific CTA blocks", () => {
+  const telegramTargets = [
+    {
+      chatId: "-1001",
+      threadId: 8,
+      chatType: "supergroup",
+      ctaEnabled: true,
+      ctaText: "Join YUBIT",
+      ctaUrl: "https://yubit.vip/join"
+    },
+    { chatId: "-1002", threadId: 8, chatType: "supergroup" }
+  ];
+
+  const analysis = automation.buildAutomationTelegramPlans("daily-analysis", {
+    caption: "<b>Daily Market Analysis</b>\nMarket remains constructive."
+  }, telegramTargets, "https://example.com/analysis.png");
+  assert.match(analysis[0].steps[0].payload.caption, /<b>Join YUBIT<\/b>\nhttps:\/\/yubit\.vip\/join/);
+  assert.doesNotMatch(analysis[1].steps[0].payload.caption, /Join YUBIT/);
+
+  const events = automation.buildAutomationTelegramPlans("daily-events", {
+    fullText: "<b>Market Events</b>\n\n1. Event one"
+  }, [telegramTargets[0]], "https://example.com/events.png");
+  assert.equal(events[0].steps[0].payload.caption, undefined);
+  assert.match(events[0].steps[1].payload.text, /<b>Join YUBIT<\/b>\nhttps:\/\/yubit\.vip\/join/);
+
+  const discord = automation.buildAutomationDiscordPlans("daily-analysis", {
+    caption: "<b>Daily Market Analysis</b>\nMarket remains constructive."
+  }, [{
+    platform: "discord",
+    guildId: "guild-1",
+    channelId: "channel-1",
+    ctaEnabled: true,
+    ctaText: "Open VIP Desk",
+    ctaUrl: "https://example.com/vip"
+  }], "https://example.com/analysis.png");
+  assert.match(discord[0].steps[0].payload.content, /\*\*Open VIP Desk\*\*\nhttps:\/\/example\.com\/vip/);
+});
+
 test("Discord agent updates use the same fixed X and YouTube templates", () => {
   const plans = automation.buildAgentUpdateDiscordPlans([
     { platform: "X", publishedAt: "2026-08-04T01:20:00Z", url: "https://x.com/demo/status/1" },

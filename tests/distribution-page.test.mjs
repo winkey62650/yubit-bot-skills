@@ -10,6 +10,14 @@ test("automatic publishing and Telegram broadcast keep separate rule selections"
   assert.match(pageSource, /reconcileRuleSelection/);
 });
 
+test("automatic publishing supports per-target CTA configuration", () => {
+  assert.match(pageSource, /按频道追加 CTA 与链接/);
+  assert.match(pageSource, /targetCtas/);
+  assert.match(pageSource, /CTA 文案/);
+  assert.match(pageSource, /CTA 链接/);
+  assert.match(pageSource, /targetCtasFromTargets/);
+});
+
 test("content sync clearly configures where the selected Bot or human account copies messages", () => {
   assert.match(pageSource, /\["broadcast", "内容同步"\]/);
   assert.match(pageSource, /新增内容同步规则/);
