@@ -23,6 +23,8 @@ test("distribution center provides persistent destination CTA configuration", ()
   assert.match(pageSource, /CTA 内容（支持 Markdown 与换行）/);
   assert.match(pageSource, /ctaContent/);
   assert.match(pageSource, /<textarea/);
+  assert.match(pageSource, /Telegram 实际发送效果/);
+  assert.match(pageSource, /renderTelegramMarkdownHtml/);
   assert.doesNotMatch(pageSource, /Field label="CTA 文案"/);
   assert.doesNotMatch(pageSource, /Field label="CTA 链接"/);
   assert.match(pageSource, /保存此频道/);

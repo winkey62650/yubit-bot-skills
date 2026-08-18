@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { composeManualMessage, isAllowedManualCtaUrl } from "../lib/manual-cta.mjs";
+import * as manualCta from "../lib/manual-cta.mjs";
+
+const { composeManualMessage, isAllowedManualCtaUrl } = manualCta;
 
 test("manual CTA is appended after the message body", () => {
   assert.equal(
@@ -47,4 +49,28 @@ test("manual CTA keeps the full CTA while truncating an oversized body", () => {
 
   assert.equal(result.length, 24);
   assert.match(result, /…\n\nJoin\nhttps:\/\/x\.co$/);
+});
+
+test("Telegram renderer turns the saved formatted CTA into safe HTML", () => {
+  assert.equal(typeof manualCta.renderTelegramMarkdownHtml, "function");
+  const content = [
+    "_________________",
+    "💎 **YUBIT | TRADE WITHOUT LIMITS**",
+    "",
+    "**Crypto · TradFi · One Exchange**",
+    "",
+    "👉 **[START TRADING NOW ↗](https://www.yubit.com/en-US/register?inviteCode=MJOD)**",
+  ].join("\n");
+
+  assert.equal(
+    manualCta.renderTelegramMarkdownHtml(content),
+    [
+      "_________________",
+      "💎 <b>YUBIT | TRADE WITHOUT LIMITS</b>",
+      "",
+      "<b>Crypto · TradFi · One Exchange</b>",
+      "",
+      "👉 <b><a href=\"https://www.yubit.com/en-US/register?inviteCode=MJOD\">START TRADING NOW ↗</a></b>",
+    ].join("\n"),
+  );
 });

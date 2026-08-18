@@ -104,7 +104,9 @@ test("manual composer loads destination CTA instead of accepting a transient CTA
   assert.match(route, /skippedAutomaticTargets/);
   assert.doesNotMatch(route, /formData\.get\("ctaText"\)/);
   assert.doesNotMatch(route, /formData\.get\("ctaUrl"\)/);
-  assert.match(route, /parse_mode:\s*"Markdown"/);
+  assert.match(route, /renderTelegramMarkdownHtml/);
+  assert.match(route, /parse_mode:\s*"HTML"/);
+  assert.doesNotMatch(route, /parse_mode:\s*"Markdown"/);
 });
 
 test("queued composer rechecks exact topic availability immediately before delivery", async () => {
@@ -115,5 +117,7 @@ test("queued composer rechecks exact topic availability immediately before deliv
 
   assert.match(source, /hydrateTelegramTopicAvailability/);
   assert.match(source, /assertAccountCanSendToTargets/);
-  assert.match(source, /parse_mode:\s*"Markdown"/);
+  assert.match(source, /renderTelegramMarkdownHtml/);
+  assert.match(source, /parse_mode:\s*"HTML"/);
+  assert.doesNotMatch(source, /parse_mode:\s*"Markdown"/);
 });

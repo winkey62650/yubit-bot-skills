@@ -10,7 +10,7 @@ import { canQueueComposerMessage } from "../../../../lib/access-control.mjs";
 import { getDistributionRepository } from "../../../../lib/distribution-repository.mjs";
 import { expandAutomaticBroadcastTargets } from "../../../../lib/distribution-service.mjs";
 import { sendTelegramPreservingClosedTopic } from "../../../../lib/telegram-delivery.mjs";
-import { composeManualMessage } from "../../../../lib/manual-cta.mjs";
+import { composeManualMessage, renderTelegramMarkdownHtml } from "../../../../lib/manual-cta.mjs";
 import { hydrateDestinationCtas } from "../../../../lib/destination-cta.mjs";
 
 function composerTargetEndpoint(value, index) {
@@ -155,7 +155,8 @@ export async function POST(req) {
     for (const [target, targetConfig] of targets) {
       const [chatId, threadId] = target.split(":");
       const composedText = composeManualMessage(text, targetConfig, { limit: mediaFiles.length > 0 ? 1024 : 4096 });
-      const payload = { chat_id: chatId, parse_mode: "Markdown" };
+      const renderedText = renderTelegramMarkdownHtml(composedText);
+      const payload = { chat_id: chatId, parse_mode: "HTML" };
       if (threadId) {
         payload.message_thread_id = Number(threadId);
       }
@@ -166,14 +167,14 @@ export async function POST(req) {
            // Use sendMediaGroup
            payload.media = processedFiles.map((fileObj, index) => ({
              media: fileObj.customFile,
-             caption: index === 0 ? composedText : "", // Attach caption to first file
-             parse_mode: "Markdown"
+             caption: index === 0 ? renderedText : "", // Attach caption to first file
+             parse_mode: "HTML"
            }));
            result = await send("sendMediaGroup", payload);
         } else if (processedFiles.length === 1) {
            // Single file
            const fileObj = processedFiles[0];
-           payload.caption = composedText;
+           payload.caption = renderedText;
            
            let method = "sendDocument";
            if (fileObj.type) {
@@ -187,7 +188,7 @@ export async function POST(req) {
            result = await send(method, payload);
         } else {
            // Text only
-           payload.text = composedText;
+           payload.text = renderedText;
            result = await send("sendMessage", payload);
         }
         results.push({ target, result });

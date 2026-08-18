@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import { assertAccountCanSendToTargets } from "../../../../lib/telegram-composer-targets.mjs";
 import { hydrateTelegramTopicAvailability, topicIdsByChatFromTargets } from "../../../../lib/telegram-topic-availability.mjs";
 import { sendTelegramPreservingClosedTopic } from "../../../../lib/telegram-delivery.mjs";
+import { renderTelegramMarkdownHtml } from "../../../../lib/manual-cta.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,9 +57,9 @@ export async function GET(request) {
 
     const chatId = String(msg.chatId || "").trim();
     const threadId = msg.threadId ? Number(msg.threadId) : null;
-    const text = String(msg.text || "");
+    const text = renderTelegramMarkdownHtml(String(msg.text || ""));
 
-    const payload = { chat_id: chatId, parse_mode: "Markdown" };
+    const payload = { chat_id: chatId, parse_mode: "HTML" };
     if (threadId) payload.message_thread_id = threadId;
 
     try {
@@ -86,7 +87,7 @@ export async function GET(request) {
         payload.media = processedFiles.map((f, i) => ({
           media: f.customFile,
           caption: i === 0 ? text : "",
-          parse_mode: "Markdown"
+          parse_mode: "HTML"
         }));
         result = await send("sendMediaGroup", payload);
       } else if (processedFiles.length === 1) {
