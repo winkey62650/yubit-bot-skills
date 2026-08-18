@@ -215,6 +215,6 @@ echo "Discord gateway service: active"
 
 find "$APP_ROOT/releases" -mindepth 1 -maxdepth 1 -type d ! -path "$release" -printf '%T@ %p\n' \
   | sort -nr | awk 'NR > 2 {sub(/^[^ ]+ /, ""); print}' \
-  | xargs -r rm -rf
+  | xargs -r sudo rm -rf
 
 echo "Deployed $commit to https://$SERVER_NAME"

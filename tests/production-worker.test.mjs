@@ -140,6 +140,15 @@ test("server deployment removes conflicting JSON storage settings from the prima
   assert.match(deployScript, /install -m 0600 -o root -g root .*"\$ENV_FILE"/);
 });
 
+test("server deployment can prune old releases containing root-owned build files", async () => {
+  const deployScript = await readFile(
+    fileURLToPath(new URL("../deploy/server/deploy.sh", import.meta.url)),
+    "utf8",
+  );
+
+  assert.match(deployScript, /xargs -r sudo rm -rf/);
+});
+
 test("production redirects use the public HTTPS origin instead of the private listener", async () => {
   const middleware = await readFile(
     fileURLToPath(new URL("../middleware.js", import.meta.url)),
