@@ -216,6 +216,19 @@ test("automation plans append target-specific CTA blocks", () => {
   assert.match(discord[0].steps[0].payload.content, /\*\*Open VIP Desk\*\*\nhttps:\/\/example\.com\/vip/);
 });
 
+test("automation plans render one formatted CTA content block for Telegram and Discord", () => {
+  const ctaContent = "**Join YUBIT**\n[Open community](https://example.com/join?from=cta&lang=en)";
+  const telegram = automation.buildAutomationTelegramPlans("daily-analysis", {
+    caption: "<b>Daily Market Analysis</b>\nMarket remains constructive."
+  }, [{ chatId: "-1001", threadId: 8, chatType: "supergroup", ctaEnabled: true, ctaContent }], "https://example.com/analysis.png");
+  assert.match(telegram[0].steps[0].payload.caption, /<b>Join YUBIT<\/b>\n<a href="https:\/\/example\.com\/join\?from=cta&amp;lang=en">Open community<\/a>$/);
+
+  const discord = automation.buildAutomationDiscordPlans("daily-analysis", {
+    caption: "<b>Daily Market Analysis</b>\nMarket remains constructive."
+  }, [{ platform: "discord", guildId: "g1", channelId: "c1", ctaEnabled: true, ctaContent }], "https://example.com/analysis.png");
+  assert.match(discord[0].steps[0].payload.content, /\*\*Join YUBIT\*\*\n\[Open community\]\(https:\/\/example\.com\/join\?from=cta&lang=en\)$/);
+});
+
 test("Telegram plans reserve space for each target CTA when generated content reaches platform limits", () => {
   const target = {
     chatId: "-1001",

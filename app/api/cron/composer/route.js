@@ -58,7 +58,7 @@ export async function GET(request) {
     const threadId = msg.threadId ? Number(msg.threadId) : null;
     const text = String(msg.text || "");
 
-    const payload = { chat_id: chatId };
+    const payload = { chat_id: chatId, parse_mode: "Markdown" };
     if (threadId) payload.message_thread_id = threadId;
 
     try {
@@ -85,7 +85,8 @@ export async function GET(request) {
       if (processedFiles.length > 1) {
         payload.media = processedFiles.map((f, i) => ({
           media: f.customFile,
-          caption: i === 0 ? text : ""
+          caption: i === 0 ? text : "",
+          parse_mode: "Markdown"
         }));
         result = await send("sendMediaGroup", payload);
       } else if (processedFiles.length === 1) {

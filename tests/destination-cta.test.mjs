@@ -32,6 +32,34 @@ test("destination CTA is keyed by Telegram group or Discord server", () => {
   assert.equal(destinationCtaKey({ platform: "discord", guildId: "g1", channelId: "c9" }), "discord:g1");
 });
 
+test("destination CTA persists one formatted content field and migrates legacy split fields", async () => {
+  const repo = repository();
+  await saveDestinationCtaConfig(repo, {
+    platform: "telegram",
+    chatId: "-1001",
+    ctaEnabled: true,
+    ctaContent: "**Join YUBIT**\n\n[Open community](https://example.com/join)",
+  });
+  await repo.setMeta("distribution:destination-cta:v1", {
+    ...(await repo.getMeta("distribution:destination-cta:v1")),
+    "discord:g1": {
+      platform: "discord",
+      guildId: "g1",
+      ctaEnabled: true,
+      ctaText: "Legacy Discord",
+      ctaUrl: "https://example.com/legacy",
+    },
+  });
+
+  const registry = await loadDestinationCtaRegistry(repo);
+  assert.equal(registry["telegram:-1001"].ctaContent, "**Join YUBIT**\n\n[Open community](https://example.com/join)");
+  assert.equal(registry["discord:g1"].ctaContent, "Legacy Discord\nhttps://example.com/legacy");
+  assert.equal("ctaText" in registry["telegram:-1001"], false);
+  assert.equal("ctaUrl" in registry["telegram:-1001"], false);
+  assert.equal("ctaText" in registry["discord:g1"], false);
+  assert.equal("ctaUrl" in registry["discord:g1"], false);
+});
+
 test("one saved group or server CTA is applied without changing topic or channel routing", async () => {
   const repo = repository();
   await saveDestinationCtaRegistry(repo, [
@@ -40,7 +68,7 @@ test("one saved group or server CTA is applied without changing topic or channel
   ]);
 
   const registry = await loadDestinationCtaRegistry(repo);
-  assert.equal(registry["telegram:-1001"].ctaText, "Join Group");
+  assert.equal(registry["telegram:-1001"].ctaContent, "Join Group\nhttps://example.com/group");
 
   const targets = await hydrateDestinationCtas(repo, [
     { platform: "telegram", chatId: "-1001", threadId: 23, ctaText: "legacy" },
@@ -48,10 +76,10 @@ test("one saved group or server CTA is applied without changing topic or channel
     { platform: "discord", guildId: "g1", channelId: "c9" },
     { platform: "discord", guildId: "g1", channelId: "c10" },
   ]);
-  assert.equal(targets[0].ctaText, "Join Group");
-  assert.equal(targets[1].ctaText, "Join Group");
-  assert.equal(targets[2].ctaText, "Join Discord");
-  assert.equal(targets[3].ctaText, "Join Discord");
+  assert.equal(targets[0].ctaContent, "Join Group\nhttps://example.com/group");
+  assert.equal(targets[1].ctaContent, "Join Group\nhttps://example.com/group");
+  assert.equal(targets[2].ctaContent, "Join Discord\nhttps://example.com/d");
+  assert.equal(targets[3].ctaContent, "Join Discord\nhttps://example.com/d");
   assert.equal(targets[0].threadId, 23);
   assert.equal(targets[1].threadId, 24);
   assert.equal(targets[2].channelId, "c9");
@@ -75,9 +103,9 @@ test("saving one destination CTA preserves CTA configs for other groups and serv
     ctaUrl: "https://example.com/two",
   });
 
-  assert.equal(registry["telegram:-1001"].ctaText, "Group One");
-  assert.equal(registry["telegram:-1002"].ctaText, "Group Two");
-  assert.equal(registry["discord:g1"].ctaText, "Discord One");
+  assert.equal(registry["telegram:-1001"].ctaContent, "Group One\nhttps://example.com/one");
+  assert.equal(registry["telegram:-1002"].ctaContent, "Group Two\nhttps://example.com/two");
+  assert.equal(registry["discord:g1"].ctaContent, "Discord One\nhttps://example.com/d");
 });
 
 test("bulk CTA save merges drafts and cannot erase a previously saved channel", async () => {
@@ -100,8 +128,8 @@ test("bulk CTA save merges drafts and cannot erase a previously saved channel", 
   }]);
 
   const registry = await loadDestinationCtaRegistry(repo);
-  assert.equal(registry["telegram:-1001"].ctaText, "Demo CTA");
-  assert.equal(registry["discord:g1"].ctaText, "Discord CTA");
+  assert.equal(registry["telegram:-1001"].ctaContent, "Demo CTA\nhttps://example.com/demo");
+  assert.equal(registry["discord:g1"].ctaContent, "Discord CTA\nhttps://example.com/discord");
 
   const [target] = await hydrateDestinationCtas(repo, [
     { platform: "telegram", chatId: "-1001", threadId: 23 },
@@ -122,9 +150,9 @@ test("an explicitly disabled Telegram group overrides legacy rule CTA for every 
     { platform: "telegram", chatId: "-1001", threadId: 24, ctaEnabled: true, ctaText: "legacy two" },
   ]);
   assert.equal(targets[0].ctaEnabled, false);
-  assert.equal(targets[0].ctaText, "");
+  assert.equal(targets[0].ctaContent, "");
   assert.equal(targets[1].ctaEnabled, false);
-  assert.equal(targets[1].ctaText, "");
+  assert.equal(targets[1].ctaContent, "");
   assert.equal(composeManualMessage("body", targets[0]), "body");
 });
 
@@ -135,7 +163,7 @@ test("legacy Telegram topic CTA records are read as one group CTA", async () => 
   });
 
   const registry = await loadDestinationCtaRegistry(repo);
-  assert.equal(registry["telegram:-1001"].ctaText, "Legacy CTA");
+  assert.equal(registry["telegram:-1001"].ctaContent, "Legacy CTA\nhttps://example.com/legacy");
   assert.equal(registry["telegram:-1001"].threadId, null);
 });
 
@@ -146,6 +174,6 @@ test("legacy Discord channel CTA records are read as one server CTA", async () =
   });
 
   const registry = await loadDestinationCtaRegistry(repo);
-  assert.equal(registry["discord:guild-1"].ctaText, "Legacy Discord CTA");
+  assert.equal(registry["discord:guild-1"].ctaContent, "Legacy Discord CTA\nhttps://example.com/legacy");
   assert.equal(registry["discord:guild-1"].channelId, "");
 });

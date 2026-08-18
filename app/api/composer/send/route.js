@@ -155,7 +155,7 @@ export async function POST(req) {
     for (const [target, targetConfig] of targets) {
       const [chatId, threadId] = target.split(":");
       const composedText = composeManualMessage(text, targetConfig, { limit: mediaFiles.length > 0 ? 1024 : 4096 });
-      const payload = { chat_id: chatId };
+      const payload = { chat_id: chatId, parse_mode: "Markdown" };
       if (threadId) {
         payload.message_thread_id = Number(threadId);
       }
@@ -166,7 +166,8 @@ export async function POST(req) {
            // Use sendMediaGroup
            payload.media = processedFiles.map((fileObj, index) => ({
              media: fileObj.customFile,
-             caption: index === 0 ? composedText : "" // Attach caption to first file
+             caption: index === 0 ? composedText : "", // Attach caption to first file
+             parse_mode: "Markdown"
            }));
            result = await send("sendMediaGroup", payload);
         } else if (processedFiles.length === 1) {

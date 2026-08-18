@@ -13,6 +13,16 @@ test("manual CTA is appended after the message body", () => {
   );
 });
 
+test("manual CTA accepts one formatted multiline content block", () => {
+  assert.equal(
+    composeManualMessage("Market update", {
+      ctaEnabled: true,
+      ctaContent: "**Join YUBIT**\n\n[Open the community](https://yubit.com/join)",
+    }),
+    "Market update\n\n**Join YUBIT**\n\n[Open the community](https://yubit.com/join)",
+  );
+});
+
 test("manual CTA supports text-only, link-only, and CTA-only messages", () => {
   assert.equal(composeManualMessage("News", { ctaText: "Read more" }), "News\n\nRead more");
   assert.equal(composeManualMessage("News", { ctaUrl: "https://example.com" }), "News\n\nhttps://example.com");

@@ -824,8 +824,7 @@ function DestinationCtaView({ options, registry, setRegistry, busy, onSave, onSa
     return {
       ...target,
       ctaEnabled: false,
-      ctaText: "",
-      ctaUrl: "",
+      ctaContent: "",
       ...(registry[destinationCtaConfigKey(target)] || {})
     };
   }
@@ -856,10 +855,9 @@ function DestinationCtaView({ options, registry, setRegistry, busy, onSave, onSa
         const target = option.target;
         const cta = configFor(target);
         const rowBusy = busy === `destination-cta:${destinationCtaConfigKey(target)}`;
-        return <div className="grid gap-3 p-4 lg:grid-cols-[minmax(180px,.8fr)_minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end" key={destinationCtaConfigKey(target)}>
+        return <div className="grid gap-3 p-4 lg:grid-cols-[minmax(180px,.7fr)_minmax(0,2fr)_auto] lg:items-end" key={destinationCtaConfigKey(target)}>
           <div><p className="text-xs font-bold text-ops-muted">目标</p><p className="mt-2 text-sm font-black">{option.label}</p><p className="mt-1 break-all font-mono text-[11px] text-ops-muted">{target.chatId || target.guildId}</p></div>
-          <Field label="CTA 文案"><input className={inputClass} onChange={(event) => update(target, { ctaText: event.target.value, ctaEnabled: true })} placeholder="例如：立即加入 YUBIT" value={cta.ctaText || ""} /></Field>
-          <Field label="CTA 链接"><input className={inputClass} onChange={(event) => update(target, { ctaUrl: event.target.value, ctaEnabled: true })} placeholder="https://…" type="url" value={cta.ctaUrl || ""} /></Field>
+          <Field label="CTA 内容（支持 Markdown 与换行）"><textarea className={`${inputClass} min-h-32 py-3`} onChange={(event) => update(target, { ctaContent: event.target.value, ctaEnabled: true })} placeholder={"**立即加入 YUBIT**\n\n[点击进入社区](https://…)"} value={cta.ctaContent || ""} /><p className="mt-1 text-xs leading-5 text-ops-muted">与手动信息发布正文格式一致，可自由换行、加入 Emoji、Markdown 文案和链接。</p></Field>
           <div className="grid gap-2"><Toggle checked={cta.ctaEnabled === true} label="启用 CTA" onChange={(ctaEnabled) => update(target, { ctaEnabled })} /><button className="min-h-10 rounded-lg border border-ops-accent px-3 text-xs font-black text-ops-accent disabled:opacity-40" disabled={Boolean(busy)} onClick={() => onSaveOne(cta)} type="button">{rowBusy ? "保存中…" : "保存此频道"}</button></div>
         </div>;
       })}</div>
