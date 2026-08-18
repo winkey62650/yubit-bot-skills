@@ -4,6 +4,7 @@ import * as telegramDiscovery from "../lib/telegram-discovery.mjs";
 import {
   collectTelegramChatCandidates,
   discoverTelegramChats,
+  filterActiveTelegramGroups,
   mergeBotGroupDiscoveries,
   mergeExpectedForumTopics,
   orderTopicsByTemplate,
@@ -40,6 +41,23 @@ test("keeps only current memberships and distinguishes Forum from supergroup", a
   assert.equal(result.groups.length, 2);
   assert.equal(result.groups.find((group) => group.chatId === activeId).canUseTopics, false);
   assert.equal(result.groups.find((group) => group.chatId === forumId).canManageTopics, true);
+});
+
+test("does not persist stale update candidates after every bot has left", () => {
+  const groups = mergeBotGroupDiscoveries([
+    {
+      name: "AdminBot",
+      status: "在线",
+      groups: [{ chatId: "-1003862539988", title: "DEMO Academy", membership: "unknown" }]
+    },
+    {
+      name: "SpeakerBot",
+      status: "在线",
+      groups: [{ chatId: forumId, title: "DEMO Academy", membership: "administrator" }]
+    }
+  ]);
+
+  assert.deepEqual(filterActiveTelegramGroups(groups).map((group) => group.chatId), [forumId]);
 });
 
 test("discovers a private channel and records SpeakerBot publishing rights", async () => {
