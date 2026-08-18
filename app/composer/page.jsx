@@ -10,6 +10,7 @@ import {
   buildAccountTargetGroups,
   filterTelegramComposerTargets
 } from "../../lib/telegram-composer-targets.mjs";
+import { isAllowedManualCtaUrl } from "../../lib/manual-cta.mjs";
 
 export default function ComposerPage() {
   const { t } = useLanguage();
@@ -25,6 +26,8 @@ export default function ComposerPage() {
   const [selectedUserId, setSelectedUserId] = useState("");
   const [selectedTargets, setSelectedTargets] = useState([]);
   const [messageText, setMessageText] = useState("");
+  const [ctaText, setCtaText] = useState("");
+  const [ctaUrl, setCtaUrl] = useState("");
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [targetSearch, setTargetSearch] = useState("");
   
@@ -210,8 +213,12 @@ export default function ComposerPage() {
       setError(t("composer.selectTargetError"));
       return;
     }
-    if (!messageText.trim() && selectedFiles.length === 0) {
+    if (!messageText.trim() && !ctaText.trim() && !ctaUrl.trim() && selectedFiles.length === 0) {
       setError(t("composer.contentError"));
+      return;
+    }
+    if (!isAllowedManualCtaUrl(ctaUrl)) {
+      setError(t("composer.ctaUrlError"));
       return;
     }
 
@@ -223,6 +230,8 @@ export default function ComposerPage() {
       const formData = new FormData();
       formData.append("userId", selectedUserId);
       formData.append("text", messageText);
+      formData.append("ctaText", ctaText);
+      formData.append("ctaUrl", ctaUrl);
       formData.append("queue", String(queue));
       
       if (selectedFiles.length > 0) {
@@ -245,6 +254,8 @@ export default function ComposerPage() {
       
       setSuccess(queue ? t("composer.queued") : t("composer.sent"));
       setMessageText("");
+      setCtaText("");
+      setCtaUrl("");
       setSelectedFiles([]);
       setSelectedTargets([]);
     } catch (err) {
@@ -304,6 +315,19 @@ export default function ComposerPage() {
                 />
               </Field>
 
+              <div className="rounded-xl border border-ops-line bg-ops-soft/50 p-4">
+                <h2 className="text-sm font-black">{t("composer.ctaTitle")}</h2>
+                <p className="mt-1 text-xs text-ops-muted">{t("composer.ctaHint")}</p>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <Field label={t("composer.ctaText")}>
+                    <input className={inputClass} value={ctaText} onChange={(event) => setCtaText(event.target.value)} placeholder={t("composer.ctaTextPlaceholder")} disabled={sending} />
+                  </Field>
+                  <Field label={t("composer.ctaUrl")}>
+                    <input type="url" className={inputClass} value={ctaUrl} onChange={(event) => setCtaUrl(event.target.value)} placeholder="https://…" disabled={sending} />
+                  </Field>
+                </div>
+              </div>
+
               <Field label={t("composer.media")}>
                 <div className="flex flex-col gap-3">
                   <input 
@@ -357,7 +381,7 @@ export default function ComposerPage() {
               <div className="flex gap-3 pt-2">
                 <button 
                   onClick={() => handleSend(false)} 
-                  disabled={sending || !selectedUserId || selectedTargets.length === 0 || (!messageText && selectedFiles.length === 0)}
+                  disabled={sending || !selectedUserId || selectedTargets.length === 0 || (!messageText.trim() && !ctaText.trim() && !ctaUrl.trim() && selectedFiles.length === 0)}
                   className="rounded-lg bg-ops-accent px-5 py-2 font-black text-white disabled:opacity-50"
                 >
                   {sending ? t("composer.processing") : t("composer.send")}
@@ -365,7 +389,7 @@ export default function ComposerPage() {
                 {user?.role === "admin" ? (
                   <button
                     onClick={() => handleSend(true)}
-                    disabled={sending || !selectedUserId || selectedTargets.length === 0 || (!messageText && selectedFiles.length === 0)}
+                    disabled={sending || !selectedUserId || selectedTargets.length === 0 || (!messageText.trim() && !ctaText.trim() && !ctaUrl.trim() && selectedFiles.length === 0)}
                     className="rounded-lg bg-[#f0f2f5] px-5 py-2 font-black text-ops-muted hover:bg-[#e4e6eb] transition-colors disabled:opacity-50"
                   >
                     {t("composer.queue")}

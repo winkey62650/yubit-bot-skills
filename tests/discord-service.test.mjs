@@ -734,6 +734,39 @@ test("Discord manual publish deduplicates targets and isolates per-target failur
   assert.doesNotMatch(result.results[1].error, /manual-secret-token/);
 });
 
+test("Discord manual publish appends the operator CTA to the outgoing content", async () => {
+  const repository = createRepository();
+  await saveDiscordConfig({
+    guilds: {
+      "guild-1": {
+        guildId: "guild-1",
+        guildName: "Demo",
+        channels: [{ templateId: 1, channelId: "channel-ok", name: "updates" }],
+      },
+    },
+  }, { repository });
+  const messageBodies = [];
+
+  const result = await sendDiscordManualPublish({
+    channelIds: ["channel-ok"],
+    content: "Market update",
+    ctaText: "Join YUBIT",
+    ctaUrl: "https://yubit.com/join",
+  }, {
+    token: "secret-token",
+    repository,
+    fetchImpl: async (url, request = {}) => {
+      if (String(url).includes("/channels/channel-ok/messages")) {
+        messageBodies.push(JSON.parse(request.body));
+      }
+      return jsonResponse(200, { id: "message-1" });
+    },
+  });
+
+  assert.equal(result.delivered, 1);
+  assert.equal(messageBodies[0].content, "Market update\n\nJoin YUBIT\nhttps://yubit.com/join");
+});
+
 test("Discord manual publish sends independent targets concurrently", async () => {
   const repository = createRepository();
   await saveDiscordConfig({

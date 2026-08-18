@@ -10,6 +10,7 @@ import { canQueueComposerMessage } from "../../../../lib/access-control.mjs";
 import { getDistributionRepository } from "../../../../lib/distribution-repository.mjs";
 import { expandAutomaticBroadcastTargets } from "../../../../lib/distribution-service.mjs";
 import { sendTelegramPreservingClosedTopic } from "../../../../lib/telegram-delivery.mjs";
+import { composeManualMessage } from "../../../../lib/manual-cta.mjs";
 
 function composerTargetEndpoint(value, index) {
   const [chatId, threadId] = String(value).split(":");
@@ -30,7 +31,9 @@ export async function POST(req) {
   try {
     const formData = await req.formData();
     const userId = formData.get("userId");
-    const text = formData.get("text") || "";
+    const text = String(formData.get("text") || "");
+    const ctaText = String(formData.get("ctaText") || "");
+    const ctaUrl = String(formData.get("ctaUrl") || "");
     const queue = formData.get("queue") === "true";
     const mediaFiles = formData.getAll("media"); // Array of File or null
     const requestedTargets = formData.getAll("targets"); // array of "chatId:threadId" or "chatId:"
@@ -51,7 +54,10 @@ export async function POST(req) {
     if (!userId || requestedTargets.length === 0) {
       return NextResponse.json({ ok: false, error: "缺少必要参数 (userId, targets)" }, { status: 400 });
     }
-    if (!text && mediaFiles.length === 0) {
+    const composedText = composeManualMessage(text, { ctaText, ctaUrl }, {
+      limit: mediaFiles.length > 0 ? 1024 : 4096,
+    });
+    if (!composedText && mediaFiles.length === 0) {
       return NextResponse.json({ ok: false, error: "消息内容和附件不能同时为空" }, { status: 400 });
     }
 
@@ -119,7 +125,7 @@ export async function POST(req) {
           userId,
           chatId,
           threadId: threadId ? Number(threadId) : null,
-          text,
+          text: composedText,
           mediaFiles: processedFiles,
           createdAt: new Date().toISOString(),
           status: "pending"
@@ -146,13 +152,13 @@ export async function POST(req) {
            // Use sendMediaGroup
            payload.media = processedFiles.map((fileObj, index) => ({
              media: fileObj.customFile,
-             caption: index === 0 ? text : "" // Attach caption to first file
+             caption: index === 0 ? composedText : "" // Attach caption to first file
            }));
            result = await send("sendMediaGroup", payload);
         } else if (processedFiles.length === 1) {
            // Single file
            const fileObj = processedFiles[0];
-           payload.caption = text || "";
+           payload.caption = composedText;
            
            let method = "sendDocument";
            if (fileObj.type) {
@@ -166,7 +172,7 @@ export async function POST(req) {
            result = await send(method, payload);
         } else {
            // Text only
-           payload.text = text;
+           payload.text = composedText;
            result = await send("sendMessage", payload);
         }
         results.push({ target, result });

@@ -88,6 +88,23 @@ test("manual composer can search Telegram groups and Topics", async () => {
   assert.match(source, /open=\{targetSearch\.trim\(\) \? true : undefined\}/);
 });
 
+test("manual composer accepts an optional CTA text and link", async () => {
+  const [page, route] = await Promise.all([
+    readFile(new URL("../app/composer/page.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/composer/send/route.js", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(page, /ctaText/);
+  assert.match(page, /ctaUrl/);
+  assert.match(page, /composer\.ctaText/);
+  assert.match(page, /composer\.ctaUrl/);
+  assert.match(page, /formData\.append\("ctaText"/);
+  assert.match(page, /formData\.append\("ctaUrl"/);
+  assert.match(route, /composeManualMessage/);
+  assert.match(route, /formData\.get\("ctaText"\)/);
+  assert.match(route, /formData\.get\("ctaUrl"\)/);
+});
+
 test("queued composer rechecks exact topic availability immediately before delivery", async () => {
   const source = await readFile(
     new URL("../app/api/cron/composer/route.js", import.meta.url),

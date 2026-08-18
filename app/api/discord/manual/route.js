@@ -42,6 +42,8 @@ export async function POST(request) {
       body = {
         channelIds: formData.getAll("channelIds").map(String),
         content: String(formData.get("content") || ""),
+        ctaText: String(formData.get("ctaText") || ""),
+        ctaUrl: String(formData.get("ctaUrl") || ""),
         imageUrl: String(formData.get("imageUrl") || ""),
         attachment,
       };
@@ -51,6 +53,8 @@ export async function POST(request) {
     const manualPublish = await sendDiscordManualPublish({
       channelIds: body.channelIds,
       content: body.content,
+      ctaText: body.ctaText,
+      ctaUrl: body.ctaUrl,
       imageUrl: body.imageUrl,
       attachment: body.attachment,
     });
