@@ -306,7 +306,7 @@ export default function ComposerPage() {
 
               <div className="rounded-xl border border-[#cae5da] bg-[#f2faf6] p-4">
                 <h2 className="text-sm font-black text-[#173f31]">频道 CTA 配置</h2>
-                <p className="mt-1 text-xs leading-5 text-[#41564d]">发送前会按所选 Telegram 群组与 Topic 自动读取各自 CTA，并追加到对应消息末尾。</p>
+                <p className="mt-1 text-xs leading-5 text-[#41564d]">发送前会按所选 Telegram 群组或频道读取共用 CTA；同一群内所有 Topic 使用相同配置，并追加到对应消息末尾。</p>
                 {user?.role === "admin" ? <Link className="mt-3 inline-flex text-xs font-black text-ops-accent hover:underline" href="/distribution?view=destination-cta">管理频道 CTA →</Link> : <p className="mt-2 text-xs font-bold text-ops-muted">如需修改，请联系管理员在内容分发中心维护。</p>}
               </div>
 

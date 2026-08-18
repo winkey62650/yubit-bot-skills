@@ -13,6 +13,7 @@ import {
   buildBroadcastRouteSummary,
   buildDistributionSourceOptions,
   buildDistributionTargetOptions,
+  buildTelegramDestinationCtaOptions,
   buildDiscordDistributionTargetOptions,
   buildSocialSourceReadiness,
   buildSocialSourceRouteReadiness,
@@ -274,7 +275,7 @@ function DistributionPageContent() {
       const result = await response.json();
       if (!response.ok || !result.ok) throw new Error(result.error || "频道 CTA 保存失败");
       setDestinationCtas(result.registry || {});
-      setNotice("频道 CTA 已保存；后续手动和自动分发会按每个目标自动读取。");
+      setNotice("频道 CTA 已保存；Telegram 群内所有 Topic 将共用群组 CTA，后续手动和自动分发会自动读取。");
     } catch (error) {
       setNotice(error.message);
     } finally {
@@ -584,7 +585,7 @@ function AutomationView({ form, setForm, rules, groups, discordState, socialPack
       <Field label="预设频率"><select className={inputClass} value={form.schedulePreset} disabled={form.contentType === "whale-signals"} onChange={(event) => setForm({ ...form, schedulePreset: event.target.value })}>{schedules.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>{form.contentType === "whale-signals" ? <p className="mt-1 text-xs text-ops-muted">系统每小时检查真实订单簿，仅在异动达到阈值时发布，相同信号冷却期内不重复。</p> : null}</Field>
       <FormStep number="3" title="选择发布目标" desc={form.contentType === "agent-sync" ? "每条来源优先使用上方独立绑定；此处任务目标用于兼容旧配置和异常兜底。" : `建议发布到 ${template.destinationHint}；可选择一个或多个已授权的群和 Topic。`} />
       <TargetPicker options={automationTargets} selected={form.targets} onChange={(targets) => setForm({ ...form, targets, targetCtas: retainTargetCtas(form.targetCtas, targets) })} presets={presets} onSavePreset={(name) => onSavePreset(name, form.targets)} onDeletePreset={onDeletePreset} />
-      <p className="rounded-lg border border-[#cae5da] bg-[#f2faf6] p-3 text-xs leading-5 text-[#41564d]">所选目标的 CTA 由「频道 CTA」统一维护，任务执行到每个频道或 Topic 前会自动读取。</p>
+      <p className="rounded-lg border border-[#cae5da] bg-[#f2faf6] p-3 text-xs leading-5 text-[#41564d]">所选目标的 CTA 由「频道 CTA」统一维护；Telegram 同一群内所有 Topic 共用一份，任务执行前会自动读取。</p>
       <Toggle checked={form.enabled} label="创建后立即启用" onChange={(enabled) => setForm({ ...form, enabled })} />
       <label className="flex items-start gap-3 rounded-lg border border-ops-line bg-[#fbfcfb] p-3 text-sm font-bold leading-6 text-[#33423b]"><input className="mt-1" checked={confirmed} onChange={(event) => setConfirmedFor(event.target.checked ? fingerprint : "")} type="checkbox" /><span>我已确认发送模板、频率和目标。动态数据会在实际执行时刷新。</span></label>
     </RuleForm>
@@ -816,12 +817,12 @@ function DestinationCtaView({ options, registry, setRegistry, busy, onSave }) {
     <Card className="p-5">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h2 className="text-xl font-black">频道与 Topic CTA 配置</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-ops-muted">CTA 与固定目标绑定。Telegram 按群组 + Topic，Discord 按 Channel 保存；内容分发到每个目标时会在发送前自动读取，并分别追加到消息末尾。</p>
+          <h2 className="text-xl font-black">频道 CTA 配置</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-ops-muted">CTA 与固定频道绑定。Telegram 每个群组或频道共用一份，群内所有 Topic 自动使用相同 CTA；Discord 按 Channel 保存。内容分发时会在发送前自动读取并追加到消息末尾。</p>
         </div>
         <button className="min-h-11 rounded-lg bg-ops-accent px-5 text-sm font-black text-white disabled:opacity-50" disabled={Boolean(busy)} onClick={() => onSave(Object.values(registry))} type="button">{busy === "destination-cta" ? "保存中…" : "保存全部配置"}</button>
       </div>
-      <div className="mt-5"><Field label="搜索频道或 Topic"><input className={inputClass} onChange={(event) => setSearch(event.target.value)} placeholder="输入群组、Server、Topic 或 Channel 名称" type="search" value={search} /></Field></div>
+      <div className="mt-5"><Field label="搜索频道"><input className={inputClass} onChange={(event) => setSearch(event.target.value)} placeholder="输入 Telegram 群组、频道、Discord Server 或 Channel 名称" type="search" value={search} /></Field></div>
     </Card>
 
     {optionGroups.length ? optionGroups.map((group) => <Card className="overflow-hidden" key={group.key}>
@@ -836,7 +837,7 @@ function DestinationCtaView({ options, registry, setRegistry, busy, onSave }) {
           <Toggle checked={cta.ctaEnabled === true} label="启用 CTA" onChange={(ctaEnabled) => update(target, { ctaEnabled })} />
         </div>;
       })}</div>
-    </Card>) : <Card className="p-8 text-center text-sm font-bold text-ops-muted">没有匹配的 Telegram Topic 或 Discord Channel。</Card>}
+    </Card>) : <Card className="p-8 text-center text-sm font-bold text-ops-muted">没有匹配的 Telegram 群组/频道或 Discord Channel。</Card>}
   </div>;
 }
 
@@ -873,14 +874,14 @@ function automationTargetOptions(groups, discordState) {
   return [...targetOptions(groups), ...buildDiscordDistributionTargetOptions(discordState)];
 }
 function destinationCtaTargetOptions(groups, discordState) {
-  return [...buildDistributionTargetOptions(groups), ...buildDiscordDistributionTargetOptions(discordState)];
+  return [...buildTelegramDestinationCtaOptions(groups), ...buildDiscordDistributionTargetOptions(discordState)];
 }
 function targetOptions(groups) {
   return buildDistributionTargetOptions(groups).filter((option) => option.target?.chatType !== "channel");
 }
 function sourceOptions(groups) { return buildDistributionSourceOptions(groups); }
 function targetKey(value) { return value?.platform === "discord" ? `discord:${value.guildId}:${value.channelId}` : value?.chatType === "channel" ? `${value.chatId}:channel` : `${value.chatId}:${Number(value.threadId || 0)}`; }
-function destinationCtaConfigKey(value) { return value?.platform === "discord" ? `discord:${value.channelId}` : value?.chatType === "channel" ? `telegram:${value.chatId}:channel` : `telegram:${value.chatId}:${Number(value.threadId || 0)}`; }
+function destinationCtaConfigKey(value) { return value?.platform === "discord" ? `discord:${value.channelId}` : `telegram:${value.chatId}`; }
 function normalizeFormTargetCta(input = {}) {
   const ctaText = String(input?.ctaText ?? input?.text ?? "").trim();
   const ctaUrl = String(input?.ctaUrl ?? input?.url ?? "").trim();

@@ -5,6 +5,7 @@ import {
   arePublisherBlockingChecksHealthy,
   buildDistributionSourceOptions,
   buildDistributionTargetOptions,
+  buildTelegramDestinationCtaOptions,
   buildDiscordDistributionTargetOptions,
   buildBroadcastRouteSummary,
   buildPublisherStatusChecks,
@@ -21,6 +22,26 @@ import {
   recommendedScheduleFor,
   distributionDestinationLabel
 } from "../lib/distribution-ui.mjs";
+
+test("Telegram CTA options contain one entry per group or channel", () => {
+  const options = buildTelegramDestinationCtaOptions([
+    {
+      chatId: "-1001",
+      title: "Academy",
+      isForum: true,
+      topics: [
+        { threadId: 23, name: "News" },
+        { threadId: 24, name: "Analysis" },
+      ],
+    },
+    { chatId: "-1002", title: "Announcements", type: "channel" },
+  ]);
+
+  assert.deepEqual(options.map((option) => option.key), ["telegram:-1001", "telegram:-1002"]);
+  assert.equal(options[0].target.threadId, null);
+  assert.equal(options[0].target.topicName, "所有 Topics");
+  assert.equal(options[1].target.topicName, "整个频道");
+});
 
 test("publisher status checks expose identity, bridge, session, routing and latest delivery independently", () => {
   const checks = buildPublisherStatusChecks({

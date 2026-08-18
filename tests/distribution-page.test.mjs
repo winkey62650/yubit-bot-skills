@@ -12,7 +12,9 @@ test("automatic publishing and Telegram broadcast keep separate rule selections"
 
 test("distribution center provides persistent destination CTA configuration", () => {
   assert.match(pageSource, /\["destination-cta", "频道 CTA"\]/);
-  assert.match(pageSource, /频道与 Topic CTA 配置/);
+  assert.match(pageSource, /频道 CTA 配置/);
+  assert.match(pageSource, /Telegram 每个群组或频道共用一份/);
+  assert.doesNotMatch(pageSource, /Telegram 按群组 \+ Topic/);
   assert.match(pageSource, /发送前自动读取/);
   assert.match(pageSource, /saveDestinationCtas/);
   assert.match(pageSource, /CTA 文案/);
