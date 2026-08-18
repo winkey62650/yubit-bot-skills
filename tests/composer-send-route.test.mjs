@@ -76,6 +76,18 @@ test("manual composer collapses destinations by group and only selects live writ
   assert.doesNotMatch(source, /id="selectAll"/);
 });
 
+test("manual composer can search Telegram groups and Topics", async () => {
+  const source = await readFile(
+    new URL("../app/composer/page.jsx", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(source, /filterTelegramComposerTargets/);
+  assert.match(source, /type="search"/);
+  assert.match(source, /composer\.targetSearchPlaceholder/);
+  assert.match(source, /open=\{targetSearch\.trim\(\) \? true : undefined\}/);
+});
+
 test("queued composer rechecks exact topic availability immediately before delivery", async () => {
   const source = await readFile(
     new URL("../app/api/cron/composer/route.js", import.meta.url),

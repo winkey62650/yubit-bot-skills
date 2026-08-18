@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   assertAccountCanSendToTargets,
-  buildAccountTargetGroups
+  buildAccountTargetGroups,
+  filterTelegramComposerTargets
 } from "../lib/telegram-composer-targets.mjs";
 
 const configuredGroups = [
@@ -176,4 +177,31 @@ test("composer exposes live topics from unconfigured forums and appends newly di
     [4, "General"],
     [9, "Crypto Analysis"]
   ]);
+});
+
+test("composer target search matches group and Topic names without mutating the source list", () => {
+  const targetGroups = [
+    {
+      chatId: "-100111",
+      title: "Nicholas Academy",
+      options: [
+        { id: "-100111:7", label: "Signals" },
+        { id: "-100111:8", label: "Market News" }
+      ]
+    },
+    {
+      chatId: "-100222",
+      title: "Serenity Research",
+      options: [{ id: "-100222:9", label: "Crypto Analysis" }]
+    }
+  ];
+
+  assert.equal(filterTelegramComposerTargets(targetGroups, " academy ")[0], targetGroups[0]);
+  assert.deepEqual(
+    filterTelegramComposerTargets(targetGroups, "analysis"),
+    [{ ...targetGroups[1], options: [targetGroups[1].options[0]] }]
+  );
+  assert.deepEqual(filterTelegramComposerTargets(targetGroups, "missing"), []);
+  assert.equal(filterTelegramComposerTargets(targetGroups, ""), targetGroups);
+  assert.equal(targetGroups[1].options.length, 1);
 });

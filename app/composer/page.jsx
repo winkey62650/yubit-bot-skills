@@ -1,12 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import Link from "next/link";
 import ConsoleShell from "../components/ConsoleShell";
 import { useLanguage } from "../components/LanguageProvider";
 import { useSession } from "../components/SessionProvider";
 import { Card, PageHeader, Field, inputClass } from "../components/ui";
-import { buildAccountTargetGroups } from "../../lib/telegram-composer-targets.mjs";
+import {
+  buildAccountTargetGroups,
+  filterTelegramComposerTargets
+} from "../../lib/telegram-composer-targets.mjs";
 
 export default function ComposerPage() {
   const { t } = useLanguage();
@@ -23,6 +26,7 @@ export default function ComposerPage() {
   const [selectedTargets, setSelectedTargets] = useState([]);
   const [messageText, setMessageText] = useState("");
   const [selectedFiles, setSelectedFiles] = useState([]);
+  const [targetSearch, setTargetSearch] = useState("");
   
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
@@ -153,6 +157,10 @@ export default function ComposerPage() {
     };
   }).filter((group) => group.options.length > 0);
   const targetOptions = targetGroups.flatMap((group) => group.options);
+  const filteredTargetGroups = useMemo(
+    () => filterTelegramComposerTargets(targetGroups, targetSearch),
+    [targetGroups, targetSearch]
+  );
 
   const handleTargetToggle = (id) => {
     if (!targetOptions.find((option) => option.id === id)?.available) return;
@@ -401,14 +409,34 @@ export default function ComposerPage() {
               <p className="text-xs">{t("composer.noTargetsHint")}</p>
             </div>
           ) : (
-            <div className="flex flex-col gap-2 max-h-[500px] overflow-y-auto pr-2">
-              {targetGroups.map((group) => {
+            <div className="space-y-3">
+              <Field label={t("composer.targetSearch")}>
+                <input
+                  type="search"
+                  className={inputClass}
+                  value={targetSearch}
+                  onChange={(event) => setTargetSearch(event.target.value)}
+                  placeholder={t("composer.targetSearchPlaceholder")}
+                  disabled={sending || targetsLoading}
+                />
+              </Field>
+
+              {filteredTargetGroups.length === 0 ? (
+                <div className="rounded-lg bg-gray-50 p-4 text-center text-sm text-ops-muted">
+                  {t("composer.noSearchResults")}
+                </div>
+              ) : (
+                <div className="flex max-h-[500px] flex-col gap-2 overflow-y-auto pr-2">
+              {filteredTargetGroups.map((group) => {
                 const groupAvailableTargets = group.options.filter((option) => option.available);
                 const selectedInGroup = groupAvailableTargets.filter((option) => selectedTargets.includes(option.id)).length;
                 const allSelected = groupAvailableTargets.length > 0 && selectedInGroup === groupAvailableTargets.length;
 
                 return (
-                  <details key={group.chatId} className="group rounded-xl border border-ops-line bg-white open:shadow-sm">
+                  <details key={group.chatId}
+                    open={targetSearch.trim() ? true : undefined}
+                    className="group rounded-xl border border-ops-line bg-white open:shadow-sm"
+                  >
                     <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-xl px-3 py-3 hover:bg-[#f7faf8] [&::-webkit-details-marker]:hidden">
                       <div className="min-w-0">
                         <div className="truncate text-sm font-black">{group.title}</div>
@@ -453,6 +481,8 @@ export default function ComposerPage() {
                   </details>
                 );
               })}
+                </div>
+              )}
             </div>
           )}
           <p className="mt-4 text-xs text-ops-muted">{t("composer.selectionHint", { count: selectedTargets.length })}</p>
