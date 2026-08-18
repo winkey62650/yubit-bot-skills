@@ -14,6 +14,7 @@ import {
   buildDistributionSourceOptions,
   buildDistributionTargetOptions,
   buildTelegramDestinationCtaOptions,
+  buildDiscordDestinationCtaOptions,
   buildDiscordDistributionTargetOptions,
   buildSocialSourceReadiness,
   buildSocialSourceRouteReadiness,
@@ -275,7 +276,7 @@ function DistributionPageContent() {
       const result = await response.json();
       if (!response.ok || !result.ok) throw new Error(result.error || "频道 CTA 保存失败");
       setDestinationCtas(result.registry || {});
-      setNotice("频道 CTA 已保存；Telegram 群内所有 Topic 将共用群组 CTA，后续手动和自动分发会自动读取。");
+      setNotice("频道 CTA 已保存；Telegram 群内所有 Topic、Discord Server 内所有 Channel 将各自共用一份 CTA。");
     } catch (error) {
       setNotice(error.message);
     } finally {
@@ -585,7 +586,7 @@ function AutomationView({ form, setForm, rules, groups, discordState, socialPack
       <Field label="预设频率"><select className={inputClass} value={form.schedulePreset} disabled={form.contentType === "whale-signals"} onChange={(event) => setForm({ ...form, schedulePreset: event.target.value })}>{schedules.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>{form.contentType === "whale-signals" ? <p className="mt-1 text-xs text-ops-muted">系统每小时检查真实订单簿，仅在异动达到阈值时发布，相同信号冷却期内不重复。</p> : null}</Field>
       <FormStep number="3" title="选择发布目标" desc={form.contentType === "agent-sync" ? "每条来源优先使用上方独立绑定；此处任务目标用于兼容旧配置和异常兜底。" : `建议发布到 ${template.destinationHint}；可选择一个或多个已授权的群和 Topic。`} />
       <TargetPicker options={automationTargets} selected={form.targets} onChange={(targets) => setForm({ ...form, targets, targetCtas: retainTargetCtas(form.targetCtas, targets) })} presets={presets} onSavePreset={(name) => onSavePreset(name, form.targets)} onDeletePreset={onDeletePreset} />
-      <p className="rounded-lg border border-[#cae5da] bg-[#f2faf6] p-3 text-xs leading-5 text-[#41564d]">所选目标的 CTA 由「频道 CTA」统一维护；Telegram 同一群内所有 Topic 共用一份，任务执行前会自动读取。</p>
+      <p className="rounded-lg border border-[#cae5da] bg-[#f2faf6] p-3 text-xs leading-5 text-[#41564d]">所选目标的 CTA 由「频道 CTA」统一维护；Telegram 同一群内所有 Topic、Discord 同一 Server 内所有 Channel 各自共用一份，任务执行前会自动读取。</p>
       <Toggle checked={form.enabled} label="创建后立即启用" onChange={(enabled) => setForm({ ...form, enabled })} />
       <label className="flex items-start gap-3 rounded-lg border border-ops-line bg-[#fbfcfb] p-3 text-sm font-bold leading-6 text-[#33423b]"><input className="mt-1" checked={confirmed} onChange={(event) => setConfirmedFor(event.target.checked ? fingerprint : "")} type="checkbox" /><span>我已确认发送模板、频率和目标。动态数据会在实际执行时刷新。</span></label>
     </RuleForm>
@@ -818,26 +819,26 @@ function DestinationCtaView({ options, registry, setRegistry, busy, onSave }) {
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h2 className="text-xl font-black">频道 CTA 配置</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-ops-muted">CTA 与固定频道绑定。Telegram 每个群组或频道共用一份，群内所有 Topic 自动使用相同 CTA；Discord 按 Channel 保存。内容分发时会在发送前自动读取并追加到消息末尾。</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-ops-muted">CTA 与固定群组或 Server 绑定。Telegram 每个群组或频道共用一份，群内所有 Topic 自动使用相同 CTA；Discord 每个 Server 共用一份，Server 内所有 Channel 自动使用相同 CTA。内容分发时会在发送前自动读取并追加到消息末尾。</p>
         </div>
         <button className="min-h-11 rounded-lg bg-ops-accent px-5 text-sm font-black text-white disabled:opacity-50" disabled={Boolean(busy)} onClick={() => onSave(Object.values(registry))} type="button">{busy === "destination-cta" ? "保存中…" : "保存全部配置"}</button>
       </div>
-      <div className="mt-5"><Field label="搜索频道"><input className={inputClass} onChange={(event) => setSearch(event.target.value)} placeholder="输入 Telegram 群组、频道、Discord Server 或 Channel 名称" type="search" value={search} /></Field></div>
+      <div className="mt-5"><Field label="搜索频道"><input className={inputClass} onChange={(event) => setSearch(event.target.value)} placeholder="输入 Telegram 群组/频道或 Discord Server 名称" type="search" value={search} /></Field></div>
     </Card>
 
     {optionGroups.length ? optionGroups.map((group) => <Card className="overflow-hidden" key={group.key}>
-      <div className="flex items-center justify-between border-b border-ops-line p-4"><div className="flex items-center gap-2"><StatusPill tone={group.platform === "discord" ? "amber" : "green"}>{group.platform === "discord" ? "Discord" : "Telegram"}</StatusPill><h3 className="font-black">{group.label}</h3></div><span className="text-xs font-bold text-ops-muted">{group.options.length} 个目标</span></div>
+      <div className="flex items-center justify-between border-b border-ops-line p-4"><div className="flex items-center gap-2"><StatusPill tone={group.platform === "discord" ? "amber" : "green"}>{group.platform === "discord" ? "Discord" : "Telegram"}</StatusPill><h3 className="font-black">{group.label}</h3></div><span className="text-xs font-bold text-ops-muted">{group.options.length} 个配置</span></div>
       <div className="divide-y divide-ops-line">{group.options.map((option) => {
         const target = option.target;
         const cta = configFor(target);
         return <div className="grid gap-3 p-4 lg:grid-cols-[minmax(180px,.8fr)_minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end" key={destinationCtaConfigKey(target)}>
-          <div><p className="text-xs font-bold text-ops-muted">目标</p><p className="mt-2 text-sm font-black">{destinationLabel(target)}</p></div>
+          <div><p className="text-xs font-bold text-ops-muted">目标</p><p className="mt-2 text-sm font-black">{option.label}</p></div>
           <Field label="CTA 文案"><input className={inputClass} onChange={(event) => update(target, { ctaText: event.target.value, ctaEnabled: true })} placeholder="例如：立即加入 YUBIT" value={cta.ctaText || ""} /></Field>
           <Field label="CTA 链接"><input className={inputClass} onChange={(event) => update(target, { ctaUrl: event.target.value, ctaEnabled: true })} placeholder="https://…" type="url" value={cta.ctaUrl || ""} /></Field>
           <Toggle checked={cta.ctaEnabled === true} label="启用 CTA" onChange={(ctaEnabled) => update(target, { ctaEnabled })} />
         </div>;
       })}</div>
-    </Card>) : <Card className="p-8 text-center text-sm font-bold text-ops-muted">没有匹配的 Telegram 群组/频道或 Discord Channel。</Card>}
+    </Card>) : <Card className="p-8 text-center text-sm font-bold text-ops-muted">没有匹配的 Telegram 群组/频道或 Discord Server。</Card>}
   </div>;
 }
 
@@ -874,14 +875,14 @@ function automationTargetOptions(groups, discordState) {
   return [...targetOptions(groups), ...buildDiscordDistributionTargetOptions(discordState)];
 }
 function destinationCtaTargetOptions(groups, discordState) {
-  return [...buildTelegramDestinationCtaOptions(groups), ...buildDiscordDistributionTargetOptions(discordState)];
+  return [...buildTelegramDestinationCtaOptions(groups), ...buildDiscordDestinationCtaOptions(discordState)];
 }
 function targetOptions(groups) {
   return buildDistributionTargetOptions(groups).filter((option) => option.target?.chatType !== "channel");
 }
 function sourceOptions(groups) { return buildDistributionSourceOptions(groups); }
 function targetKey(value) { return value?.platform === "discord" ? `discord:${value.guildId}:${value.channelId}` : value?.chatType === "channel" ? `${value.chatId}:channel` : `${value.chatId}:${Number(value.threadId || 0)}`; }
-function destinationCtaConfigKey(value) { return value?.platform === "discord" ? `discord:${value.channelId}` : `telegram:${value.chatId}`; }
+function destinationCtaConfigKey(value) { return value?.platform === "discord" ? `discord:${value.guildId}` : `telegram:${value.chatId}`; }
 function normalizeFormTargetCta(input = {}) {
   const ctaText = String(input?.ctaText ?? input?.text ?? "").trim();
   const ctaUrl = String(input?.ctaUrl ?? input?.url ?? "").trim();

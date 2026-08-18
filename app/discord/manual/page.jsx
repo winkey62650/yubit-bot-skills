@@ -110,7 +110,7 @@ export default function DiscordManualPage() {
   }
 
   return <ConsoleShell>
-    <PageHeader title="Discord 手动信息发布" desc="Trader 填写正文或图片；每个频道的 CTA 会在发送前自动读取并追加。" action={<button type="button" onClick={checkHealth} className="rounded-lg border border-ops-line bg-white px-4 py-2 text-sm font-black">重新实时检测</button>} />
+    <PageHeader title="Discord 手动信息发布" desc="Trader 填写正文或图片；每个 Server 的 CTA 会在发送前自动读取并追加。" action={<button type="button" onClick={checkHealth} className="rounded-lg border border-ops-line bg-white px-4 py-2 text-sm font-black">重新实时检测</button>} />
     {loading && <div className="mb-4 text-sm text-ops-muted">正在检测可发送频道…</div>}
     {notice && <div className="mb-4 rounded-lg bg-[#e6f7ef] px-4 py-3 text-sm font-bold text-ops-accent">{notice}</div>}
     {error && <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{error}</div>}
@@ -131,8 +131,8 @@ export default function DiscordManualPage() {
         <div className="mt-5 grid gap-4">
           <Field label="消息正文"><textarea className={`${inputClass} min-h-56 resize-y`} value={manualContent} onChange={(event) => setManualContent(event.target.value)} placeholder="输入需要发送的 Trader 信息；换行会按原格式保留。" /></Field>
           <div className="rounded-xl border border-[#cae5da] bg-[#f2faf6] p-4">
-            <h3 className="text-sm font-black text-[#173f31]">频道 CTA 配置</h3>
-            <p className="mt-1 text-xs leading-5 text-[#41564d]">系统会按每个 Discord Channel 自动读取配置，不需要在本次发布中重复填写。</p>
+            <h3 className="text-sm font-black text-[#173f31]">Server CTA 配置</h3>
+            <p className="mt-1 text-xs leading-5 text-[#41564d]">系统会按 Discord Server 自动读取配置，同一 Server 下所有 Channel 共用，不需要在本次发布中重复填写。</p>
             <Link className="mt-3 inline-flex text-xs font-black text-ops-accent hover:underline" href="/distribution?view=destination-cta">管理频道 CTA →</Link>
           </div>
           <Field label="本地图片（可选，最大 10MB）"><input key={fileInputKey} id="manualImageFile" name="manualImageFile" type="file" accept="image/*" className={inputClass} onChange={(event) => { const file = event.target.files?.[0] || null; setManualImageFile(file); if (file) setManualImageUrl(""); }} /></Field>

@@ -6,6 +6,7 @@ import {
   buildDistributionSourceOptions,
   buildDistributionTargetOptions,
   buildTelegramDestinationCtaOptions,
+  buildDiscordDestinationCtaOptions,
   buildDiscordDistributionTargetOptions,
   buildBroadcastRouteSummary,
   buildPublisherStatusChecks,
@@ -41,6 +42,36 @@ test("Telegram CTA options contain one entry per group or channel", () => {
   assert.equal(options[0].target.threadId, null);
   assert.equal(options[0].target.topicName, "所有 Topics");
   assert.equal(options[1].target.topicName, "整个频道");
+});
+
+test("Discord CTA options contain one entry per server instead of one per channel", () => {
+  const options = buildDiscordDestinationCtaOptions({
+    guilds: [{ id: "guild-1", name: "Demo Discord" }],
+    config: {
+      guilds: {
+        "guild-1": {
+          channels: [
+            { channelId: "channel-1", name: "market-analysis" },
+            { channelId: "channel-2", name: "market-events" },
+          ],
+        },
+      },
+    },
+  });
+
+  assert.deepEqual(options, [{
+    key: "discord:guild-1",
+    label: "所有 Channels",
+    groupLabel: "Demo Discord",
+    platform: "discord",
+    target: {
+      platform: "discord",
+      guildId: "guild-1",
+      channelId: "",
+      groupName: "Demo Discord",
+      topicName: "所有 Channels",
+    },
+  }]);
 });
 
 test("publisher status checks expose identity, bridge, session, routing and latest delivery independently", () => {

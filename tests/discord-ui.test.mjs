@@ -87,7 +87,8 @@ test("Discord Trader 手动信息发布使用频道级 CTA 配置并直接发布
   assert.match(page, /manualContent/);
   assert.match(page, /manualImageUrl/);
   assert.match(page, /manualImageFile/);
-  assert.match(page, /频道 CTA 配置/);
+  assert.match(page, /Server CTA 配置/);
+  assert.match(page, /同一 Server 下所有 Channel 共用/);
   assert.match(page, /\/distribution\?view=destination-cta/);
   assert.doesNotMatch(page, /manualCtaText/);
   assert.doesNotMatch(page, /manualCtaUrl/);

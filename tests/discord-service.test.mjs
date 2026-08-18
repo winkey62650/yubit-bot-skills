@@ -735,21 +735,23 @@ test("Discord manual publish deduplicates targets and isolates per-target failur
   assert.doesNotMatch(result.results[1].error, /manual-secret-token/);
 });
 
-test("Discord manual publish loads and appends the destination channel CTA", async () => {
+test("Discord manual publish loads one server CTA for every selected channel", async () => {
   const repository = createRepository();
   await saveDiscordConfig({
     guilds: {
       "guild-1": {
         guildId: "guild-1",
         guildName: "Demo",
-        channels: [{ templateId: 1, channelId: "channel-ok", name: "updates" }],
+        channels: [
+          { templateId: 1, channelId: "channel-ok", name: "updates" },
+          { templateId: 2, channelId: "channel-two", name: "announcements" },
+        ],
       },
     },
   }, { repository });
   await saveDestinationCtaRegistry(repository, [{
     platform: "discord",
     guildId: "guild-1",
-    channelId: "channel-ok",
     ctaEnabled: true,
     ctaText: "Join YUBIT",
     ctaUrl: "https://yubit.com/join",
@@ -757,21 +759,24 @@ test("Discord manual publish loads and appends the destination channel CTA", asy
   const messageBodies = [];
 
   const result = await sendDiscordManualPublish({
-    channelIds: ["channel-ok"],
+    channelIds: ["channel-ok", "channel-two"],
     content: "Market update",
   }, {
     token: "secret-token",
     repository,
     fetchImpl: async (url, request = {}) => {
-      if (String(url).includes("/channels/channel-ok/messages")) {
+      if (/\/channels\/(?:channel-ok|channel-two)\/messages/.test(String(url))) {
         messageBodies.push(JSON.parse(request.body));
       }
       return jsonResponse(200, { id: "message-1" });
     },
   });
 
-  assert.equal(result.delivered, 1);
-  assert.equal(messageBodies[0].content, "Market update\n\nJoin YUBIT\nhttps://yubit.com/join");
+  assert.equal(result.delivered, 2);
+  assert.deepEqual(messageBodies.map((body) => body.content), [
+    "Market update\n\nJoin YUBIT\nhttps://yubit.com/join",
+    "Market update\n\nJoin YUBIT\nhttps://yubit.com/join",
+  ]);
 });
 
 test("Discord manual publish sends independent targets concurrently", async () => {
