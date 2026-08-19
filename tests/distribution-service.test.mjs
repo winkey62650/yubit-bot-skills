@@ -25,6 +25,15 @@ import {
   verifyTelegramWebhookSecret
 } from "../lib/distribution-service.mjs";
 import { MemoryDistributionRepository } from "../lib/distribution-engine.mjs";
+import {
+  RELEASE_STATE_META_KEY,
+  acknowledgeDataReleaseTarget,
+  buildReleaseDeduplicationKey,
+  buildDataReleaseTargetKey,
+  markDataReleaseTargetPending,
+  pollDataReleaseUpdates,
+  prepareDataReleaseDelivery,
+} from "../lib/data-release-monitor.mjs";
 
 test("desktop publisher health reflects a recent local bridge heartbeat", async () => {
   const repository = {
@@ -1402,6 +1411,120 @@ test("a deduplicated or suppressed automation run creates no failed delivery rec
   assert.equal(result.status, "skipped");
   assert.equal(deliveries.length, 0);
   assert.equal(events[0].payload.outcome, "skipped");
+});
+
+test("queued release automation passes its repository and does not recreate an existing target claim", async () => {
+  const target = { id: "release-target", chatId: "-1001", threadId: 8 };
+  const targetKey = buildDataReleaseTargetKey(target);
+  const eventData = { id: "us-cpi", sourceId: "us-cpi", scheduledAt: "2026-08-19T12:30:00.000Z", values: { actual: "2.7%" }, actualObservedAt: "2026-08-19T12:30:20.000Z" };
+  const deduplicationKey = buildReleaseDeduplicationKey(eventData);
+  const rule = { id: "release-rule", kind: "automation", contentType: "data-release-updates", targets: [target] };
+  const events = [];
+  const deliveries = [];
+  const repository = {
+    async getRule() { return rule; }, async listRules() { return []; },
+    async createEvent(value) { const saved = { id: `event-${events.length + 1}`, ...value }; events.push(saved); return saved; },
+    async updateEvent(id, patch) { return Object.assign(events.find((item) => item.id === id), patch); },
+    async createDelivery(value) { const saved = { id: `delivery-${deliveries.length + 1}`, ...value }; deliveries.push(saved); return saved; },
+    async updateDelivery(id, patch) { return Object.assign(deliveries.find((item) => item.id === id), patch); },
+    async saveMapping() {},
+  };
+  let calls = 0;
+  const runner = async (_jobId, options) => {
+    calls += 1;
+    assert.equal(options.repository, repository);
+    return { status: "queued", preview: {
+      event: eventData,
+      deduplicationKey,
+      deliveryReceipt: { deduplicationKey, event: eventData, expectedTargetKeys: [targetKey], pendingTargetKeys: [targetKey] },
+      targetResults: [{ target, status: "pending", receiptExisting: calls > 1, releaseTargetKey: targetKey }],
+      deliveryPlans: [{ target, steps: [{ method: "sendMessage", payload: { text: "release" } }] }],
+    } };
+  };
+
+  const options = { repository, runner, env: { TELEGRAM_DESKTOP_PUBLISHER_REQUIRED: "true", TELEGRAM_USER_PUBLISHER_TARGETS: "-1001" } };
+  await runDistributionAutomationRule(rule.id, options);
+  await runDistributionAutomationRule(rule.id, options);
+
+  assert.equal(deliveries.length, 1);
+  assert.equal(events[0].payload.releaseDeduplicationKey, deduplicationKey);
+  assert.deepEqual(events[0].payload.releaseExpectedTargetKeys, [targetKey]);
+  assert.equal(deliveries[0].payload.releaseTargetKey, targetKey);
+});
+
+test("desktop release completion records its target receipt and globally acknowledges the release", async () => {
+  const target = { id: "release-target", chatId: "-1001", threadId: 8, groupName: "DEMO Academy" };
+  const targetKey = buildDataReleaseTargetKey(target);
+  const releaseEvent = { id: "us-cpi", sourceId: "us-cpi", scheduledAt: "2026-08-19T12:30:00.000Z", values: { actual: "2.7%" }, actualObservedAt: "2026-08-19T12:30:20.000Z" };
+  const deduplicationKey = buildReleaseDeduplicationKey(releaseEvent);
+  const meta = new Map([[RELEASE_STATE_META_KEY, {
+    calendarWeek: "2026-08-17", monitoredEvents: [{ eventKey: "us-cpi|2026-08-19T12:30:00.000Z", id: "us-cpi", scheduledAt: releaseEvent.scheduledAt, lastActual: null, observedAt: null }], publishedKeys: [], timedOutKeys: [], updatedAt: "2026-08-19T12:30:00.000Z",
+  }]]);
+  const delivery = { id: "delivery-release", status: "success", target, deliveredAt: "2026-08-19T12:31:00.000Z", payload: { releaseDeduplicationKey: deduplicationKey, releaseTargetKey: targetKey, releaseEvent, releaseExpectedTargetKeys: [targetKey] } };
+  const repository = {
+    async getMeta(key) { return structuredClone(meta.get(key) ?? null); },
+    async setMeta(key, value) { meta.set(key, structuredClone(value)); return value; },
+    async getDelivery() { return delivery; },
+  };
+  await prepareDataReleaseDelivery({ repository, deduplicationKey, event: releaseEvent, targetKeys: [targetKey], now: "2026-08-19T12:30:30Z" });
+  await markDataReleaseTargetPending({ repository, deduplicationKey, targetKey, event: releaseEvent, now: "2026-08-19T12:30:31Z" });
+
+  await completeDesktopPublisherDelivery(delivery.id, { status: "success" }, {
+    repository, now: "2026-08-19T12:31:05Z", env: { TELEGRAM_USER_PUBLISHER_TARGETS: "-1001" },
+  });
+
+  assert.deepEqual((await repository.getMeta(RELEASE_STATE_META_KEY)).publishedKeys, [deduplicationKey]);
+  assert.equal((await repository.getMeta(RELEASE_STATE_META_KEY)).monitoredEvents[0].observedAt, releaseEvent.actualObservedAt);
+  const nextPoll = await pollDataReleaseUpdates({
+    repository,
+    now: "2026-08-19T12:32:06Z",
+    fetchCalendar: async () => ({ events: [releaseEvent], sources: [] }),
+  });
+  assert.equal(nextPoll.publishable, false);
+  assert.equal(nextPoll.skipReason, "duplicate-release");
+});
+
+test("desktop release waits for every expected target receipt before global acknowledgement", async () => {
+  const targets = [
+    { id: "release-a", chatId: "-1001", threadId: 8, groupName: "DEMO Academy" },
+    { id: "release-b", chatId: "-1002", threadId: 8, groupName: "DEMO Academy" },
+  ];
+  const targetKeys = targets.map(buildDataReleaseTargetKey);
+  const releaseEvent = { id: "us-cpi-multi", sourceId: "us-cpi-multi", scheduledAt: "2026-08-19T12:30:00.000Z", values: { actual: "2.7%" }, actualObservedAt: "2026-08-19T12:30:20.000Z" };
+  const deduplicationKey = buildReleaseDeduplicationKey(releaseEvent);
+  const meta = new Map([[RELEASE_STATE_META_KEY, {
+    calendarWeek: "2026-08-17", monitoredEvents: [], publishedKeys: [], timedOutKeys: [], updatedAt: "2026-08-19T12:30:00.000Z",
+  }]]);
+  const deliveries = targets.map((target, index) => ({
+    id: `delivery-${index}`,
+    status: "success",
+    target,
+    payload: {
+      releaseDeduplicationKey: deduplicationKey,
+      releaseTargetKey: targetKeys[index],
+      releaseEvent,
+      releaseExpectedTargetKeys: targetKeys,
+    },
+  }));
+  const repository = {
+    async getMeta(key) { return structuredClone(meta.get(key) ?? null); },
+    async setMeta(key, value) { meta.set(key, structuredClone(value)); return value; },
+    async getDelivery(id) { return deliveries.find((delivery) => delivery.id === id); },
+  };
+  await prepareDataReleaseDelivery({ repository, deduplicationKey, event: releaseEvent, targetKeys, now: "2026-08-19T12:30:30Z" });
+  for (let index = 0; index < targets.length; index += 1) {
+    await markDataReleaseTargetPending({ repository, deduplicationKey, targetKey: targetKeys[index], event: releaseEvent, now: `2026-08-19T12:30:3${index + 1}Z` });
+  }
+
+  await completeDesktopPublisherDelivery(deliveries[0].id, { status: "success" }, {
+    repository, now: "2026-08-19T12:31:05Z", env: { TELEGRAM_USER_PUBLISHER_TARGETS: "-1001,-1002" },
+  });
+  assert.deepEqual((await repository.getMeta(RELEASE_STATE_META_KEY)).publishedKeys, []);
+
+  await completeDesktopPublisherDelivery(deliveries[1].id, { status: "success" }, {
+    repository, now: "2026-08-19T12:31:10Z", env: { TELEGRAM_USER_PUBLISHER_TARGETS: "-1001,-1002" },
+  });
+  assert.deepEqual((await repository.getMeta(RELEASE_STATE_META_KEY)).publishedKeys, [deduplicationKey]);
 });
 
 test("production automation execution filters every non-DEMO target until approval", async () => {

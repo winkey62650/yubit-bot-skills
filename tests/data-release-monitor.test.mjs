@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  DATA_RELEASE_DELIVERY_META_KEY,
   RELEASE_STATE_META_KEY,
   WEEKLY_CALENDAR_META_KEY,
   acknowledgeDataReleasePublished,
+  acknowledgeDataReleaseTarget,
+  buildDataReleaseTargetKey,
   buildReleaseDeduplicationKey,
   cacheWeeklyCalendar,
+  prepareDataReleaseDelivery,
   pollDataReleaseUpdates,
   releaseWindowStatus,
   selectReleasableEvents,
@@ -50,12 +54,40 @@ function calendarResult(events, extras = {}) {
 }
 
 test("exports stable repository keys and builds the exact normalized release key", () => {
+  assert.equal(DATA_RELEASE_DELIVERY_META_KEY, "market-content:release-delivery:v1");
   assert.equal(RELEASE_STATE_META_KEY, "market-content:release-state:v1");
   assert.equal(WEEKLY_CALENDAR_META_KEY, "market-content:weekly-calendar:v1");
   assert.equal(
     buildReleaseDeduplicationKey(release({ values: { actual: " 2.70 % " } })),
     '["us-cpi-yoy-2026-08","2026-08-19T12:30:00.000Z","2.7%"]',
   );
+});
+
+test("delivery receipts persist expected targets and preserve successful targets across retries", async () => {
+  const repository = repositoryDouble();
+  const event = release({ values: { actual: "2.7%", forecast: "2.8%", previous: "2.9%" } });
+  const deduplicationKey = buildReleaseDeduplicationKey(event);
+  const firstKey = buildDataReleaseTargetKey({ platform: "discord", guildId: "g1", channelId: "c1" });
+  const secondKey = buildDataReleaseTargetKey({ chatId: "-1001", threadId: 8 });
+
+  const prepared = await prepareDataReleaseDelivery({
+    repository, deduplicationKey, event, targetKeys: [firstKey, secondKey], now: "2026-08-19T12:31:00Z",
+  });
+  assert.deepEqual(prepared.expectedTargetKeys, [firstKey, secondKey]);
+  assert.deepEqual(prepared.successfulTargetKeys, []);
+
+  const partial = await acknowledgeDataReleaseTarget({
+    repository, deduplicationKey, targetKey: firstKey, event, now: "2026-08-19T12:31:05Z",
+  });
+  assert.equal(partial.complete, false);
+  assert.deepEqual(partial.successfulTargetKeys, [firstKey]);
+
+  const retry = await prepareDataReleaseDelivery({
+    repository, deduplicationKey, event, targetKeys: [firstKey, secondKey], now: "2026-08-19T12:32:00Z",
+  });
+  assert.deepEqual(retry.successfulTargetKeys, [firstKey]);
+  assert.deepEqual(retry.readyTargetKeys, [secondKey]);
+  assert.ok(await repository.getMeta(DATA_RELEASE_DELIVERY_META_KEY));
 });
 
 test("classifies the -5 minute through +15 minute release window inclusively", () => {

@@ -688,11 +688,11 @@ test("data release retries after send failure and acknowledges only after every 
     { platform: "discord", guildId: "g1", channelId: "c2" }
   ];
   let failSecondTarget = true;
-  let sends = 0;
+  const sends = new Map();
   const discordSender = async (channelId) => {
-    sends += 1;
+    sends.set(channelId, (sends.get(channelId) || 0) + 1);
     if (channelId === "c2" && failSecondTarget) throw new Error("Discord unavailable");
-    return { id: `message-${sends}` };
+    return { id: `message-${channelId}-${sends.get(channelId)}` };
   };
   const run = (now) => automation.runAutomationJob("data-release-updates", {
     now,
@@ -712,13 +712,77 @@ test("data release retries after send failure and acknowledges only after every 
   failSecondTarget = false;
   const success = await run("2026-08-19T12:32:00Z");
   assert.equal(success.status, "success");
+  assert.deepEqual(Object.fromEntries(sends), { c1: 1, c2: 2 });
   assert.deepEqual((await repository.getMeta("market-content:release-state:v1")).publishedKeys, [success.preview.deduplicationKey]);
 
-  const sendsAfterSuccess = sends;
+  const sendsAfterSuccess = Object.fromEntries(sends);
   const duplicate = await run("2026-08-19T12:33:00Z");
   assert.equal(duplicate.status, "skipped");
   assert.equal(duplicate.preview.skipReason, "duplicate-release");
-  assert.equal(sends, sendsAfterSuccess);
+  assert.deepEqual(Object.fromEntries(sends), sendsAfterSuccess);
+});
+
+test("queued data release keeps its target claim and does not create another plan next minute", async () => {
+  const calendar = { result: [{
+    id: "us-cpi-queued",
+    title: "US CPI YoY",
+    country: "US",
+    importance: 3,
+    date: "2026-08-19T12:30:00Z",
+    actual: "2.7",
+    forecast: "2.8",
+    previous: "2.9",
+    unit: "%"
+  }] };
+  const repository = automationRepository();
+  const options = {
+    force: true,
+    dryRun: false,
+    deferDelivery: true,
+    repository,
+    fetchImpl: fixtureFetch(calendar),
+    fetchReaction: async () => ({ prices: {}, sources: [], warnings: [] }),
+    targets: [{ id: "queued-release", chatId: "-1001", threadId: 8 }],
+  };
+
+  const queued = await automation.runAutomationJob("data-release-updates", { ...options, now: "2026-08-19T12:31:00Z" });
+  const stillQueued = await automation.runAutomationJob("data-release-updates", { ...options, now: "2026-08-19T12:32:00Z" });
+
+  assert.equal(queued.status, "queued");
+  assert.equal(queued.preview.deliveryPlans.length, 1);
+  assert.equal(stillQueued.status, "queued");
+  assert.equal(stillQueued.preview.deliveryPlans.length, 0);
+  assert.equal(stillQueued.preview.targetResults[0].receiptExisting, true);
+  assert.deepEqual(stillQueued.preview.deliveryReceipt.pendingTargetKeys, ["telegram:-1001:8"]);
+});
+
+test("data release retries only global acknowledgement when release-state persistence fails", async () => {
+  const calendar = { result: [{ id: "us-cpi-ack-retry", title: "US CPI YoY", country: "US", importance: 3, date: "2026-08-19T12:30:00Z", actual: "2.7", forecast: "2.8", previous: "2.9", unit: "%" }] };
+  const base = automationRepository();
+  let rejectReleaseAck = true;
+  const repository = {
+    ...base,
+    async setMeta(key, value) {
+      if (key === "market-content:release-state:v1" && Array.isArray(value?.publishedKeys) && value.publishedKeys.length && rejectReleaseAck) {
+        rejectReleaseAck = false;
+        throw new Error("release state unavailable");
+      }
+      return base.setMeta(key, value);
+    },
+  };
+  let sends = 0;
+  const options = {
+    force: true, dryRun: false, repository, fetchImpl: fixtureFetch(calendar),
+    fetchReaction: async () => ({ prices: {}, sources: [], warnings: [] }),
+    targets: [{ platform: "discord", guildId: "g1", channelId: "c1" }],
+    discordSender: async () => ({ id: `message-${++sends}` }),
+  };
+
+  await assert.rejects(() => automation.runAutomationJob("data-release-updates", { ...options, now: "2026-08-19T12:31:00Z" }), /release state unavailable/);
+  const retried = await automation.runAutomationJob("data-release-updates", { ...options, now: "2026-08-19T12:32:00Z" });
+  assert.equal(retried.status, "success");
+  assert.equal(sends, 1);
+  assert.equal((await repository.getMeta("market-content:release-state:v1")).monitoredEvents[0].observedAt, "2026-08-19T12:31:00.000Z");
 });
 
 test("concurrent data-release runs send once and acknowledge before the queued run polls", async () => {
