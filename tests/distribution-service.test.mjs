@@ -704,7 +704,6 @@ test("non-publishable automation results never create deliveries when telemetry 
       nextRunAt: "2026-08-19T10:40:00.000Z",
       targets: [{ id: `target-${status}`, chatId: "-100200", threadId: 8 }]
     };
-    const sendCalls = [];
     const deliveries = [];
     const savedRules = [];
     const repository = {
@@ -741,7 +740,6 @@ test("non-publishable automation results never create deliveries when telemetry 
     assert.equal(result.status, status);
     assert.equal(result.telemetryPersisted, false);
     assert.equal(result.telemetryError, "EVENT_TELEMETRY_WRITE_FAILED");
-    assert.equal(sendCalls.length, 0);
     assert.equal(deliveries.length, 0);
     assert.equal(savedRules[0].status, "ready");
     assert.equal(savedRules[0].nextRunAt, "2026-08-19T10:41:00.000Z");
@@ -757,7 +755,6 @@ test("a successful automation run without target receipts fails closed instead o
     contentType: "crypto-daily",
     targets: [target]
   };
-  const sendCalls = [];
   const deliveries = [];
   let updatedEvent = null;
   const repository = {
@@ -786,7 +783,6 @@ test("a successful automation run without target receipts fails closed instead o
 
   assert.equal(result.status, "failed");
   assert.equal(result.error, "AUTOMATION_TARGET_RESULT_MISSING");
-  assert.equal(sendCalls.length, 0);
   assert.equal(deliveries.length, 1);
   assert.equal(deliveries[0].status, "failed");
   assert.equal(deliveries[0].targetMessageId, null);
@@ -794,6 +790,238 @@ test("a successful automation run without target receipts fails closed instead o
   assert.equal(deliveries[0].error, "AUTOMATION_TARGET_RESULT_MISSING");
   assert.equal(updatedEvent.payload.outcome, "failed");
   assert.equal(updatedEvent.payload.outcomeError, "AUTOMATION_TARGET_RESULT_MISSING");
+});
+
+test("complete mixed target receipts aggregate to partial and keep a one-time rule retryable", async () => {
+  const targets = [
+    { id: "target-mixed-success", chatId: "-100200", threadId: 8 },
+    { id: "target-mixed-failed", chatId: "-100201", threadId: 8 }
+  ];
+  const rule = {
+    id: "rule-mixed-receipts",
+    kind: "automation",
+    name: "Mixed receipts",
+    contentType: "crypto-daily",
+    enabled: true,
+    runOnce: true,
+    status: "running",
+    schedulePreset: "daily-1100",
+    nextRunAt: "2026-08-19T10:40:00.000Z",
+    targets
+  };
+  const events = [];
+  const deliveries = [];
+  const savedRules = [];
+  const repository = {
+    async cleanupExpired() {},
+    async getMeta() { return { completedAt: "2026-08-01T00:00:00.000Z" }; },
+    async claimDueAutomationRules() { return [rule]; },
+    async listRules() { return []; },
+    async createEvent(event) { const saved = { id: "event-mixed", ...event }; events.push(saved); return saved; },
+    async updateEvent(id, patch) { Object.assign(events.find((event) => event.id === id), patch); },
+    async createDelivery(delivery) { const saved = { id: `delivery-${deliveries.length + 1}`, ...delivery }; deliveries.push(saved); return saved; },
+    async updateDelivery(id, patch) { Object.assign(deliveries.find((delivery) => delivery.id === id), patch); },
+    async saveMapping() {},
+    async saveRule(saved) { savedRules.push(saved); return saved; }
+  };
+
+  const execution = await runDueDistributionJobs(new Date("2026-08-19T10:40:37.000Z"), {
+    repository,
+    runner: async () => ({
+      status: "success",
+      preview: { targetResults: [
+        { target: targets[0], status: "success", messageId: 801 },
+        { target: targets[1], status: "failed", error: "TELEGRAM_REJECTED" }
+      ] }
+    })
+  });
+
+  assert.equal(execution.results[0].status, "partial");
+  assert.equal(events[0].payload.outcome, "partial");
+  assert.deepEqual(deliveries.map((delivery) => delivery.status), ["success", "failed"]);
+  assert.equal(deliveries[0].targetMessageId, 801);
+  assert.equal(deliveries[1].error, "TELEGRAM_REJECTED");
+  assert.equal(savedRules[0].enabled, true);
+  assert.equal(savedRules[0].status, "retrying");
+  assert.equal(savedRules[0].nextRunAt, "2026-08-19T10:45:37.000Z");
+});
+
+test("a partial target receipt set aggregates success plus a missing receipt to partial", async () => {
+  const targets = [
+    { id: "target-partial-present", chatId: "-100200", threadId: 8 },
+    { id: "target-partial-missing", chatId: "-100201", threadId: 8 }
+  ];
+  const rule = { id: "rule-partial-missing", kind: "automation", contentType: "crypto-daily", targets };
+  const deliveries = [];
+  let outcome = null;
+  const repository = {
+    async getRule() { return rule; }, async listRules() { return []; },
+    async createEvent(event) { return { id: "event-partial-missing", ...event }; },
+    async updateEvent(_id, patch) { outcome = patch.payload.outcome; },
+    async createDelivery(delivery) { const saved = { id: `delivery-${deliveries.length + 1}`, ...delivery }; deliveries.push(saved); return saved; },
+    async updateDelivery(id, patch) { Object.assign(deliveries.find((delivery) => delivery.id === id), patch); },
+    async saveMapping() {}
+  };
+
+  const result = await runDistributionAutomationRule(rule.id, {
+    repository,
+    runner: async () => ({ status: "success", preview: { targetResults: [
+      { target: targets[0], status: "success", messageId: 811 }
+    ] } })
+  });
+
+  assert.equal(result.status, "partial");
+  assert.equal(outcome, "partial");
+  assert.deepEqual(deliveries.map((delivery) => delivery.status), ["success", "failed"]);
+  assert.equal(deliveries[1].error, "AUTOMATION_TARGET_RESULT_MISSING");
+});
+
+test("telemetry failure after reliable external receipts preserves delivery success and completes a one-time rule", async () => {
+  const target = { id: "target-telemetry-after-send", chatId: "-100200", threadId: 8 };
+  const rule = {
+    id: "rule-telemetry-after-send",
+    kind: "automation",
+    contentType: "crypto-daily",
+    enabled: true,
+    runOnce: true,
+    status: "running",
+    schedulePreset: "daily-1100",
+    targets: [target]
+  };
+  const deliveries = [];
+  const savedRules = [];
+  let runnerCalls = 0;
+  const repository = {
+    async cleanupExpired() {},
+    async getMeta() { return { completedAt: "2026-08-01T00:00:00.000Z" }; },
+    async claimDueAutomationRules() { return [rule]; },
+    async listRules() { return []; },
+    async createEvent(event) { return { id: "event-telemetry-after-send", ...event }; },
+    async updateEvent() {
+      assert.equal(deliveries[0]?.status, "success");
+      assert.equal(deliveries[0]?.targetMessageId, 901);
+      throw new Error("EVENT_TELEMETRY_WRITE_FAILED");
+    },
+    async createDelivery(delivery) { const saved = { id: "delivery-telemetry-after-send", ...delivery }; deliveries.push(saved); return saved; },
+    async updateDelivery(id, patch) { Object.assign(deliveries.find((delivery) => delivery.id === id), patch); },
+    async saveMapping() {},
+    async saveRule(saved) { savedRules.push(saved); return saved; }
+  };
+
+  const execution = await runDueDistributionJobs(new Date("2026-08-19T10:40:37.000Z"), {
+    repository,
+    runner: async () => {
+      runnerCalls += 1;
+      return { status: "success", preview: { targetResults: [
+        { target, status: "success", messageId: 901, messageIds: [901, 902] }
+      ] } };
+    }
+  });
+  const result = execution.results[0];
+
+  assert.equal(runnerCalls, 1);
+  assert.equal(result.status, "success");
+  assert.equal(result.telemetryPersisted, false);
+  assert.equal(result.telemetryError, "EVENT_TELEMETRY_WRITE_FAILED");
+  assert.equal(deliveries.length, 1);
+  assert.equal(deliveries[0].status, "success");
+  assert.equal(deliveries[0].targetMessageId, 901);
+  assert.deepEqual(deliveries[0].targetMessageIds, [901, 902]);
+  assert.ok(deliveries[0].deliveredAt);
+  assert.equal(savedRules[0].enabled, false);
+  assert.equal(savedRules[0].status, "completed");
+  assert.equal(savedRules[0].nextRunAt, null);
+});
+
+test("delivery persistence failure after a reliable external receipt does not schedule a duplicate send", async () => {
+  const target = { id: "target-delivery-store-after-send", chatId: "-100200", threadId: 8 };
+  const rule = {
+    id: "rule-delivery-store-after-send",
+    kind: "automation",
+    contentType: "crypto-daily",
+    enabled: true,
+    runOnce: true,
+    status: "running",
+    schedulePreset: "daily-1100",
+    targets: [target]
+  };
+  const events = [];
+  const savedRules = [];
+  let runnerCalls = 0;
+  const repository = {
+    async cleanupExpired() {},
+    async getMeta() { return { completedAt: "2026-08-01T00:00:00.000Z" }; },
+    async claimDueAutomationRules() { return [rule]; },
+    async listRules() { return []; },
+    async createEvent(event) { const saved = { id: "event-delivery-store-after-send", ...event }; events.push(saved); return saved; },
+    async updateEvent(id, patch) { Object.assign(events.find((event) => event.id === id), patch); },
+    async createDelivery() { throw new Error("DELIVERY_RECEIPT_WRITE_FAILED"); },
+    async saveMapping() {},
+    async saveRule(saved) { savedRules.push(saved); return saved; }
+  };
+
+  const execution = await runDueDistributionJobs(new Date("2026-08-19T10:40:37.000Z"), {
+    repository,
+    runner: async () => {
+      runnerCalls += 1;
+      return { status: "success", preview: { targetResults: [
+        { target, status: "success", messageId: 911, messageIds: [911] }
+      ] } };
+    }
+  });
+  const result = execution.results[0];
+
+  assert.equal(runnerCalls, 1);
+  assert.equal(result.status, "success");
+  assert.equal(result.deliveryPersisted, false);
+  assert.equal(result.deliveryError, "DELIVERY_RECEIPT_WRITE_FAILED");
+  assert.equal(result.telemetryPersisted, true);
+  assert.equal(events[0].payload.outcome, "success");
+  assert.equal(savedRules[0].enabled, false);
+  assert.equal(savedRules[0].status, "completed");
+  assert.equal(savedRules[0].nextRunAt, null);
+});
+
+test("missing empty and invalid runner statuses fail closed and schedule a retry", async () => {
+  for (const status of [undefined, "", "not-a-status"]) {
+    const suffix = status || "missing";
+    const target = { id: `target-invalid-${suffix}`, chatId: "-100200", threadId: 8 };
+    const rule = {
+      id: `rule-invalid-${suffix}`,
+      kind: "automation",
+      contentType: "crypto-daily",
+      enabled: true,
+      runOnce: true,
+      status: "running",
+      schedulePreset: "daily-1100",
+      targets: [target]
+    };
+    const events = [];
+    const deliveries = [];
+    const savedRules = [];
+    const repository = {
+      async cleanupExpired() {}, async getMeta() { return { completedAt: "2026-08-01T00:00:00.000Z" }; },
+      async claimDueAutomationRules() { return [rule]; }, async listRules() { return []; },
+      async createEvent(event) { const saved = { id: `event-${suffix}`, ...event }; events.push(saved); return saved; },
+      async updateEvent(id, patch) { Object.assign(events.find((event) => event.id === id), patch); },
+      async createDelivery(delivery) { const saved = { id: `delivery-${suffix}`, ...delivery }; deliveries.push(saved); return saved; },
+      async updateDelivery(id, patch) { Object.assign(deliveries.find((delivery) => delivery.id === id), patch); },
+      async saveMapping() {}, async saveRule(saved) { savedRules.push(saved); return saved; }
+    };
+
+    const execution = await runDueDistributionJobs(new Date("2026-08-19T10:40:37.000Z"), {
+      repository,
+      runner: async () => ({ status, preview: { targetResults: [] } })
+    });
+
+    assert.equal(execution.results[0].status, "failed");
+    assert.equal(execution.results[0].error, "AUTOMATION_RUN_STATUS_INVALID");
+    assert.equal(events[0].payload.outcome, "failed");
+    assert.equal(events[0].payload.outcomeError, "AUTOMATION_RUN_STATUS_INVALID");
+    assert.equal(deliveries[0].status, "failed");
+    assert.equal(savedRules[0].status, "retrying");
+    assert.equal(savedRules[0].nextRunAt, "2026-08-19T10:45:37.000Z");
+  }
 });
 
 test("scheduled release checks are rescheduled at the next whole minute after a non-publishable result", async () => {
