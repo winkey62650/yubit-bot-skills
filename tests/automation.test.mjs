@@ -670,6 +670,99 @@ test("non-publishable data releases are skipped before any sender is called", as
   assert.equal(sends, 0);
 });
 
+test("data release retries after send failure and acknowledges only after every target succeeds", async () => {
+  const actualCalendar = { result: [{
+    id: "us-cpi-retry",
+    title: "US CPI YoY",
+    country: "US",
+    importance: 3,
+    date: "2026-08-19T12:30:00Z",
+    actual: "2.7",
+    forecast: "2.8",
+    previous: "2.9",
+    unit: "%"
+  }] };
+  const repository = automationRepository();
+  const targets = [
+    { platform: "discord", guildId: "g1", channelId: "c1" },
+    { platform: "discord", guildId: "g1", channelId: "c2" }
+  ];
+  let failSecondTarget = true;
+  let sends = 0;
+  const discordSender = async (channelId) => {
+    sends += 1;
+    if (channelId === "c2" && failSecondTarget) throw new Error("Discord unavailable");
+    return { id: `message-${sends}` };
+  };
+  const run = (now) => automation.runAutomationJob("data-release-updates", {
+    now,
+    force: true,
+    dryRun: false,
+    repository,
+    fetchImpl: fixtureFetch(actualCalendar),
+    fetchReaction: async () => ({ prices: {}, sources: [], warnings: [] }),
+    targets,
+    discordSender
+  });
+
+  const partial = await run("2026-08-19T12:31:00Z");
+  assert.equal(partial.status, "partial");
+  assert.deepEqual((await repository.getMeta("market-content:release-state:v1")).publishedKeys, []);
+
+  failSecondTarget = false;
+  const success = await run("2026-08-19T12:32:00Z");
+  assert.equal(success.status, "success");
+  assert.deepEqual((await repository.getMeta("market-content:release-state:v1")).publishedKeys, [success.preview.deduplicationKey]);
+
+  const sendsAfterSuccess = sends;
+  const duplicate = await run("2026-08-19T12:33:00Z");
+  assert.equal(duplicate.status, "skipped");
+  assert.equal(duplicate.preview.skipReason, "duplicate-release");
+  assert.equal(sends, sendsAfterSuccess);
+});
+
+test("concurrent data-release runs send once and acknowledge before the queued run polls", async () => {
+  const actualCalendar = { result: [{
+    id: "us-cpi-concurrent",
+    title: "US CPI YoY",
+    country: "US",
+    importance: 3,
+    date: "2026-08-19T12:30:00Z",
+    actual: "2.7",
+    forecast: "2.8",
+    previous: "2.9",
+    unit: "%"
+  }] };
+  const repository = automationRepository();
+  let sends = 0;
+  const options = {
+    now: "2026-08-19T12:31:00Z",
+    force: true,
+    dryRun: false,
+    repository,
+    fetchImpl: fixtureFetch(actualCalendar),
+    fetchReaction: async () => ({ prices: {}, sources: [], warnings: [] }),
+    targets: [{ platform: "discord", guildId: "g1", channelId: "c1" }],
+    discordSender: async () => {
+      await Promise.resolve();
+      sends += 1;
+      return { id: `message-${sends}` };
+    }
+  };
+
+  const results = await Promise.all([
+    automation.runAutomationJob("data-release-updates", options),
+    automation.runAutomationJob("data-release-updates", options),
+  ]);
+
+  assert.deepEqual(results.map(({ status }) => status).sort(), ["skipped", "success"]);
+  const success = results.find(({ status }) => status === "success");
+  assert.equal(sends, success.preview.deliveryPlans[0].steps.length);
+  assert.deepEqual((await repository.getMeta("market-content:release-state:v1")).publishedKeys, [
+    success.preview.deduplicationKey,
+  ]);
+});
+
 test("an injected Telegram sender runs without a production bot token", async () => {
   const rss = `<?xml version="1.0"?><rss><channel><item><guid>btc-etf-send</guid><title>Bitcoin ETF records net inflow</title><link>https://example.com/etf-send</link><description>Institutional demand increased.</description><pubDate>Wed, 19 Aug 2026 06:00:00 GMT</pubDate></item></channel></rss>`;
   let sends = 0;

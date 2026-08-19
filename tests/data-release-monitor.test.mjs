@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   RELEASE_STATE_META_KEY,
   WEEKLY_CALENDAR_META_KEY,
+  acknowledgeDataReleasePublished,
   buildReleaseDeduplicationKey,
   cacheWeeklyCalendar,
   pollDataReleaseUpdates,
@@ -108,6 +109,45 @@ test("cacheWeeklyCalendar persists only when requested", async () => {
   assert.equal(await dryRepository.getMeta(WEEKLY_CALENDAR_META_KEY), null);
 });
 
+test("prepares a release without publishing it, retries until acknowledged, then deduplicates", async () => {
+  const live = release({ values: { actual: "2.7%", forecast: "2.8%", previous: "2.9%" } });
+  const repository = repositoryDouble({
+    [WEEKLY_CALENDAR_META_KEY]: {
+      calendarWeek: "2026-08-17",
+      events: [release()],
+      updatedAt: "2026-08-19T10:00:00.000Z",
+    },
+  });
+  const fetchCalendar = async () => calendarResult([live]);
+
+  const prepared = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:31:00Z", repository, fetchCalendar, persist: true,
+  });
+  assert.equal(prepared.publishable, true);
+  assert.deepEqual((await repository.getMeta(RELEASE_STATE_META_KEY)).publishedKeys, []);
+
+  const retry = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:32:00Z", repository, fetchCalendar, persist: true,
+  });
+  assert.equal(retry.publishable, true);
+  assert.equal(retry.deduplicationKey, prepared.deduplicationKey);
+
+  const acknowledged = await acknowledgeDataReleasePublished({
+    repository,
+    deduplicationKey: retry.deduplicationKey,
+    event: retry.event,
+    now: "2026-08-19T12:32:05Z",
+  });
+  assert.equal(acknowledged.acknowledged, true);
+  assert.deepEqual((await repository.getMeta(RELEASE_STATE_META_KEY)).publishedKeys, [retry.deduplicationKey]);
+
+  const duplicate = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:33:05Z", repository, fetchCalendar, persist: true,
+  });
+  assert.equal(duplicate.publishable, false);
+  assert.equal(duplicate.skipReason, "duplicate-release");
+});
+
 test("publishes a new Actual once and persists the exact state shape and deduplication key", async () => {
   const repository = repositoryDouble({
     [WEEKLY_CALENDAR_META_KEY]: {
@@ -126,6 +166,10 @@ test("publishes a new Actual once and persists the exact state shape and dedupli
   const first = await pollDataReleaseUpdates({
     now: "2026-08-19T12:31:00Z", repository, fetchCalendar, fetchReaction, persist: true,
   });
+  await acknowledgeDataReleasePublished({
+    repository, deduplicationKey: first.deduplicationKey, event: first.event,
+    now: "2026-08-19T12:31:05Z",
+  });
   const second = await pollDataReleaseUpdates({
     now: "2026-08-19T12:32:00Z", repository, fetchCalendar, fetchReaction, persist: true,
   });
@@ -141,7 +185,7 @@ test("publishes a new Actual once and persists the exact state shape and dedupli
   assert.deepEqual(state.publishedKeys, [first.deduplicationKey]);
 });
 
-test("serializes concurrent polls for the same repository so only one can publish", async () => {
+test("serializes concurrent polls for the same repository so only one can prepare", async () => {
   const live = release({ values: { actual: "2.7%", forecast: "2.8%", previous: "2.9%" } });
   const repository = repositoryDouble({
     [WEEKLY_CALENDAR_META_KEY]: {
@@ -164,6 +208,12 @@ test("serializes concurrent polls for the same repository so only one can publis
 
   assert.equal(results.filter(({ publishable }) => publishable).length, 1);
   assert.equal(results.filter(({ skipReason }) => skipReason === "poll-interval").length, 1);
+  assert.deepEqual((await repository.getMeta(RELEASE_STATE_META_KEY)).publishedKeys, []);
+  const prepared = results.find(({ publishable }) => publishable);
+  await acknowledgeDataReleasePublished({
+    repository, deduplicationKey: prepared.deduplicationKey, event: prepared.event,
+    now: "2026-08-19T12:31:05Z",
+  });
   assert.deepEqual((await repository.getMeta(RELEASE_STATE_META_KEY)).publishedKeys, [
     buildReleaseDeduplicationKey(live),
   ]);
@@ -223,8 +273,16 @@ test("publishes simultaneous CPI and Core CPI Actuals sequentially without losin
     now: "2026-08-19T12:31:00Z", repository, fetchCalendar, persist: true,
   });
   const stateAfterFirst = await repository.getMeta(RELEASE_STATE_META_KEY);
+  await acknowledgeDataReleasePublished({
+    repository, deduplicationKey: first.deduplicationKey, event: first.event,
+    now: "2026-08-19T12:31:05Z",
+  });
   const second = await pollDataReleaseUpdates({
     now: "2026-08-19T12:32:00Z", repository, fetchCalendar, persist: true,
+  });
+  await acknowledgeDataReleasePublished({
+    repository, deduplicationKey: second.deduplicationKey, event: second.event,
+    now: "2026-08-19T12:32:05Z",
   });
   const third = await pollDataReleaseUpdates({
     now: "2026-08-19T12:33:00Z", repository, fetchCalendar, persist: true,
@@ -271,6 +329,10 @@ test("publishes a valid event without letting a stale Actual in the same poll bl
     now: "2026-08-19T12:31:00Z", repository, fetchCalendar, persist: true,
   });
   const stateAfterFirst = await repository.getMeta(RELEASE_STATE_META_KEY);
+  await acknowledgeDataReleasePublished({
+    repository, deduplicationKey: first.deduplicationKey, event: first.event,
+    now: "2026-08-19T12:31:05Z",
+  });
   const second = await pollDataReleaseUpdates({
     now: "2026-08-19T12:32:00Z", repository, fetchCalendar, persist: true,
   });
@@ -308,6 +370,10 @@ test("publishes an independent valid event while preserving a separate source co
 
   const first = await pollDataReleaseUpdates({
     now: "2026-08-19T12:31:00Z", repository, fetchCalendar, persist: true,
+  });
+  await acknowledgeDataReleasePublished({
+    repository, deduplicationKey: first.deduplicationKey, event: first.event,
+    now: "2026-08-19T12:31:05Z",
   });
   const second = await pollDataReleaseUpdates({
     now: "2026-08-19T12:32:00Z", repository, fetchCalendar, persist: true,
