@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>SEC Updates</title>
+  <entry>
+    <id>tag:sec.gov,2026:release-17</id>
+    <title>SEC issues guidance on crypto asset custody</title>
+    <link rel="alternate" href="https://www.sec.gov/newsroom/press-releases/2026-17?utm_source=rss&amp;amp;mode=full" />
+    <summary>Guidance covers advisers&apos; safeguarding obligations.</summary>
+    <updated>2026-08-18T10:15:00Z</updated>
+    <category term="Regulation" />
+  </entry>
+</feed>

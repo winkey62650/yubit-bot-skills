@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Industry Wire</title>
+    <item>
+      <guid isPermaLink="false">industry-42</guid>
+      <title>Bitcoin &amp; Ether gain after ETF update</title>
+      <link>https://industry.example/news/etf-update?ref=rss&amp;day=1</link>
+      <description><![CDATA[Funds report <b>$250M</b> of net inflows &amp; higher volume.]]></description>
+      <pubDate>Tue, 18 Aug 2026 08:00:00 GMT</pubDate>
+      <category>BTC ETF / Institutional</category>
+    </item>
+  </channel>
+</rss>

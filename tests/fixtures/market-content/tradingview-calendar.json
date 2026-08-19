@@ -1,0 +1,26 @@
+{
+  "result": [
+    {
+      "id": "us-cpi-yoy-2026-08",
+      "title": "US CPI YoY",
+      "country": "US",
+      "date": "2026-08-12T12:30:00.000Z",
+      "importance": 3,
+      "actual": "2.7",
+      "forecast": "2.8",
+      "previous": "2.9",
+      "unit": "%"
+    },
+    {
+      "id": "sec-roundtable-2026-08",
+      "event": "SEC Crypto Roundtable",
+      "country": "US",
+      "date": "TBD",
+      "importance": 2,
+      "actual": null,
+      "forecast": "",
+      "previous": "TBD",
+      "unit": "%"
+    }
+  ]
+}
