@@ -125,6 +125,29 @@ test("deduplication rejects opposite lifecycle and security facts despite shared
   assert.equal(deduplicateCryptoStories([successfulLaunch, shutdownAfterExploit]).length, 2);
 });
 
+test("deduplication rejects successful and failed launches despite shared canonical identity", () => {
+  for (const [index, title] of ["Protocol launch fails", "Protocol launch failed", "Protocol reports failed launch"].entries()) {
+    const canonicalId = `protocol-launch-${index}`;
+    const successfulLaunch = story({
+      id: `protocol:successful-launch-${index}`,
+      canonicalId,
+      title: "Protocol launch succeeds",
+      summary: "The mainnet launch was successful.",
+      categories: ["Market / Project"],
+    });
+    const failedLaunch = story({
+      id: `wire:failed-launch-${index}`,
+      canonicalId,
+      title,
+      summary: undefined,
+      url: `https://industry.example/protocol-failed-launch-${index}`,
+      categories: ["Market / Project"],
+    });
+
+    assert.equal(deduplicateCryptoStories([successfulLaunch, failedLaunch]).length, 2, title);
+  }
+});
+
 test("deduplication fingerprints differently worded reports of the same sourced fact", () => {
   const industry = story({
     id: "wire:ibit-flow",
@@ -316,6 +339,28 @@ test("Crypto Daily does not treat explicitly negated directional terms as eviden
       now,
       candidates: [story({
         id: `negated-direction-${index}`,
+        title: "Bitcoin institutional market update",
+        summary: undefined,
+        evidence: undefined,
+        ...candidate,
+      })],
+    });
+
+    assert.equal(document.sections[0].impact, "Neutral", candidate.rationale);
+  }
+});
+
+test("Crypto Daily normalizes n't contractions before checking directional evidence", () => {
+  const cases = [
+    { impact: "Bullish", rationale: "The application wasn't approved." },
+    { impact: "Bearish", rationale: "The protocol wasn't hacked." },
+  ];
+
+  for (const [index, candidate] of cases.entries()) {
+    const document = buildCryptoDailyDocument({
+      now,
+      candidates: [story({
+        id: `contracted-negation-${index}`,
         title: "Bitcoin institutional market update",
         summary: undefined,
         evidence: undefined,
