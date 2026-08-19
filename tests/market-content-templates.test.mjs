@@ -83,6 +83,28 @@ test("deduplication collapses the same story and replaces an industry link with 
   assert.equal(result[0].source.kind, "official");
 });
 
+test("deduplication trusts a shared canonical identity when one title has no recognized event", () => {
+  const industry = story({
+    id: "wire:sec-order-42",
+    canonicalId: "sec-order-42",
+    title: "SEC approves BlackRock Bitcoin ETF filing",
+    summary: "The regulator approved the filing.",
+  });
+  const official = story({
+    id: "sec:order-42",
+    canonicalId: "sec-order-42",
+    title: "Commission Order 42",
+    summary: undefined,
+    url: "https://www.sec.gov/orders/42",
+    source: { id: "sec", label: "SEC", kind: "official" },
+  });
+
+  const result = deduplicateCryptoStories([industry, official]);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].url, official.url);
+  assert.equal(result[0].source.kind, "official");
+});
+
 test("deduplication fingerprints differently worded reports of the same sourced fact", () => {
   const industry = story({
     id: "wire:ibit-flow",
@@ -127,13 +149,13 @@ test("deduplication does not merge similar reports with different amounts or eve
 test("deduplication does not let an identical story key bypass amount and direction conflicts", () => {
   const inflow = story({
     id: "ibit-inflow-same-title",
-    canonicalId: undefined,
+    canonicalId: "ibit-daily-flow",
     title: "BlackRock IBIT daily fund flow update",
     summary: "BlackRock IBIT recorded a $250M net inflow.",
   });
   const outflow = story({
     id: "ibit-outflow-same-title",
-    canonicalId: undefined,
+    canonicalId: "ibit-daily-flow",
     title: "BlackRock IBIT daily fund flow update",
     summary: "BlackRock IBIT recorded a $120M net outflow.",
     url: "https://industry.example/ibit-outflow-same-title",
@@ -267,6 +289,36 @@ test("Crypto Daily rejects a supplied impact contradicted by directional evidenc
       title: "Bitcoin institutional market update",
       summary: undefined,
       rationale: "Verified net outflows indicate weakening institutional demand.",
+      impact: "Bullish",
+    })],
+  });
+
+  assert.equal(document.sections[0].impact, "Neutral");
+});
+
+test("Crypto Daily uses directional evidence even when a non-directional rationale is present", () => {
+  const document = buildCryptoDailyDocument({
+    now,
+    candidates: [story({
+      title: "Bitcoin institutional market update",
+      summary: undefined,
+      rationale: "The report was verified against the official publication.",
+      evidence: "Verified net inflows indicate stronger institutional demand.",
+      impact: "Bullish",
+    })],
+  });
+
+  assert.equal(document.sections[0].impact, "Bullish");
+});
+
+test("Crypto Daily stays Neutral when explicit evidence sources conflict", () => {
+  const document = buildCryptoDailyDocument({
+    now,
+    candidates: [story({
+      title: "Bitcoin institutional market update",
+      summary: undefined,
+      rationale: "Verified net inflows indicate stronger institutional demand.",
+      evidence: "Verified net outflows indicate weakening institutional demand.",
       impact: "Bullish",
     })],
   });
