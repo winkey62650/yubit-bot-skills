@@ -465,7 +465,7 @@ test("a due one-time automation executes once and is archived as completed", asy
     async saveRule(saved) { savedRules.push(saved); return saved; },
   };
   const runner = async (jobId, options) => {
-    assert.equal(jobId, "daily-events");
+    assert.equal(jobId, "weekly-calendar");
     assert.deepEqual(options.targets, [target]);
     assert.equal(options.force, true);
     return { status: "success", preview: { targetResults: [{ target, status: "success", messageId: 700 }] } };
@@ -594,7 +594,7 @@ test("a confirmed manual automation run bypasses the scheduled slot dedupe and c
     async saveMapping() {}
   };
   const runner = async (jobId, options) => {
-    assert.equal(jobId, "daily-events");
+    assert.equal(jobId, "weekly-calendar");
     assert.equal(options.dryRun, false);
     assert.equal(options.force, true);
     assert.deepEqual(options.targets, [target]);
@@ -616,6 +616,158 @@ test("a confirmed manual automation run bypasses the scheduled slot dedupe and c
   assert.equal(deliveries.length, 1);
   assert.equal(deliveries[0].status, "success");
   assert.equal(deliveries[0].targetMessageId, 321);
+});
+
+test("market automation jobs receive the repository and persist non-publishable preview telemetry without deliveries", async () => {
+  const target = { id: "target-market-preview", chatId: "-100200", threadId: 8 };
+  const cases = [
+    { contentType: "crypto-daily", jobId: "crypto-daily", status: "skipped", skipReason: "insufficient-sources" },
+    { contentType: "weekly-calendar", jobId: "weekly-calendar", status: "duplicate", skipReason: "already-published" },
+    { contentType: "data-release-updates", jobId: "data-release-updates", status: "skipped", skipReason: "actual-not-available" }
+  ];
+
+  for (const scenario of cases) {
+    const rule = {
+      id: `rule-${scenario.contentType}`,
+      kind: "automation",
+      name: scenario.contentType,
+      contentType: scenario.contentType,
+      targets: [target]
+    };
+    const events = [];
+    const deliveries = [];
+    const repository = {
+      async getRule(id) { return id === rule.id ? rule : null; },
+      async listRules() { return []; },
+      async createEvent(event) {
+        const saved = { id: `event-${scenario.contentType}`, ...event };
+        events.push(saved);
+        return saved;
+      },
+      async updateEvent(id, patch) {
+        Object.assign(events.find((event) => event.id === id), patch);
+      },
+      async createDelivery(delivery) {
+        deliveries.push(delivery);
+        return delivery;
+      }
+    };
+    const preview = {
+      templateId: scenario.contentType,
+      templateVersion: "market-content-v1",
+      sources: [{ name: "official-source", url: "https://example.test/source" }],
+      warnings: ["sample warning"],
+      deduplicationKey: `${scenario.contentType}:2026-08-19`,
+      skipReason: scenario.skipReason,
+      deliveryPlans: [{ target, steps: [] }]
+    };
+
+    const result = await runDistributionAutomationRule(rule.id, {
+      repository,
+      now: new Date("2026-08-19T10:40:37.000Z"),
+      runner: async (jobId, options) => {
+        assert.equal(jobId, scenario.jobId);
+        assert.equal(options.repository, repository);
+        return { status: scenario.status, preview };
+      }
+    });
+
+    assert.equal(result.status, scenario.status);
+    assert.equal(deliveries.length, 0);
+    assert.deepEqual(events[0].payload, {
+      jobId: scenario.jobId,
+      slotAt: "2026-08-19T10:40:37.000Z",
+      trigger: "manual",
+      templateId: scenario.contentType,
+      templateVersion: "market-content-v1",
+      sources: preview.sources,
+      warnings: preview.warnings,
+      deduplicationKey: preview.deduplicationKey,
+      skipReason: scenario.skipReason,
+      preview,
+      deliveryPlans: preview.deliveryPlans,
+      outcome: scenario.status
+    });
+  }
+});
+
+test("scheduled release checks are rescheduled at the next whole minute after a non-publishable result", async () => {
+  const now = new Date("2026-08-19T10:40:37.000Z");
+  const rule = {
+    id: "release-poller",
+    kind: "automation",
+    name: "Data Release Updates",
+    contentType: "data-release-updates",
+    schedulePreset: "event-driven",
+    enabled: true,
+    status: "running",
+    nextRunAt: "2026-08-19T10:40:00.000Z",
+    targets: [{ id: "release-target", chatId: "-100200", threadId: 8 }]
+  };
+  const events = [];
+  const savedRules = [];
+  const deliveries = [];
+  const repository = {
+    async cleanupExpired() {},
+    async getMeta() { return { completedAt: "2026-08-01T00:00:00.000Z" }; },
+    async claimDueAutomationRules() { return [rule]; },
+    async listRules() { return []; },
+    async createEvent(event) {
+      const saved = { id: "release-event", ...event };
+      events.push(saved);
+      return saved;
+    },
+    async updateEvent(id, patch) {
+      Object.assign(events.find((event) => event.id === id), patch);
+    },
+    async createDelivery(delivery) {
+      deliveries.push(delivery);
+      return delivery;
+    },
+    async saveRule(saved) {
+      savedRules.push(saved);
+      return saved;
+    }
+  };
+
+  const result = await runDueDistributionJobs(now, {
+    repository,
+    runner: async (jobId, options) => {
+      assert.equal(jobId, "data-release-updates");
+      assert.equal(options.repository, repository);
+      return {
+        status: "skipped",
+        preview: {
+          templateId: "data-release-updates",
+          templateVersion: "market-content-v1",
+          sources: [],
+          warnings: [],
+          deduplicationKey: null,
+          skipReason: "actual-not-available",
+          deliveryPlans: []
+        }
+      };
+    }
+  });
+
+  assert.equal(result.results[0].status, "skipped");
+  assert.equal(deliveries.length, 0);
+  assert.equal(savedRules[0].status, "ready");
+  assert.equal(savedRules[0].nextRunAt, "2026-08-19T10:41:00.000Z");
+  assert.equal(events[0].payload.skipReason, "actual-not-available");
+});
+
+test("automation preview API is repository-backed and cannot disable dry-run", async () => {
+  const source = await readFile(new URL("../app/api/automation-test/route.js", import.meta.url), "utf8");
+
+  assert.match(source, /getDistributionRepository/);
+  assert.match(source, /const repository = await getDistributionRepository\(\)/);
+  assert.match(source, /const previewRepository =/);
+  assert.match(source, /runAutomationJob\([\s\S]*?dryRun:\s*true/);
+  assert.match(source, /runAutomationJob\([\s\S]*?force:\s*true/);
+  assert.match(source, /runAutomationJob\([\s\S]*?repository:\s*previewRepository/);
+  assert.doesNotMatch(source, /dryRun:\s*body\./);
+  assert.doesNotMatch(source, /setMeta|sendMessage|createDelivery/);
 });
 
 test("desktop publishing queues generated content and completes only after a Demo administrator acknowledges it", async () => {
