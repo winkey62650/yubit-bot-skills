@@ -27,32 +27,82 @@ function hasReliableSource(sources = []) {
   ));
 }
 
-(async () => {
+function evaluateDemoCtaAcceptance(cta, preview, expectedTarget) {
+  cta = cta || {};
+  preview = preview || {};
+  expectedTarget = expectedTarget || {};
+  const normalize = (value) => String(value || "").replace(/\r\n?/g, "\n").trim();
+  const plainText = (value) => normalize(value)
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;/g, "'")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/[\*_~`>#]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const ctaContent = normalize(cta?.ctaContent);
+  const usable = cta?.ctaEnabled === true && Boolean(ctaContent);
+  const plans = Array.isArray(preview?.deliveryPlans) ? preview.deliveryPlans : [];
+  const matchesTarget = (target) => expectedTarget?.platform === "discord" || expectedTarget?.guildId
+    ? String(target?.guildId || "") === String(expectedTarget?.guildId || "")
+    : String(target?.chatId || "") === String(expectedTarget?.chatId || "");
+  const matchingPlans = plans.filter((plan) => matchesTarget(plan?.target));
+  const hydrated = usable && matchingPlans.some((plan) => (
+    plan?.target?.ctaEnabled === true && normalize(plan?.target?.ctaContent) === ctaContent
+  ));
+  const marker = plainText(ctaContent.split("\n").find((line) => plainText(line)) || ctaContent);
+  const rendered = Boolean(marker) && matchingPlans.some((plan) => (
+    (Array.isArray(plan?.steps) ? plan.steps : []).some((step) => {
+      const payload = step?.payload || {};
+      return [payload.text, payload.caption, payload.content]
+        .some((value) => plainText(value).includes(marker));
+    })
+  ));
+  return { passed: usable && hydrated && rendered, usable, hydrated, rendered, marker };
+}
+
+async function main() {
   const api = await request.newContext({
     baseURL: baseUrl,
     ...(protectionHeaders ? { extraHTTPHeaders: protectionHeaders } : {}),
   });
   try {
     await json(await api.post("/api/auth/login", { data: { username, password } }), "login");
-    const [groupConfig, destinationCta, previewPayload] = await Promise.all([
+    const [groupConfig, destinationCta] = await Promise.all([
       json(await api.get("/api/group-config"), "group config"),
       json(await api.get("/api/destination-cta"), "destination CTA"),
-      json(await api.post("/api/automation-test", {
-        data: { jobId: "crypto-daily" },
-        timeout: 60_000,
-      }), "crypto daily preview"),
     ]);
 
     const demo = (groupConfig.groups || []).find((group) => /demo\s*academy/i.test(group.title || ""));
     if (!demo) throw new Error("DEMO Academy was not found");
     const ctaKey = `telegram:${String(demo.chatId)}`;
     const cta = destinationCta.registry?.[ctaKey] || null;
+    const topic = (Array.isArray(demo.topics) ? demo.topics : []).find((item) => (
+      Number.isInteger(Number(item?.threadId || item?.topicId || item?.id))
+      && Number(item?.threadId || item?.topicId || item?.id) > 0
+    ));
+    const chatType = demo.chatType === "channel" || demo.type === "channel" ? "channel" : "supergroup";
+    if (chatType !== "channel" && !topic) throw new Error("DEMO Academy has no valid Topic target for preview");
+    const previewTarget = {
+      platform: "telegram",
+      chatId: String(demo.chatId),
+      chatType,
+      ...(topic ? { threadId: Number(topic.threadId || topic.topicId || topic.id) } : {}),
+    };
+    const previewPayload = await json(await api.post("/api/automation-test", {
+      data: { jobId: "crypto-daily", targets: [previewTarget] },
+      timeout: 60_000,
+    }), "crypto daily preview");
     const preview = previewPayload.result?.preview || {};
     const sources = [preview.sources, preview.diagnostics?.sources, preview.document?.diagnostics?.sources]
       .find((items) => Array.isArray(items) && items.length > 0) || [];
     const publishable = preview.publishable ?? preview.document?.publishable ?? false;
     const skipReason = preview.skipReason || preview.document?.skipReason || null;
-    const passed = Boolean(cta)
+    const ctaAcceptance = evaluateDemoCtaAcceptance(cta || {}, preview, previewTarget);
+    const passed = ctaAcceptance.passed
       && hasReliableSource(sources)
       && (publishable === true || Boolean(skipReason));
 
@@ -70,6 +120,9 @@ function hasReliableSource(sources = []) {
         scope: "telegram-group",
         enabled: cta.ctaEnabled === true,
         contentConfigured: Boolean(String(cta.ctaContent || "").trim()),
+        hydrated: ctaAcceptance.hydrated,
+        rendered: ctaAcceptance.rendered,
+        marker: ctaAcceptance.marker,
       } : null,
       preview: {
         publishable,
@@ -84,7 +137,13 @@ function hasReliableSource(sources = []) {
   } finally {
     await api.dispose();
   }
-})().catch((error) => {
-  process.stderr.write(`${error.stack || error.message}\n`);
-  process.exitCode = 1;
-});
+}
+
+if (require.main === module) {
+  main().catch((error) => {
+    process.stderr.write(`${error.stack || error.message}\n`);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { evaluateDemoCtaAcceptance };

@@ -2572,6 +2572,10 @@ test("automation preview API is repository-backed and cannot disable dry-run", a
   assert.match(source, /runAutomationJob\([\s\S]*?dryRun:\s*true/);
   assert.match(source, /runAutomationJob\([\s\S]*?force:\s*true/);
   assert.match(source, /runAutomationJob\([\s\S]*?repository:\s*previewRepository/);
+  assert.match(source, /hydrateDestinationCtas\(previewRepository/);
+  assert.match(source, /targets:\s*hydratedTargets/);
+  assert.match(source, /buildAutomationTelegramPlans/);
+  assert.match(source, /buildAutomationDiscordPlans/);
   assert.doesNotMatch(source, /dryRun:\s*body\./);
   assert.doesNotMatch(source, /setMeta|sendMessage|createDelivery/);
 });

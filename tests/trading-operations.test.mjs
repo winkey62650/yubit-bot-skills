@@ -217,3 +217,35 @@ test("template audits and previews use dry-run automation preview without a deli
     assert.doesNotMatch(source, /run-now/);
   }
 });
+
+test("DEMO CTA acceptance requires enabled non-empty CTA hydrated into the final dry-run rendering", async () => {
+  const acceptance = await readFile(new URL("scripts/accept-demo-target-cta.cjs", root), "utf8");
+  const previewRoute = await readFile(new URL("app/api/automation-test/route.js", root), "utf8");
+  const evaluateDemoCtaAcceptance = extractFunction(acceptance, "evaluateDemoCtaAcceptance");
+  const telegramTarget = { platform: "telegram", chatId: "-1001", threadId: 8 };
+  const discordTarget = { platform: "discord", guildId: "guild-1", channelId: "channel-1" };
+  const telegramPreview = {
+    deliveryPlans: [{
+      target: { ...telegramTarget, ctaEnabled: true, ctaContent: "**LATEST TG CTA**\n[Join TG](https://example.com/tg)" },
+      steps: [{ payload: { text: "Market update\n\n────────\n<b>LATEST TG CTA</b>\n<a href=\"https://example.com/tg\">Join TG</a>" } }]
+    }]
+  };
+  const discordPreview = {
+    deliveryPlans: [{
+      target: { ...discordTarget, ctaEnabled: true, ctaContent: "**LATEST DC CTA**\n[Join DC](https://example.com/dc)" },
+      steps: [{ payload: { content: "Market update\n\n────────\n**LATEST DC CTA**\n[Join DC](https://example.com/dc)" } }]
+    }]
+  };
+
+  assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: false, ctaContent: "LATEST TG CTA" }, telegramPreview, telegramTarget).passed, false);
+  assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "   \n " }, telegramPreview, telegramTarget).passed, false);
+  assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**LATEST TG CTA**\n[Join TG](https://example.com/tg)" }, telegramPreview, telegramTarget).passed, true);
+  assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**LATEST DC CTA**\n[Join DC](https://example.com/dc)" }, discordPreview, discordTarget).passed, true);
+
+  assert.match(acceptance, /data:\s*\{\s*jobId:\s*"crypto-daily",\s*targets:/);
+  assert.match(previewRoute, /hydrateDestinationCtas/);
+  assert.match(previewRoute, /targets:\s*hydratedTargets/);
+  assert.match(previewRoute, /buildAutomationTelegramPlans/);
+  assert.match(previewRoute, /buildAutomationDiscordPlans/);
+  assert.doesNotMatch(acceptance, /run-now|setMeta|saveRule|createDelivery/);
+});
