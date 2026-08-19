@@ -19,6 +19,7 @@ import {
   repairAutomationTargetLabels,
   repairDemoToJennaXDirection,
   retryDistributionDelivery,
+  resetAutomationManualReconciliation,
   runDueDistributionJobs,
   runDistributionAutomationRule,
   validateRuleRuntime,
@@ -1159,7 +1160,6 @@ test("success target receipts without a valid message id fail closed", async () 
     { messageId: "abc" },
     { messageId: "-1" },
     { messageId: "1.5" },
-    { messageId: "9007199254740992" },
     { messageIds: [] },
     { messageIds: [""] },
     { messageIds: [null] }
@@ -1191,6 +1191,29 @@ test("success target receipts without a valid message id fail closed", async () 
     assert.equal(deliveries[0].targetMessageId, null, `invalid receipt ${index}`);
     assert.equal(eventPayload.outcome, "failed", `invalid receipt ${index}`);
   }
+});
+
+test("Discord snowflake message ids remain exact decimal strings through delivery persistence", async () => {
+  const target = { id: "discord-snowflake", platform: "discord", guildId: "987654321098765432", channelId: "123456789012345678" };
+  const snowflake = "18446744073709551615";
+  const deliveries = [];
+  const repository = {
+    async getRule() { return { id: "snowflake-rule", kind: "automation", contentType: "crypto-daily", targets: [target] }; },
+    async getMeta() { return null; }, async createEvent(event) { return { id: "snowflake-event", ...event }; },
+    async updateEvent() {}, async saveMapping() {},
+    async createDelivery(value) { const saved = { id: "snowflake-delivery", ...value }; deliveries.push(saved); return saved; },
+    async updateDelivery(id, patch) { Object.assign(deliveries.find((row) => row.id === id), patch); }
+  };
+  const result = await runDistributionAutomationRule("snowflake-rule", {
+    repository,
+    runner: async () => ({ status: "success", preview: { targetResults: [
+      { target, status: "success", messageId: `000${snowflake}` }
+    ] } })
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(deliveries[0].targetMessageId, snowflake);
+  assert.deepEqual(deliveries[0].targetMessageIds, [snowflake]);
 });
 
 test("an invalid runner envelope with reliable receipts completes without automatic resend", async () => {
@@ -1256,14 +1279,21 @@ function createAutomationReviewRepository(initialRule, options = {}) {
     },
     async acquireMetaLease(key, lease, now = new Date()) {
       const current = leases.get(key);
-      if (current && Date.parse(current.leaseUntil) > new Date(now).getTime()) return null;
-      leases.set(key, structuredClone(lease));
-      return structuredClone(lease);
+      const currentLeaseUntil = options.leaseTtlMs ? current?.testLeaseUntil : Date.parse(current?.leaseUntil ?? "");
+      const clock = options.leaseTtlMs ? Date.now() : new Date(now).getTime();
+      if (current && currentLeaseUntil > clock) return null;
+      const saved = options.leaseTtlMs ? { ...lease, testLeaseUntil: Date.now() + options.leaseTtlMs } : lease;
+      leases.set(key, structuredClone(saved));
+      return structuredClone(saved);
     },
     async renewMetaLease(key, leaseId, leaseUntil) {
       const current = leases.get(key);
       if (current?.leaseId !== leaseId) return null;
-      const renewed = { ...current, leaseUntil };
+      const renewed = {
+        ...current,
+        leaseUntil,
+        ...(options.leaseTtlMs ? { testLeaseUntil: Date.now() + options.leaseTtlMs } : {})
+      };
       leases.set(key, renewed);
       return structuredClone(renewed);
     },
@@ -1490,6 +1520,234 @@ test("recurring scheduled executions use distinct generations", async () => {
   await runDueDistributionJobs(new Date("2026-08-20T08:00:01.000Z"), { repository: harness.repository, runner });
 
   assert.equal(runnerCalls, 2);
+});
+
+test("automation execution lease heartbeat prevents a second repository runner after the lease TTL", async () => {
+  const target = { id: "heartbeat-target", chatId: "-100560", threadId: 8 };
+  const rule = {
+    id: "heartbeat-rule", kind: "automation", contentType: "crypto-daily", runOnce: true,
+    enabled: true, status: "ready", nextRunAt: "2026-08-19T08:00:00.000Z", targets: [target]
+  };
+  const harness = createAutomationReviewRepository(rule, { leaseTtlMs: 40 });
+  const secondRepository = { ...harness.repository };
+  let runnerCalls = 0;
+  let releaseRunner;
+  const gate = new Promise((resolve) => { releaseRunner = resolve; });
+  let entered;
+  const runnerEntered = new Promise((resolve) => { entered = resolve; });
+  const runner = async () => {
+    runnerCalls += 1;
+    entered();
+    await gate;
+    return { status: "success", preview: { targetResults: [{ target, status: "success", messageId: 1801 }] } };
+  };
+  const env = { AUTOMATION_EXECUTION_LEASE_HEARTBEAT_MS: "10" };
+
+  const first = runDistributionAutomationRule(rule.id, { repository: harness.repository, runner, env });
+  await runnerEntered;
+  await new Promise((resolve) => setTimeout(resolve, 75));
+  const second = await runDistributionAutomationRule(rule.id, { repository: secondRepository, runner, env });
+  releaseRunner();
+  await first;
+
+  assert.equal(runnerCalls, 1);
+  assert.equal(second.status, "busy");
+});
+
+test("lease release failure cannot overwrite a confirmed result or cause resend", async () => {
+  const target = { id: "release-throw-target", chatId: "-100561", threadId: 8 };
+  const harness = createAutomationReviewRepository({
+    id: "release-throw-rule", kind: "automation", contentType: "crypto-daily", runOnce: true, targets: [target]
+  });
+  harness.repository.releaseMetaLease = async () => { throw new Error("LEASE_RELEASE_FAILED"); };
+  let runnerCalls = 0;
+  const runner = async () => ({ status: "success", preview: { targetResults: [
+    { target, status: "success", messageId: 1802 + runnerCalls++ }
+  ] } });
+
+  const first = await runDistributionAutomationRule("release-throw-rule", { repository: harness.repository, runner });
+  const second = await runDistributionAutomationRule("release-throw-rule", { repository: harness.repository, runner });
+
+  assert.equal(first.status, "success");
+  assert.ok(second.alreadyDelivered === true || second.status === "busy");
+  assert.equal(runnerCalls, 1);
+});
+
+test("manual reconciliation blocks direct retries until an operator resets it", async () => {
+  const targets = [
+    { id: "manual-a", chatId: "-100562", threadId: 8 },
+    { id: "manual-b", chatId: "-100563", threadId: 8 }
+  ];
+  const options = { failMetaAfterRunner: true, failDeliveries: true };
+  const harness = createAutomationReviewRepository({
+    id: "manual-reset-rule", kind: "automation", contentType: "crypto-daily", enabled: true,
+    runOnce: true, status: "ready", nextRunAt: "2026-08-19T08:00:00.000Z", targets
+  }, options);
+  let runnerCalls = 0;
+  const runner = async () => {
+    runnerCalls += 1;
+    harness.markRunnerStarted();
+    return { status: "partial", preview: { targetResults: [
+      { target: targets[0], status: "success", messageId: 1803 },
+      { target: targets[1], status: "failed", error: "TEMP" }
+    ] } };
+  };
+
+  const first = await runDueDistributionJobs(new Date("2026-08-19T08:00:01.000Z"), { repository: harness.repository, runner });
+  const blocked = await runDistributionAutomationRule("manual-reset-rule", { repository: harness.repository, runner });
+  options.failMetaAfterRunner = false;
+  options.failDeliveries = false;
+  const reset = await resetAutomationManualReconciliation("manual-reset-rule", { repository: harness.repository, now: new Date("2026-08-19T09:00:00.000Z") });
+  const afterReset = await runDistributionAutomationRule("manual-reset-rule", {
+    repository: harness.repository,
+    runner: async (_job, input) => {
+      runnerCalls += 1;
+      return { status: "success", preview: { targetResults: input.targets.map((target, index) => ({ target, status: "success", messageId: 1810 + index })) } };
+    }
+  });
+
+  assert.equal(first.results[0].status, "manual-reconciliation");
+  assert.equal(blocked.status, "manual-reconciliation");
+  assert.equal(reset.status, "ready");
+  assert.equal(afterReset.status, "success");
+  assert.equal(runnerCalls, 2);
+});
+
+test("direct manual reconciliation durably blocks retries when execution meta cannot be updated", async () => {
+  const targets = [
+    { id: "direct-manual-a", chatId: "-100572", threadId: 8 },
+    { id: "direct-manual-b", chatId: "-100573", threadId: 8 }
+  ];
+  const options = { failMetaAfterRunner: true, failDeliveries: true };
+  const harness = createAutomationReviewRepository({
+    id: "direct-manual-rule", kind: "automation", contentType: "crypto-daily", enabled: true,
+    runOnce: true, status: "ready", targets
+  }, options);
+  let runnerCalls = 0;
+  const runner = async () => {
+    runnerCalls += 1;
+    harness.markRunnerStarted();
+    return { status: "partial", preview: { targetResults: [
+      { target: targets[0], status: "success", messageId: 1809 },
+      { target: targets[1], status: "failed", error: "TEMP" }
+    ] } };
+  };
+
+  const first = await runDistributionAutomationRule("direct-manual-rule", { repository: harness.repository, runner });
+  const second = await runDistributionAutomationRule("direct-manual-rule", { repository: harness.repository, runner });
+
+  assert.equal(first.status, "manual-reconciliation");
+  assert.equal(second.status, "manual-reconciliation");
+  assert.equal(harness.rule().status, "manual-reconciliation");
+  assert.equal(runnerCalls, 1);
+});
+
+test("active partial receipts remain durable after 31 days", async () => {
+  const targets = [
+    { id: "long-a", chatId: "-100564", threadId: 8 },
+    { id: "long-b", chatId: "-100565", threadId: 8 }
+  ];
+  const harness = createAutomationReviewRepository({
+    id: "long-retry-rule", kind: "automation", contentType: "crypto-daily", enabled: true,
+    runOnce: true, status: "ready", nextRunAt: "2026-01-01T08:00:00.000Z", targets
+  });
+  const attempts = [];
+  const runner = async (_job, input) => {
+    attempts.push(input.targets.map((target) => target.id));
+    if (attempts.length === 1) return { status: "partial", preview: { targetResults: [
+      { target: targets[0], status: "success", messageId: 1821 },
+      { target: targets[1], status: "failed", error: "TEMP" }
+    ] } };
+    return { status: "success", preview: { targetResults: [{ target: targets[1], status: "success", messageId: 1822 }] } };
+  };
+
+  await runDueDistributionJobs(new Date("2026-01-01T08:00:01.000Z"), { repository: harness.repository, runner });
+  harness.replaceRule({ ...harness.rule(), enabled: true, nextRunAt: "2026-02-01T08:00:00.000Z" });
+  await runDueDistributionJobs(new Date("2026-02-01T08:00:01.000Z"), { repository: harness.repository, runner });
+
+  assert.deepEqual(attempts, [["long-a", "long-b"], ["long-b"]]);
+});
+
+test("a new scheduled anchor does not reuse an old partial generation", async () => {
+  const targets = [
+    { id: "anchor-a", chatId: "-100566", threadId: 8 },
+    { id: "anchor-b", chatId: "-100567", threadId: 8 }
+  ];
+  const harness = createAutomationReviewRepository({
+    id: "anchor-rule", kind: "automation", contentType: "crypto-daily", enabled: true,
+    runOnce: true, status: "ready", nextRunAt: "2026-08-19T08:00:00.000Z", targets
+  });
+  const attempts = [];
+  const runner = async (_job, input) => {
+    attempts.push(input.targets.map((target) => target.id));
+    return attempts.length === 1
+      ? { status: "partial", preview: { targetResults: [
+        { target: targets[0], status: "success", messageId: 1831 },
+        { target: targets[1], status: "failed", error: "TEMP" }
+      ] } }
+      : { status: "success", preview: { targetResults: input.targets.map((target, index) => ({ target, status: "success", messageId: 1832 + index })) } };
+  };
+
+  await runDueDistributionJobs(new Date("2026-08-19T08:00:01.000Z"), { repository: harness.repository, runner });
+  harness.replaceRule({ ...harness.rule(), enabled: true, status: "ready", nextRunAt: "2026-08-20T08:00:00.000Z" });
+  await runDueDistributionJobs(new Date("2026-08-20T08:00:01.000Z"), { repository: harness.repository, runner });
+
+  assert.deepEqual(attempts, [["anchor-a", "anchor-b"], ["anchor-a", "anchor-b"]]);
+});
+
+test("target migration keeps unchanged success receipts while CTA revision starts a new run", async () => {
+  const a = { id: "revision-a", chatId: "-100568", threadId: 8 };
+  const b = { id: "revision-b", chatId: "-100569", threadId: 8 };
+  const c = { id: "revision-c", chatId: "-100570", threadId: 8 };
+  const harness = createAutomationReviewRepository({
+    id: "revision-rule", kind: "automation", contentType: "crypto-daily", enabled: true, runOnce: true,
+    status: "ready", updatedAt: "2026-08-19T07:00:00.000Z", nextRunAt: "2026-08-19T08:00:00.000Z", targets: [a, b]
+  });
+  const attempts = [];
+  const runner = async (_job, input) => {
+    attempts.push(input.targets.map((target) => target.id));
+    if (attempts.length === 1) return { status: "partial", preview: { targetResults: [
+      { target: a, status: "success", messageId: 1841 }, { target: b, status: "failed", error: "TEMP" }
+    ] } };
+    return { status: "success", preview: { targetResults: input.targets.map((target, index) => ({ target, status: "success", messageId: 1842 + index })) } };
+  };
+
+  await runDueDistributionJobs(new Date("2026-08-19T08:00:01.000Z"), { repository: harness.repository, runner });
+  harness.replaceRule({ ...harness.rule(), enabled: true, status: "ready", updatedAt: "2026-08-20T07:00:00.000Z", nextRunAt: "2026-08-20T08:00:00.000Z", targets: [a, c] });
+  await runDueDistributionJobs(new Date("2026-08-20T08:00:01.000Z"), { repository: harness.repository, runner });
+  harness.replaceRule({ ...harness.rule(), enabled: true, status: "ready", updatedAt: "2026-08-21T07:00:00.000Z", nextRunAt: "2026-08-21T08:00:00.000Z", targets: [{ ...a, ctaText: "new CTA" }, c] });
+  await runDueDistributionJobs(new Date("2026-08-21T08:00:01.000Z"), { repository: harness.repository, runner });
+
+  assert.deepEqual(attempts, [["revision-a", "revision-b"], ["revision-c"], ["revision-a", "revision-c"]]);
+});
+
+test("failed event telemetry is queued and flushed on the next execution", async () => {
+  const target = { id: "telemetry-target", chatId: "-100571", threadId: 8 };
+  const harness = createAutomationReviewRepository({
+    id: "telemetry-rule", kind: "automation", contentType: "crypto-daily", runOnce: true, targets: [target]
+  });
+  const originalUpdateEvent = harness.repository.updateEvent;
+  let failTelemetry = true;
+  harness.repository.updateEvent = async (...args) => {
+    if (failTelemetry) throw new Error("TELEMETRY_UNAVAILABLE");
+    return originalUpdateEvent(...args);
+  };
+  let runnerCalls = 0;
+  const runner = async () => ({ status: "success", preview: { targetResults: [
+    { target, status: "success", messageId: 1851 + runnerCalls++ }
+  ] } });
+
+  const first = await runDistributionAutomationRule("telemetry-rule", { repository: harness.repository, runner });
+  const queued = [...harness.meta.values()].find((value) => value?.kind === "automation-telemetry-pending");
+  failTelemetry = false;
+  const second = await runDistributionAutomationRule("telemetry-rule", { repository: harness.repository, runner });
+  const remaining = [...harness.meta.values()].find((value) => value?.kind === "automation-telemetry-pending");
+
+  assert.equal(first.telemetryQueued, true);
+  assert.ok(queued);
+  assert.equal(second.alreadyDelivered, true);
+  assert.equal(remaining, undefined);
+  assert.equal(runnerCalls, 1);
 });
 
 test("scheduled release checks are rescheduled at the next whole minute after a non-publishable result", async () => {
