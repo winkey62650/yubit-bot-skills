@@ -78,6 +78,25 @@ test("selects a new Actual, exposes the next event, and records end-window timeo
   assert.deepEqual(selected.timedOutKeys, ["expired|2026-08-19T11:00:00.000Z"]);
 });
 
+test("times out a previously monitored event after it disappears from the live snapshot", () => {
+  const eventKey = "us-cpi-yoy-2026-08|2026-08-19T12:30:00.000Z";
+  const selected = selectReleasableEvents([], {
+    monitoredEvents: [{
+      eventKey,
+      id: "us-cpi-yoy-2026-08",
+      scheduledAt,
+      lastActual: null,
+      observedAt: null,
+    }],
+    publishedKeys: [],
+    timedOutKeys: [],
+  }, "2026-08-19T12:45:00.001Z");
+
+  assert.deepEqual(selected.monitoredEvents, []);
+  assert.deepEqual(selected.timedOutKeys, [eventKey]);
+  assert.deepEqual(selected.newlyTimedOutKeys, [eventKey]);
+});
+
 test("cacheWeeklyCalendar persists only when requested", async () => {
   const repository = repositoryDouble();
   const calendar = { calendarWeek: "2026-08-17", events: [release()], updatedAt: "2026-08-19T10:00:00Z" };
@@ -456,6 +475,53 @@ test("refreshes a same-week calendar after its six-hour TTL expires", async () =
   assert.equal(calls.length, 1);
   assert.ok(result.warnings.some((warning) => /bootstrap/i.test(warning)));
   assert.equal((await repository.getMeta(WEEKLY_CALENDAR_META_KEY)).updatedAt, "2026-08-19T12:00:00.000Z");
+});
+
+test("keeps an in-window cached event across an empty TTL refresh until Actual arrives", async () => {
+  const repository = repositoryDouble({
+    [WEEKLY_CALENDAR_META_KEY]: {
+      calendarWeek: "2026-08-17", events: [release()], updatedAt: "2026-08-19T06:30:59.999Z",
+    },
+  });
+  let calls = 0;
+  const fetchCalendar = async () => {
+    calls += 1;
+    return calendarResult(calls === 1 ? [] : [
+      release({ values: { actual: "2.7%", forecast: "2.8%", previous: "2.9%" } }),
+    ]);
+  };
+
+  const emptyRefresh = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:31:00Z", repository, fetchCalendar, persist: true,
+  });
+  const cachedAfterEmpty = await repository.getMeta(WEEKLY_CALENDAR_META_KEY);
+  const actualRefresh = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:32:00Z", repository, fetchCalendar, persist: true,
+  });
+
+  assert.equal(emptyRefresh.publishable, false);
+  assert.equal(cachedAfterEmpty.events.length, 1);
+  assert.equal(cachedAfterEmpty.events[0].id, "us-cpi-yoy-2026-08");
+  assert.equal(calls, 2);
+  assert.equal(actualRefresh.publishable, true);
+  assert.equal(actualRefresh.event.values.actual, "2.7%");
+});
+
+test("allows an empty TTL refresh to clear cached events outside their release window", async () => {
+  const repository = repositoryDouble({
+    [WEEKLY_CALENDAR_META_KEY]: {
+      calendarWeek: "2026-08-17",
+      events: [release({ scheduledAt: "2026-08-19T11:00:00Z" })],
+      updatedAt: "2026-08-19T05:59:59.999Z",
+    },
+  });
+
+  await pollDataReleaseUpdates({
+    now: "2026-08-19T12:00:00Z", repository,
+    fetchCalendar: async () => calendarResult([]), persist: true,
+  });
+
+  assert.deepEqual((await repository.getMeta(WEEKLY_CALENDAR_META_KEY)).events, []);
 });
 
 test("preserves an in-window Actual baseline across an empty live snapshot", async () => {
