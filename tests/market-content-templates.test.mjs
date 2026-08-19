@@ -395,6 +395,28 @@ test("ranking considers explicit event impact before freshness", () => {
   assert.deepEqual(rankCryptoStories([lowImpact, highImpact], now).map((item) => item.id), ["high-impact", "low-impact"]);
 });
 
+test("ranking uses canonical content as its final deterministic tie-breaker", () => {
+  const alpha = story({
+    id: "same-rank",
+    title: "Identical ETF update",
+    url: "https://wire.example/same-rank",
+    summary: "Alpha summary",
+    evidence: "Alpha evidence",
+  });
+  const zulu = story({
+    id: "same-rank",
+    title: "Identical ETF update",
+    url: "https://wire.example/same-rank",
+    summary: "Zulu summary",
+    evidence: "Zulu evidence",
+  });
+
+  const forward = rankCryptoStories([zulu, alpha], now);
+  const reverse = rankCryptoStories([alpha, zulu], now);
+  assert.deepEqual(forward, reverse);
+  assert.deepEqual(forward.map((item) => item.evidence), ["Alpha evidence", "Zulu evidence"]);
+});
+
 test("Crypto Daily selects one traceable story per section and does not reuse another section's story", () => {
   const document = buildCryptoDailyDocument({
     now,
@@ -700,6 +722,24 @@ test("weekly calendar fails closed on conflicting duplicate values independent o
   assert.ok(!nodes.some((node) => node.type === "metric" && node.label === "Forecast"));
   assert.ok(!nodes.some((node) => node.type === "metric" && node.label === "Importance"));
   assert.ok(nodes.some((node) => node.type === "metric" && node.label === "Previous" && node.value === "2.9%"));
+});
+
+test("weekly calendar resolves importance conflicts before filtering non-allowlist macro events", () => {
+  const high = {
+    id: "treasury-refunding",
+    title: "Treasury refunding announcement",
+    kind: "macro",
+    country: "US",
+    importance: 3,
+    scheduledAt: "2026-08-19T13:00:00Z",
+    source: { label: "US Treasury", url: "https://home.treasury.gov/refunding" },
+  };
+  const low = { ...high, importance: 2 };
+
+  const forward = buildWeeklyCalendarDocument({ now, events: [high, low] });
+  const reverse = buildWeeklyCalendarDocument({ now, events: [low, high] });
+  assert.deepEqual(forward, reverse);
+  assert.deepEqual(forward.days, []);
 });
 
 test("release impact rules cover inflation, employment, growth, and FOMC deterministically", () => {
