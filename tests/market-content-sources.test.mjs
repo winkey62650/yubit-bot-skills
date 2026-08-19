@@ -435,6 +435,63 @@ test("OKX fallback requests candles before the target and selects only completed
   assert.equal(result.data.BTC.beforePriceAt, new Date(target - 60_000).toISOString());
 });
 
+test("OKX skips a confirmed target-minute candle that closes after a mid-minute event", async () => {
+  const target = Date.parse("2026-08-18T12:00:30.000Z");
+  const targetMinute = Date.parse("2026-08-18T12:00:00.000Z");
+  const previousMinute = targetMinute - 60_000;
+  const fetchImpl = async (url) => {
+    const parsed = new URL(url);
+    if (parsed.hostname.includes("binance")) return jsonResponse({ code: -1121 }, 404);
+    if (parsed.pathname.includes("candles")) {
+      return jsonResponse({ code: "0", data: [
+        [String(targetMinute), "0", "0", "0", "70000", "0", "0", "0", "1"],
+        [String(previousMinute), "0", "0", "0", "65000", "0", "0", "0", "1"],
+      ] });
+    }
+    return jsonResponse({ code: "0", data: [{ last: "65650", ts: String(target + 15 * 60_000) }] });
+  };
+
+  const result = await fetchMarketReaction({
+    beforeAt: target,
+    now: target + 15 * 60_000,
+    fetchImpl,
+    symbols: ["BTC"],
+  });
+
+  assert.equal(result.data.BTC.beforePrice, 65000);
+  assert.equal(result.data.BTC.beforePriceAt, new Date(previousMinute).toISOString());
+});
+
+test("Binance skips a candle closing after the event and selects the nearest fully closed candle", async () => {
+  const target = Date.parse("2026-08-18T12:00:30.000Z");
+  const targetMinute = Date.parse("2026-08-18T12:00:00.000Z");
+  const previousMinute = targetMinute - 60_000;
+  const urls = [];
+  const fetchImpl = async (url) => {
+    const parsed = new URL(url);
+    urls.push(parsed);
+    if (parsed.pathname.includes("klines")) {
+      return jsonResponse([
+        [targetMinute, "0", "0", "0", "70000", "0", targetMinute + 60_000 - 1],
+        [previousMinute, "0", "0", "0", "65000", "0", targetMinute - 1],
+      ]);
+    }
+    return jsonResponse({ symbol: "BTCUSDT", price: "65650" });
+  };
+
+  const result = await fetchMarketReaction({
+    beforeAt: target,
+    now: target + 15 * 60_000,
+    fetchImpl,
+    symbols: ["BTC"],
+  });
+  const candleUrl = urls.find((url) => url.pathname.includes("klines"));
+
+  assert.equal(candleUrl.searchParams.get("endTime"), String(targetMinute - 1));
+  assert.equal(result.data.BTC.beforePrice, 65000);
+  assert.equal(result.data.BTC.beforePriceAt, new Date(previousMinute).toISOString());
+});
+
 test("market reaction runs independent symbols within one shared deadline", async () => {
   const startedAt = Date.now();
   const result = await settleWithin(fetchMarketReaction({
