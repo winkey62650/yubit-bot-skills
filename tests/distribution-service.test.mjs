@@ -674,10 +674,12 @@ test("market automation jobs receive the repository and persist non-publishable 
 
     assert.equal(result.status, scenario.status);
     assert.equal(deliveries.length, 0);
+    assert.match(events[0].payload.generation, /^[a-f0-9]{24}$/);
     assert.deepEqual(events[0].payload, {
       jobId: scenario.jobId,
       slotAt: "2026-08-19T10:40:37.000Z",
       trigger: "manual",
+      generation: events[0].payload.generation,
       templateId: scenario.contentType,
       templateVersion: "market-content-v1",
       sources: preview.sources,
@@ -1149,7 +1151,15 @@ test("success target receipts without a valid message id fail closed", async () 
     { messageId: null },
     { messageId: undefined },
     { messageId: 0 },
+    { messageId: -1 },
+    { messageId: 1.5 },
+    { messageId: Number.NaN },
+    { messageId: Number.MAX_SAFE_INTEGER + 1 },
     { messageId: "" },
+    { messageId: "abc" },
+    { messageId: "-1" },
+    { messageId: "1.5" },
+    { messageId: "9007199254740992" },
     { messageIds: [] },
     { messageIds: [""] },
     { messageIds: [null] }
@@ -1223,6 +1233,263 @@ test("an invalid runner envelope with reliable receipts completes without automa
   assert.equal(savedRules[0].enabled, false);
   assert.equal(savedRules[0].status, "completed");
   assert.equal(savedRules[0].nextRunAt, null);
+});
+
+function createAutomationReviewRepository(initialRule, options = {}) {
+  let rule = structuredClone(initialRule);
+  const meta = new Map();
+  const leases = new Map();
+  const events = [];
+  const deliveries = [];
+  let runnerStarted = false;
+  const repository = {
+    async cleanupExpired() {},
+    async getRule() { return structuredClone(rule); },
+    async getMeta(key) {
+      if (key === "legacy-migration-v1") return { completedAt: "2026-08-01T00:00:00.000Z" };
+      return structuredClone(meta.get(key) ?? null);
+    },
+    async setMeta(key, value) {
+      if (runnerStarted && options.failMetaAfterRunner) throw new Error("META_STORE_UNAVAILABLE");
+      meta.set(key, structuredClone(value));
+      return value;
+    },
+    async acquireMetaLease(key, lease, now = new Date()) {
+      const current = leases.get(key);
+      if (current && Date.parse(current.leaseUntil) > new Date(now).getTime()) return null;
+      leases.set(key, structuredClone(lease));
+      return structuredClone(lease);
+    },
+    async renewMetaLease(key, leaseId, leaseUntil) {
+      const current = leases.get(key);
+      if (current?.leaseId !== leaseId) return null;
+      const renewed = { ...current, leaseUntil };
+      leases.set(key, renewed);
+      return structuredClone(renewed);
+    },
+    async releaseMetaLease(key, leaseId) {
+      if (leases.get(key)?.leaseId !== leaseId) return false;
+      leases.delete(key);
+      return true;
+    },
+    async claimDueAutomationRules(now) {
+      if (!rule.enabled || (rule.nextRunAt && Date.parse(rule.nextRunAt) > now.getTime())) return [];
+      return [structuredClone(rule)];
+    },
+    async listRules() { return []; },
+    async listDeliveries() {
+      if (options.rejectUnscopedDeliveries) throw new Error("UNSCOPED_DELIVERY_QUERY_FORBIDDEN");
+      return structuredClone(deliveries);
+    },
+    async createEvent(event) {
+      const saved = { id: `review-event-${events.length + 1}`, ...structuredClone(event) };
+      events.push(saved);
+      return saved;
+    },
+    async updateEvent(id, patch) { Object.assign(events.find((event) => event.id === id), structuredClone(patch)); },
+    async createDelivery(delivery) {
+      if (options.failDeliveries) throw new Error("DELIVERY_STORE_UNAVAILABLE");
+      const saved = { id: `review-delivery-${deliveries.length + 1}`, ...structuredClone(delivery) };
+      deliveries.push(saved);
+      return saved;
+    },
+    async updateDelivery(id, patch) { return Object.assign(deliveries.find((delivery) => delivery.id === id), structuredClone(patch)); },
+    async saveMapping() {},
+    async saveRule(saved) { rule = structuredClone(saved); return structuredClone(saved); }
+  };
+  return {
+    repository,
+    events,
+    deliveries,
+    meta,
+    markRunnerStarted() { runnerStarted = true; },
+    rule() { return structuredClone(rule); },
+    replaceRule(next) { rule = structuredClone(next); runnerStarted = false; }
+  };
+}
+
+test("manual and scheduled execution share one generation lease and call the runner once", async () => {
+  const target = { id: "target-concurrent", chatId: "-100500", threadId: 8 };
+  const rule = {
+    id: "rule-concurrent", kind: "automation", contentType: "crypto-daily", schedulePreset: "daily-0800-utc",
+    enabled: true, runOnce: true, status: "ready", nextRunAt: "2026-08-19T10:40:00.000Z", targets: [target]
+  };
+  const harness = createAutomationReviewRepository(rule);
+  let runnerCalls = 0;
+  let releaseRunner;
+  const runnerGate = new Promise((resolve) => { releaseRunner = resolve; });
+  let runnerEntered;
+  const entered = new Promise((resolve) => { runnerEntered = resolve; });
+  const runner = async () => {
+    runnerCalls += 1;
+    runnerEntered();
+    await runnerGate;
+    return { status: "success", preview: { targetResults: [{ target, status: "success", messageId: 1301 }] } };
+  };
+
+  const manual = runDistributionAutomationRule(rule.id, {
+    repository: harness.repository, runner, now: new Date("2026-08-19T10:40:37.000Z")
+  });
+  await entered;
+  const scheduledRun = runDueDistributionJobs(new Date("2026-08-19T10:40:37.000Z"), {
+    repository: harness.repository, runner
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  releaseRunner();
+  const [scheduled] = await Promise.all([scheduledRun, manual]);
+
+  assert.equal(runnerCalls, 1);
+  assert.equal(scheduled.results[0].status, "busy");
+});
+
+test("a completed receipt generation does not suppress a re-enabled changed generation", async () => {
+  const target = { id: "target-generation", chatId: "-100510", threadId: 8 };
+  const firstRule = {
+    id: "rule-generation", kind: "automation", contentType: "crypto-daily", schedulePreset: "daily-0800-utc",
+    enabled: true, runOnce: true, status: "ready", nextRunAt: "2026-08-19T10:40:00.000Z", targets: [target]
+  };
+  const harness = createAutomationReviewRepository(firstRule);
+  let runnerCalls = 0;
+  const runner = async () => ({
+    status: "success",
+    preview: { targetResults: [{ target, status: "success", messageId: 1400 + (++runnerCalls) }] }
+  });
+
+  await runDueDistributionJobs(new Date("2026-08-19T10:40:37.000Z"), { repository: harness.repository, runner });
+  harness.replaceRule({
+    ...harness.rule(), enabled: true, status: "ready", contentType: "weekly-calendar",
+    schedulePreset: "weekly-monday-0030-utc", nextRunAt: "2026-08-26T10:40:00.000Z", leaseUntil: null
+  });
+  await runDueDistributionJobs(new Date("2026-08-26T10:40:37.000Z"), { repository: harness.repository, runner });
+
+  assert.equal(runnerCalls, 2);
+});
+
+test("mixed receipts with both receipt and delivery persistence unavailable require manual reconciliation", async () => {
+  const targets = [
+    { id: "target-double-a", chatId: "-100520", threadId: 8 },
+    { id: "target-double-b", chatId: "-100521", threadId: 8 }
+  ];
+  const rule = {
+    id: "rule-double-failure", kind: "automation", contentType: "crypto-daily", schedulePreset: "daily-0800-utc",
+    enabled: true, runOnce: true, status: "ready", nextRunAt: "2026-08-19T10:40:00.000Z", targets
+  };
+  const harness = createAutomationReviewRepository(rule, { failMetaAfterRunner: true, failDeliveries: true });
+  let runnerCalls = 0;
+  const runner = async () => {
+    runnerCalls += 1;
+    harness.markRunnerStarted();
+    return { status: "success", preview: { targetResults: [
+      { target: targets[0], status: "success", messageId: 1501 },
+      { target: targets[1], status: "failed", error: "TEMPORARY_FAILURE" }
+    ] } };
+  };
+
+  const first = await runDueDistributionJobs(new Date("2026-08-19T10:40:37.000Z"), { repository: harness.repository, runner });
+  const second = await runDueDistributionJobs(new Date("2026-08-19T10:45:37.000Z"), { repository: harness.repository, runner });
+
+  assert.equal(first.results[0].status, "manual-reconciliation");
+  assert.equal(second.claimed, 0);
+  assert.equal(runnerCalls, 1);
+  assert.equal(harness.rule().enabled, false);
+  assert.equal(harness.rule().status, "manual-reconciliation");
+});
+
+test("mixed receipts without a meta store fail closed when delivery persistence also fails", async () => {
+  const targets = [
+    { id: "target-no-meta-a", chatId: "-100522", threadId: 8 },
+    { id: "target-no-meta-b", chatId: "-100523", threadId: 8 }
+  ];
+  let rule = {
+    id: "rule-no-meta-double-failure", kind: "automation", contentType: "crypto-daily",
+    enabled: true, runOnce: true, status: "ready", nextRunAt: "2026-08-19T10:40:00.000Z", targets
+  };
+  const events = [];
+  const repository = {
+    async cleanupExpired() {},
+    async getMeta(key) { return key === "legacy-migration-v1" ? { completedAt: "2026-08-01T00:00:00.000Z" } : null; },
+    async claimDueAutomationRules() { return rule.enabled ? [structuredClone(rule)] : []; },
+    async listRules() { return []; },
+    async createEvent(event) { const saved = { id: "event-no-meta", ...event }; events.push(saved); return saved; },
+    async updateEvent(id, patch) { Object.assign(events.find((event) => event.id === id), structuredClone(patch)); },
+    async createDelivery() { throw new Error("DELIVERY_STORE_UNAVAILABLE"); },
+    async saveMapping() {},
+    async saveRule(saved) { rule = structuredClone(saved); return saved; }
+  };
+  let runnerCalls = 0;
+  const execution = await runDueDistributionJobs(new Date("2026-08-19T10:40:37.000Z"), {
+    repository,
+    runner: async () => {
+      runnerCalls += 1;
+      return { status: "success", preview: { targetResults: [
+        { target: targets[0], status: "success", messageId: 1502 },
+        { target: targets[1], status: "failed", error: "TEMPORARY_FAILURE" }
+      ] } };
+    }
+  });
+
+  assert.equal(execution.results[0].status, "manual-reconciliation");
+  assert.equal(events[0].payload.outcome, "manual-reconciliation");
+  assert.equal(runnerCalls, 1);
+  assert.equal(rule.enabled, false);
+  assert.equal(rule.status, "manual-reconciliation");
+});
+
+test("conflicting target ids fail closed before endpoint result matching", async () => {
+  const targets = [
+    { id: "duplicate-target-id", chatId: "-100530", threadId: 8 },
+    { id: "duplicate-target-id", chatId: "-100531", threadId: 8 }
+  ];
+  const harness = createAutomationReviewRepository({
+    id: "rule-target-id-conflict", kind: "automation", contentType: "crypto-daily", targets
+  });
+  let runnerCalls = 0;
+
+  const result = await runDistributionAutomationRule("rule-target-id-conflict", {
+    repository: harness.repository,
+    runner: async () => { runnerCalls += 1; return { status: "success", preview: { targetResults: [] } }; }
+  });
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.error, "AUTOMATION_TARGET_ID_CONFLICT");
+  assert.equal(runnerCalls, 0);
+});
+
+test("receipt recovery never scans a truncated global delivery list", async () => {
+  const target = { id: "target-no-global-scan", chatId: "-100540", threadId: 8 };
+  const harness = createAutomationReviewRepository({
+    id: "rule-no-global-scan", kind: "automation", contentType: "crypto-daily", runOnce: true, targets: [target]
+  }, { rejectUnscopedDeliveries: true });
+  let runnerCalls = 0;
+
+  const result = await runDistributionAutomationRule("rule-no-global-scan", {
+    repository: harness.repository,
+    runner: async () => {
+      runnerCalls += 1;
+      return { status: "success", preview: { targetResults: [{ target, status: "success", messageId: 1601 }] } };
+    }
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(runnerCalls, 1);
+});
+
+test("recurring scheduled executions use distinct generations", async () => {
+  const target = { id: "target-recurring-generation", chatId: "-100550", threadId: 8 };
+  const harness = createAutomationReviewRepository({
+    id: "rule-recurring-generation", kind: "automation", contentType: "crypto-daily", schedulePreset: "daily-0800-utc",
+    enabled: true, runOnce: false, status: "ready", nextRunAt: "2026-08-19T08:00:00.000Z", targets: [target]
+  });
+  let runnerCalls = 0;
+  const runner = async () => ({
+    status: "success",
+    preview: { targetResults: [{ target, status: "success", messageId: 1700 + (++runnerCalls) }] }
+  });
+
+  await runDueDistributionJobs(new Date("2026-08-19T08:00:01.000Z"), { repository: harness.repository, runner });
+  await runDueDistributionJobs(new Date("2026-08-20T08:00:01.000Z"), { repository: harness.repository, runner });
+
+  assert.equal(runnerCalls, 2);
 });
 
 test("scheduled release checks are rescheduled at the next whole minute after a non-publishable result", async () => {
