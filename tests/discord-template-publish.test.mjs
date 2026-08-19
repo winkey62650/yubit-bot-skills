@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { publishDiscordTemplate } from "../lib/discord-template-publish.mjs";
+import { saveDestinationCtaConfig } from "../lib/destination-cta.mjs";
 
 const health = {
   guilds: [
@@ -10,6 +11,7 @@ const health = {
       guildName: "Guild One",
       channels: [
         { channelId: "channel-market", name: "market", permissionsOk: true },
+        { channelId: "channel-research", name: "research", permissionsOk: true },
         { channelId: "channel-blocked", name: "blocked", permissionsOk: false },
       ],
     },
@@ -22,6 +24,19 @@ const health = {
     },
   ],
 };
+
+function ctaRepository() {
+  const meta = new Map();
+  return {
+    async getMeta(key) {
+      return meta.get(key) ?? null;
+    },
+    async setMeta(key, value) {
+      meta.set(key, structuredClone(value));
+      return value;
+    },
+  };
+}
 
 test("Discord template publishing rejects unknown templates", async () => {
   await assert.rejects(
@@ -121,3 +136,85 @@ for (const jobId of ["crypto-daily", "weekly-calendar", "data-release-updates"])
     ]);
   });
 }
+
+for (const contentType of [
+  "crypto-daily",
+  "weekly-calendar",
+  "data-release-updates",
+  "news",
+  "daily-events",
+  "daily-analysis",
+  "whale-signals",
+  "agent-sync",
+]) {
+  test(`Discord template publishing hydrates the latest guild CTA and injects its repository for ${contentType}`, async () => {
+    const repository = ctaRepository();
+    await saveDestinationCtaConfig(repository, {
+      platform: "discord",
+      guildId: "guild-one",
+      ctaEnabled: true,
+      ctaContent: "**Stale CTA**",
+    });
+    await saveDestinationCtaConfig(repository, {
+      platform: "discord",
+      guildId: "guild-one",
+      ctaEnabled: true,
+      ctaContent: "**Latest CTA**\n[Join](https://example.com/latest)",
+    });
+
+    let capturedOptions;
+    await publishDiscordTemplate({
+      contentType,
+      channelIds: ["channel-market", "channel-research"],
+    }, {
+      health,
+      repository,
+      runJob: async (_jobId, options) => {
+        capturedOptions = options;
+        return { status: "success", preview: { targetResults: [] } };
+      },
+    });
+
+    assert.equal(capturedOptions.repository, repository);
+    assert.deepEqual(capturedOptions.targets.map((target) => ({
+      channelId: target.channelId,
+      ctaEnabled: target.ctaEnabled,
+      ctaContent: target.ctaContent,
+    })), [
+      { channelId: "channel-market", ctaEnabled: true, ctaContent: "**Latest CTA**\n[Join](https://example.com/latest)" },
+      { channelId: "channel-research", ctaEnabled: true, ctaContent: "**Latest CTA**\n[Join](https://example.com/latest)" },
+    ]);
+  });
+}
+
+test("Discord template publishing preserves an empty guild CTA without adding destination content", async () => {
+  const repository = ctaRepository();
+  await saveDestinationCtaConfig(repository, {
+    platform: "discord",
+    guildId: "guild-one",
+    ctaEnabled: false,
+    ctaContent: "",
+  });
+
+  let capturedOptions;
+  await publishDiscordTemplate({
+    contentType: "crypto-daily",
+    channelIds: ["channel-market", "channel-research"],
+  }, {
+    health,
+    repository,
+    runJob: async (_jobId, options) => {
+      capturedOptions = options;
+      return { status: "success", preview: { targetResults: [] } };
+    },
+  });
+
+  assert.deepEqual(capturedOptions.targets.map((target) => ({
+    channelId: target.channelId,
+    ctaEnabled: target.ctaEnabled,
+    ctaContent: target.ctaContent,
+  })), [
+    { channelId: "channel-market", ctaEnabled: false, ctaContent: "" },
+    { channelId: "channel-research", ctaEnabled: false, ctaContent: "" },
+  ]);
+});
