@@ -32,12 +32,13 @@ function evaluateDemoCtaAcceptance(cta, preview, expectedTarget) {
   preview = preview || {};
   expectedTarget = expectedTarget || {};
   const normalize = (value) => String(value || "").replace(/\r\n?/g, "\n").trim();
-  const plainText = (value) => normalize(value)
+  const decodeHtmlEntities = (value) => normalize(value)
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, "\"")
-    .replace(/&#39;/g, "'")
+    .replace(/&#39;/g, "'");
+  const plainText = (value) => decodeHtmlEntities(value)
     .replace(/<[^>]*>/g, " ")
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
     .replace(/[\*_~`>#]/g, " ")
@@ -62,10 +63,11 @@ function evaluateDemoCtaAcceptance(cta, preview, expectedTarget) {
   const urls = [...new Set(Array.from(ctaContent.matchAll(/https?:\/\/[^\s)>]+/g), (match) => match[0]))];
   const containsCompleteCta = (value) => {
     const raw = normalize(value);
+    const decodedRaw = decodeHtmlEntities(raw);
     const visible = plainText(raw);
     return Boolean(raw)
       && visibleLines.every((line) => visible.includes(line))
-      && urls.every((url) => raw.includes(url));
+      && urls.every((url) => decodedRaw.includes(url));
   };
   const renderedSteps = matchingPlans.flatMap((plan) => {
     const steps = Array.isArray(plan?.steps) ? plan.steps : [];

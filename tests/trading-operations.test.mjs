@@ -236,6 +236,13 @@ test("DEMO CTA acceptance requires enabled non-empty CTA hydrated into the final
       steps: [{ payload: { content: "Market update\n\n────────\n**LATEST DC CTA**\n[Join DC](https://example.com/dc)" } }]
     }]
   };
+  const telegramQueryCta = "**TRADE WITH YUBIT**\n[Register](https://example.com/register?ref=demo&source=tg)\n[View fees](https://example.com/fees?tier=vip&lang=en)";
+  const telegramQueryPreview = {
+    deliveryPlans: [{
+      target: { ...telegramTarget, ctaEnabled: true, ctaContent: telegramQueryCta },
+      steps: [{ payload: { text: "Market update\n\n────────\n<b>TRADE WITH YUBIT</b>\n<a href=\"https://example.com/register?ref=demo&amp;source=tg\">Register</a>\n<a href=\"https://example.com/fees?tier=vip&amp;lang=en\">View fees</a>" } }]
+    }]
+  };
   const bodyCollisionWithoutLink = {
     deliveryPlans: [{
       target: { ...telegramTarget, ctaEnabled: true, ctaContent: "**BTC**\n[Trade now](https://example.com/trade)" },
@@ -255,6 +262,7 @@ test("DEMO CTA acceptance requires enabled non-empty CTA hydrated into the final
   assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: false, ctaContent: "LATEST TG CTA" }, telegramPreview, telegramTarget).passed, false);
   assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "   \n " }, telegramPreview, telegramTarget).passed, false);
   assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**LATEST TG CTA**\n[Join TG](https://example.com/tg)" }, telegramPreview, telegramTarget).passed, true);
+  assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: telegramQueryCta }, telegramQueryPreview, telegramTarget).passed, true);
   assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**LATEST DC CTA**\n[Join DC](https://example.com/dc)" }, discordPreview, discordTarget).passed, true);
   assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**BTC**\n[Trade now](https://example.com/trade)" }, bodyCollisionWithoutLink, telegramTarget).passed, false);
   assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**LATEST TG CTA**\n[Join TG](https://example.com/tg)" }, ctaBeforeFinalStep, telegramTarget).passed, false);
