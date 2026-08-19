@@ -226,14 +226,66 @@ test("Postgres delivery records preserve every Telegram message id", async () =>
 
   assert.match(captured.sql, /target_message_ids/);
   assert.match(captured.sql, /publisher_progress/);
-  assert.equal(captured.params[4], "[521,522]");
+  assert.equal(captured.params[3], "521");
+  assert.equal(captured.params[4], '["521","522"]');
   assert.equal(captured.params[5], '[{"stepId":"1-photo-a1","checksum":"a1","targetMessageId":521}]');
   assert.equal(captured.params[6], '{"leaseId":"lease-1","stepId":"1-photo-a1","observedGroupName":"DEMO Academy"}');
   assert.equal(captured.params[7], '{"releaseDeduplicationKey":"release-1"}');
-  assert.deepEqual(delivery.targetMessageIds, [521, 522]);
+  assert.equal(delivery.targetMessageId, "521");
+  assert.deepEqual(delivery.targetMessageIds, ["521", "522"]);
   assert.deepEqual(delivery.publisherProgress, [{ stepId: "1-photo-a1", checksum: "a1", targetMessageId: 521 }]);
   assert.equal(delivery.publisherVerification.leaseId, "lease-1");
   assert.deepEqual(delivery.payload, { releaseDeduplicationKey: "release-1" });
+});
+
+test("Postgres delivery ids preserve Discord snowflakes as canonical decimal strings", async () => {
+  const repository = Object.create(PostgresDistributionRepository.prototype);
+  const snowflake = "18446744073709551615";
+  let captured;
+  repository.getDelivery = async () => ({ id: "snow", status: "pending", attempts: 0, targetMessageId: null, targetMessageIds: [] });
+  repository.sql = { async query(sql, params) {
+    captured = params;
+    return [{ id: "snow", status: "success", attempts: 1, target_message_id: params[3], target_message_ids: JSON.parse(params[4]) }];
+  } };
+  const delivery = await repository.updateDelivery("snow", {
+    status: "success", attempts: 1, targetMessageIds: [`000${snowflake}`]
+  });
+  assert.equal(captured[3], snowflake);
+  assert.equal(captured[4], `["${snowflake}"]`);
+  assert.equal(delivery.targetMessageId, snowflake);
+  assert.deepEqual(delivery.targetMessageIds, [snowflake]);
+});
+
+test("JSON repository canonicalizes delivery ids and physically removes only expired automation meta", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "distribution-meta-cleanup-"));
+  const previousDirectory = process.env.JSON_STORE_DIRECTORY;
+  const previousBackend = process.env.JSON_STORE_BACKEND;
+  process.env.JSON_STORE_DIRECTORY = directory;
+  process.env.JSON_STORE_BACKEND = "local";
+  try {
+    const repository = new JsonDistributionRepository();
+    const delivery = await repository.createDelivery({ eventId: "event", ruleId: "rule", targetId: "target", target: {} });
+    const updated = await repository.updateDelivery(delivery.id, {
+      status: "success", targetMessageIds: [123, "0018446744073709551615", 0, "bad"]
+    });
+    assert.equal(updated.targetMessageId, "123");
+    assert.deepEqual(updated.targetMessageIds, ["123", "18446744073709551615"]);
+    await repository.setMeta("automation-execution-state-v1:expired", { status: "success", expiresAt: "2026-08-01T00:00:00.000Z" });
+    await repository.setMeta("automation-target-receipts-v2:active", { status: "partial", expiresAt: null });
+    await repository.setMeta("unrelated:expired", { expiresAt: "2026-08-01T00:00:00.000Z" });
+    await repository.cleanupExpired(new Date("2026-09-01T00:00:00.000Z"));
+    assert.equal(await repository.getMeta("automation-execution-state-v1:expired"), null);
+    assert.equal((await repository.getMeta("automation-target-receipts-v2:active")).status, "partial");
+    assert.ok(await repository.getMeta("unrelated:expired"));
+    const raw = JSON.parse(await readFile(join(directory, "distribution-center.json"), "utf8"));
+    assert.equal(Object.hasOwn(raw.meta, "automation-execution-state-v1:expired"), false);
+  } finally {
+    if (previousDirectory === undefined) delete process.env.JSON_STORE_DIRECTORY;
+    else process.env.JSON_STORE_DIRECTORY = previousDirectory;
+    if (previousBackend === undefined) delete process.env.JSON_STORE_BACKEND;
+    else process.env.JSON_STORE_BACKEND = previousBackend;
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("Postgres creates delivery rows with their queued release payload", async () => {
@@ -311,8 +363,8 @@ test("Postgres delivery updates keep a standalone Telegram message id", async ()
 
   await repository.updateDelivery("delivery-standalone", { targetMessageId: 777 });
 
-  assert.equal(capturedParams[3], 777);
-  assert.equal(capturedParams[4], "[777]");
+  assert.equal(capturedParams[3], "777");
+  assert.equal(capturedParams[4], '["777"]');
 });
 
 test("Postgres desktop publisher lease is atomic and only its owner can release it", async () => {

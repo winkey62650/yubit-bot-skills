@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import {
   JsonDistributionRepository,
@@ -1277,6 +1279,17 @@ function createAutomationReviewRepository(initialRule, options = {}) {
       meta.set(key, structuredClone(value));
       return value;
     },
+    async compareAndSetMeta(key, expected, value) {
+      const current = meta.get(key) ?? null;
+      if (expected?.absent === true && current !== null) return null;
+      for (const [field, expectedValue] of Object.entries(expected ?? {})) {
+        if (field === "absent") continue;
+        if (current?.[field] !== expectedValue) return null;
+      }
+      meta.set(key, structuredClone(value));
+      return structuredClone(value);
+    },
+    async deleteMeta(key) { return meta.delete(key); },
     async acquireMetaLease(key, lease, now = new Date()) {
       const current = leases.get(key);
       const currentLeaseUntil = options.leaseTtlMs ? current?.testLeaseUntil : Date.parse(current?.leaseUntil ?? "");
@@ -1370,6 +1383,32 @@ test("manual and scheduled execution share one generation lease and call the run
 
   assert.equal(runnerCalls, 1);
   assert.equal(scheduled.results[0].status, "busy");
+});
+
+test("the sending fence is persisted with compare-and-set before the runner starts", async () => {
+  const target = { id: "target-cas", chatId: "-100505", threadId: 8 };
+  const rule = {
+    id: "rule-cas", kind: "automation", contentType: "crypto-daily", schedulePreset: "daily-0800-utc",
+    enabled: true, runOnce: true, status: "ready", nextRunAt: "2026-08-19T10:40:00.000Z", targets: [target]
+  };
+  const harness = createAutomationReviewRepository(rule);
+  const setMeta = harness.repository.setMeta;
+  harness.repository.setMeta = async (key, value) => {
+    if (value?.phase === "sending") throw new Error("SENDING_FENCE_MUST_USE_CAS");
+    return setMeta(key, value);
+  };
+  let runnerCalls = 0;
+  const result = await runDistributionAutomationRule(rule.id, {
+    repository: harness.repository,
+    now: new Date("2026-08-19T10:40:37.000Z"),
+    runner: async () => {
+      runnerCalls += 1;
+      return { status: "success", preview: { targetResults: [{ target, status: "success", messageId: 1305 }] } };
+    }
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(runnerCalls, 1);
 });
 
 test("a completed receipt generation does not suppress a re-enabled changed generation", async () => {
@@ -1597,7 +1636,23 @@ test("manual reconciliation blocks direct retries until an operator resets it", 
   const blocked = await runDistributionAutomationRule("manual-reset-rule", { repository: harness.repository, runner });
   options.failMetaAfterRunner = false;
   options.failDeliveries = false;
-  const reset = await resetAutomationManualReconciliation("manual-reset-rule", { repository: harness.repository, now: new Date("2026-08-19T09:00:00.000Z") });
+  const generation = first.results[0].generation;
+  await assert.rejects(
+    resetAutomationManualReconciliation("manual-reset-rule", { repository: harness.repository, expectedGeneration: generation }),
+    /AUTOMATION_RECONCILIATION_ACTOR_REQUIRED/
+  );
+  await assert.rejects(
+    resetAutomationManualReconciliation("manual-reset-rule", { repository: harness.repository, actor: "ops" }),
+    /AUTOMATION_RECONCILIATION_GENERATION_REQUIRED/
+  );
+  await assert.rejects(
+    resetAutomationManualReconciliation("manual-reset-rule", { repository: harness.repository, actor: "ops", expectedGeneration: "wrong" }),
+    /AUTOMATION_RECONCILIATION_GENERATION_MISMATCH/
+  );
+  const reset = await resetAutomationManualReconciliation("manual-reset-rule", {
+    repository: harness.repository, actor: "ops", expectedGeneration: generation,
+    now: new Date("2026-08-19T09:00:00.000Z")
+  });
   const afterReset = await runDistributionAutomationRule("manual-reset-rule", {
     repository: harness.repository,
     runner: async (_job, input) => {
@@ -1611,6 +1666,128 @@ test("manual reconciliation blocks direct retries until an operator resets it", 
   assert.equal(reset.status, "ready");
   assert.equal(afterReset.status, "success");
   assert.equal(runnerCalls, 2);
+});
+
+test("repository-maintained updatedAt does not invalidate a partial retry generation", async () => {
+  const targets = [
+    { id: "stable-a", chatId: "-100580", threadId: 8 },
+    { id: "stable-b", chatId: "-100581", threadId: 8 }
+  ];
+  const harness = createAutomationReviewRepository({
+    id: "stable-revision-rule", kind: "automation", contentType: "crypto-daily", enabled: true,
+    runOnce: true, status: "ready", updatedAt: "2026-08-19T07:00:00.000Z",
+    nextRunAt: "2026-08-19T08:00:00.000Z", targets
+  });
+  const attempts = [];
+  const runner = async (_job, input) => {
+    attempts.push(input.targets.map((target) => target.id));
+    return attempts.length === 1
+      ? { status: "partial", preview: { targetResults: [
+        { target: targets[0], status: "success", messageId: 1901 },
+        { target: targets[1], status: "failed", error: "TEMP" }
+      ] } }
+      : { status: "success", preview: { targetResults: [{ target: targets[1], status: "success", messageId: 1902 }] } };
+  };
+  await runDueDistributionJobs(new Date("2026-08-19T08:00:01.000Z"), { repository: harness.repository, runner });
+  harness.replaceRule({ ...harness.rule(), enabled: true, status: "retrying", updatedAt: "2026-08-19T08:05:00.000Z" });
+  await runDistributionAutomationRule("stable-revision-rule", { repository: harness.repository, runner });
+  assert.deepEqual(attempts, [["stable-a", "stable-b"], ["stable-b"]]);
+});
+
+test("JSON repository preserves a partial generation across automatic updatedAt changes and retries only B", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "distribution-json-partial-"));
+  const previousDirectory = process.env.JSON_STORE_DIRECTORY;
+  const previousBackend = process.env.JSON_STORE_BACKEND;
+  process.env.JSON_STORE_DIRECTORY = directory;
+  process.env.JSON_STORE_BACKEND = "local";
+  try {
+    const repository = new JsonDistributionRepository();
+    const targets = [
+      { id: "json-a", chatId: "-100570", threadId: 8 },
+      { id: "json-b", chatId: "-100571", threadId: 8 }
+    ];
+    await repository.saveRule({
+      id: "json-partial-rule", kind: "automation", contentType: "crypto-daily", enabled: true,
+      runOnce: true, status: "ready", nextRunAt: "2026-08-19T08:00:00.000Z", targets
+    });
+    const attempts = [];
+    const runner = async (_jobId, options) => {
+      attempts.push(options.targets.map((target) => target.id));
+      return attempts.length === 1
+        ? { status: "partial", preview: { targetResults: [
+            { target: options.targets[0], status: "success", messageId: "18446744073709551615" },
+            { target: options.targets[1], status: "failed", error: "TEMP" }
+          ] } }
+        : { status: "success", preview: { targetResults: [
+            { target: options.targets[0], status: "success", messageId: "18446744073709551616" }
+          ] } };
+    };
+
+    const first = await runDistributionAutomationRule("json-partial-rule", {
+      repository, runner, now: new Date("2026-08-19T08:00:01.000Z")
+    });
+    const stored = await repository.getRule("json-partial-rule");
+    await repository.saveRule({ ...stored, status: "retrying", nextRunAt: "2026-08-19T08:05:01.000Z" });
+    const second = await runDistributionAutomationRule("json-partial-rule", {
+      repository, runner, now: new Date("2026-08-19T08:05:01.000Z")
+    });
+
+    assert.equal(first.status, "partial");
+    assert.equal(second.status, "success");
+    assert.deepEqual(attempts, [["json-a", "json-b"], ["json-b"]]);
+    const deliveries = await repository.listDeliveries({ limit: 10 });
+    assert.ok(deliveries.some((delivery) => delivery.targetMessageId === "18446744073709551615"));
+    assert.ok(deliveries.some((delivery) => delivery.targetMessageId === "18446744073709551616"));
+  } finally {
+    if (previousDirectory === undefined) delete process.env.JSON_STORE_DIRECTORY;
+    else process.env.JSON_STORE_DIRECTORY = previousDirectory;
+    if (previousBackend === undefined) delete process.env.JSON_STORE_BACKEND;
+    else process.env.JSON_STORE_BACKEND = previousBackend;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("a late lease loser cannot overwrite a winner's execution or rule state", async () => {
+  const target = { id: "late-loser", chatId: "-100572", threadId: 8 };
+  const harness = createAutomationReviewRepository({
+    id: "late-loser-rule", kind: "automation", contentType: "crypto-daily", enabled: true,
+    runOnce: true, status: "ready", nextRunAt: "2026-08-19T08:00:00.000Z", targets: [target]
+  });
+  let renewals = 0;
+  harness.repository.renewMetaLease = async (_key, leaseId) => (++renewals <= 2 ? { leaseId } : null);
+  let casCalls = 0;
+  const compareAndSetMeta = harness.repository.compareAndSetMeta;
+  harness.repository.compareAndSetMeta = async (...args) => (++casCalls === 3 ? null : compareAndSetMeta(...args));
+  let runnerCalls = 0;
+
+  const result = await runDistributionAutomationRule("late-loser-rule", {
+    repository: harness.repository,
+    runner: async () => {
+      runnerCalls += 1;
+      return { status: "success", preview: { targetResults: [{ target, status: "success", messageId: 1901 }] } };
+    }
+  });
+
+  assert.equal(result.status, "busy");
+  assert.equal(result.error, "AUTOMATION_EXECUTION_FENCE_SUPERSEDED");
+  assert.equal(runnerCalls, 1);
+  assert.equal(harness.rule().status, "ready");
+});
+
+test("an unconfirmed sending phase fences every retry after the runner throws", async () => {
+  const target = { id: "uncertain-target", chatId: "-100582", threadId: 8 };
+  const harness = createAutomationReviewRepository({
+    id: "uncertain-rule", kind: "automation", contentType: "crypto-daily", enabled: true,
+    runOnce: true, status: "ready", nextRunAt: "2026-08-19T08:00:00.000Z", targets: [target]
+  }, { leaseTtlMs: 10 });
+  let runnerCalls = 0;
+  const runner = async () => { runnerCalls += 1; throw new Error("CONNECTION_LOST_AFTER_SEND"); };
+  const first = await runDistributionAutomationRule("uncertain-rule", { repository: harness.repository, runner });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const second = await runDistributionAutomationRule("uncertain-rule", { repository: { ...harness.repository }, runner });
+  assert.equal(first.status, "manual-reconciliation");
+  assert.equal(second.status, "manual-reconciliation");
+  assert.equal(runnerCalls, 1);
 });
 
 test("direct manual reconciliation durably blocks retries when execution meta cannot be updated", async () => {
