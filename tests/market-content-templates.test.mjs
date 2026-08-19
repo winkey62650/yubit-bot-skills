@@ -190,6 +190,35 @@ test("Crypto Daily selects one traceable story per section and does not reuse an
   assert.equal(document.sections[2].impact, "Neutral");
 });
 
+test("Crypto Daily ignores a supplied directional impact without directional evidence", () => {
+  const document = buildCryptoDailyDocument({
+    now,
+    candidates: [story({
+      title: "Bitcoin institutional market update",
+      summary: undefined,
+      rationale: undefined,
+      impact: "Bullish",
+    })],
+  });
+  const section = document.sections[0];
+  assert.equal(section.impact, "Neutral");
+  assert.deepEqual(section.nodes.filter((node) => node.type === "metric").map((node) => node.value), ["🟡 Neutral"]);
+  assert.doesNotMatch(JSON.stringify(section), /Bullish/);
+});
+
+test("Crypto Daily retains a supplied directional impact with explicit rationale", () => {
+  const document = buildCryptoDailyDocument({
+    now,
+    candidates: [story({
+      title: "Bitcoin institutional market update",
+      summary: undefined,
+      rationale: "Verified allocations increased, demonstrating stronger institutional demand.",
+      impact: "Bullish",
+    })],
+  });
+  assert.equal(document.sections[0].impact, "Bullish");
+});
+
 test("Crypto Daily rejects candidates without a valid verifiable publication time", () => {
   for (const publishedAt of [undefined, null, "not-a-date"]) {
     const document = buildCryptoDailyDocument({ now, candidates: [story({ publishedAt })] });
