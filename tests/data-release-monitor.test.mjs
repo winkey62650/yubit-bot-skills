@@ -170,6 +170,83 @@ test("publishes simultaneous CPI and Core CPI Actuals sequentially without losin
   assert.equal(finalState.publishedKeys.filter((key) => key === coreCpiKey).length, 1);
 });
 
+test("publishes a valid event without letting a stale Actual in the same poll block it", async () => {
+  const good = release({
+    id: "01-good-cpi",
+    sourceId: "01-good-cpi",
+    values: { actual: "2.7%", forecast: "2.8%", previous: "2.9%" },
+    observedAt: "2026-08-19T12:30:30Z",
+  });
+  const stale = release({
+    id: "02-stale-core-cpi",
+    sourceId: "02-stale-core-cpi",
+    title: "US Core CPI YoY",
+    values: { actual: "2.8%", forecast: "2.9%", previous: "3.0%" },
+    observedAt: "2026-08-19T12:29:00Z",
+  });
+  const repository = repositoryDouble({
+    [WEEKLY_CALENDAR_META_KEY]: {
+      calendarWeek: "2026-08-17", events: [good, stale], updatedAt: "2026-08-17T00:30:00Z",
+    },
+  });
+  const fetchCalendar = async () => calendarResult([good, stale]);
+
+  const first = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:31:00Z", repository, fetchCalendar, persist: true,
+  });
+  const stateAfterFirst = await repository.getMeta(RELEASE_STATE_META_KEY);
+  const second = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:32:00Z", repository, fetchCalendar, persist: true,
+  });
+
+  assert.equal(first.publishable, true);
+  assert.equal(first.event.id, good.id);
+  assert.equal(
+    stateAfterFirst.monitoredEvents.find(({ id }) => id === stale.id).observedAt,
+    "2026-08-19T12:29:00.000Z",
+  );
+  assert.equal(second.publishable, false);
+  assert.equal(second.skipReason, "stale-actual");
+  assert.equal(second.event.id, stale.id);
+});
+
+test("publishes an independent valid event while preserving a separate source conflict", async () => {
+  const conflictingA = release({
+    id: "01-conflicted-cpi", sourceId: "01-conflicted-cpi",
+    values: { actual: "2.7%" }, rawValues: { actual: "2.7", unit: "%" }, source: { id: "tv" },
+  });
+  const conflictingB = release({
+    id: "01-conflicted-cpi", sourceId: "01-conflicted-cpi",
+    values: { actual: "2.8%" }, rawValues: { actual: "2.8", unit: "%" }, source: { id: "bls" },
+  });
+  const good = release({
+    id: "02-good-pce", sourceId: "02-good-pce", title: "US PCE YoY",
+    values: { actual: "2.6%", forecast: "2.7%", previous: "2.8%" },
+  });
+  const repository = repositoryDouble({
+    [WEEKLY_CALENDAR_META_KEY]: {
+      calendarWeek: "2026-08-17", events: [conflictingA, conflictingB, good], updatedAt: "2026-08-17T00:30:00Z",
+    },
+  });
+  const fetchCalendar = async () => calendarResult([conflictingA, conflictingB, good]);
+
+  const first = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:31:00Z", repository, fetchCalendar, persist: true,
+  });
+  const second = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:32:00Z", repository, fetchCalendar, persist: true,
+  });
+
+  assert.equal(first.publishable, true);
+  assert.equal(first.event.id, good.id);
+  assert.deepEqual((await repository.getMeta(RELEASE_STATE_META_KEY)).publishedKeys, [
+    buildReleaseDeduplicationKey(good),
+  ]);
+  assert.equal(second.publishable, false);
+  assert.equal(second.skipReason, "source-conflict");
+  assert.deepEqual(second.conflict.rawValues, ["2.7", "2.8"]);
+});
+
 test("detects an Actual that appears on a later one-minute poll", async () => {
   const repository = repositoryDouble({
     [WEEKLY_CALENDAR_META_KEY]: { calendarWeek: "2026-08-17", events: [release()], updatedAt: "2026-08-17T00:30:00Z" },
@@ -284,13 +361,21 @@ test("does not cache a soft-failed bootstrap response or overwrite the stale cal
     calendarWeek: "2026-08-10", events: [release()], updatedAt: "2026-08-10T00:30:00Z",
   };
   const repository = repositoryDouble({ [WEEKLY_CALENDAR_META_KEY]: staleCalendar });
-  const result = await pollDataReleaseUpdates({
-    now: "2026-08-19T12:00:00Z", repository,
-    fetchCalendar: async () => calendarResult([], {
+  let calls = 0;
+  const fetchCalendar = async () => {
+    calls += 1;
+    return calendarResult([], {
       sources: [{ id: "tradingview-calendar", status: "timeout" }],
       warnings: ["TradingView calendar timed out."],
-    }),
+    });
+  };
+  const result = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:00:00Z", repository,
+    fetchCalendar,
     persist: true,
+  });
+  const throttled = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:00:30Z", repository, fetchCalendar, persist: true,
   });
 
   assert.equal(result.publishable, false);
@@ -298,6 +383,11 @@ test("does not cache a soft-failed bootstrap response or overwrite the stale cal
   assert.ok(result.warnings.some((warning) => /timed out/i.test(warning)));
   assert.deepEqual(await repository.getMeta(WEEKLY_CALENDAR_META_KEY), staleCalendar);
   assert.equal(repository.writes.some(([key]) => key === WEEKLY_CALENDAR_META_KEY), false);
+  assert.equal(calls, 1);
+  assert.equal(throttled.skipReason, "poll-interval");
+  const state = await repository.getMeta(RELEASE_STATE_META_KEY);
+  assert.deepEqual(Object.keys(state).sort(), ["calendarWeek", "monitoredEvents", "publishedKeys", "timedOutKeys", "updatedAt"]);
+  assert.equal(state.updatedAt, "2026-08-19T12:00:00.000Z");
 });
 
 test("preserves a valid cached calendar when an in-window Actual refresh soft-fails", async () => {
@@ -305,13 +395,21 @@ test("preserves a valid cached calendar when an in-window Actual refresh soft-fa
     calendarWeek: "2026-08-17", events: [release()], updatedAt: "2026-08-17T00:30:00Z",
   };
   const repository = repositoryDouble({ [WEEKLY_CALENDAR_META_KEY]: cachedCalendar });
-  const result = await pollDataReleaseUpdates({
-    now: "2026-08-19T12:31:00Z", repository,
-    fetchCalendar: async () => calendarResult([], {
+  let calls = 0;
+  const fetchCalendar = async () => {
+    calls += 1;
+    return calendarResult([], {
       sources: [{ id: "tradingview-calendar", status: "error" }],
       warnings: ["TradingView calendar failed."],
-    }),
+    });
+  };
+  const result = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:31:00Z", repository,
+    fetchCalendar,
     persist: true,
+  });
+  const throttled = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:31:30Z", repository, fetchCalendar, persist: true,
   });
 
   assert.equal(result.publishable, false);
@@ -319,6 +417,48 @@ test("preserves a valid cached calendar when an in-window Actual refresh soft-fa
   assert.ok(result.warnings.some((warning) => /failed/i.test(warning)));
   assert.deepEqual(await repository.getMeta(WEEKLY_CALENDAR_META_KEY), cachedCalendar);
   assert.equal(repository.writes.some(([key]) => key === WEEKLY_CALENDAR_META_KEY), false);
+  assert.equal(throttled.skipReason, "poll-interval");
+  assert.equal(calls, 1);
+});
+
+test("persists a live adapter exception as the last check and throttles the next poll", async () => {
+  const cachedCalendar = {
+    calendarWeek: "2026-08-17", events: [release()], updatedAt: "2026-08-17T00:30:00Z",
+  };
+  const repository = repositoryDouble({ [WEEKLY_CALENDAR_META_KEY]: cachedCalendar });
+  let calls = 0;
+  const fetchCalendar = async () => {
+    calls += 1;
+    throw new Error("upstream unavailable");
+  };
+
+  const failed = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:31:00Z", repository, fetchCalendar, persist: true,
+  });
+  const throttled = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:31:30Z", repository, fetchCalendar, persist: true,
+  });
+
+  assert.equal(failed.skipReason, "calendar-unavailable");
+  assert.equal(throttled.skipReason, "poll-interval");
+  assert.equal(calls, 1);
+  assert.deepEqual(await repository.getMeta(WEEKLY_CALENDAR_META_KEY), cachedCalendar);
+  const state = await repository.getMeta(RELEASE_STATE_META_KEY);
+  assert.deepEqual(Object.keys(state).sort(), ["calendarWeek", "monitoredEvents", "publishedKeys", "timedOutKeys", "updatedAt"]);
+  assert.equal(state.updatedAt, "2026-08-19T12:31:00.000Z");
+});
+
+test("does not persist throttle state for a dry-run adapter failure", async () => {
+  const repository = repositoryDouble();
+  const result = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:00:00Z", repository,
+    fetchCalendar: async () => { throw new Error("offline"); },
+    persist: false,
+  });
+
+  assert.equal(result.skipReason, "calendar-unavailable");
+  assert.equal(repository.writes.length, 0);
+  assert.equal(await repository.getMeta(RELEASE_STATE_META_KEY), null);
 });
 
 test("accepts and caches an empty calendar from a successful source", async () => {
