@@ -10,8 +10,10 @@ import { loadWorkspaceState, saveWorkspaceState } from "../../lib/workspace-clie
 import { renderTelegramMarkdownHtml } from "../../lib/manual-cta.mjs";
 import {
   applyDistributionTopicMappings,
+  CONTENT_TEMPLATES,
   bulkDeleteNotice,
   buildBroadcastRouteSummary,
+  buildMarketPreviewFacts,
   buildDistributionSourceOptions,
   buildDistributionTargetOptions,
   buildTelegramDestinationCtaOptions,
@@ -24,7 +26,8 @@ import {
   filterBroadcastTargetOptions,
   getContentTemplate,
   reconcileRuleSelection,
-  recommendedScheduleFor
+  recommendedScheduleFor,
+  resolveScheduleForContentType
 } from "../../lib/distribution-ui.mjs";
 
 const tabs = [
@@ -36,20 +39,16 @@ const tabs = [
   ["logs", "运行记录"]
 ];
 
-const contentTypes = [
-  ["news", "Crypto News"],
-  ["daily-events", "Daily Events"],
-  ["daily-analysis", "Daily Analysis"],
-  ["whale-signals", "大户挂单 & 巨鲸数据"],
-  ["agent-sync", "代理群信息更新"]
-];
+const contentTypes = Object.entries(CONTENT_TEMPLATES).map(([value, template]) => [value, template.label]);
 
 const schedules = [
   ["every-5-minutes", "每 5 分钟"],
   ["every-15-minutes", "每 15 分钟"],
   ["hourly", "每小时"],
   ["every-4-hours", "每 4 小时"],
-  ["daily-0800-utc", "每日 08:00 UTC"]
+  ["daily-0800-utc", "每日 08:00 UTC"],
+  ["weekly-monday-0030-utc", "每周一 00:30 UTC"],
+  ["event-driven", "重点数据公布后"]
 ];
 
 const DEMO_ACADEMY_CHAT_ID = "-1003710405969";
@@ -70,7 +69,9 @@ const botPublishingSteps = [
 ];
 
 const officialPublishingRoutes = [
-  "Daily Events → 3. Market Events",
+  "每日 Crypto 新闻 → 7. YUBIT Updates",
+  "每周数据日历 → 3. Market Events",
+  "数据公布快讯 → 3. Market Events",
   "Daily Analysis → 4. Market Analysis - Crypto/Stocks/TradFi",
   "Whale Signals → 6. Smart Money Tracker"
 ];
@@ -93,7 +94,7 @@ const officialPublishingContracts = [
   }
 ];
 
-const emptyAutomation = { id: "", kind: "automation", name: "", contentType: "daily-events", schedulePreset: "daily-0800-utc", enabled: true, targets: [], targetCtas: {} };
+const emptyAutomation = { id: "", kind: "automation", name: "", contentType: "crypto-daily", schedulePreset: "daily-0800-utc", enabled: true, targets: [], targetCtas: {} };
 const emptyBroadcast = { id: "", kind: "broadcast", name: "", mode: "automatic", enabled: true, source: { chatId: "", chatType: "supergroup", threadId: "", groupName: "", topicName: "" }, targets: [] };
 
 export default function DistributionPage() {
@@ -343,7 +344,14 @@ function DistributionPageContent() {
       })
       : resolvedTargets;
     const { targetCtas, ...formWithoutTargetCtas } = form;
-    const rule = { ...formWithoutTargetCtas, id: form.id || undefined, targets };
+    const rule = {
+      ...formWithoutTargetCtas,
+      id: form.id || undefined,
+      schedulePreset: form.kind === "automation"
+        ? resolveScheduleForContentType(form.contentType, form.schedulePreset)
+        : form.schedulePreset,
+      targets
+    };
     const result = await post({ rule }, "规则已保存，并会在刷新、重新登录及重新部署后保持一致。");
     if (result) reset();
   }
@@ -605,10 +613,10 @@ function AutomationView({ form, setForm, rules, groups, discordState, socialPack
         <p className="mt-2 text-sm leading-6 text-[#41564d]">{template.description}</p>
       </div>
       <FormStep number="2" title="确认频率" desc="日更任务按 UTC 运行；监控任务按时间窗口扫描并去重。" />
-      <Field label="预设频率"><select className={inputClass} value={form.schedulePreset} disabled={form.contentType === "whale-signals"} onChange={(event) => setForm({ ...form, schedulePreset: event.target.value })}>{schedules.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>{form.contentType === "whale-signals" ? <p className="mt-1 text-xs text-ops-muted">系统每小时检查真实订单簿，仅在异动达到阈值时发布，相同信号冷却期内不重复。</p> : null}</Field>
+      <Field label="预设频率"><select className={inputClass} value={resolveScheduleForContentType(form.contentType, form.schedulePreset)} disabled={template.scheduleLocked || form.contentType === "whale-signals"} onChange={(event) => setForm({ ...form, schedulePreset: event.target.value })}>{schedules.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>{template.scheduleLocked ? <p className="mt-1 text-xs text-ops-muted">此内容模板使用固定周期，保存时会自动校正，避免排期漂移。</p> : form.contentType === "whale-signals" ? <p className="mt-1 text-xs text-ops-muted">系统每小时检查真实订单簿，仅在异动达到阈值时发布，相同信号冷却期内不重复。</p> : null}</Field>
       <FormStep number="3" title="选择发布目标" desc={form.contentType === "agent-sync" ? "每条来源优先使用上方独立绑定；此处任务目标用于兼容旧配置和异常兜底。" : `建议发布到 ${template.destinationHint}；可选择一个或多个已授权的群和 Topic。`} />
       <TargetPicker options={automationTargets} selected={form.targets} onChange={(targets) => setForm({ ...form, targets, targetCtas: retainTargetCtas(form.targetCtas, targets) })} presets={presets} onSavePreset={(name) => onSavePreset(name, form.targets)} onDeletePreset={onDeletePreset} />
-      <p className="rounded-lg border border-[#cae5da] bg-[#f2faf6] p-3 text-xs leading-5 text-[#41564d]">所选目标的 CTA 由「频道 CTA」统一维护；Telegram 同一群内所有 Topic、Discord 同一 Server 内所有 Channel 各自共用一份，任务执行前会自动读取。</p>
+      <p className="rounded-lg border border-[#cae5da] bg-[#f2faf6] p-3 text-xs leading-5 text-[#41564d]">所选目标的 CTA 由「频道 CTA」统一维护；Telegram Topics 共用一个群 CTA，Discord Channels 共用一个服务器 CTA，任务执行前会自动读取。</p>
       <Toggle checked={form.enabled} label="创建后立即启用" onChange={(enabled) => setForm({ ...form, enabled })} />
       <label className="flex items-start gap-3 rounded-lg border border-ops-line bg-[#fbfcfb] p-3 text-sm font-bold leading-6 text-[#33423b]"><input className="mt-1" checked={confirmed} onChange={(event) => setConfirmedFor(event.target.checked ? fingerprint : "")} type="checkbox" /><span>我已确认发送模板、频率和目标。动态数据会在实际执行时刷新。</span></label>
     </RuleForm>
@@ -673,7 +681,16 @@ function DeliveryIdentitySelector({ purpose, value, botLabel, userLabel, botDesc
 function TelegramTemplatePreview({ form, template, publisherName, preview, previewState, onGenerate }) {
   const templatePreview = template.preview || null;
   const displayPreview = preview || templatePreview;
-  const caption = displayPreview?.caption ? stripTelegramHtml(displayPreview.caption) : "当前模板还没有样稿，请生成一次真实内容预览。";
+  const telegramPlan = displayPreview?.deliveryPlans?.find((plan) => plan.platform === "telegram");
+  const telegramHtml = displayPreview?.telegramHtml
+    || displayPreview?.caption
+    || telegramPlan?.steps?.map((step) => step?.payload?.text || step?.payload?.caption).filter(Boolean).join("\n\n");
+  const caption = telegramHtml ? stripTelegramHtml(telegramHtml) : "当前模板还没有样稿，请生成一次真实内容预览。";
+  const facts = buildMarketPreviewFacts(displayPreview || {});
+  const sourceRows = [displayPreview?.sources, displayPreview?.sourceHealth?.sources, displayPreview?.document?.sources].find(Array.isArray) || [];
+  const warnings = Array.isArray(displayPreview?.warnings) ? displayPreview.warnings : [];
+  const publishable = displayPreview?.publishable ?? displayPreview?.document?.publishable;
+  const skipReason = displayPreview?.skipReason || displayPreview?.outcome?.skipReason;
   const isLivePreview = Boolean(preview);
   return <Card className="overflow-hidden xl:sticky xl:top-5">
     <div className="border-b border-ops-line p-5"><p className="text-xs font-black uppercase tracking-[.16em] text-ops-accent">发送前预览</p><div className="mt-1 flex flex-wrap items-center justify-between gap-2"><h2 className="text-xl font-black">Telegram 成品</h2><StatusPill tone={isLivePreview ? "green" : "amber"}>{isLivePreview ? "实时数据预览" : templatePreview ? "英文模板样稿" : "待生成"}</StatusPill></div></div>
@@ -692,9 +709,13 @@ function TelegramTemplatePreview({ form, template, publisherName, preview, previ
     </div>
     <div className="grid gap-3 p-5">
       {templatePreview?.sections?.length ? <div><p className="mb-2 text-xs font-black text-ops-muted">模板内容结构</p><div className="flex flex-wrap gap-2">{templatePreview.sections.map((section) => <span className="rounded-full bg-[#edf6f1] px-2.5 py-1 text-xs font-bold text-[#2d5a48]" key={section}>{section}</span>)}</div></div> : null}
-      <div className="grid gap-2 text-sm sm:grid-cols-2"><PreviewFact label="发送频率" value={labelFor(schedules, form.schedulePreset)} /><PreviewFact label="目标数量" value={`${form.targets.length} 个目标`} />{template.itemCountPolicy ? <PreviewFact label="内容条数" value={template.itemCountPolicy} /> : <PreviewFact label="建议位置" value={template.destinationHint} />}<PreviewFact label="发布身份" value={`目标群名称和头像（由 ${publisherName} 匿名授权）`} /></div>
+      <div className="grid gap-2 text-sm sm:grid-cols-2"><PreviewFact label="发送频率" value={labelFor(schedules, resolveScheduleForContentType(form.contentType, form.schedulePreset))} /><PreviewFact label="目标数量" value={`${form.targets.length} 个目标`} />{template.itemCountPolicy ? <PreviewFact label="内容条数" value={template.itemCountPolicy} /> : <PreviewFact label="建议位置" value={template.destinationHint} />}<PreviewFact label="发布身份" value={`目标群名称和头像（由 ${publisherName} 匿名授权）`} /></div>
+      {isLivePreview ? <div className="grid gap-2 text-sm sm:grid-cols-2"><PreviewFact label="可发布" value={publishable === true ? "是" : publishable === false ? "否" : "待判断"} /><PreviewFact label="候选 / 已选" value={`${facts.candidateCount} / ${facts.selectedCount}`} /><PreviewFact label="缺失 / 冲突" value={`${facts.missingCount} / ${facts.conflictCount}`} /><PreviewFact label="下一个监控事件" value={facts.nextMonitoredEvent || "暂无"} /></div> : null}
+      {sourceRows.length ? <div><p className="mb-2 text-xs font-black text-ops-muted">来源状态</p><div className="grid gap-2">{sourceRows.map((source, index) => <div className="rounded-lg border border-ops-line p-3 text-xs leading-5" key={source.id || source.name || index}><strong>{source.label || source.name || source.id || `来源 ${index + 1}`}</strong><div>状态：{source.status || "未知"} · 最近成功：{source.lastSuccessAt || source.lastSuccess || "暂无"}</div><div>新鲜度：{source.freshnessSeconds == null ? source.freshness || source.freshnessStatus || "未知" : `${source.freshnessSeconds} 秒`} · 回退来源：{source.fallbackFrom || source.fallback || source.fallbackSource || "无"}</div></div>)}</div></div> : null}
+      {warnings.length ? <p className="rounded-lg bg-[#fff8e8] p-3 text-xs font-bold leading-5 text-[#79591e]">警告：{warnings.join("；")}</p> : null}
+      {skipReason ? <p className="rounded-lg bg-[#f3f4f4] p-3 text-xs font-bold text-ops-muted">跳过原因：{skipReason}</p> : null}
       {previewState && previewState !== "success" && previewState !== "loading" ? <p role="alert" className="rounded-lg bg-[#fff2ef] p-3 text-xs font-bold text-[#a04a3d]">{previewState}</p> : null}
-      <button className="min-h-11 rounded-lg border border-ops-accent px-4 text-sm font-black text-ops-accent disabled:opacity-50" disabled={previewState === "loading" || !template.jobId} onClick={onGenerate} type="button">{previewState === "loading" ? "正在生成实时数据…" : preview ? "刷新实时数据预览" : "切换为本次实时数据预览"}</button>
+      <button className="min-h-11 rounded-lg border border-ops-accent px-4 text-sm font-black text-ops-accent disabled:opacity-50" disabled={previewState === "loading" || !template.jobId} onClick={onGenerate} type="button">{previewState === "loading" ? "正在生成实时数据…" : "立即测试并预览"}</button>
       <p className="text-center text-xs leading-5 text-ops-muted">此操作只运行数据与模板，不会向 Telegram 发送消息。</p>
     </div>
   </Card>;

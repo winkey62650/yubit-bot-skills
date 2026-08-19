@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  CONTENT_TEMPLATES,
   applyDistributionTopicMappings,
   arePublisherBlockingChecksHealthy,
   buildDistributionSourceOptions,
@@ -9,6 +10,7 @@ import {
   buildDiscordDestinationCtaOptions,
   buildDiscordDistributionTargetOptions,
   buildBroadcastRouteSummary,
+  buildMarketPreviewFacts,
   buildPublisherStatusChecks,
   buildSocialSourceRouteReadiness,
   buildSocialSourceReadiness,
@@ -21,6 +23,7 @@ import {
   orderedDistributionTopics,
   reconcileRuleSelection,
   recommendedScheduleFor,
+  resolveScheduleForContentType,
   distributionDestinationLabel
 } from "../lib/distribution-ui.mjs";
 
@@ -564,14 +567,16 @@ test("configured Discord channels are selectable and grouped by server", () => {
 
 test("every SpeakerBot content type points to its semantic numbered Topic", () => {
   assert.deepEqual(Object.fromEntries([
-    "news",
-    "daily-events",
+    "crypto-daily",
+    "weekly-calendar",
+    "data-release-updates",
     "daily-analysis",
     "whale-signals",
     "agent-sync"
   ].map((contentType) => [contentType, getContentTemplate(contentType).destinationHint])), {
-    news: "7. YUBIT Updates",
-    "daily-events": "3. Market Events",
+    "crypto-daily": "7. YUBIT Updates",
+    "weekly-calendar": "3. Market Events",
+    "data-release-updates": "3. Market Events",
     "daily-analysis": "4. Market Analysis - Crypto/Stocks/TradFi",
     "whale-signals": "6. Smart Money Tracker",
     "agent-sync": "2. CryptoGuy Trading Zone"
@@ -617,11 +622,61 @@ test("every enabled social source must map to a sendable group and topic", () =>
 });
 
 test("each automatic content template recommends the production schedule and real job", () => {
-  assert.equal(recommendedScheduleFor("daily-events"), "daily-0800-utc");
+  assert.deepEqual(Object.keys(CONTENT_TEMPLATES).slice(0, 3), [
+    "crypto-daily",
+    "weekly-calendar",
+    "data-release-updates"
+  ]);
+  assert.deepEqual(Object.keys(CONTENT_TEMPLATES).slice(0, 3).map((key) => CONTENT_TEMPLATES[key].label), [
+    "每日 Crypto 新闻",
+    "每周数据日历",
+    "数据公布快讯"
+  ]);
+  assert.equal(recommendedScheduleFor("crypto-daily"), "daily-0800-utc");
+  assert.equal(recommendedScheduleFor("weekly-calendar"), "weekly-monday-0030-utc");
+  assert.equal(recommendedScheduleFor("data-release-updates"), "event-driven");
+  assert.equal(getContentTemplate("crypto-daily").jobId, "crypto-daily");
+  assert.equal(getContentTemplate("weekly-calendar").jobId, "weekly-calendar");
+  assert.equal(getContentTemplate("data-release-updates").jobId, "data-release-monitor");
+  assert.equal(getContentTemplate("data-release-updates").scheduleLocked, true);
+  assert.equal(getContentTemplate("weekly-calendar").scheduleLocked, true);
+  assert.equal(getContentTemplate("crypto-daily").scheduleLocked, true);
   assert.equal(recommendedScheduleFor("whale-signals"), "hourly");
   assert.equal(recommendedScheduleFor("agent-sync"), "hourly");
   assert.equal(getContentTemplate("daily-analysis").jobId, "daily-analysis");
-  assert.match(getContentTemplate("news").runtimeNote, /执行时/);
+  assert.deepEqual(Object.keys(CONTENT_TEMPLATES).slice(3), ["daily-analysis", "whale-signals", "agent-sync"]);
+});
+
+test("fixed market schedules cannot drift when stale form data is saved", () => {
+  assert.equal(resolveScheduleForContentType("crypto-daily", "every-5-minutes"), "daily-0800-utc");
+  assert.equal(resolveScheduleForContentType("weekly-calendar", "hourly"), "weekly-monday-0030-utc");
+  assert.equal(resolveScheduleForContentType("data-release-updates", "daily-0800-utc"), "event-driven");
+  assert.equal(resolveScheduleForContentType("daily-analysis", "every-4-hours"), "every-4-hours");
+});
+
+test("market preview facts summarize selection diagnostics and the next monitored release", () => {
+  assert.deepEqual(buildMarketPreviewFacts({
+    candidates: Array.from({ length: 12 }, (_, index) => ({ id: `candidate-${index}` })),
+    selected: [{ id: "one" }, { id: "two" }, { id: "three" }],
+    missing: [],
+    conflicts: [],
+    nextMonitoredEvent: "US CPI · Aug 19 12:30 UTC"
+  }), {
+    candidateCount: 12,
+    selectedCount: 3,
+    missingCount: 0,
+    conflictCount: 0,
+    nextMonitoredEvent: "US CPI · Aug 19 12:30 UTC"
+  });
+});
+
+test("market preview facts turn a structured monitored event into safe display text", () => {
+  assert.equal(buildMarketPreviewFacts({
+    nextMonitoredEvent: {
+      title: "US CPI",
+      scheduledAt: "2026-08-19T12:30:00.000Z"
+    }
+  }).nextMonitoredEvent, "US CPI · Aug 19, 12:30 UTC");
 });
 
 test("unknown content types return a safe incomplete template", () => {
@@ -661,44 +716,17 @@ test("broadcast route is ready only after source and at least one target are set
   assert.equal(channelSource.ready, true);
 });
 
-test("market events sample preserves the supplied July 7 briefing without imposing a fixed daily count", () => {
-  const template = getContentTemplate("daily-events");
-  const preview = template.preview;
-  assert.equal(preview.templateVersion, "editorial-template-v1");
-  assert.equal(preview.language, "English");
-  assert.ok(preview.items.length > 0);
-  assert.match(template.itemCountPolicy, /动态/);
-  assert.match(preview.caption, /^🌅 MORNING MARKET BRIEF · JULY 7/);
-  assert.match(preview.caption, /01 · US equities rebounded/);
-  assert.match(preview.caption, /Market commentary only\.$/);
-  assert.ok(preview.caption.length <= 1024);
-  assert.doesNotMatch(preview.caption, /Executive read|full English brief follows|Story count|full 11-story/i);
-  assert.match(preview.headline, /MORNING MARKET BRIEF/i);
-  assert.match(preview.items.join(" "), /Nasdaq/i);
-  assert.match(preview.items.join(" "), /BONKDAO/i);
-  assert.match(preview.items.join(" "), /Samsung Electronics/i);
-  assert.match(preview.items.join(" "), /ANSEM/i);
-  assert.match(preview.items.join(" "), /SpaceX/i);
-  assert.match(preview.items.join(" "), /Strategy/i);
-  assert.match(preview.disclaimer, /verify/i);
-  assert.match(template.runtimeNote, /先单独发送海报.*再发送.*英文/i);
-  assert.doesNotMatch(template.runtimeNote, /合并成一条/);
-});
-
-test("events, analysis and whale templates are previewable before live data is requested", () => {
-  for (const contentType of ["daily-events", "daily-analysis", "whale-signals"]) {
+test("market, analysis and whale templates are previewable before live data is requested", () => {
+  for (const contentType of ["crypto-daily", "weekly-calendar", "data-release-updates", "daily-analysis", "whale-signals"]) {
     const preview = getContentTemplate(contentType).preview;
-    assert.equal(preview.templateVersion, "editorial-template-v1");
     assert.equal(preview.branding, "neutral");
-    assert.match(preview.imageUrl, /^\/(api\/media\/card\?kind=|templates\/)/);
     assert.ok(preview.caption.length > 80);
     assert.ok(preview.sections.length >= 3);
     assert.doesNotMatch(JSON.stringify(preview), /yubit/i);
   }
 });
 
-test("all three editorial samples use generated poster assets", () => {
-  assert.match(getContentTemplate("daily-events").preview.imageUrl, /^\/api\/media\/card\?kind=events/);
+test("legacy analysis and whale samples retain generated poster assets", () => {
   assert.match(getContentTemplate("daily-analysis").preview.imageUrl, /^\/api\/media\/card\?kind=analysis/);
   assert.match(getContentTemplate("whale-signals").preview.imageUrl, /^\/api\/media\/card\?kind=whale/);
 });
@@ -722,7 +750,7 @@ test("whale preview exposes the approved poster and operating copy before publis
 });
 
 test("public editorial previews omit quotas, clock times and publishing frequency", () => {
-  for (const contentType of ["daily-events", "daily-analysis", "whale-signals"]) {
+  for (const contentType of ["crypto-daily", "weekly-calendar", "data-release-updates", "daily-analysis", "whale-signals"]) {
     const preview = getContentTemplate(contentType).preview;
     const publicCopy = `${preview.headline}\n${preview.caption}`;
     assert.doesNotMatch(publicCopy, /\b11\s+(?:stories|items|events)\b|\{\{TIME_UTC\}\}|\d{1,2}:\d{2}\s*UTC|updates hourly|\bhourly\b/i);

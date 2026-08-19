@@ -7,13 +7,9 @@ import { Card, Field, PageHeader, StatusPill, inputClass } from "../../component
 import SocialSourceManager from "../../distribution/SocialSourceManager";
 import { buildDiscordSocialTargetOptions, extractDistributionOverview, formatDiscordTargetLabel } from "../../../lib/discord-distribution-ui.mjs";
 import { mergeDiscordGuilds } from "../../../lib/discord-guild-list.mjs";
+import { CONTENT_TEMPLATES, getContentTemplate, resolveScheduleForContentType } from "../../../lib/distribution-ui.mjs";
 
-const TEMPLATES = [
-  { value: "daily-events", label: "Daily Events", detail: "独立海报 + 英文正文" },
-  { value: "daily-analysis", label: "Daily Analysis", detail: "每日行情图文分析" },
-  { value: "whale-signals", label: "Whale Signals", detail: "巨鲸与大户挂单英文图文" },
-  { value: "news", label: "News Feed", detail: "市场新闻自动整理" },
-];
+const TEMPLATES = Object.entries(CONTENT_TEMPLATES).map(([value, template]) => ({ value, label: template.label, detail: template.format }));
 
 const SCHEDULES = [
   { value: "daily-0800-utc", label: "每日 08:00 UTC" },
@@ -21,6 +17,8 @@ const SCHEDULES = [
   { value: "every-4-hours", label: "每 4 小时" },
   { value: "every-15-minutes", label: "每 15 分钟" },
   { value: "every-5-minutes", label: "每 5 分钟" },
+  { value: "weekly-monday-0030-utc", label: "每周一 00:30 UTC" },
+  { value: "event-driven", label: "重点数据公布后" },
 ];
 
 function canDistributeTo(channel) {
@@ -39,7 +37,7 @@ export default function DiscordDistributionPage() {
   const [overview, setOverview] = useState({ rules: [] });
   const [socialPackages, setSocialPackages] = useState([]);
   const [health, setHealth] = useState({ summary: {}, guilds: [] });
-  const [contentType, setContentType] = useState("daily-events");
+  const [contentType, setContentType] = useState("crypto-daily");
   const [schedulePreset, setSchedulePreset] = useState("daily-0800-utc");
   const [taskName, setTaskName] = useState("");
   const [enabled, setEnabled] = useState(true);
@@ -107,6 +105,7 @@ export default function DiscordDistributionPage() {
   const discordRules = useMemo(() => (overview.rules || []).filter((rule) => rule.kind === "automation" && (rule.targets || []).some((target) => target.platform === "discord")), [overview.rules]);
   const configuredGuilds = availableGuilds;
   const discordSocialTargetOptions = useMemo(() => buildDiscordSocialTargetOptions(availableGuilds), [availableGuilds]);
+  const template = getContentTemplate(contentType);
 
   function toggleChannel(channelId) {
     setSelectedChannelIds((current) => current.includes(channelId) ? current.filter((id) => id !== channelId) : [...current, channelId]);
@@ -116,14 +115,13 @@ export default function DiscordDistributionPage() {
     if (!selectedChannelIds.length) return setError("请至少选择一个已通过实时检测的目标 Channel。");
     setBusy(true); setError(""); setNotice("");
     try {
-      const template = TEMPLATES.find((item) => item.value === contentType);
       const targets = selectedChannelIds.map((channelId) => {
         const { guild, channel } = channelMap.get(channelId);
         return { platform: "discord", guildId: guild.guildId, channelId, groupName: guild.guildName, topicName: channel.name, enabled: true };
       });
       const response = await fetch("/api/distribution", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rule: { kind: "automation", name: taskName.trim() || `${template.label} · Discord`, contentType, schedulePreset, enabled, targets } }),
+        body: JSON.stringify({ rule: { kind: "automation", name: taskName.trim() || `${template.label} · Discord`, contentType, schedulePreset: resolveScheduleForContentType(contentType, schedulePreset), enabled, targets } }),
       });
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.error || "自动发布任务保存失败。");
@@ -172,14 +170,16 @@ export default function DiscordDistributionPage() {
       <Card className="p-6">
         <h2 className="text-xl font-black">选择内容模板</h2>
         <div className="mt-5 grid gap-4">
-          <Field label="模板"><select className={inputClass} value={contentType} onChange={(event) => setContentType(event.target.value)}>{TEMPLATES.map((item) => <option key={item.value} value={item.value}>{item.label} · {item.detail}</option>)}</select></Field>
+          <Field label="模板"><select className={inputClass} value={contentType} onChange={(event) => { const nextContentType = event.target.value; setContentType(nextContentType); setSchedulePreset(resolveScheduleForContentType(nextContentType)); }}>{TEMPLATES.map((item) => <option key={item.value} value={item.value}>{item.label} · {item.detail}</option>)}</select></Field>
           <Field label="任务名称（可选）"><input className={inputClass} value={taskName} onChange={(event) => setTaskName(event.target.value)} placeholder="未填写时使用模板名称" /></Field>
-          <Field label="定时频率"><select className={inputClass} value={schedulePreset} onChange={(event) => setSchedulePreset(event.target.value)}>{SCHEDULES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field>
+          <Field label="定时频率"><select className={inputClass} value={resolveScheduleForContentType(contentType, schedulePreset)} disabled={template.scheduleLocked || contentType === "whale-signals"} onChange={(event) => setSchedulePreset(event.target.value)}>{SCHEDULES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>{template.scheduleLocked ? <p className="mt-1 text-xs text-ops-muted">此模板使用固定周期，保存时会自动校正。</p> : null}</Field>
           <label className="flex min-h-10 items-center gap-2 rounded-lg border border-ops-line px-4 text-sm font-bold"><input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />保存后立即启用</label>
         </div>
       </Card>
       <Card className="p-6">
         <div className="flex items-center justify-between"><h2 className="text-xl font-black">选择目标 Server / Channel</h2><StatusPill tone={sendableCount ? "green" : "amber"}>{sendableCount} 个可发送</StatusPill></div>
+        <div className="mt-4 rounded-lg border border-[#cae5da] bg-[#f2faf6] px-4 py-3 text-sm text-[#41564d]">CTA 在频道级统一维护：Discord Channels 共用一个服务器 CTA，不新增 Channel 单独配置。</div>
+        <p className="mt-3 text-xs leading-5 text-ops-muted">旧 Daily Events 已升级为可追溯的每日 Crypto 新闻、每周数据日历和数据公布快讯；Daily Analysis 与 Whale Signals 保持可用。</p>
         <div className="mt-4 rounded-lg bg-ops-soft px-4 py-3 text-sm text-ops-muted">数字表示“可自动分发 / Bot 当前可见”的 Channel 数量。要让全部 Channel 可选，请为 Bot 开启 View Channel、Send Messages 和 Embed Links；若 Channel 有单独权限覆盖，也需取消对应的拒绝权限。修改后点击“重新实时检测”。</div>
         <div className="mt-5 grid gap-3">
           {availableGuilds.map((guild) => <details key={guild.guildId} className="rounded-lg border border-ops-line"><summary className="cursor-pointer list-none px-4 py-3 font-black">{guild.guildName} <span className="ml-2 text-xs text-ops-muted">{(guild.channels || []).filter(canDistributeTo).length}/{(guild.channels || []).length}</span></summary><div className="border-t border-ops-line p-3">{(guild.channels || []).map((channel) => { const selectable = canDistributeTo(channel); return <label key={channel.channelId} className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm ${selectable ? "hover:bg-ops-soft" : "opacity-50"}`}><span className="flex items-center gap-2"><input type="checkbox" disabled={!selectable} checked={selectedChannelIds.includes(channel.channelId)} onChange={() => toggleChannel(channel.channelId)} />#{channel.name}</span><StatusPill tone={selectable ? "green" : "gray"}>{distributionStatus(channel)}</StatusPill></label>; })}</div></details>)}

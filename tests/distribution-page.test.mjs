@@ -3,6 +3,48 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const pageSource = await readFile(new URL("../app/distribution/page.jsx", import.meta.url), "utf8");
+const discordPageSource = await readFile(new URL("../app/discord/distribution/page.jsx", import.meta.url), "utf8");
+
+test("automatic publishing defaults to Crypto Daily and exposes the three fixed market templates first", () => {
+  assert.match(pageSource, /contentType: "crypto-daily"/);
+  assert.match(pageSource, /CONTENT_TEMPLATES/);
+  assert.match(pageSource, /resolveScheduleForContentType/);
+  assert.match(pageSource, /template\.scheduleLocked \|\| form\.contentType === "whale-signals"/);
+  assert.match(pageSource, /weekly-monday-0030-utc/);
+  assert.match(pageSource, /event-driven/);
+  assert.match(discordPageSource, /useState\("crypto-daily"\)/);
+  assert.match(discordPageSource, /CONTENT_TEMPLATES/);
+  assert.match(discordPageSource, /resolveScheduleForContentType/);
+  assert.match(discordPageSource, /template\.scheduleLocked \|\| contentType === "whale-signals"/);
+});
+
+test("market preview shows publishability, source health, selection counts and next event without sending", () => {
+  assert.match(pageSource, /立即测试并预览/);
+  assert.match(pageSource, /buildMarketPreviewFacts/);
+  assert.match(pageSource, /可发布/);
+  assert.match(pageSource, /来源状态/);
+  assert.match(pageSource, /最近成功/);
+  assert.match(pageSource, /新鲜度/);
+  assert.match(pageSource, /回退来源/);
+  assert.match(pageSource, /候选/);
+  assert.match(pageSource, /已选/);
+  assert.match(pageSource, /缺失/);
+  assert.match(pageSource, /冲突/);
+  assert.match(pageSource, /跳过原因/);
+  assert.match(pageSource, /下一个监控事件/);
+  assert.match(pageSource, /stripTelegramHtml/);
+  assert.match(pageSource, /source\.freshnessSeconds/);
+  assert.match(pageSource, /source\.fallbackFrom/);
+  assert.match(pageSource, /labelFor\(schedules, resolveScheduleForContentType\(form\.contentType, form\.schedulePreset\)\)/);
+});
+
+test("CTA guidance stays scoped to a Telegram group and Discord server", () => {
+  assert.match(pageSource, /Telegram Topics 共用一个群 CTA/);
+  assert.match(pageSource, /Discord Channels 共用一个服务器 CTA/);
+  assert.match(discordPageSource, /Discord Channels 共用一个服务器 CTA/);
+  assert.doesNotMatch(pageSource, /每个 Topic.*CTA/);
+  assert.doesNotMatch(discordPageSource, /每个 Channel.*CTA/);
+});
 
 test("automatic publishing and Telegram broadcast keep separate rule selections", () => {
   assert.match(pageSource, /selectedAutomationRules/);
@@ -83,7 +125,9 @@ test("automatic publishing explains the official identity workflow and exact top
   assert.match(pageSource, /唯一租约保证单实例发布/);
   assert.match(pageSource, /每一步发送后立即回写检查点/);
   assert.match(pageSource, /逐字发送，禁止翻译、摘要、改写、增删或重新排版/);
-  assert.match(pageSource, /Daily Events → 3\. Market Events/);
+  assert.match(pageSource, /每日 Crypto 新闻 → 7\. YUBIT Updates/);
+  assert.match(pageSource, /每周数据日历 → 3\. Market Events/);
+  assert.match(pageSource, /数据公布快讯 → 3\. Market Events/);
   assert.match(pageSource, /Daily Analysis → 4\. Market Analysis - Crypto\/Stocks\/TradFi/);
   assert.match(pageSource, /Whale Signals → 6\. Smart Money Tracker/);
   assert.match(pageSource, /2 条 · 独立海报 \+ 独立英文正文/);
