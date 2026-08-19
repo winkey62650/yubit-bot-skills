@@ -1177,20 +1177,26 @@ test("four failed persistence fences trip a repository-scoped circuit before a f
     ] } };
   };
 
+  // These are separate facades over the same backing store. A process safety
+  // fence must not be bypassed just because request wiring creates a new object.
+  const firstFacade = { ...harness.repository };
+  const secondFacade = { ...harness.repository };
   const first = await runDistributionAutomationRule(rule.id, {
-    repository: harness.repository, runner, now: new Date("2026-08-19T10:40:01.000Z")
+    repository: firstFacade, runner, now: new Date("2026-08-19T10:40:01.000Z")
   });
   const blocked = await runDistributionAutomationRule(rule.id, {
-    repository: harness.repository, runner, now: new Date("2026-08-19T10:41:01.000Z")
+    repository: secondFacade, runner, now: new Date("2026-08-19T10:41:01.000Z")
   });
 
-  assert.equal(runnerCalls, 1);
   assert.equal(first.status, "manual-reconciliation-unpersisted");
+  assert.equal(first.error, "AUTOMATION_RECONCILIATION_PERSISTENCE_UNAVAILABLE");
+  assert.equal(runnerCalls, 1);
   assert.equal(first.ruleReconciliationPersisted, false);
   assert.equal(first.rulePersistenceError, "RULE_STORE_UNAVAILABLE");
   assert.equal(first.executionStateError, "EXECUTION_STATE_STORE_UNAVAILABLE");
   assert.equal(first.telemetryPersisted, true);
   assert.equal(blocked.status, "manual-reconciliation-unpersisted");
+  assert.equal(blocked.error, "AUTOMATION_RECONCILIATION_PERSISTENCE_UNAVAILABLE");
   assert.equal(blocked.circuitBreakerOpen, true);
   assert.equal(blocked.ruleReconciliationPersisted, false);
 
@@ -1198,8 +1204,9 @@ test("four failed persistence fences trip a repository-scoped circuit before a f
   failures.failManualExecutionStateAfterRunner = false;
   failures.failDeliveries = false;
   failures.failRuleSavesAfterRunner = false;
+  const recoveredFacade = { ...harness.repository };
   const recovered = await runDistributionAutomationRule(rule.id, {
-    repository: harness.repository, runner, now: new Date("2026-08-19T10:42:01.000Z")
+    repository: recoveredFacade, runner, now: new Date("2026-08-19T10:42:01.000Z")
   });
 
   assert.equal(runnerCalls, 1);
@@ -1208,6 +1215,67 @@ test("four failed persistence fences trip a repository-scoped circuit before a f
   assert.equal(recovered.ruleReconciliationPersisted, true);
   assert.equal(harness.rule().status, "manual-reconciliation");
   assert.equal(harness.rule().enabled, false);
+});
+
+test("explicit stable repository namespaces isolate tenants that reuse a rule id", async () => {
+  const rule = {
+    id: "shared-tenant-rule", kind: "automation", contentType: "crypto-daily", enabled: true,
+    runOnce: true, status: "ready", schedulePreset: "daily-1100",
+    targets: [{ id: "shared-tenant-target", chatId: "-100229", threadId: 8 }]
+  };
+  const failures = {
+    failMetaAfterRunner: true,
+    failManualExecutionStateAfterRunner: true,
+    failDeliveries: true,
+    failRuleSavesAfterRunner: true
+  };
+  const tenantA = createAutomationReviewRepository(rule, failures);
+  const tenantB = createAutomationReviewRepository(rule);
+  const repositoryA = { ...tenantA.repository, automationCircuitNamespace: "tenant-a-store" };
+  const repositoryB = { ...tenantB.repository, automationCircuitNamespace: "tenant-b-store" };
+  let tenantACalls = 0;
+  let tenantBCalls = 0;
+
+  const uncertain = await runDistributionAutomationRule(rule.id, {
+    repository: repositoryA,
+    now: new Date("2026-08-19T10:43:01.000Z"),
+    runner: async () => {
+      tenantACalls += 1;
+      tenantA.markRunnerStarted();
+      return { status: "success", preview: { targetResults: [
+        { target: rule.targets[0], status: "success", messageId: "951" }
+      ] } };
+    }
+  });
+  const isolated = await runDistributionAutomationRule(rule.id, {
+    repository: repositoryB,
+    now: new Date("2026-08-19T10:43:02.000Z"),
+    runner: async () => {
+      tenantBCalls += 1;
+      return { status: "success", preview: { targetResults: [
+        { target: rule.targets[0], status: "success", messageId: "952" }
+      ] } };
+    }
+  });
+
+  assert.equal(uncertain.status, "manual-reconciliation-unpersisted");
+  assert.equal(isolated.status, "success");
+  assert.equal(tenantACalls, 1);
+  assert.equal(tenantBCalls, 1);
+
+  // Recover tenant A's store so its process-local entry is converted into the
+  // durable manual fence and removed instead of leaking after this test.
+  failures.failMetaAfterRunner = false;
+  failures.failManualExecutionStateAfterRunner = false;
+  failures.failDeliveries = false;
+  failures.failRuleSavesAfterRunner = false;
+  const recovered = await runDistributionAutomationRule(rule.id, {
+    repository: repositoryA,
+    now: new Date("2026-08-19T10:44:01.000Z"),
+    runner: async () => { tenantACalls += 1; }
+  });
+  assert.equal(recovered.status, "manual-reconciliation");
+  assert.equal(tenantACalls, 1);
 });
 
 test("a scheduled rule save failure is reported without interrupting later claimed rules", async () => {
