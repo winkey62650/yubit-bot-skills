@@ -617,7 +617,7 @@ function fixtureFetch(body) {
   });
 }
 
-const marketEnvelopeKeys = ["templateId", "document", "sources", "warnings", "deduplicationKey", "publishable"];
+const marketEnvelopeKeys = ["templateId", "document", "sources", "warnings", "deduplicationKey", "publishable", "generatedAt"];
 
 test("fixture-backed market jobs return the common automation envelope", async () => {
   const rss = `<?xml version="1.0"?><rss><channel><item><guid>btc-etf</guid><title>Bitcoin ETF records net inflow</title><link>https://example.com/etf</link><description>Institutional demand increased.</description><pubDate>Wed, 19 Aug 2026 06:00:00 GMT</pubDate></item></channel></rss>`;
@@ -636,6 +636,11 @@ test("fixture-backed market jobs return the common automation envelope", async (
   assert.equal(weekly.document.templateId, "weekly-calendar");
   assert.equal(release.publishable, false);
   assert.equal(typeof release.skipReason, "string");
+  assert.deepEqual([daily.generatedAt, weekly.generatedAt, release.generatedAt], [
+    "2026-08-19T08:00:00.000Z",
+    "2026-08-19T08:00:00.000Z",
+    "2026-08-19T08:00:00.000Z"
+  ]);
   assert.equal(repository.writes.length, 0);
 });
 
@@ -704,4 +709,45 @@ test("market plans use platform renderers, strict paragraph chunks, and one fina
   assert.ok(discord.steps.every((step) => step.payload.content.length < 2000));
   assert.equal(discord.steps.filter((step) => step.payload.content.includes("Join YUBIT")).length, 1);
   assert.match(discord.steps.at(-1).payload.content, /\*\*Join YUBIT\*\*/);
+});
+
+function marketDocumentWithParagraphs(lengths) {
+  return {
+    templateId: "crypto-daily",
+    version: "market-content-v1",
+    nodes: [],
+    sections: [{ nodes: lengths.map((length, index) => ({
+      type: "paragraph",
+      text: `${index + 1}-${String.fromCharCode(97 + index).repeat(length - 2)}`
+    })) }]
+  };
+}
+
+test("multiline CTA remains one indivisible final block on Telegram and Discord", () => {
+  const ctaContent = `**CTA START**\n${"j".repeat(120)}\n\nCTA END\n${"k".repeat(120)}`;
+  const [telegram] = automation.buildAutomationTelegramPlans("crypto-daily", {
+    document: marketDocumentWithParagraphs([1900, 1900])
+  }, [{ chatId: "-1001", threadId: 8, ctaEnabled: true, ctaContent }]);
+  const [discord] = automation.buildAutomationDiscordPlans("crypto-daily", {
+    document: marketDocumentWithParagraphs([1800])
+  }, [{ platform: "discord", guildId: "g1", channelId: "c1", ctaEnabled: true, ctaContent }]);
+
+  for (const steps of [telegram.steps, discord.steps]) {
+    assert.equal(steps.filter((step) => JSON.stringify(step.payload).includes("CTA START")).length, 1);
+    assert.equal(steps.filter((step) => JSON.stringify(step.payload).includes("CTA END")).length, 1);
+    const finalPayload = JSON.stringify(steps.at(-1).payload);
+    assert.match(finalPayload, /CTA START/);
+    assert.match(finalPayload, /CTA END/);
+  }
+  assert.ok(telegram.steps.every((step) => step.payload.text.length <= 4096));
+  assert.ok(discord.steps.every((step) => step.payload.content.length <= 2000));
+});
+
+test("oversized CTA fails safely instead of splitting or producing an over-limit send", () => {
+  assert.throws(() => automation.buildAutomationTelegramPlans("crypto-daily", {
+    document: marketDocumentWithParagraphs([20])
+  }, [{ chatId: "-1001", threadId: 8, ctaEnabled: true, ctaContent: "t".repeat(4097) }]), /CTA block exceeds the 4096 character platform limit/);
+  assert.throws(() => automation.buildAutomationDiscordPlans("crypto-daily", {
+    document: marketDocumentWithParagraphs([20])
+  }, [{ platform: "discord", guildId: "g1", channelId: "c1", ctaEnabled: true, ctaContent: "d".repeat(2001) }]), /CTA block exceeds the 2000 character platform limit/);
 });
