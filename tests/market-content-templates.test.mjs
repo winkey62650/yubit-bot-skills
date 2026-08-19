@@ -83,6 +83,47 @@ test("deduplication collapses the same story and replaces an industry link with 
   assert.equal(result[0].source.kind, "official");
 });
 
+test("deduplication fingerprints differently worded reports of the same sourced fact", () => {
+  const industry = story({
+    id: "wire:ibit-flow",
+    canonicalId: undefined,
+    title: "BlackRock's Bitcoin ETF draws $250M daily inflow",
+    summary: "IBIT saw a $250M net inflow on August 18.",
+    url: "https://industry.example/ibit-flow",
+  });
+  const official = story({
+    id: "blackrock:fund-flow",
+    canonicalId: undefined,
+    title: "iShares Bitcoin Trust publishes August 18 fund flows",
+    summary: "BlackRock IBIT recorded net inflows of 250 million dollars for the day.",
+    url: "https://blackrock.example/ibit/fund-flows",
+    source: { id: "blackrock", label: "BlackRock", kind: "official" },
+  });
+
+  const result = deduplicateCryptoStories([official, industry]);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].url, official.url);
+  assert.equal(result[0].source.kind, "official");
+});
+
+test("deduplication does not merge similar reports with different amounts or event direction", () => {
+  const inflow = story({
+    id: "ibit-inflow",
+    canonicalId: undefined,
+    title: "BlackRock IBIT records $250M net inflow",
+    summary: "The Bitcoin ETF posted a $250M net inflow.",
+  });
+  const outflow = story({
+    id: "ibit-outflow",
+    canonicalId: undefined,
+    title: "BlackRock IBIT records $120M net outflow",
+    summary: "The Bitcoin ETF posted a $120M net outflow.",
+    url: "https://industry.example/ibit-outflow",
+  });
+
+  assert.equal(deduplicateCryptoStories([inflow, outflow]).length, 2);
+});
+
 test("ranking is deterministic and independent of candidate input order", () => {
   const official = story({ id: "official", title: "Official ETF filing", url: "https://sec.gov/official", source: { id: "sec", kind: "official", label: "SEC" }, importance: 2 });
   const recent = story({ id: "recent", title: "Recent ETF report", url: "https://wire.example/recent", publishedAt: "2026-08-19T07:59:00Z", importance: 2 });
@@ -111,6 +152,14 @@ test("Crypto Daily selects one traceable story per section and does not reuse an
   assert.equal(document.sections[0].nodes.filter((node) => node.type === "link").length, 1);
   assert.equal(document.sections[1].nodes.filter((node) => node.type === "link").length, 1);
   assert.equal(document.sections[2].impact, "Neutral");
+});
+
+test("Crypto Daily rejects candidates without a valid verifiable publication time", () => {
+  for (const publishedAt of [undefined, null, "not-a-date"]) {
+    const document = buildCryptoDailyDocument({ now, candidates: [story({ publishedAt })] });
+    assert.equal(document.sections[0].impact, "Neutral");
+    assert.ok(document.sections[0].nodes.some((node) => node.type === "paragraph" && node.text === "No material verified update in the last 24 hours."));
+  }
 });
 
 test("weekly calendar covers the current UTC Monday through Sunday, groups by date, and omits missing values", () => {
@@ -149,6 +198,20 @@ test("weekly calendar keeps only official crypto events with a source-provided t
   assert.deepEqual(document.days.flatMap((day) => day.events.map((event) => event.id)), ["official"]);
 });
 
+test("weekly calendar treats a date-only scheduledAt as TBD while retaining its date group", () => {
+  const document = buildWeeklyCalendarDocument({
+    now,
+    events: [
+      { id: "date-only-scheduled", title: "Policy consultation closes", kind: "macro", importance: 3, scheduledAt: "2026-08-20", source: { label: "Agency", url: "https://agency.example/calendar" } },
+    ],
+  });
+
+  assert.deepEqual(document.days.map((day) => day.date), ["2026-08-20"]);
+  assert.equal(document.days[0].events[0].time, "TBD");
+  assert.match(document.days[0].events[0].nodes[0].text, /^TBD —/);
+  assert.doesNotMatch(renderTelegramMarketDocument(document), /00:00/);
+});
+
 test("release impact rules cover inflation, employment, growth, and FOMC deterministically", () => {
   assert.equal(evaluateReleaseImpact({ indicator: "cpi", values: { actual: "2.7%", forecast: "2.8%" } }).impact, "Bullish");
   assert.equal(evaluateReleaseImpact({ indicator: "core-pce", values: { actual: "3.1%", forecast: "3.0%" } }).impact, "Bearish");
@@ -171,6 +234,31 @@ test("conflicting employment signals and unknown or incomplete releases fall bac
   assert.equal(conflicting.impact, "Neutral");
   assert.equal(evaluateReleaseImpact({ indicator: "cpi", values: { actual: "2.7%" } }).impact, "Neutral");
   assert.equal(evaluateReleaseImpact({ indicator: "bitcoin-dominance", values: { actual: "60", forecast: "59" } }).impact, "Neutral");
+});
+
+test("multi-component employment releases stay Neutral when any required component lacks evidence", () => {
+  const missingUnemploymentForecast = evaluateReleaseImpact({
+    components: [
+      { indicator: "nonfarm-payrolls", values: { actual: "160K", forecast: "200K" } },
+      { indicator: "unemployment-rate", values: { actual: "4.1%" } },
+    ],
+  });
+  const missingPayrollForecast = evaluateReleaseImpact({
+    components: [
+      { indicator: "nonfarm-payrolls", values: { actual: "160K" } },
+      { indicator: "unemployment-rate", values: { actual: "4.1%", forecast: "4.0%" } },
+    ],
+  });
+  const unknownComponent = evaluateReleaseImpact({
+    components: [
+      { indicator: "nonfarm-payrolls", values: { actual: "160K", forecast: "200K" } },
+      { indicator: "labor-force-participation", values: { actual: "62.8%", forecast: "62.7%" } },
+    ],
+  });
+
+  assert.equal(missingUnemploymentForecast.impact, "Neutral");
+  assert.equal(missingPayrollForecast.impact, "Neutral");
+  assert.equal(unknownComponent.impact, "Neutral");
 });
 
 test("data release documents enforce the allowlist and omit absent values and reactions", () => {
