@@ -691,6 +691,111 @@ test("market automation jobs receive the repository and persist non-publishable 
   }
 });
 
+test("non-publishable automation results never create deliveries when telemetry persistence fails", async () => {
+  for (const status of ["skipped", "duplicate"]) {
+    const rule = {
+      id: `rule-${status}-telemetry-failure`,
+      kind: "automation",
+      name: `${status} telemetry failure`,
+      contentType: "crypto-daily",
+      enabled: true,
+      status: "running",
+      schedulePreset: "event-driven",
+      nextRunAt: "2026-08-19T10:40:00.000Z",
+      targets: [{ id: `target-${status}`, chatId: "-100200", threadId: 8 }]
+    };
+    const sendCalls = [];
+    const deliveries = [];
+    const savedRules = [];
+    const repository = {
+      async cleanupExpired() {},
+      async getMeta() { return { completedAt: "2026-08-01T00:00:00.000Z" }; },
+      async claimDueAutomationRules() { return [rule]; },
+      async listRules() { return []; },
+      async createEvent(event) { return { id: `event-${status}`, ...event }; },
+      async updateEvent() { throw new Error("EVENT_TELEMETRY_WRITE_FAILED"); },
+      async createDelivery(delivery) {
+        deliveries.push(delivery);
+        return { id: `delivery-${deliveries.length}`, ...delivery };
+      },
+      async updateDelivery() {},
+      async saveRule(saved) {
+        savedRules.push(saved);
+        return saved;
+      }
+    };
+
+    const execution = await runDueDistributionJobs(new Date("2026-08-19T10:40:37.000Z"), {
+      repository,
+      runner: async () => ({
+        status,
+        preview: {
+          templateId: "crypto-daily",
+          skipReason: status === "skipped" ? "insufficient-sources" : "already-published",
+          targetResults: []
+        }
+      })
+    });
+    const result = execution.results[0];
+
+    assert.equal(result.status, status);
+    assert.equal(result.telemetryPersisted, false);
+    assert.equal(result.telemetryError, "EVENT_TELEMETRY_WRITE_FAILED");
+    assert.equal(sendCalls.length, 0);
+    assert.equal(deliveries.length, 0);
+    assert.equal(savedRules[0].status, "ready");
+    assert.equal(savedRules[0].nextRunAt, "2026-08-19T10:41:00.000Z");
+  }
+});
+
+test("a successful automation run without target receipts fails closed instead of inventing delivery success", async () => {
+  const target = { id: "target-missing-receipt", chatId: "-100200", threadId: 8 };
+  const rule = {
+    id: "rule-missing-receipt",
+    kind: "automation",
+    name: "Missing receipt",
+    contentType: "crypto-daily",
+    targets: [target]
+  };
+  const sendCalls = [];
+  const deliveries = [];
+  let updatedEvent = null;
+  const repository = {
+    async getRule(id) { return id === rule.id ? rule : null; },
+    async listRules() { return []; },
+    async createEvent(event) { return { id: "event-missing-receipt", ...event }; },
+    async updateEvent(id, patch) { updatedEvent = { id, ...patch }; },
+    async createDelivery(delivery) {
+      const saved = { id: `delivery-${deliveries.length + 1}`, ...delivery };
+      deliveries.push(saved);
+      return saved;
+    },
+    async updateDelivery(id, patch) {
+      Object.assign(deliveries.find((delivery) => delivery.id === id), patch);
+    },
+    async saveMapping() {}
+  };
+
+  const result = await runDistributionAutomationRule(rule.id, {
+    repository,
+    runner: async () => ({
+      status: "success",
+      preview: { targetResults: [] }
+    })
+  });
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.error, "AUTOMATION_TARGET_RESULT_MISSING");
+  assert.equal(sendCalls.length, 0);
+  assert.equal(deliveries.length, 1);
+  assert.equal(deliveries[0].status, "failed");
+  assert.equal(deliveries[0].targetMessageId, null);
+  assert.equal(deliveries[0].deliveredAt, null);
+  assert.equal(deliveries[0].error, "AUTOMATION_TARGET_RESULT_MISSING");
+  assert.equal(updatedEvent.payload.outcome, "failed");
+  assert.equal(updatedEvent.payload.outcomeError, "AUTOMATION_TARGET_RESULT_MISSING");
+});
+
 test("scheduled release checks are rescheduled at the next whole minute after a non-publishable result", async () => {
   const now = new Date("2026-08-19T10:40:37.000Z");
   const rule = {
