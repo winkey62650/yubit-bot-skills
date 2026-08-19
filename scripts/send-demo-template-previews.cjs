@@ -18,6 +18,13 @@ const allTemplates = [
   { contentType: "whale-signals", jobId: "whale-hourly" },
   { contentType: "agent-sync", jobId: "agent-sync-4h" },
 ];
+const marketContentTypes = new Set(["crypto-daily", "weekly-calendar", "data-release-updates"]);
+
+function hasReliableSource(sources = []) {
+  return Array.isArray(sources) && sources.some((source) => (
+    ["ok", "healthy", "success"].includes(String(source?.status || "").trim().toLowerCase())
+  ));
+}
 const selectedTypes = new Set(String(process.env.TEST_CONTENT_TYPES || "").split(",").map((value) => value.trim()).filter(Boolean));
 const templates = selectedTypes.size ? allTemplates.filter((item) => selectedTypes.has(item.contentType)) : allTemplates;
 if (!templates.length) throw new Error("TEST_CONTENT_TYPES did not match a supported template");
@@ -38,18 +45,21 @@ async function json(response, label) {
         data: { jobId: template.jobId }, timeout: 60_000,
       }), `预览 ${template.contentType}`);
       const preview = payload.result?.preview || {};
+      const sources = [preview.sources, preview.diagnostics?.sources, preview.document?.diagnostics?.sources]
+        .find((items) => Array.isArray(items) && items.length > 0) || [];
       report.previews.push({
         ...template,
         publishable: preview.publishable ?? preview.document?.publishable ?? false,
         skipReason: preview.skipReason || preview.document?.skipReason || null,
-        sources: preview.sources || preview.diagnostics?.sources || [],
+        sources,
+        sourceHealthOk: !marketContentTypes.has(template.contentType) || hasReliableSource(sources),
         warnings: preview.warnings || preview.diagnostics?.warnings || [],
         document: preview.document || null,
       });
     }
     report.finishedAt = new Date().toISOString();
     report.ok = report.previews.length === templates.length
-      && report.previews.every((item) => item.publishable || item.skipReason);
+      && report.previews.every((item) => item.sourceHealthOk && (item.publishable || item.skipReason));
     fs.mkdirSync(path.dirname(artifactPath), { recursive: true });
     fs.writeFileSync(artifactPath, `${JSON.stringify(report, null, 2)}\n`);
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);

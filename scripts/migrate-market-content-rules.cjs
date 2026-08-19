@@ -58,25 +58,45 @@ function comparableRule(rule) {
       }));
     const changedIds = new Set(operations.map((item) => item.id));
     const saved = [];
+    const savedOperationIds = new Set();
+    const failedSaves = [];
     if (migrationApply) {
       for (const rule of migratedRules.filter((item) => changedIds.has(item.id))) {
-        const payload = await readJson(await api.post("/api/distribution", { data: { rule } }), `保存 ${rule.name}`);
-        saved.push(payload.rule?.id || rule.id);
+        try {
+          const payload = await readJson(await api.post("/api/distribution", { data: { rule } }), `保存 ${rule.name}`);
+          saved.push(payload.rule?.id || rule.id);
+          savedOperationIds.add(rule.id);
+        } catch (error) {
+          failedSaves.push({ id: rule.id, contentType: rule.contentType, error: error.message });
+        }
       }
     }
+    const unsaved = operations
+      .filter((operation) => !savedOperationIds.has(operation.id))
+      .map((operation) => ({
+        ...operation,
+        reason: migrationApply
+          ? failedSaves.find((failure) => failure.id === operation.id)?.error || "not-saved"
+          : "dry-run",
+      }));
     console.log(JSON.stringify({
-      ok: true,
+      ok: failedSaves.length === 0,
       dryRun: !migrationApply,
       baseUrl,
       operations,
       before: operations.map(({ id }) => comparableRule(currentById.get(id))),
       after: operations.map(({ id }) => comparableRule(migratedRules.find((rule) => rule.id === id))),
       saved,
+      failedSaves,
+      unsaved,
       changes: migrated.changes,
       note: migrationApply
-        ? "迁移配置已保存；未执行任何自动任务或消息投递。"
+        ? (failedSaves.length
+          ? "部分迁移配置保存失败；请根据 saved、failedSaves 与 unsaved 清单处理。未执行任何自动任务或消息投递。"
+          : "迁移配置已保存；未执行任何自动任务或消息投递。")
         : "当前仅生成迁移计划。设置 MIGRATION_APPLY=true 与 APPLY_PRODUCTION_CONFIGURATION=true 后才会保存。",
     }, null, 2));
+    if (failedSaves.length) process.exitCode = 1;
   } finally {
     await api.dispose();
   }

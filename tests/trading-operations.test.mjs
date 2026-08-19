@@ -1,8 +1,21 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import test from "node:test";
 
 const root = new URL("../", import.meta.url);
+
+function extractFunction(source, name) {
+  const start = source.indexOf(`function ${name}`);
+  assert.notEqual(start, -1, `${name} must be declared`);
+  const bodyStart = source.indexOf("{", start);
+  let depth = 0;
+  for (let index = bodyStart; index < source.length; index += 1) {
+    if (source[index] === "{") depth += 1;
+    if (source[index] === "}") depth -= 1;
+    if (depth === 0) return Function(`${source.slice(start, index + 1)}; return ${name};`)();
+  }
+  throw new Error(`${name} has no closing brace`);
+}
 
 test("manual recovery automation runs trading reconciliation with the protected cron secret", async () => {
   const workflow = await readFile(new URL(".github/workflows/telegram-automations.yml", root), "utf8");
@@ -128,7 +141,37 @@ test("market content migration is dry-run by default and can never execute deliv
   assert.match(migration, /data-release-updates/);
   assert.match(migration, /before:/);
   assert.match(migration, /after:/);
+  assert.match(migration, /failedSaves/);
+  assert.match(migration, /unsaved/);
   assert.doesNotMatch(migration, /run-now|\/api\/telegram|\/api\/discord/);
+});
+
+test("market preview release gates require at least one reliable source", async () => {
+  for (const file of [
+    "scripts/audit-production-release.cjs",
+    "scripts/audit-distribution-templates.cjs",
+    "scripts/send-demo-template-previews.cjs",
+  ]) {
+    const source = await readFile(new URL(file, root), "utf8");
+    const hasReliableSource = extractFunction(source, "hasReliableSource");
+    assert.equal(hasReliableSource([{ status: "error" }, { status: "timeout" }, { status: "schema-error" }]), false, file);
+    assert.equal(hasReliableSource([{ status: "unknown" }]), false, file);
+    assert.equal(hasReliableSource([{ status: "ok" }]), true, file);
+    assert.equal(hasReliableSource([{ status: "timeout" }, { status: "ok" }]), true, file);
+  }
+});
+
+test("run-now exists only in the explicitly authorized live automation test", async () => {
+  const scriptsDirectory = new URL("scripts/", root);
+  const entries = await readdir(scriptsDirectory, { withFileTypes: true });
+  const offenders = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !/\.(?:cjs|mjs|js)$/.test(entry.name)) continue;
+    const source = await readFile(new URL(entry.name, scriptsDirectory), "utf8");
+    if (/run-now/.test(source)) offenders.push({ file: entry.name, source });
+  }
+  assert.deepEqual(offenders.map((item) => item.file), ["test-production-automation-delivery.cjs"]);
+  assert.match(offenders[0].source, /authorizeLiveTelegramOperation/);
 });
 
 test("production distribution gates cover all six automations and seven broadcasts", async () => {

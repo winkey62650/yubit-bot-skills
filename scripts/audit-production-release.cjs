@@ -56,9 +56,16 @@ function inspectRuleTargets(rule) {
   };
 }
 
+function hasReliableSource(sources = []) {
+  return Array.isArray(sources) && sources.some((source) => (
+    ["ok", "healthy", "success"].includes(String(source?.status || "").trim().toLowerCase())
+  ));
+}
+
 function inspectMarketPreview(preview = {}) {
   const diagnostics = preview.diagnostics || preview.document?.diagnostics || {};
-  const sources = Array.isArray(preview.sources) ? preview.sources : (Array.isArray(diagnostics.sources) ? diagnostics.sources : []);
+  const sources = [preview.sources, diagnostics.sources, preview.document?.diagnostics?.sources]
+    .find((items) => Array.isArray(items) && items.length > 0) || [];
   const sourceHealth = sources.map((source) => ({
     id: source.id || source.name || source.source,
     status: source.status || "unknown",
@@ -72,7 +79,7 @@ function inspectMarketPreview(preview = {}) {
     publishable,
     skipReason,
     sourceHealth,
-    sourceHealthOk: sourceHealth.length > 0 && sourceHealth.every((source) => source.status !== "unknown"),
+    sourceHealthOk: hasReliableSource(sourceHealth),
     publishabilityOk: publishable === true || (publishable === false && Boolean(skipReason)),
   };
 }

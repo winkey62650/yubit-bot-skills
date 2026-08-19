@@ -18,6 +18,13 @@ const expected = [
   { jobId: "whale-hourly", contentType: "whale-signals" },
   { jobId: "agent-sync-4h", contentType: "agent-sync" },
 ];
+const marketContentTypes = new Set(["crypto-daily", "weekly-calendar", "data-release-updates"]);
+
+function hasReliableSource(sources = []) {
+  return Array.isArray(sources) && sources.some((source) => (
+    ["ok", "healthy", "success"].includes(String(source?.status || "").trim().toLowerCase())
+  ));
+}
 
 async function json(response, label) {
   const payload = await response.json().catch(() => ({}));
@@ -40,17 +47,21 @@ async function json(response, label) {
         data: { jobId: item.jobId }, timeout: 60_000,
       }), `预览 ${item.contentType}`);
       const preview = payload.result?.preview || {};
+      const sources = [preview.sources, preview.diagnostics?.sources, preview.document?.diagnostics?.sources]
+        .find((items) => Array.isArray(items) && items.length > 0) || [];
       templates.push({
         ...item,
         publishable: preview.publishable ?? preview.document?.publishable ?? false,
         skipReason: preview.skipReason || preview.document?.skipReason || null,
-        sources: preview.sources || preview.diagnostics?.sources || [],
+        sources,
+        sourceHealthOk: !marketContentTypes.has(item.contentType) || hasReliableSource(sources),
         warnings: preview.warnings || preview.diagnostics?.warnings || [],
         document: preview.document || null,
       });
     }
     const report = {
-      ok: templates.length === expected.length && templates.every((item) => item.publishable || item.skipReason),
+      ok: templates.length === expected.length
+        && templates.every((item) => item.sourceHealthOk && (item.publishable || item.skipReason)),
       baseUrl, dryRun: true, groupCount: (groups.groups || []).length,
       ruleCount: (distribution.rules || []).length, templates,
     };
