@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as automation from "../lib/automation-jobs.mjs";
+import {
+  markDataReleaseTargetPending,
+  prepareDataReleaseDelivery,
+  prepareDataReleaseSend,
+} from "../lib/data-release-monitor.mjs";
 
 const { AUTOMATION_JOBS, automationSlot, automationTopicMatches } = automation;
 
@@ -750,6 +755,7 @@ test("queued data release keeps its target claim and does not create another pla
 
   assert.equal(queued.status, "queued");
   assert.equal(queued.preview.deliveryPlans.length, 1);
+  assert.match(queued.preview.targetResults[0].releaseClaimToken, /^[0-9a-f-]{36}$/i);
   assert.equal(stillQueued.status, "queued");
   assert.equal(stillQueued.preview.deliveryPlans.length, 0);
   assert.equal(stillQueued.preview.targetResults[0].receiptExisting, true);
@@ -851,6 +857,57 @@ test("Telegram release remains fail-closed without resending while its success r
   assert.equal(recovered.preview.deliveryPlans.length, 0);
   assert.deepEqual((await repository.getMeta("market-content:release-state:v1")).publishedKeys, [recovered.preview.deduplicationKey]);
   assert.equal(sends, 1);
+});
+
+test("a sending marker from a crash before the first send requires manual reconciliation", async () => {
+  const calendar = { result: [{ id: "us-cpi-before-send-crash", title: "US CPI YoY", country: "US", importance: 3, date: "2026-08-19T12:30:00Z", actual: "2.7", forecast: "2.8", previous: "2.9", unit: "%" }] };
+  const repository = automationRepository();
+  const target = { platform: "discord", guildId: "g1", channelId: "c1" };
+  const common = { force: true, repository, fetchImpl: fixtureFetch(calendar), fetchReaction: async () => ({ prices: {}, sources: [], warnings: [] }), targets: [target] };
+  const dryRun = await automation.runAutomationJob("data-release-updates", { ...common, dryRun: true, now: "2026-08-19T12:31:00Z" });
+  const deduplicationKey = dryRun.preview.deduplicationKey;
+  const event = dryRun.preview.event;
+  const targetKey = "discord:g1:c1";
+  await prepareDataReleaseDelivery({ repository, deduplicationKey, event, targetKeys: [targetKey], now: "2026-08-19T12:31:01Z" });
+  await markDataReleaseTargetPending({ repository, deduplicationKey, targetKey, event, now: "2026-08-19T12:31:02Z" });
+  await prepareDataReleaseSend({ repository, deduplicationKey, targetKey, now: "2026-08-19T12:31:03Z" });
+  let sends = 0;
+
+  const result = await automation.runAutomationJob("data-release-updates", { ...common, dryRun: false, now: "2026-08-19T12:32:00Z", discordSender: async () => ({ id: `message-${++sends}` }) });
+  const retry = await automation.runAutomationJob("data-release-updates", { ...common, dryRun: false, now: "2026-08-19T12:33:00Z", discordSender: async () => ({ id: `message-${++sends}` }) });
+
+  assert.equal(result.status, "manual-reconciliation");
+  assert.equal(result.preview.targetResults[0].deliveryState, "uncertain-delivery");
+  assert.equal(result.preview.targetResults[0].manualReconciliationRequired, true);
+  assert.equal(retry.status, "manual-reconciliation");
+  assert.equal(sends, 0);
+  assert.deepEqual((await repository.getMeta("market-content:release-state:v1")).publishedKeys, []);
+  assert.equal((await repository.getMeta("market-content:release-sent:v1")).entries[0].status, "sending");
+});
+
+test("a multi-step crash remains uncertain and never falsely acknowledges or resends", async () => {
+  const calendar = { result: [{ id: "us-cpi-mid-send-crash", title: "US CPI YoY", country: "US", importance: 3, date: "2026-08-19T12:30:00Z", actual: "2.7", forecast: "2.8", previous: "2.9", unit: "%" }] };
+  const repository = automationRepository();
+  let sends = 0;
+  const target = { platform: "discord", guildId: "g1", channelId: "c1" };
+  const common = { force: true, repository, fetchImpl: fixtureFetch(calendar), fetchReaction: async () => ({ prices: {}, sources: [], warnings: [] }), targets: [target] };
+  const dryRun = await automation.runAutomationJob("data-release-updates", { ...common, dryRun: true, now: "2026-08-19T12:31:00Z" });
+  const deduplicationKey = dryRun.preview.deduplicationKey;
+  const event = dryRun.preview.event;
+  const targetKey = "discord:g1:c1";
+  await prepareDataReleaseDelivery({ repository, deduplicationKey, event, targetKeys: [targetKey], now: "2026-08-19T12:31:01Z" });
+  await markDataReleaseTargetPending({ repository, deduplicationKey, targetKey, event, now: "2026-08-19T12:31:02Z" });
+  await repository.setMeta("market-content:release-sent:v1", { version: 1, entries: [{ deduplicationKey, targetKey, status: "sending", messageIds: ["first-step-message"], updatedAt: "2026-08-19T12:31:03Z" }], updatedAt: "2026-08-19T12:31:03Z" });
+  const first = await automation.runAutomationJob("data-release-updates", { ...common, dryRun: false, now: "2026-08-19T12:31:30Z", discordSender: async () => ({ id: `message-${++sends}` }) });
+  const retry = await automation.runAutomationJob("data-release-updates", { ...common, dryRun: false, now: "2026-08-19T12:32:00Z", discordSender: async () => ({ id: `message-${++sends}` }) });
+
+  assert.equal(first.status, "manual-reconciliation");
+  assert.ok(["manual-reconciliation", "skipped"].includes(retry.status));
+  assert.equal(sends, 0);
+  assert.deepEqual((await repository.getMeta("market-content:release-state:v1")).publishedKeys, []);
+  const marker = (await repository.getMeta("market-content:release-sent:v1")).entries[0];
+  assert.equal(marker.status, "sending");
+  assert.deepEqual(marker.messageIds, ["first-step-message"]);
 });
 
 test("data-release run lease renews across its TTL and releases after an exception", async () => {

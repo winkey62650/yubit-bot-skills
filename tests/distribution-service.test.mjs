@@ -1271,6 +1271,36 @@ test("failed desktop cleanup compensates a transient receipt release failure on 
   assert.deepEqual(receipt.readyTargetKeys, [targetKey]);
 });
 
+test("an old failed desktop generation cannot release a newer pending claim during concurrent schedulers", async () => {
+  const target = { id: "release-generation", chatId: "-1001", threadId: 8 };
+  const eventData = { id: "release-generation", sourceId: "release-generation", scheduledAt: "2026-08-19T12:30:00.000Z", values: { actual: "2.7%" } };
+  const deduplicationKey = buildReleaseDeduplicationKey(eventData);
+  const targetKey = buildDataReleaseTargetKey(target);
+  const oldDelivery = { id: "delivery-old", eventId: "event-old", ruleId: "rule-release", status: "failed", createdAt: "2026-08-19T12:30:00Z", target, payload: { releaseDeduplicationKey: deduplicationKey, releaseTargetKey: targetKey, releaseClaimToken: "old-generation", releaseEvent: eventData } };
+  const newerDelivery = { id: "delivery-new", eventId: "event-new", ruleId: "rule-release", status: "pending", createdAt: "2026-08-19T12:31:00Z", target, payload: { releaseDeduplicationKey: deduplicationKey, releaseTargetKey: targetKey, releaseClaimToken: "new-generation", releaseEvent: eventData } };
+  const deliveries = [oldDelivery, newerDelivery];
+  const meta = new Map();
+  const repository = {
+    async getMeta(key) { return structuredClone(meta.get(key) ?? null); }, async setMeta(key, value) { meta.set(key, structuredClone(value)); return value; },
+    async listDeliveries({ status }) { return deliveries.filter((item) => item.status === status); }, async getRule() { return { kind: "automation" }; },
+    async claimDelivery(id) { const item = deliveries.find((row) => row.id === id); if (item.status !== "pending") return null; item.status = "sending"; return item; },
+    async getEvent(id) { return { id, payload: { deliveryPlans: [{ target, steps: [{ method: "sendMessage", payload: { text: "release" } }] }] } }; },
+    async updateDelivery(id, patch) { return Object.assign(deliveries.find((item) => item.id === id), patch); },
+  };
+  await prepareDataReleaseDelivery({ repository, deduplicationKey, event: eventData, targetKeys: [targetKey], now: "2026-08-19T12:30:00Z" });
+  await markDataReleaseTargetPending({ repository, deduplicationKey, targetKey, event: eventData, claimToken: "new-generation", now: "2026-08-19T12:31:00Z" });
+
+  const [first, second] = await Promise.all([
+    claimDesktopPublisherDelivery({ repository, env: { TELEGRAM_USER_PUBLISHER_TARGETS: "-1001" }, now: "2026-08-19T12:31:01Z" }),
+    claimDesktopPublisherDelivery({ repository, env: { TELEGRAM_USER_PUBLISHER_TARGETS: "-1001" }, now: "2026-08-19T12:31:01Z" }),
+  ]);
+
+  assert.equal([first, second].filter(Boolean).every((item) => item.deliveryId === newerDelivery.id), true);
+  const receipt = await prepareDataReleaseDelivery({ repository, deduplicationKey, event: eventData, targetKeys: [targetKey], now: "2026-08-19T12:31:02Z" });
+  assert.deepEqual(receipt.pendingTargetKeys, [targetKey]);
+  assert.equal(newerDelivery.status, "sending");
+});
+
 test("desktop publisher resumes an old delivery when at least one step already succeeded", async () => {
   const delivery = {
     id: "delivery-old-progress",
