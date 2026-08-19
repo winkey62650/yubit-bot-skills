@@ -249,6 +249,18 @@ test("DEMO CTA acceptance requires enabled non-empty CTA hydrated into the final
       steps: [{ payload: { text: "BTC market body only; the CTA link is absent." } }]
     }]
   };
+  const plainTextBodyCollision = {
+    deliveryPlans: [{
+      target: { ...telegramTarget, ctaEnabled: true, ctaContent: "**BTC**" },
+      steps: [{ payload: { text: "BTC surged today" } }]
+    }]
+  };
+  const scatteredCtaTokens = {
+    deliveryPlans: [{
+      target: { ...telegramTarget, ctaEnabled: true, ctaContent: "**LATEST TG CTA**\n[Join TG](https://example.com/tg)" },
+      steps: [{ payload: { text: "LATEST TG CTA\nUnrelated market analysis\nJoin TG https://example.com/tg" } }]
+    }]
+  };
   const ctaBeforeFinalStep = {
     deliveryPlans: [{
       target: { ...telegramTarget, ctaEnabled: true, ctaContent: "**LATEST TG CTA**\n[Join TG](https://example.com/tg)" },
@@ -265,6 +277,8 @@ test("DEMO CTA acceptance requires enabled non-empty CTA hydrated into the final
   assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: telegramQueryCta }, telegramQueryPreview, telegramTarget).passed, true);
   assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**LATEST DC CTA**\n[Join DC](https://example.com/dc)" }, discordPreview, discordTarget).passed, true);
   assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**BTC**\n[Trade now](https://example.com/trade)" }, bodyCollisionWithoutLink, telegramTarget).passed, false);
+  assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**BTC**" }, plainTextBodyCollision, telegramTarget).passed, false);
+  assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**LATEST TG CTA**\n[Join TG](https://example.com/tg)" }, scatteredCtaTokens, telegramTarget).passed, false);
   assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**LATEST TG CTA**\n[Join TG](https://example.com/tg)" }, ctaBeforeFinalStep, telegramTarget).passed, false);
 
   assert.match(acceptance, /data:\s*\{\s*jobId:\s*"crypto-daily",\s*targets:/);

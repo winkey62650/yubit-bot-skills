@@ -33,17 +33,21 @@ function evaluateDemoCtaAcceptance(cta, preview, expectedTarget) {
   expectedTarget = expectedTarget || {};
   const normalize = (value) => String(value || "").replace(/\r\n?/g, "\n").trim();
   const decodeHtmlEntities = (value) => normalize(value)
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, "\"")
-    .replace(/&#39;/g, "'");
-  const plainText = (value) => decodeHtmlEntities(value)
+    .replace(/&amp;|&#38;|&#x26;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#39;|&apos;/gi, "'");
+  const canonicalBlock = (value) => decodeHtmlEntities(value)
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<a\b[^>]*\bhref=(["'])(.*?)\1[^>]*>([\s\S]*?)<\/a>/gi, (_match, _quote, url, label) => (
+      `${label.replace(/<[^>]*>/g, " ")} ⟦${url}⟧`
+    ))
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, "$1 ⟦$2⟧")
     .replace(/<[^>]*>/g, " ")
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
-    .replace(/[\*_~`>#]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+    .split("\n")
+    .map((line) => line.replace(/[\*_~`>#]/g, " ").replace(/\s+/g, " ").trim())
+    .filter(Boolean);
   const ctaContent = normalize(cta?.ctaContent);
   const usable = cta?.ctaEnabled === true && Boolean(ctaContent);
   const plans = Array.isArray(preview?.deliveryPlans) ? preview.deliveryPlans : [];
@@ -59,15 +63,13 @@ function evaluateDemoCtaAcceptance(cta, preview, expectedTarget) {
   const hydrated = usable && matchingPlans.some((plan) => (
     plan?.target?.ctaEnabled === true && normalize(plan?.target?.ctaContent) === ctaContent
   ));
-  const visibleLines = ctaContent.split("\n").map(plainText).filter(Boolean);
-  const urls = [...new Set(Array.from(ctaContent.matchAll(/https?:\/\/[^\s)>]+/g), (match) => match[0]))];
+  const ctaBlock = canonicalBlock(ctaContent);
   const containsCompleteCta = (value) => {
-    const raw = normalize(value);
-    const decodedRaw = decodeHtmlEntities(raw);
-    const visible = plainText(raw);
-    return Boolean(raw)
-      && visibleLines.every((line) => visible.includes(line))
-      && urls.every((url) => decodedRaw.includes(url));
+    const messageBlock = canonicalBlock(value);
+    const offset = messageBlock.length - ctaBlock.length;
+    return ctaBlock.length > 0
+      && offset >= 0
+      && ctaBlock.every((line, index) => messageBlock[offset + index] === line);
   };
   const renderedSteps = matchingPlans.flatMap((plan) => {
     const steps = Array.isArray(plan?.steps) ? plan.steps : [];
@@ -77,10 +79,10 @@ function evaluateDemoCtaAcceptance(cta, preview, expectedTarget) {
       return matched ? [{ index, lastIndex: steps.length - 1 }] : [];
     });
   });
-  const rendered = Boolean(visibleLines.length || urls.length)
+  const rendered = ctaBlock.length > 0
     && renderedSteps.length === 1
     && renderedSteps[0].index === renderedSteps[0].lastIndex;
-  const marker = visibleLines[0] || urls[0] || "";
+  const marker = ctaBlock[0] || "";
   return { passed: usable && hydrated && rendered, usable, hydrated, rendered, marker };
 }
 
