@@ -1,17 +1,7 @@
 const { request } = require("playwright");
+const { randomBytes } = require("node:crypto");
 const { authorizeProductionConfiguration, buildVercelProtectionHeaders } = require("../lib/release-gate.cjs");
-
-const { baseUrl } = authorizeProductionConfiguration(process.env, {
-  operation: "DEMO 群 CTA 只读预览审计",
-  apply: false,
-});
-const username = process.env.TEST_USERNAME || process.env.AUTH_USERNAME;
-const password = process.env.TEST_PASSWORD || process.env.AUTH_PASSWORD;
-const protectionHeaders = buildVercelProtectionHeaders(process.env.VERCEL_AUTOMATION_BYPASS_SECRET);
-
-if (!username || !password) {
-  throw new Error("TEST_USERNAME/TEST_PASSWORD or AUTH_USERNAME/AUTH_PASSWORD are required");
-}
+const { verifyCtaPreviewBoundary } = require("../lib/cta-preview-evidence.cjs");
 
 async function json(response, label) {
   const payload = await response.json().catch(() => ({}));
@@ -27,7 +17,7 @@ function hasReliableSource(sources = []) {
   ));
 }
 
-function evaluateDemoCtaAcceptance(cta, preview, expectedTarget) {
+function evaluateDemoCtaAcceptance(cta, preview, expectedTarget, { evidenceSecret, previewChallenge } = {}) {
   cta = cta || {};
   preview = preview || {};
   expectedTarget = expectedTarget || {};
@@ -64,7 +54,7 @@ function evaluateDemoCtaAcceptance(cta, preview, expectedTarget) {
     plan?.target?.ctaEnabled === true && normalize(plan?.target?.ctaContent) === ctaContent
   ));
   const ctaBlock = canonicalBlock(ctaContent);
-  const containsCompleteCta = (step, stepIndex, steps, platform) => {
+  const containsCompleteCta = (plan, step, stepIndex, steps, platform) => {
     const boundary = step?.ctaBoundary;
     const field = boundary?.field;
     const expectedField = platform === "telegram" && step?.method === "sendMessage"
@@ -89,6 +79,14 @@ function evaluateDemoCtaAcceptance(cta, preview, expectedTarget) {
       || boundary.start < 0
       || boundary.start >= boundary.end
       || boundary.end !== value.length) return false;
+    if (!verifyCtaPreviewBoundary({
+      plan,
+      step,
+      stepIndex,
+      stepCount: steps.length,
+      secret: evidenceSecret,
+      challenge: previewChallenge,
+    })) return false;
     const renderedCtaBlock = canonicalBlock(value.slice(boundary.start, boundary.end));
     return ctaBlock.length > 0
       && renderedCtaBlock.length === ctaBlock.length
@@ -98,7 +96,7 @@ function evaluateDemoCtaAcceptance(cta, preview, expectedTarget) {
     const steps = Array.isArray(plan?.steps) ? plan.steps : [];
     const platform = plan?.target?.platform === "discord" || plan?.target?.guildId ? "discord" : "telegram";
     return steps.flatMap((step, index) => {
-      const matched = containsCompleteCta(step, index, steps, platform);
+      const matched = containsCompleteCta(plan, step, index, steps, platform);
       return matched ? [{ index, lastIndex: steps.length - 1 }] : [];
     });
   });
@@ -110,6 +108,21 @@ function evaluateDemoCtaAcceptance(cta, preview, expectedTarget) {
 }
 
 async function main() {
+  const { baseUrl } = authorizeProductionConfiguration(process.env, {
+    operation: "DEMO 群 CTA 只读预览审计",
+    apply: false,
+  });
+  const username = process.env.TEST_USERNAME || process.env.AUTH_USERNAME;
+  const password = process.env.TEST_PASSWORD || process.env.AUTH_PASSWORD;
+  const protectionHeaders = buildVercelProtectionHeaders(process.env.VERCEL_AUTOMATION_BYPASS_SECRET);
+  const evidenceSecret = String(process.env.CTA_PREVIEW_EVIDENCE_SECRET || "");
+  if (!username || !password) {
+    throw new Error("TEST_USERNAME/TEST_PASSWORD or AUTH_USERNAME/AUTH_PASSWORD are required");
+  }
+  if (Buffer.byteLength(evidenceSecret, "utf8") < 32) {
+    throw new Error("CTA_PREVIEW_EVIDENCE_SECRET must contain at least 32 bytes");
+  }
+  const previewChallenge = randomBytes(32).toString("base64url");
   const api = await request.newContext({
     baseURL: baseUrl,
     ...(protectionHeaders ? { extraHTTPHeaders: protectionHeaders } : {}),
@@ -138,7 +151,7 @@ async function main() {
       ...(topic ? { threadId: Number(topic.threadId || topic.topicId || topic.id) } : {}),
     };
     const previewPayload = await json(await api.post("/api/automation-test", {
-      data: { jobId: "crypto-daily", targets: [previewTarget] },
+      data: { jobId: "crypto-daily", targets: [previewTarget], previewChallenge },
       timeout: 60_000,
     }), "crypto daily preview");
     const preview = previewPayload.result?.preview || {};
@@ -146,7 +159,10 @@ async function main() {
       .find((items) => Array.isArray(items) && items.length > 0) || [];
     const publishable = preview.publishable ?? preview.document?.publishable ?? false;
     const skipReason = preview.skipReason || preview.document?.skipReason || null;
-    const ctaAcceptance = evaluateDemoCtaAcceptance(cta || {}, preview, previewTarget);
+    const ctaAcceptance = evaluateDemoCtaAcceptance(cta || {}, preview, previewTarget, {
+      evidenceSecret,
+      previewChallenge,
+    });
     const passed = ctaAcceptance.passed
       && hasReliableSource(sources)
       && (publishable === true || Boolean(skipReason));

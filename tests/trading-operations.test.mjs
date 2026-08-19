@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
+import { createRequire } from "node:module";
 import { readdir, readFile } from "node:fs/promises";
 import test from "node:test";
 
 const root = new URL("../", import.meta.url);
+const require = createRequire(import.meta.url);
 
 function extractFunction(source, name) {
   const start = source.indexOf(`function ${name}`);
@@ -222,7 +225,22 @@ test("DEMO CTA acceptance requires enabled non-empty CTA hydrated into the final
   const acceptance = await readFile(new URL("scripts/accept-demo-target-cta.cjs", root), "utf8");
   const previewRoute = await readFile(new URL("app/api/automation-test/route.js", root), "utf8");
   const automation = await import(new URL("lib/automation-jobs.mjs", root));
-  const evaluateDemoCtaAcceptance = extractFunction(acceptance, "evaluateDemoCtaAcceptance");
+  const { evaluateDemoCtaAcceptance } = require("../scripts/accept-demo-target-cta.cjs");
+  const { signCtaPreviewPlans } = require("../lib/cta-preview-evidence.cjs");
+  const evidenceSecret = randomBytes(32).toString("base64url");
+  const previewChallenge = randomBytes(32).toString("base64url");
+  const withEvidence = (preview) => ({
+    ...preview,
+    deliveryPlans: signCtaPreviewPlans(preview.deliveryPlans, {
+      secret: evidenceSecret,
+      challenge: previewChallenge,
+    }),
+  });
+  const evaluate = (cta, preview, target, options = {}) => evaluateDemoCtaAcceptance(cta, preview, target, {
+    evidenceSecret,
+    previewChallenge,
+    ...options,
+  });
   const telegramTarget = { platform: "telegram", chatId: "-1001", threadId: 8 };
   const discordTarget = { platform: "discord", guildId: "guild-1", channelId: "channel-1" };
   const ctaStep = (field, value, ctaSuffix) => ({
@@ -241,22 +259,26 @@ test("DEMO CTA acceptance requires enabled non-empty CTA hydrated into the final
     version: "market-content-v1",
     nodes: [{ type: "paragraph", text: body }],
   });
-  const telegramPreview = {
+  const telegramPreview = withEvidence({
     deliveryPlans: automation.buildAutomationTelegramPlans("crypto-daily", {
       document: marketDocument(),
     }, [{ ...telegramTarget, ctaEnabled: true, ctaContent: "**LATEST TG CTA**\n[Join TG](https://example.com/tg)" }]),
-  };
-  const discordPreview = {
+  });
+  const discordPreview = withEvidence({
     deliveryPlans: automation.buildAutomationDiscordPlans("crypto-daily", {
       document: marketDocument(),
     }, [{ ...discordTarget, ctaEnabled: true, ctaContent: "**LATEST DC CTA**\n[Join DC](https://example.com/dc)" }]),
-  };
+  });
+  const forgedTelegramEvidence = structuredClone(telegramPreview);
+  forgedTelegramEvidence.deliveryPlans[0].steps.at(-1).ctaBoundary.evidence.signature = "forged";
+  const forgedDiscordEvidence = structuredClone(discordPreview);
+  forgedDiscordEvidence.deliveryPlans[0].steps.at(-1).ctaBoundary.evidence.signature = "forged";
   const telegramQueryCta = "**TRADE WITH YUBIT**\n[Register](https://example.com/register?ref=demo&source=tg)\n[View fees](https://example.com/fees?tier=vip&lang=en)";
-  const telegramQueryPreview = {
+  const telegramQueryPreview = withEvidence({
     deliveryPlans: automation.buildAutomationTelegramPlans("crypto-daily", {
       document: marketDocument(),
     }, [{ ...telegramTarget, ctaEnabled: true, ctaContent: telegramQueryCta }]),
-  };
+  });
   const bodyCollisionWithoutLink = {
     deliveryPlans: [{
       target: { ...telegramTarget, ctaEnabled: true, ctaContent: "**BTC**\n[Trade now](https://example.com/trade)" },
@@ -320,7 +342,7 @@ test("DEMO CTA acceptance requires enabled non-empty CTA hydrated into the final
     }]
   };
   const realPlannerTarget = { ...telegramTarget, ctaEnabled: true, ctaContent: "**BTC**" };
-  const realPlannerPreview = {
+  const realPlannerPreview = withEvidence({
     deliveryPlans: automation.buildAutomationTelegramPlans("crypto-daily", {
       document: {
         templateId: "crypto-daily",
@@ -328,22 +350,25 @@ test("DEMO CTA acceptance requires enabled non-empty CTA hydrated into the final
         nodes: [{ type: "paragraph", text: "Market summary\nBTC" }],
       },
     }, [realPlannerTarget]),
-  };
+  });
 
-  assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: false, ctaContent: "LATEST TG CTA" }, telegramPreview, telegramTarget).passed, false);
-  assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "   \n " }, telegramPreview, telegramTarget).passed, false);
-  assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**LATEST TG CTA**\n[Join TG](https://example.com/tg)" }, telegramPreview, telegramTarget).passed, true);
-  assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: telegramQueryCta }, telegramQueryPreview, telegramTarget).passed, true);
-  assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**LATEST DC CTA**\n[Join DC](https://example.com/dc)" }, discordPreview, discordTarget).passed, true);
-  assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**BTC**\n[Trade now](https://example.com/trade)" }, bodyCollisionWithoutLink, telegramTarget).passed, false);
-  assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**BTC**" }, plainTextBodyCollision, telegramTarget).passed, false);
-  assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**BTC**" }, exactBodySuffixCollision, telegramTarget).passed, false);
-  assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**BTC**" }, forgedExactSuffixCollision, telegramTarget).passed, false);
-  assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**LATEST TG CTA**\n[Join TG](https://example.com/tg)" }, wrongTelegramMethodField("sendMessage", "caption"), telegramTarget).passed, false);
-  assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**LATEST TG CTA**\n[Join TG](https://example.com/tg)" }, wrongTelegramMethodField("sendPhoto", "text"), telegramTarget).passed, false);
-  assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**BTC**" }, realPlannerPreview, telegramTarget).passed, true);
-  assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**LATEST TG CTA**\n[Join TG](https://example.com/tg)" }, scatteredCtaTokens, telegramTarget).passed, false);
-  assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**LATEST TG CTA**\n[Join TG](https://example.com/tg)" }, ctaBeforeFinalStep, telegramTarget).passed, false);
+  assert.equal(evaluate({ ctaEnabled: false, ctaContent: "LATEST TG CTA" }, telegramPreview, telegramTarget).passed, false);
+  assert.equal(evaluate({ ctaEnabled: true, ctaContent: "   \n " }, telegramPreview, telegramTarget).passed, false);
+  assert.equal(evaluate({ ctaEnabled: true, ctaContent: "**LATEST TG CTA**\n[Join TG](https://example.com/tg)" }, telegramPreview, telegramTarget).passed, true);
+  assert.equal(evaluate({ ctaEnabled: true, ctaContent: telegramQueryCta }, telegramQueryPreview, telegramTarget).passed, true);
+  assert.equal(evaluate({ ctaEnabled: true, ctaContent: "**LATEST DC CTA**\n[Join DC](https://example.com/dc)" }, discordPreview, discordTarget).passed, true);
+  assert.equal(evaluate({ ctaEnabled: true, ctaContent: "**LATEST TG CTA**\n[Join TG](https://example.com/tg)" }, forgedTelegramEvidence, telegramTarget).passed, false);
+  assert.equal(evaluate({ ctaEnabled: true, ctaContent: "**LATEST DC CTA**\n[Join DC](https://example.com/dc)" }, forgedDiscordEvidence, discordTarget).passed, false);
+  assert.equal(evaluate({ ctaEnabled: true, ctaContent: "**BTC**\n[Trade now](https://example.com/trade)" }, bodyCollisionWithoutLink, telegramTarget).passed, false);
+  assert.equal(evaluate({ ctaEnabled: true, ctaContent: "**BTC**" }, plainTextBodyCollision, telegramTarget).passed, false);
+  assert.equal(evaluate({ ctaEnabled: true, ctaContent: "**BTC**" }, exactBodySuffixCollision, telegramTarget).passed, false);
+  assert.equal(evaluate({ ctaEnabled: true, ctaContent: "**BTC**" }, forgedExactSuffixCollision, telegramTarget).passed, false);
+  assert.equal(evaluate({ ctaEnabled: true, ctaContent: "**LATEST TG CTA**\n[Join TG](https://example.com/tg)" }, wrongTelegramMethodField("sendMessage", "caption"), telegramTarget).passed, false);
+  assert.equal(evaluate({ ctaEnabled: true, ctaContent: "**LATEST TG CTA**\n[Join TG](https://example.com/tg)" }, wrongTelegramMethodField("sendPhoto", "text"), telegramTarget).passed, false);
+  assert.equal(evaluate({ ctaEnabled: true, ctaContent: "**BTC**" }, realPlannerPreview, telegramTarget).passed, true);
+  assert.equal(evaluate({ ctaEnabled: true, ctaContent: "**LATEST TG CTA**\n[Join TG](https://example.com/tg)" }, scatteredCtaTokens, telegramTarget).passed, false);
+  assert.equal(evaluate({ ctaEnabled: true, ctaContent: "**LATEST TG CTA**\n[Join TG](https://example.com/tg)" }, ctaBeforeFinalStep, telegramTarget).passed, false);
+  assert.equal(evaluate({ ctaEnabled: true, ctaContent: "**LATEST TG CTA**\n[Join TG](https://example.com/tg)" }, telegramPreview, telegramTarget, { previewChallenge: `${previewChallenge}x` }).passed, false);
 
   assert.match(acceptance, /data:\s*\{\s*jobId:\s*"crypto-daily",\s*targets:/);
   assert.match(previewRoute, /hydrateDestinationCtas/);
@@ -351,5 +376,9 @@ test("DEMO CTA acceptance requires enabled non-empty CTA hydrated into the final
   assert.match(previewRoute, /readOnlyPreview:\s*true/);
   assert.match(previewRoute, /buildAutomationTelegramPlans/);
   assert.match(previewRoute, /buildAutomationDiscordPlans/);
+  assert.match(previewRoute, /signCtaPreviewPlans/);
+  assert.match(previewRoute, /previewChallenge/);
+  assert.match(acceptance, /CTA_PREVIEW_EVIDENCE_SECRET/);
+  assert.match(acceptance, /randomBytes\(32\)/);
   assert.doesNotMatch(acceptance, /run-now|setMeta|saveRule|createDelivery/);
 });

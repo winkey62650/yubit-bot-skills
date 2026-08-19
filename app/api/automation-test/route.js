@@ -7,6 +7,9 @@ import {
 } from "../../../lib/automation-jobs.mjs";
 import { hydrateDestinationCtas } from "../../../lib/destination-cta.mjs";
 import { getDistributionRepository } from "../../../lib/distribution-repository.mjs";
+import ctaPreviewEvidence from "../../../lib/cta-preview-evidence.cjs";
+
+const { signCtaPreviewPlans } = ctaPreviewEvidence;
 
 export const maxDuration = 30;
 const MARKET_PREVIEW_JOBS = new Set(["crypto-daily", "weekly-calendar", "data-release-updates"]);
@@ -30,13 +33,19 @@ export async function POST(request) {
     });
     const jobId = String(body.jobId || "");
     if (result?.preview && MARKET_PREVIEW_JOBS.has(jobId) && hydratedTargets.length) {
+      const deliveryPlans = [
+        ...buildAutomationTelegramPlans(jobId, result.preview, hydratedTargets, result.preview.imageUrl),
+        ...buildAutomationDiscordPlans(jobId, result.preview, hydratedTargets, result.preview.imageUrl)
+      ];
       result.preview = {
         ...result.preview,
         targets: hydratedTargets,
-        deliveryPlans: [
-          ...buildAutomationTelegramPlans(jobId, result.preview, hydratedTargets, result.preview.imageUrl),
-          ...buildAutomationDiscordPlans(jobId, result.preview, hydratedTargets, result.preview.imageUrl)
-        ]
+        deliveryPlans: body.previewChallenge
+          ? signCtaPreviewPlans(deliveryPlans, {
+            secret: process.env.CTA_PREVIEW_EVIDENCE_SECRET,
+            challenge: body.previewChallenge,
+          })
+          : deliveryPlans
       };
     }
     return NextResponse.json({ ok: true, result });
