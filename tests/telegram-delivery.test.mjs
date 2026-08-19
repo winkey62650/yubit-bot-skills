@@ -47,6 +47,41 @@ test("approved Demo outbound messages use the Telegram user publisher", async ()
   }]);
 });
 
+test("an aborted delivery never invokes either Telegram transport", async () => {
+  const controller = new AbortController();
+  controller.abort(new Error("cancelled"));
+  let botCalls = 0;
+  let userCalls = 0;
+  const delivery = createTelegramDelivery({
+    env: publisherEnv(),
+    botApiCall: async () => { botCalls += 1; },
+    userPublisherCall: async () => { userCalls += 1; },
+  });
+
+  await assert.rejects(
+    delivery("speaker-token", "sendMessage", { chat_id: DEMO_GROUP_ID, text: "stop" }, { signal: controller.signal }),
+    /cancelled|abort/i,
+  );
+  assert.equal(botCalls, 0);
+  assert.equal(userCalls, 0);
+});
+
+test("Telegram delivery forwards AbortSignal to the selected user publisher", async () => {
+  const controller = new AbortController();
+  let publisherOptions;
+  const delivery = createTelegramDelivery({
+    env: publisherEnv(),
+    botApiCall: async () => ({ message_id: 1 }),
+    userPublisherCall: async (_token, _method, _payload, options) => {
+      publisherOptions = options;
+      return { message_id: 2 };
+    },
+  });
+
+  await delivery("speaker-token", "sendMessage", { chat_id: DEMO_GROUP_ID, text: "go" }, { signal: controller.signal });
+  assert.equal(publisherOptions.signal, controller.signal);
+});
+
 test("required user publishing never falls back to a visible Bot identity", async () => {
   let botCalls = 0;
   const delivery = createTelegramDelivery({

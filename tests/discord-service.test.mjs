@@ -651,6 +651,39 @@ test("Discord message delivery supports text and image embeds", async () => {
   });
 });
 
+test("Discord delivery forwards AbortSignal and rejects an in-flight abort", async () => {
+  const controller = new AbortController();
+  let observedSignal;
+  let markFetchStarted;
+  const fetchStarted = new Promise((resolve) => { markFetchStarted = resolve; });
+  const pending = sendDiscordMessage("channel-abort", { content: "cancel" }, {
+    token: "secret",
+    signal: controller.signal,
+    fetchImpl: async (_url, options) => {
+      observedSignal = options.signal;
+      markFetchStarted();
+      return new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true }));
+    },
+  });
+  await fetchStarted;
+  controller.abort(new Error("DISCORD_ABORTED"));
+
+  await assert.rejects(pending, /DISCORD_ABORTED/);
+  assert.equal(observedSignal, controller.signal);
+});
+
+test("an already-aborted Discord delivery does not invoke fetch", async () => {
+  const controller = new AbortController();
+  controller.abort(new Error("DISCORD_PRE_ABORTED"));
+  let fetchCalls = 0;
+  await assert.rejects(sendDiscordMessage("channel-abort", { content: "cancel" }, {
+    token: "secret",
+    signal: controller.signal,
+    fetchImpl: async () => { fetchCalls += 1; },
+  }), /DISCORD_PRE_ABORTED/);
+  assert.equal(fetchCalls, 0);
+});
+
 test("Discord message delivery uploads a local image as a multipart attachment", async () => {
   let request;
   const result = await sendDiscordMessage(

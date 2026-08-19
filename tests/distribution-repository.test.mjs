@@ -449,3 +449,14 @@ test("Postgres desktop publisher lease is atomic and only its owner can release 
   assert.match(calls[2].sql, /value->>'leaseId'=\$2/);
   assert.deepEqual(calls[2].params, ["desktop-publisher-lock-v1", "lease-1"]);
 });
+
+test("Postgres metadata prefix lookup escapes SQL LIKE wildcards", async () => {
+  const repository = Object.create(PostgresDistributionRepository.prototype);
+  let captured;
+  repository.sql = { async query(sql, params) { captured = { sql, params }; return []; } };
+
+  await repository.listMetaByPrefix("telemetry:%_\\scope:");
+
+  assert.match(captured.sql, /LIKE \$1 ESCAPE/);
+  assert.equal(captured.params[0], "telemetry:\\%\\_\\\\scope:%");
+});

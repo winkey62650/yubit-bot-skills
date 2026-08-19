@@ -1092,6 +1092,30 @@ test("an injected Telegram sender runs without a production bot token", async ()
   assert.equal(senderSignal, controller.signal);
 });
 
+test("Telegram bot API delivery honors pre-abort and in-flight abort", async () => {
+  const pre = new AbortController();
+  pre.abort(new Error("TELEGRAM_PRE_ABORTED"));
+  let preFetchCalls = 0;
+  await assert.rejects(automation.telegramCall("token", "sendMessage", { chat_id: "-1001", text: "stop" }, async () => {
+    preFetchCalls += 1;
+  }, { signal: pre.signal, env: { TELEGRAM_PUBLISHER_MODE: "bot" } }), /TELEGRAM_PRE_ABORTED/);
+  assert.equal(preFetchCalls, 0);
+
+  const inflight = new AbortController();
+  let observedSignal;
+  let markFetchStarted;
+  const fetchStarted = new Promise((resolve) => { markFetchStarted = resolve; });
+  const request = automation.telegramCall("token", "sendMessage", { chat_id: "-1001", text: "stop" }, async (_url, options) => {
+    observedSignal = options.signal;
+    markFetchStarted();
+    return new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true }));
+  }, { signal: inflight.signal, env: { TELEGRAM_PUBLISHER_MODE: "bot" } });
+  await fetchStarted;
+  inflight.abort(new Error("TELEGRAM_INFLIGHT_ABORTED"));
+  await assert.rejects(request, /TELEGRAM_INFLIGHT_ABORTED/);
+  assert.equal(observedSignal, inflight.signal);
+});
+
 test("market plans use platform renderers, strict paragraph chunks, and one final CTA", () => {
   const document = {
     templateId: "crypto-daily",

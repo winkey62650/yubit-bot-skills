@@ -24,6 +24,7 @@ import {
   resetAutomationManualReconciliation,
   runDueDistributionJobs,
   runDistributionAutomationRule,
+  telegramCall,
   validateRuleRuntime,
   verifyTelegramWebhookSecret
 } from "../lib/distribution-service.mjs";
@@ -37,6 +38,25 @@ import {
   pollDataReleaseUpdates,
   prepareDataReleaseDelivery,
 } from "../lib/data-release-monitor.mjs";
+
+test("distribution Telegram transport forwards AbortSignal and blocks an already-aborted fetch", async () => {
+  const controller = new AbortController();
+  controller.abort(new Error("DISTRIBUTION_TELEGRAM_ABORTED"));
+  let fetchCalls = 0;
+
+  await assert.rejects(telegramCall("forward-token", "sendMessage", {
+    chat_id: "-1001",
+    text: "stop"
+  }, {
+    signal: controller.signal,
+    env: { TELEGRAM_PUBLISHER_MODE: "bot" },
+    fetchImpl: async () => {
+      fetchCalls += 1;
+    }
+  }), /DISTRIBUTION_TELEGRAM_ABORTED/);
+
+  assert.equal(fetchCalls, 0);
+});
 
 test("desktop publisher health reflects a recent local bridge heartbeat", async () => {
   const repository = {
@@ -1633,6 +1653,29 @@ test("heartbeat and critical lease renewals never overlap", async () => {
   assert.equal(maximumActive, 1);
 });
 
+test("a hung lease renewal is bounded and cannot hang the execution", async () => {
+  const target = { id: "hung-renew-target", chatId: "-100594", threadId: 8 };
+  const harness = createAutomationReviewRepository({
+    id: "hung-renew-rule", kind: "automation", contentType: "crypto-daily", runOnce: true,
+    enabled: true, status: "ready", targets: [target]
+  });
+  harness.repository.renewMetaLease = async () => new Promise(() => {});
+  let runnerCalls = 0;
+
+  const result = await Promise.race([
+    runDistributionAutomationRule("hung-renew-rule", {
+      repository: harness.repository,
+      env: { AUTOMATION_EXECUTION_LEASE_RENEW_TIMEOUT_MS: "15", AUTOMATION_EXECUTION_LEASE_HEARTBEAT_MS: "5" },
+      runner: async () => { runnerCalls += 1; return { status: "success", preview: { targetResults: [] } }; }
+    }),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("EXECUTION_HUNG")), 150))
+  ]);
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.error, "AUTOMATION_EXECUTION_LEASE_LOST");
+  assert.equal(runnerCalls, 0);
+});
+
 test("lease release failure cannot overwrite a confirmed result or cause resend", async () => {
   const target = { id: "release-throw-target", chatId: "-100561", threadId: 8 };
   const harness = createAutomationReviewRepository({
@@ -1715,6 +1758,53 @@ test("manual reconciliation can only be acknowledged as sent by an authorized op
   assert.equal(reset.status, "completed");
   assert.equal(reset.enabled, false);
   assert.equal(afterReset.alreadyDelivered, true);
+  assert.equal(runnerCalls, 1);
+});
+
+test("acknowledging a recurring scheduled generation advances its schedule without disabling the rule", async () => {
+  const targets = [
+    { id: "recurring-manual-a", chatId: "-100595", threadId: 8 },
+    { id: "recurring-manual-b", chatId: "-100596", threadId: 8 }
+  ];
+  const failureOptions = { failMetaAfterRunner: true, failDeliveries: true };
+  const harness = createAutomationReviewRepository({
+    id: "recurring-manual-rule", kind: "automation", contentType: "crypto-daily",
+    schedulePreset: "daily-0800-utc", runOnce: false, enabled: true, status: "ready",
+    nextRunAt: "2026-08-19T08:00:00.000Z", targets
+  }, failureOptions);
+  let runnerCalls = 0;
+  const first = await runDueDistributionJobs(new Date("2026-08-19T08:00:01.000Z"), {
+    repository: harness.repository,
+    runner: async () => {
+      runnerCalls += 1;
+      harness.markRunnerStarted();
+      return { status: "partial", preview: { targetResults: [
+        { target: targets[0], status: "success", messageId: 1901 },
+        { target: targets[1], status: "failed", error: "UNKNOWN_SEND_STATE" }
+      ] } };
+    }
+  });
+  failureOptions.failMetaAfterRunner = false;
+  failureOptions.failDeliveries = false;
+  const generation = first.results[0].generation;
+
+  const reset = await resetAutomationManualReconciliation("recurring-manual-rule", {
+    repository: harness.repository,
+    actor: "operator@example.com",
+    expectedGeneration: generation,
+    resolution: "acknowledge-sent",
+    authorize: async ({ actor }) => actor === "operator@example.com",
+    now: new Date("2026-08-19T09:00:00.000Z")
+  });
+  const oldSlot = await runDueDistributionJobs(new Date("2026-08-19T09:00:01.000Z"), {
+    repository: harness.repository,
+    runner: async () => { runnerCalls += 1; throw new Error("OLD_GENERATION_RESENT"); }
+  });
+
+  assert.equal(reset.enabled, true);
+  assert.equal(reset.status, "ready");
+  assert.equal(reset.nextRunAt, "2026-08-20T08:00:00.000Z");
+  assert.equal(oldSlot.claimed, 0);
   assert.equal(runnerCalls, 1);
 });
 
@@ -2033,7 +2123,7 @@ test("failed event telemetry is queued and flushed on the next execution", async
   assert.equal(runnerCalls, 1);
 });
 
-test("telemetry failures use independent event keys and flush acknowledges only successful items", async () => {
+test("telemetry failures use independent event keys and a poison item does not block later items", async () => {
   const target = { id: "telemetry-isolated-target", chatId: "-100592", threadId: 8 };
   const harness = createAutomationReviewRepository({
     id: "telemetry-isolated-rule", kind: "automation", contentType: "crypto-daily", targets: [target]
@@ -2051,13 +2141,45 @@ test("telemetry failures use independent event keys and flush acknowledges only 
 
   await runDistributionAutomationRule("telemetry-isolated-rule", { repository: harness.repository, runner, now: new Date("2026-08-19T08:00:00Z") });
   await runDistributionAutomationRule("telemetry-isolated-rule", { repository: harness.repository, runner, now: new Date("2026-08-20T08:00:00Z") });
-  const queuedKeys = [...harness.meta.keys()].filter((key) => key.startsWith("automation-telemetry-pending-v1:telemetry-isolated-rule:"));
-  assert.equal(queuedKeys.length, 2);
-  assert.notEqual(queuedKeys[0], queuedKeys[1]);
+  const queued = [...harness.meta.entries()].filter(([, value]) => value?.kind === "automation-telemetry-pending");
+  assert.equal(queued.length, 2);
+  assert.notEqual(queued[0][0], queued[1][0]);
 
+  const poisonEventId = queued[0][1].eventId;
   fail = false;
+  harness.repository.updateEvent = async (...args) => {
+    if (args[0] === poisonEventId) throw new Error("POISON_TELEMETRY");
+    return originalUpdate(...args);
+  };
   await runDistributionAutomationRule("telemetry-isolated-rule", { repository: harness.repository, runner, now: new Date("2026-08-21T08:00:00Z") });
-  assert.equal([...harness.meta.keys()].filter((key) => key.startsWith("automation-telemetry-pending-v1:telemetry-isolated-rule:")).length, 0);
+  const remaining = [...harness.meta.values()].filter((value) => value?.kind === "automation-telemetry-pending");
+  assert.deepEqual(remaining.map((value) => value.eventId), [poisonEventId]);
+});
+
+test("telemetry rule scopes do not collide when one rule id prefixes another", async () => {
+  const target = { id: "scope-target", chatId: "-100597", threadId: 8 };
+  const short = createAutomationReviewRepository({ id: "a", kind: "automation", contentType: "crypto-daily", targets: [target] });
+  const longRule = { id: "a:b", kind: "automation", contentType: "crypto-daily", targets: [target] };
+  short.replaceRule({ id: "a", kind: "automation", contentType: "crypto-daily", targets: [target] });
+  const rules = new Map([["a", short.rule()], ["a:b", longRule]]);
+  const originalGetRule = short.repository.getRule;
+  short.repository.getRule = async (id) => structuredClone(rules.get(id) ?? await originalGetRule(id));
+  const originalUpdate = short.repository.updateEvent;
+  let fail = true;
+  short.repository.updateEvent = async (...args) => {
+    if (fail) throw new Error("TELEMETRY_DOWN");
+    return originalUpdate(...args);
+  };
+  let messageId = 2100;
+  const runner = async () => ({ status: "success", preview: { targetResults: [{ target, status: "success", messageId: ++messageId }] } });
+
+  await runDistributionAutomationRule("a", { repository: short.repository, runner, now: new Date("2026-08-19T08:00:00Z") });
+  await runDistributionAutomationRule("a:b", { repository: short.repository, runner, now: new Date("2026-08-19T08:01:00Z") });
+  fail = false;
+  await runDistributionAutomationRule("a", { repository: short.repository, runner, now: new Date("2026-08-20T08:00:00Z") });
+
+  const remaining = [...short.meta.values()].filter((value) => value?.kind === "automation-telemetry-pending");
+  assert.deepEqual(remaining.map((value) => value.ruleId), ["a:b"]);
 });
 
 test("scheduled release checks are rescheduled at the next whole minute after a non-publishable result", async () => {
