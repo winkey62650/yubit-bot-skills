@@ -183,6 +183,7 @@ test("Postgres creates delivery rows with their queued release payload", async (
   const payload = { releaseDeduplicationKey: "release-1", releaseTargetKey: "telegram:-1001:8" };
   const delivery = await repository.createDelivery({ eventId: "event-1", ruleId: "rule-1", targetId: "target-1", target: {}, status: "pending", payload });
   assert.match(captured.sql, /payload/);
+  assert.match(captured.sql, /EXCLUDED\.payload = '\{\}'::jsonb THEN distribution_deliveries\.payload/);
   assert.equal(captured.params[7], JSON.stringify(payload));
   assert.deepEqual(delivery.payload, payload);
 });

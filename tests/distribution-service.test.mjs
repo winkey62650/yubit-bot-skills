@@ -1213,6 +1213,64 @@ test("desktop publisher releases a queued release claim when its plan is missing
   assert.deepEqual(receipt.readyTargetKeys, [targetKey]);
 });
 
+test("stale desktop cleanup retries the delivery update before releasing its receipt", async () => {
+  const target = { id: "release-stale-compensation", chatId: "-1001", threadId: 8 };
+  const eventData = { id: "stale-compensation", sourceId: "stale-compensation", scheduledAt: "2026-07-20T00:00:00.000Z", values: { actual: "2.7%" } };
+  const deduplicationKey = buildReleaseDeduplicationKey(eventData);
+  const targetKey = buildDataReleaseTargetKey(target);
+  const meta = new Map();
+  const delivery = { id: "delivery-stale-compensation", eventId: "event-stale-compensation", ruleId: "rule-stale-compensation", status: "sending", attempts: 0, createdAt: "2026-07-20T00:00:00.000Z", target, payload: { releaseDeduplicationKey: deduplicationKey, releaseTargetKey: targetKey, releaseEvent: eventData } };
+  let updateFailures = 1;
+  const repository = {
+    async getMeta(key) { return structuredClone(meta.get(key) ?? null); }, async setMeta(key, value) { meta.set(key, structuredClone(value)); return value; },
+    async listDeliveries({ status }) { return delivery.status === status ? [delivery] : []; },
+    async updateDelivery(_id, patch) { if (updateFailures-- > 0) throw new Error("delivery update unavailable"); return Object.assign(delivery, patch); },
+  };
+  await prepareDataReleaseDelivery({ repository, deduplicationKey, event: eventData, targetKeys: [targetKey], now: "2026-07-20T00:00:00Z" });
+  await markDataReleaseTargetPending({ repository, deduplicationKey, targetKey, event: eventData, now: "2026-07-20T00:00:01Z" });
+
+  await assert.rejects(() => claimDesktopPublisherDelivery({ repository, env: { TELEGRAM_USER_PUBLISHER_TARGETS: "-1001" }, now: "2026-07-22T06:00:00Z" }), /delivery update unavailable/);
+  let receipt = await prepareDataReleaseDelivery({ repository, deduplicationKey, event: eventData, targetKeys: [targetKey], now: "2026-07-22T06:00:01Z" });
+  assert.deepEqual(receipt.pendingTargetKeys, [targetKey]);
+  assert.equal(delivery.status, "sending");
+
+  assert.equal(await claimDesktopPublisherDelivery({ repository, env: { TELEGRAM_USER_PUBLISHER_TARGETS: "-1001" }, now: "2026-07-22T06:00:02Z" }), null);
+  receipt = await prepareDataReleaseDelivery({ repository, deduplicationKey, event: eventData, targetKeys: [targetKey], now: "2026-07-22T06:00:03Z" });
+  assert.deepEqual(receipt.readyTargetKeys, [targetKey]);
+  assert.equal(delivery.status, "failed");
+});
+
+test("failed desktop cleanup compensates a transient receipt release failure on the next pass", async () => {
+  const target = { id: "release-receipt-compensation", chatId: "-1001", threadId: 8 };
+  const eventData = { id: "receipt-compensation", sourceId: "receipt-compensation", scheduledAt: "2026-08-19T12:30:00.000Z", values: { actual: "2.7%" } };
+  const deduplicationKey = buildReleaseDeduplicationKey(eventData);
+  const targetKey = buildDataReleaseTargetKey(target);
+  const meta = new Map();
+  const delivery = { id: "delivery-receipt-compensation", eventId: "event-receipt-compensation", ruleId: "rule-receipt-compensation", status: "pending", attempts: 0, target, payload: { releaseDeduplicationKey: deduplicationKey, releaseTargetKey: targetKey, releaseEvent: eventData } };
+  let receiptFailures = 0;
+  let failReceiptRelease = false;
+  const repository = {
+    async getMeta(key) { return structuredClone(meta.get(key) ?? null); },
+    async setMeta(key, value) {
+      const targetStatus = value?.entries?.[0]?.targets?.[targetKey]?.status;
+      if (failReceiptRelease && key === "market-content:release-delivery:v1" && targetStatus === "ready" && receiptFailures++ === 0) throw new Error("receipt store unavailable");
+      meta.set(key, structuredClone(value)); return value;
+    },
+    async listDeliveries({ status }) { return delivery.status === status ? [delivery] : []; }, async getRule() { return { kind: "automation" }; },
+    async claimDelivery() { delivery.status = "sending"; return delivery; }, async getEvent() { return { id: delivery.eventId, payload: { deliveryPlans: [] } }; },
+    async updateDelivery(_id, patch) { return Object.assign(delivery, patch); },
+  };
+  await prepareDataReleaseDelivery({ repository, deduplicationKey, event: eventData, targetKeys: [targetKey], now: "2026-08-19T12:30:00Z" });
+  await markDataReleaseTargetPending({ repository, deduplicationKey, targetKey, event: eventData, now: "2026-08-19T12:30:01Z" });
+  failReceiptRelease = true;
+
+  await assert.rejects(() => claimDesktopPublisherDelivery({ repository, env: { TELEGRAM_USER_PUBLISHER_TARGETS: "-1001" }, now: "2026-08-19T12:31:00Z" }), /receipt store unavailable/);
+  assert.equal(delivery.status, "failed");
+  assert.equal(await claimDesktopPublisherDelivery({ repository, env: { TELEGRAM_USER_PUBLISHER_TARGETS: "-1001" }, now: "2026-08-19T12:31:01Z" }), null);
+  const receipt = await prepareDataReleaseDelivery({ repository, deduplicationKey, event: eventData, targetKeys: [targetKey], now: "2026-08-19T12:31:02Z" });
+  assert.deepEqual(receipt.readyTargetKeys, [targetKey]);
+});
+
 test("desktop publisher resumes an old delivery when at least one step already succeeded", async () => {
   const delivery = {
     id: "delivery-old-progress",
@@ -1529,6 +1587,60 @@ test("queued release claim is released when delivery persistence fails after the
   assert.equal(result.status, "failed");
   const receipt = await prepareDataReleaseDelivery({ repository, deduplicationKey, event: eventData, targetKeys: [targetKey], now: "2026-08-19T12:32:00Z" });
   assert.deepEqual(receipt.readyTargetKeys, [targetKey]);
+});
+
+test("queued release rolls back every unsent target when the second delivery insert fails", async () => {
+  const targets = [
+    { id: "release-persist-a", chatId: "-1001", threadId: 8 },
+    { id: "release-persist-b", chatId: "-1002", threadId: 8 },
+  ];
+  const targetKeys = targets.map(buildDataReleaseTargetKey);
+  const eventData = { id: "us-cpi-multi-persist", sourceId: "us-cpi-multi-persist", scheduledAt: "2026-08-19T12:30:00.000Z", values: { actual: "2.7%" } };
+  const deduplicationKey = buildReleaseDeduplicationKey(eventData);
+  const meta = new Map();
+  const events = [];
+  const deliveries = [];
+  let insertAttempt = 0;
+  const rule = { id: "release-multi-persist-rule", kind: "automation", contentType: "data-release-updates", targets };
+  const repository = {
+    async getMeta(key) { return structuredClone(meta.get(key) ?? null); },
+    async setMeta(key, value) { meta.set(key, structuredClone(value)); return value; },
+    async getRule() { return rule; }, async listRules() { return []; },
+    async createEvent(value) { const saved = { id: `event-multi-${events.length + 1}`, ...value }; events.push(saved); return saved; },
+    async updateEvent(id, patch) { Object.assign(events.find((item) => item.id === id), patch); },
+    async createDelivery(value) {
+      insertAttempt += 1;
+      if (insertAttempt === 2) throw new Error("second delivery insert unavailable");
+      const saved = { id: `delivery-multi-${deliveries.length + 1}`, ...structuredClone(value) };
+      deliveries.push(saved);
+      return saved;
+    },
+    async updateDelivery(id, patch) { return Object.assign(deliveries.find((item) => item.id === id), patch); },
+    async saveMapping() {},
+  };
+  const runner = async () => {
+    await prepareDataReleaseDelivery({ repository, deduplicationKey, event: eventData, targetKeys, now: "2026-08-19T12:31:00Z" });
+    for (const targetKey of targetKeys) {
+      await markDataReleaseTargetPending({ repository, deduplicationKey, targetKey, event: eventData, now: "2026-08-19T12:31:01Z" });
+    }
+    return { status: "queued", preview: {
+      event: eventData,
+      deliveryReceipt: { deduplicationKey, event: eventData, expectedTargetKeys: targetKeys },
+      targetResults: targets.map((target, index) => ({ target, status: "pending", releaseTargetKey: targetKeys[index] })),
+      deliveryPlans: targets.map((target) => ({ target, steps: [{ method: "sendMessage", payload: { text: "release" } }] })),
+    } };
+  };
+
+  const first = await runDistributionAutomationRule(rule.id, { repository, runner, env: { TELEGRAM_DESKTOP_PUBLISHER_REQUIRED: "true", TELEGRAM_USER_PUBLISHER_TARGETS: "-1001,-1002" } });
+  assert.equal(first.status, "failed");
+  const afterFailure = await prepareDataReleaseDelivery({ repository, deduplicationKey, event: eventData, targetKeys, now: "2026-08-19T12:32:00Z" });
+  assert.deepEqual(afterFailure.readyTargetKeys.sort(), [...targetKeys].sort());
+  assert.equal(deliveries[0].status, "failed");
+  assert.equal(deliveries[0].payload.releaseDeduplicationKey, deduplicationKey);
+
+  const recovered = await runDistributionAutomationRule(rule.id, { repository, runner, env: { TELEGRAM_DESKTOP_PUBLISHER_REQUIRED: "true", TELEGRAM_USER_PUBLISHER_TARGETS: "-1001,-1002" } });
+  assert.equal(recovered.status, "queued");
+  assert.equal(deliveries.filter((delivery) => delivery.status === "pending").length, 2);
 });
 
 test("desktop release completion records its target receipt and globally acknowledges the release", async () => {

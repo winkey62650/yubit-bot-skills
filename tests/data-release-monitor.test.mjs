@@ -13,6 +13,7 @@ import {
   pollDataReleaseUpdates,
   releaseWindowStatus,
   selectReleasableEvents,
+  withDataReleaseRunLease,
 } from "../lib/data-release-monitor.mjs";
 
 const scheduledAt = "2026-08-19T12:30:00.000Z";
@@ -124,6 +125,38 @@ test("delivery receipt mutations are serialized across repository instances shar
 
   const snapshot = await prepareDataReleaseDelivery({ repository: firstRepository, deduplicationKey, event, targetKeys, now: "2026-08-19T12:31:10Z" });
   assert.deepEqual(snapshot.successfulTargetKeys.sort(), targetKeys);
+});
+
+test("data release run lease releases its owner record when the operation throws", async () => {
+  const leases = new Map();
+  const repository = {
+    async acquireMetaLease(key, lease) {
+      if (leases.has(key)) return null;
+      leases.set(key, structuredClone(lease));
+      return structuredClone(lease);
+    },
+    async getMetaLease(key) { return structuredClone(leases.get(key) ?? null); },
+    async renewMetaLease(key, leaseId, leaseUntil) {
+      const current = leases.get(key);
+      if (current?.leaseId !== leaseId) return null;
+      const renewed = { ...current, leaseUntil };
+      leases.set(key, renewed);
+      return structuredClone(renewed);
+    },
+    async releaseMetaLease(key, leaseId) {
+      if (leases.get(key)?.leaseId !== leaseId) return false;
+      leases.delete(key);
+      return true;
+    },
+  };
+
+  await assert.rejects(() => withDataReleaseRunLease({
+    repository,
+    leaseTtlMs: 20,
+    heartbeatMs: 5,
+    operation: async () => { throw new Error("operation failed"); },
+  }), /operation failed/);
+  assert.equal(leases.size, 0);
 });
 
 test("classifies the -5 minute through +15 minute release window inclusively", () => {

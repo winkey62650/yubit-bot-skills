@@ -840,11 +840,72 @@ test("Telegram release remains fail-closed without resending while its success r
   const first = await automation.runAutomationJob("data-release-updates", { ...options, now: "2026-08-19T12:31:00Z" });
   const second = await automation.runAutomationJob("data-release-updates", { ...options, now: "2026-08-19T12:32:00Z" });
 
+  repository.setMeta = base.setMeta.bind(base);
+  const recovered = await automation.runAutomationJob("data-release-updates", { ...options, now: "2026-08-19T12:33:00Z" });
+
   assert.equal(first.status, "queued");
   assert.equal(first.preview.targetResults[0].receiptFinalizationPending, true);
   assert.equal(second.status, "queued");
   assert.equal(second.preview.deliveryPlans.length, 0);
+  assert.equal(recovered.status, "success");
+  assert.equal(recovered.preview.deliveryPlans.length, 0);
+  assert.deepEqual((await repository.getMeta("market-content:release-state:v1")).publishedKeys, [recovered.preview.deduplicationKey]);
   assert.equal(sends, 1);
+});
+
+test("data-release run lease renews across its TTL and releases after an exception", async () => {
+  const calendar = { result: [{ id: "us-cpi-lease-heartbeat", title: "US CPI YoY", country: "US", importance: 3, date: "2026-08-19T12:30:00Z", actual: "2.7", forecast: "2.8", previous: "2.9", unit: "%" }] };
+  const meta = new Map();
+  const repository = () => ({
+    async getMeta(key) { return structuredClone(meta.get(key) ?? null); },
+    async setMeta(key, value) { meta.set(key, structuredClone(value)); return value; },
+    async acquireMetaLease(key, lease, now) {
+      const current = meta.get(key);
+      if (current?.leaseUntil && Date.parse(current.leaseUntil) > new Date(now).getTime()) return null;
+      meta.set(key, structuredClone(lease));
+      return structuredClone(lease);
+    },
+    async getMetaLease(key) { return structuredClone(meta.get(key) ?? null); },
+    async renewMetaLease(key, leaseId, leaseUntil) {
+      if (meta.get(key)?.leaseId !== leaseId) return null;
+      const renewed = { ...meta.get(key), leaseUntil };
+      meta.set(key, renewed);
+      return structuredClone(renewed);
+    },
+    async releaseMetaLease(key, leaseId) {
+      if (meta.get(key)?.leaseId !== leaseId) return false;
+      meta.delete(key);
+      return true;
+    },
+  });
+  let sends = 0;
+  let releaseFirstSend;
+  const firstSendStarted = new Promise((resolve) => { releaseFirstSend = resolve; });
+  const first = automation.runAutomationJob("data-release-updates", {
+    now: "2026-08-19T12:31:00Z", force: true, dryRun: false, repository: repository(),
+    releaseLeaseTtlMs: 20, releaseLeaseHeartbeatMs: 5,
+    fetchImpl: fixtureFetch(calendar), fetchReaction: async () => ({ prices: {}, sources: [], warnings: [] }),
+    targets: [{ platform: "discord", guildId: "g1", channelId: "c1" }],
+    discordSender: async () => {
+      sends += 1;
+      releaseFirstSend();
+      await new Promise((resolve) => setTimeout(resolve, 45));
+      return { id: "message-1" };
+    },
+  });
+  await firstSendStarted;
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  const second = automation.runAutomationJob("data-release-updates", {
+    now: "2026-08-19T12:31:00Z", force: true, dryRun: false, repository: repository(),
+    releaseLeaseTtlMs: 20, releaseLeaseHeartbeatMs: 5,
+    fetchImpl: fixtureFetch(calendar), fetchReaction: async () => ({ prices: {}, sources: [], warnings: [] }),
+    targets: [{ platform: "discord", guildId: "g1", channelId: "c1" }],
+    discordSender: async () => ({ id: `unexpected-${++sends}` }),
+  });
+  const results = await Promise.all([first, second]);
+  assert.deepEqual(results.map(({ status }) => status).sort(), ["skipped", "success"]);
+  assert.equal(sends, 1);
+  assert.equal(meta.has("market-content:release-run-lock:v1"), false);
 });
 
 test("concurrent data-release runs send once and acknowledge before the queued run polls", async () => {
