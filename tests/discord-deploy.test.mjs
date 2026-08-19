@@ -60,3 +60,24 @@ test("生产部署由 GitHub Actions 上传固定提交，不依赖服务器访�
   assert.match(deploy, /EXPECTED_COMMIT/);
   assert.match(deploy, /\.release-commit/);
 });
+
+test("生产部署在切换版本前强制验证 CTA preview evidence secret", () => {
+  const workflow = read(".github/workflows/deploy-production-server.yml");
+  const deploy = read("deploy/server/deploy.sh");
+
+  assert.match(workflow, /CTA_PREVIEW_EVIDENCE_SECRET: \$\{\{ secrets\.CTA_PREVIEW_EVIDENCE_SECRET \}\}/);
+  assert.match(workflow, /CTA_PREVIEW_EVIDENCE_SECRET is not configured/);
+  assert.match(workflow, /CTA_PREVIEW_EVIDENCE_SECRET_B64/);
+  assert.match(workflow, /printf 'CTA_PREVIEW_EVIDENCE_SECRET=%s\\n'/);
+  const workflowValidation = workflow.indexOf("assertStrongCtaPreviewEvidenceSecret");
+  const archiveBuild = workflow.indexOf('archive_path="$RUNNER_TEMP');
+  assert.ok(workflowValidation >= 0, "workflow must reject a weak secret before touching production");
+  assert.ok(workflowValidation < archiveBuild, "workflow validation must happen before upload");
+
+  const validation = deploy.indexOf("assertStrongCtaPreviewEvidenceSecret");
+  const installCurrent = deploy.indexOf('sudo ln -sfn "$release" "$APP_ROOT/current"');
+  assert.ok(validation >= 0, "deployment must invoke the production strength validator");
+  assert.ok(validation < installCurrent, "secret validation must happen before switching current release");
+  assert.match(deploy, /CTA_PREVIEW_EVIDENCE_SECRET/);
+  assert.doesNotMatch(deploy, /echo[^\n]*\$cta_preview_evidence_secret/);
+});

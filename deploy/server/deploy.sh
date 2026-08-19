@@ -102,6 +102,21 @@ if [[ "$installed_commit" != "$commit" ]]; then
 fi
 
 cd "$release"
+cta_preview_evidence_secret="$(sudo awk -F= '$1 == "CTA_PREVIEW_EVIDENCE_SECRET" { sub(/^[^=]*=/, ""); print; exit }' "$ENV_FILE")"
+if [[ -z "$cta_preview_evidence_secret" ]]; then
+  echo "CTA_PREVIEW_EVIDENCE_SECRET is not configured." >&2
+  exit 1
+fi
+CTA_PREVIEW_EVIDENCE_SECRET="$cta_preview_evidence_secret" "$NODE_HOME/bin/node" <<'NODE'
+try {
+  const { assertStrongCtaPreviewEvidenceSecret } = require("./lib/cta-preview-evidence.cjs");
+  assertStrongCtaPreviewEvidenceSecret(process.env.CTA_PREVIEW_EVIDENCE_SECRET);
+} catch {
+  console.error("CTA_PREVIEW_EVIDENCE_SECRET is missing or too weak.");
+  process.exit(1);
+}
+NODE
+unset cta_preview_evidence_secret
 npm ci --no-audit --no-fund
 npm run check
 npm test
