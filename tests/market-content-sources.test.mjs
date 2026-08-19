@@ -124,6 +124,24 @@ test("parses RSS and Atom XML entities while retaining source labels and raw ids
   assert.deepEqual(officialItems[0].categories, ["Regulation"]);
 });
 
+test("Atom links prefer alternate, fall back to no-rel, and exclude self or enclosure", async () => {
+  const official = await textFixture("official-feed.xml");
+  const [preferred] = parseRssFeed(official, { id: "sec", label: "SEC" });
+  const [fallback] = parseRssFeed(`
+    <feed xmlns="http://www.w3.org/2005/Atom">
+      <entry>
+        <id>fallback-link</id><title>Fallback</title>
+        <link rel="self" href="https://example.test/self" />
+        <link rel="enclosure" href="https://example.test/file.pdf" />
+        <link href="https://example.test/story" />
+      </entry>
+    </feed>
+  `, { id: "official" });
+
+  assert.match(preferred.url, /press-releases\/2026-17\?utm_source=rss/);
+  assert.equal(fallback.url, "https://example.test/story");
+});
+
 test("calendar fetch retries failed GET requests at most twice and returns source health", async () => {
   const fixture = await jsonFixture("tradingview-calendar.json");
   const calls = [];
@@ -150,6 +168,63 @@ test("calendar fetch retries failed GET requests at most twice and returns sourc
   assert.equal(result.sources[0].freshnessSeconds, 0);
   assert.match(result.sources[0].checkedAt, /^2026-|^20\d\d-/);
   assert.equal(result.sources[0].lastSuccessAt, result.sources[0].checkedAt);
+});
+
+test("GET retry policy skips permanent 4xx and delays retryable 429 responses", async () => {
+  let permanentCalls = 0;
+  const permanent = await fetchTradingViewCalendar({
+    fetchImpl: async () => {
+      permanentCalls += 1;
+      return jsonResponse({ error: "forbidden" }, 403);
+    },
+    timeoutMs: 20,
+  });
+  const delays = [];
+  let retryableCalls = 0;
+  const retryable = await fetchTradingViewCalendar({
+    fetchImpl: async () => {
+      retryableCalls += 1;
+      return jsonResponse({ error: "rate limited" }, 429);
+    },
+    timeoutMs: 20,
+    retryDelayMs: 7,
+    delayImpl: async (milliseconds) => delays.push(milliseconds),
+  });
+
+  assert.equal(permanentCalls, 1);
+  assert.equal(permanent.sources[0].status, "error");
+  assert.equal(retryableCalls, 3);
+  assert.deepEqual(delays, [7, 7]);
+  assert.equal(retryable.sources[0].status, "error");
+});
+
+test("calendar rejects a successful HTTP response with an unrecognized schema", async () => {
+  let calls = 0;
+  const result = await fetchTradingViewCalendar({
+    fetchImpl: async () => {
+      calls += 1;
+      return jsonResponse({ error: "upstream challenge" });
+    },
+    timeoutMs: 20,
+  });
+
+  assert.equal(calls, 3);
+  assert.deepEqual(result.data, []);
+  assert.equal(result.sources[0].status, "error");
+  assert.equal(result.sources[0].lastSuccessAt, null);
+  assert.match(result.warnings[0], /schema|payload/i);
+});
+
+test("calendar accepts an explicitly valid empty event array", async () => {
+  const result = await fetchTradingViewCalendar({
+    fetchImpl: async () => jsonResponse({ result: [] }),
+    timeoutMs: 20,
+  });
+
+  assert.deepEqual(result.data, []);
+  assert.equal(result.sources[0].status, "ok");
+  assert.equal(result.sources[0].lastSuccessAt, result.sources[0].checkedAt);
+  assert.deepEqual(result.warnings, []);
 });
 
 test("calendar fetch stops after three total attempts", async () => {
@@ -244,6 +319,52 @@ test("daily candidates fetch configured official and industry RSS without networ
   assert.deepEqual(result.warnings, []);
 });
 
+test("RSS validation rejects HTML and malformed XML but accepts a valid empty feed", async () => {
+  assert.throws(
+    () => parseRssFeed("<html><body>Access denied</body></html>", { id: "blocked" }),
+    /feed|XML|root/i,
+  );
+  assert.throws(
+    () => parseRssFeed("<rss><channel><item></channel></rss>", { id: "broken" }),
+    /feed|XML|malformed/i,
+  );
+
+  let blockedCalls = 0;
+  let malformedCalls = 0;
+  const invalid = await fetchCryptoDailyCandidates({
+    now: "2026-08-19T08:00:00.000Z",
+    feeds: [
+      { id: "blocked", label: "Blocked", url: "https://example.test/feed" },
+      { id: "malformed", label: "Malformed", url: "https://example.test/broken.xml" },
+    ],
+    fetchImpl: async (url) => {
+      if (String(url).endsWith("broken.xml")) {
+        malformedCalls += 1;
+        return new Response("<rss><channel><item></channel></rss>", { status: 200 });
+      }
+      blockedCalls += 1;
+      return new Response("<html><body>Access denied</body></html>", { status: 200 });
+    },
+    timeoutMs: 20,
+  });
+  const empty = await fetchCryptoDailyCandidates({
+    now: "2026-08-19T08:00:00.000Z",
+    feeds: [{ id: "empty", label: "Empty", url: "https://example.test/empty.xml" }],
+    fetchImpl: async () => new Response("<rss version=\"2.0\"><channel><title>Empty</title></channel></rss>", { status: 200 }),
+    timeoutMs: 20,
+  });
+
+  assert.equal(blockedCalls, 3);
+  assert.equal(malformedCalls, 3);
+  assert.deepEqual(invalid.sources.map((source) => source.status), ["error", "error"]);
+  assert.ok(invalid.sources.every((source) => source.lastSuccessAt === null));
+  assert.equal(invalid.warnings.length, 2);
+  assert.match(invalid.warnings.join("\n"), /feed|XML|root|malformed/i);
+  assert.deepEqual(empty.data, []);
+  assert.equal(empty.sources[0].status, "ok");
+  assert.deepEqual(empty.warnings, []);
+});
+
 test("market reaction falls back from Binance to OKX and treats DXY as optional", async () => {
   const okx = await jsonFixture("okx-tickers.json");
   let binanceCalls = 0;
@@ -279,6 +400,57 @@ test("market reaction falls back from Binance to OKX and treats DXY as optional"
   assert.ok(result.sources.some((source) => source.id === "binance" && source.status === "error"));
   assert.ok(result.sources.some((source) => source.id === "okx" && source.status === "ok" && source.fallbackFrom === "binance"));
   assert.match(result.warnings.join("\n"), /DXY/);
+});
+
+test("OKX fallback requests candles before the target and selects only completed non-future candles", async () => {
+  const target = Date.parse("2026-08-18T12:00:00.000Z");
+  const urls = [];
+  const fetchImpl = async (url) => {
+    const parsed = new URL(url);
+    urls.push(parsed);
+    if (parsed.hostname.includes("binance")) return jsonResponse({ code: -1121 }, 404);
+    if (parsed.pathname.includes("candles")) {
+      return jsonResponse({ code: "0", data: [
+        [String(target + 60_000), "0", "0", "0", "99999", "0", "0", "0", "1"],
+        [String(target), "0", "0", "0", "88888", "0", "0", "0", "0"],
+        [String(target - 60_000), "0", "0", "0", "65000", "0", "0", "0", "1"],
+      ] });
+    }
+    return jsonResponse({ code: "0", data: [{ last: "65650", ts: String(target + 15 * 60_000) }] });
+  };
+
+  const result = await fetchMarketReaction({
+    beforeAt: target,
+    now: target + 15 * 60_000,
+    fetchImpl,
+    symbols: ["BTC"],
+  });
+  const candleUrl = urls.find((url) => url.pathname.includes("candles"));
+
+  assert.equal(urls.filter((url) => url.hostname.includes("binance")).length, 1);
+  assert.equal(candleUrl.searchParams.get("after"), String(target));
+  assert.equal(candleUrl.searchParams.get("before"), null);
+  assert.equal(candleUrl.searchParams.get("bar"), "1m");
+  assert.equal(result.data.BTC.beforePrice, 65000);
+  assert.equal(result.data.BTC.beforePriceAt, new Date(target - 60_000).toISOString());
+});
+
+test("market reaction runs independent symbols within one shared deadline", async () => {
+  const startedAt = Date.now();
+  const result = await settleWithin(fetchMarketReaction({
+    beforeAt: "2026-08-18T12:00:00.000Z",
+    now: "2026-08-18T12:15:00.000Z",
+    symbols: ["BTC", "ETH"],
+    timeoutMs: 15,
+    deadlineMs: 60,
+    fetchImpl: async () => new Promise((resolve) => {
+      setTimeout(() => resolve(jsonResponse({ price: "65000" })), 40);
+    }),
+  }), 500, "market reaction exceeded its overall deadline");
+
+  assert.ok(Date.now() - startedAt < 140);
+  assert.deepEqual(result.data, {});
+  assert.equal(result.warnings.length, 2);
 });
 
 test("market reaction uses Binance when primary prices are available", async () => {
