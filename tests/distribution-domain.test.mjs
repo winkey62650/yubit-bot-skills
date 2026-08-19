@@ -638,6 +638,86 @@ test("market content migration never invents a destination missing from the lega
   assert.equal(release.enabled, false);
 });
 
+test("market content migration accepts only a correctly typed deterministic sibling", () => {
+  const calendar = {
+    id: "calendar",
+    kind: "automation",
+    name: "Calendar",
+    contentType: "daily-events",
+    schedulePreset: "daily-0800-utc",
+    targets: [{ chatId: "-1001", threadId: 3 }],
+    enabled: true,
+  };
+  const release = {
+    id: "calendar-data-release-updates",
+    kind: "automation",
+    name: "Release",
+    contentType: "data-release-updates",
+    schedulePreset: "event-driven",
+    targets: [{ chatId: "-1001", threadId: 3 }],
+    enabled: false,
+  };
+
+  const migrated = migrateMarketContentRules([calendar, release], new Date("2026-08-19T10:40:01.000Z"));
+  assert.equal(migrated.rules.length, 2);
+  assert.equal(migrated.rules.filter((rule) => rule.contentType === "data-release-updates").length, 1);
+  assert.throws(
+    () => migrateMarketContentRules([calendar, { ...release, kind: "broadcast", contentType: null }]),
+    /conflict.*calendar-data-release-updates/i,
+  );
+});
+
+test("market content migration reuses an explicitly linked non-derived release and rejects an unlinked one", () => {
+  const calendar = {
+    id: "calendar",
+    kind: "automation",
+    name: "Calendar",
+    contentType: "daily-events",
+    schedulePreset: "daily-0800-utc",
+    targets: [{ chatId: "-1001", threadId: 3 }],
+    enabled: true,
+  };
+  const linked = {
+    id: "custom-release",
+    kind: "automation",
+    name: "Release",
+    contentType: "data-release-updates",
+    schedulePreset: "event-driven",
+    targets: [{ chatId: "-1001", threadId: 3 }],
+    enabled: false,
+    importedFrom: "calendar",
+  };
+
+  const migrated = migrateMarketContentRules([calendar, linked], new Date("2026-08-19T10:40:01.000Z"));
+  assert.equal(migrated.rules.length, 2);
+  assert.equal(migrated.rules.find((rule) => rule.contentType === "data-release-updates").id, "custom-release");
+  assert.ok(!migrated.rules.some((rule) => rule.id === "calendar-data-release-updates"));
+  assert.throws(
+    () => migrateMarketContentRules([calendar, { ...linked, importedFrom: null }]),
+    /conflict.*unlinked data-release-updates/i,
+  );
+  assert.throws(
+    () => migrateMarketContentRules([calendar, { ...linked, importedFrom: "missing-calendar" }]),
+    /conflict.*missing-calendar/i,
+  );
+});
+
+test("market content migration rejects duplicate input rule identities", () => {
+  const duplicate = {
+    id: "duplicate-calendar",
+    kind: "automation",
+    name: "Calendar",
+    contentType: "daily-events",
+    schedulePreset: "daily-0800-utc",
+    targets: [],
+    enabled: false,
+  };
+  assert.throws(
+    () => migrateMarketContentRules([duplicate, { ...duplicate, name: "Another calendar" }]),
+    /duplicate rule id.*duplicate-calendar/i,
+  );
+});
+
 test("enabled automation rules receive a future first run while disabled rules stay unscheduled", () => {
   const now = new Date("2026-07-14T08:03:00.000Z");
   const enabled = ensureAutomationNextRunAt({ kind: "automation", enabled: true, schedulePreset: "hourly", nextRunAt: null }, now);

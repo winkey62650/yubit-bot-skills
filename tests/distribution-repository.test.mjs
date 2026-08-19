@@ -26,12 +26,15 @@ test("JSON reads expose migrated market rules without implicitly persisting them
   };
   await writeFile(join(directory, "distribution-center.json"), JSON.stringify(stored));
   try {
-    const state = await new JsonDistributionRepository().read();
+    const repository = new JsonDistributionRepository();
+    const state = await repository.read();
     assert.deepEqual(state.rules.map((rule) => rule.contentType), ["weekly-calendar", "data-release-updates"]);
     assert.equal(state.rules[1].enabled, false);
+    await repository.setMeta("migration-review", { status: "checked" });
     const unchanged = JSON.parse(await readFile(join(directory, "distribution-center.json"), "utf8"));
     assert.equal(unchanged.rules.length, 1);
     assert.equal(unchanged.rules[0].contentType, "daily-events");
+    assert.deepEqual(unchanged.meta["migration-review"], { status: "checked" });
   } finally {
     if (previousDirectory === undefined) delete process.env.JSON_STORE_DIRECTORY;
     else process.env.JSON_STORE_DIRECTORY = previousDirectory;
