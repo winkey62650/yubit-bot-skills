@@ -124,6 +124,24 @@ test("deduplication does not merge similar reports with different amounts or eve
   assert.equal(deduplicateCryptoStories([inflow, outflow]).length, 2);
 });
 
+test("deduplication does not merge the same entities and action when the event objects differ", () => {
+  const etfFiling = story({
+    id: "sec-etf-filing",
+    canonicalId: undefined,
+    title: "SEC approves BlackRock Bitcoin ETF filing",
+    summary: "The regulator approved BlackRock's spot ETF filing.",
+  });
+  const custodyLicense = story({
+    id: "sec-custody-license",
+    canonicalId: undefined,
+    title: "SEC approves BlackRock crypto custody license",
+    summary: "The regulator approved BlackRock's custody license.",
+    url: "https://industry.example/blackrock-custody-license",
+  });
+
+  assert.equal(deduplicateCryptoStories([etfFiling, custodyLicense]).length, 2);
+});
+
 test("ranking is deterministic and independent of candidate input order", () => {
   const official = story({ id: "official", title: "Official ETF filing", url: "https://sec.gov/official", source: { id: "sec", kind: "official", label: "SEC" }, importance: 2 });
   const recent = story({ id: "recent", title: "Recent ETF report", url: "https://wire.example/recent", publishedAt: "2026-08-19T07:59:00Z", importance: 2 });
@@ -271,6 +289,23 @@ test("data release documents enforce the allowlist and omit absent values and re
   assert.ok(!document.nodes.some((node) => node.type === "metric" && node.label === "Previous"));
   assert.deepEqual(document.nodes.filter((node) => node.type === "metric" && ["BTC", "ETH", "DXY"].includes(node.label)).map((node) => node.label), ["BTC", "DXY"]);
   assert.throws(() => buildDataReleaseDocument({ event: { indicator: "bitcoin-dominance" } }), /allowlist/i);
+});
+
+test("data release documents evaluate unknown raw components but do not render them", () => {
+  const document = buildDataReleaseDocument({
+    event: {
+      title: "US Employment Report",
+      components: [
+        { indicator: "nonfarm-payrolls", title: "Nonfarm Payrolls", values: { actual: "160K", forecast: "200K" } },
+        { indicator: "labor-force-participation", title: "Labor Force Participation", values: { actual: "62.8%", forecast: "62.7%" } },
+      ],
+      source: { label: "BLS", url: "https://bls.gov/jobs-report" },
+    },
+  });
+
+  assert.equal(document.impact, "Neutral");
+  assert.ok(document.nodes.some((node) => node.type === "heading" && node.text === "Nonfarm Payrolls"));
+  assert.doesNotMatch(JSON.stringify(document), /labor force participation|62\.8%|62\.7%/i);
 });
 
 test("Telegram renders Bot API HTML with escaped text and attributes and no Markdown links", () => {
