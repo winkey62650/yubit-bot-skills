@@ -227,7 +227,7 @@ test("DEMO CTA acceptance requires enabled non-empty CTA hydrated into the final
   const automation = await import(new URL("lib/automation-jobs.mjs", root));
   const { evaluateDemoCtaAcceptance } = require("../scripts/accept-demo-target-cta.cjs");
   const { signCtaPreviewPlans } = require("../lib/cta-preview-evidence.cjs");
-  const evidenceSecret = randomBytes(32).toString("base64url");
+  const evidenceSecret = randomBytes(32).toString("hex");
   const previewChallenge = randomBytes(32).toString("base64url");
   const withEvidence = (preview) => ({
     ...preview,
@@ -379,6 +379,7 @@ test("DEMO CTA acceptance requires enabled non-empty CTA hydrated into the final
   assert.match(previewRoute, /signCtaPreviewPlans/);
   assert.match(previewRoute, /previewChallenge/);
   assert.match(acceptance, /CTA_PREVIEW_EVIDENCE_SECRET/);
+  assert.match(acceptance, /assertStrongCtaPreviewEvidenceSecret/);
   assert.match(acceptance, /randomBytes\(32\)/);
   assert.doesNotMatch(acceptance, /run-now|setMeta|saveRule|createDelivery/);
 });

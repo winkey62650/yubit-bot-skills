@@ -1,7 +1,10 @@
 const { request } = require("playwright");
 const { randomBytes } = require("node:crypto");
 const { authorizeProductionConfiguration, buildVercelProtectionHeaders } = require("../lib/release-gate.cjs");
-const { verifyCtaPreviewBoundary } = require("../lib/cta-preview-evidence.cjs");
+const {
+  assertStrongCtaPreviewEvidenceSecret,
+  verifyCtaPreviewBoundary,
+} = require("../lib/cta-preview-evidence.cjs");
 
 async function json(response, label) {
   const payload = await response.json().catch(() => ({}));
@@ -119,9 +122,7 @@ async function main() {
   if (!username || !password) {
     throw new Error("TEST_USERNAME/TEST_PASSWORD or AUTH_USERNAME/AUTH_PASSWORD are required");
   }
-  if (Buffer.byteLength(evidenceSecret, "utf8") < 32) {
-    throw new Error("CTA_PREVIEW_EVIDENCE_SECRET must contain at least 32 bytes");
-  }
+  assertStrongCtaPreviewEvidenceSecret(evidenceSecret);
   const previewChallenge = randomBytes(32).toString("base64url");
   const api = await request.newContext({
     baseURL: baseUrl,

@@ -137,7 +137,8 @@ test("server deployment removes conflicting JSON storage settings from the prima
   assert.match(deployScript, /awk .*JSON_STORE_BACKEND\|JSON_STORE_DIRECTORY/);
   assert.match(deployScript, /JSON_STORE_BACKEND=local/);
   assert.match(deployScript, /JSON_STORE_DIRECTORY=%s/);
-  assert.match(deployScript, /install -m 0600 -o root -g root .*"\$ENV_FILE"/);
+  assert.match(deployScript, /install -m 0600 -o root -g root .*"\$env_pending"/);
+  assert.match(deployScript, /mv -f "\$env_pending" "\$ENV_FILE"/);
 });
 
 test("server deployment can prune old releases containing root-owned build files", async () => {

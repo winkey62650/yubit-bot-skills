@@ -21,7 +21,9 @@ function fixture(platform = "telegram") {
       : { platform, chatId: "-1001", threadId: 8 },
     steps: [{
       method: "sendMessage",
-      payload: { [field]: payload },
+      payload: discord
+        ? { [field]: payload }
+        : { chat_id: "-1001", message_thread_id: 8, [field]: payload },
       ctaBoundary: {
         kind: "destination-cta",
         placement: "suffix",
@@ -38,7 +40,7 @@ function fixture(platform = "telegram") {
 }
 
 test("CTA preview evidence binds the challenge, destination, payload, CTA and exact final send step", () => {
-  const secret = randomBytes(32).toString("base64url");
+  const secret = randomBytes(32).toString("hex");
   const challenge = randomBytes(32).toString("base64url");
   for (const platform of ["telegram", "discord"]) {
     const [plan] = signCtaPreviewPlans(fixture(platform), { secret, challenge });
@@ -91,6 +93,14 @@ test("CTA preview evidence fails closed without a strong operational secret or v
     "ab".repeat(16),
     `${"a".repeat(24)}bcdefghi`,
     "password".repeat(4),
+    "abcdefghijklmnopqrstuvwxyz123456",
+    "0123456789abcdefghijklmnopqrstuv",
+    "CorrectHorseBatteryStaple!12345678",
+    "this-is-a-public-demo-secret-12345",
+    "12345678901234567890123456789012",
+    "abcdefghijklmnopqrstuvwxyzABCDEF",
+    `${"a".repeat(64)}\nINJECTED=value`,
+    randomBytes(32).toString("hex").toUpperCase(),
   ]) {
     assert.throws(
       () => signCtaPreviewPlans(fixture(), { secret, challenge }),
@@ -99,12 +109,12 @@ test("CTA preview evidence fails closed without a strong operational secret or v
         && !error.message.includes(secret),
     );
   }
-  assert.doesNotThrow(() => assertStrongCtaPreviewEvidenceSecret(randomBytes(32).toString("base64url")));
-  assert.throws(() => signCtaPreviewPlans(fixture(), { secret: randomBytes(32).toString("base64url"), challenge: "predictable" }), /preview challenge/);
+  assert.doesNotThrow(() => assertStrongCtaPreviewEvidenceSecret(randomBytes(32).toString("hex")));
+  assert.throws(() => signCtaPreviewPlans(fixture(), { secret: randomBytes(32).toString("hex"), challenge: "predictable" }), /preview challenge/);
 });
 
 test("CTA preview evidence binds the canonical full payload while ignoring object key order", () => {
-  const secret = randomBytes(32).toString("base64url");
+  const secret = randomBytes(32).toString("hex");
   const challenge = randomBytes(32).toString("base64url");
 
   for (const platform of ["telegram", "discord"]) {
@@ -114,6 +124,8 @@ test("CTA preview evidence binds the canonical full payload while ignoring objec
           text: plans[0].steps[0].payload.text,
           parse_mode: "HTML",
           link_preview_options: { prefer_small_media: true, is_disabled: false },
+          message_thread_id: 8,
+          chat_id: "-1001",
         }
       : {
           content: plans[0].steps[0].payload.content,
@@ -126,6 +138,8 @@ test("CTA preview evidence binds the canonical full payload while ignoring objec
           link_preview_options: { is_disabled: false, prefer_small_media: true },
           parse_mode: "HTML",
           text: reordered.steps[0].payload.text,
+          chat_id: "-1001",
+          message_thread_id: 8,
         }
       : {
           allowed_mentions: { replied_user: false, parse: [] },
@@ -155,7 +169,7 @@ test("CTA preview evidence binds the canonical full payload while ignoring objec
 });
 
 test("CTA preview evidence rejects payloads that cannot be represented as strict canonical JSON", () => {
-  const secret = randomBytes(32).toString("base64url");
+  const secret = randomBytes(32).toString("hex");
   const challenge = randomBytes(32).toString("base64url");
   const invalidValues = [undefined, Number.NaN, Number.POSITIVE_INFINITY, 1n, () => true];
   for (const invalid of invalidValues) {
@@ -169,10 +183,30 @@ test("CTA preview evidence rejects payloads that cannot be represented as strict
   const cyclic = fixture();
   cyclic[0].steps[0].payload.cyclic = cyclic[0].steps[0].payload;
   assert.throws(() => signCtaPreviewPlans(cyclic, { secret, challenge }), /canonical JSON payload/);
+
+  const arrayCases = [
+    (array) => { delete array[0]; },
+    (array) => { array.extra = true; },
+    (array) => { array[4294967295] = true; },
+    (array) => { array[Symbol("hidden")] = true; },
+    (array) => { array[0] = undefined; },
+    (array) => { array[0] = () => true; },
+    (array) => { array[0] = Number.NaN; },
+    (array) => { array[0] = Number.POSITIVE_INFINITY; },
+    (array) => { array[0] = 1n; },
+    (array) => { array[0] = array; },
+  ];
+  for (const mutate of arrayCases) {
+    const plans = fixture();
+    const items = ["safe"];
+    mutate(items);
+    plans[0].steps[0].payload.items = items;
+    assert.throws(() => signCtaPreviewPlans(plans, { secret, challenge }), /canonical JSON payload/);
+  }
 });
 
 test("CTA preview evidence requires an explicit platform consistent with target identity", () => {
-  const secret = randomBytes(32).toString("base64url");
+  const secret = randomBytes(32).toString("hex");
   const challenge = randomBytes(32).toString("base64url");
   const discordAsTelegram = fixture("discord");
   discordAsTelegram[0].target.platform = "telegram";
@@ -199,4 +233,39 @@ test("CTA preview evidence requires an explicit platform consistent with target 
       challenge,
     }), false);
   }
+});
+
+test("Telegram evidence binds payload routing to the target chat and normalized topic", () => {
+  const secret = randomBytes(32).toString("hex");
+  const challenge = randomBytes(32).toString("base64url");
+
+  for (const mutate of [
+    (plan) => { plan[0].steps[0].payload.chat_id = "-1002"; },
+    (plan) => { plan[0].steps[0].payload.message_thread_id = 9; },
+    (plan) => { delete plan[0].steps[0].payload.chat_id; },
+    (plan) => { plan[0].target.topicId = 9; },
+  ]) {
+    const plans = fixture();
+    mutate(plans);
+    assert.throws(() => signCtaPreviewPlans(plans, { secret, challenge }), /Telegram payload destination/);
+  }
+
+  for (const emptyTopic of [undefined, null, 0, "0", ""]) {
+    const plans = fixture();
+    plans[0].target.threadId = null;
+    if (emptyTopic === undefined) delete plans[0].steps[0].payload.message_thread_id;
+    else plans[0].steps[0].payload.message_thread_id = emptyTopic;
+    assert.doesNotThrow(() => signCtaPreviewPlans(plans, { secret, challenge }));
+  }
+
+  const [signed] = signCtaPreviewPlans(fixture(), { secret, challenge });
+  signed.steps[0].payload.chat_id = "-1002";
+  assert.equal(verifyCtaPreviewBoundary({
+    plan: signed,
+    step: signed.steps[0],
+    stepIndex: 0,
+    stepCount: 1,
+    secret,
+    challenge,
+  }), false);
 });

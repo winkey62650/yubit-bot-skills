@@ -64,20 +64,30 @@ test("生产部署由 GitHub Actions 上传固定提交，不依赖服务器访�
 test("生产部署在切换版本前强制验证 CTA preview evidence secret", () => {
   const workflow = read(".github/workflows/deploy-production-server.yml");
   const deploy = read("deploy/server/deploy.sh");
+  const envExample = read(".env.example");
 
   assert.match(workflow, /CTA_PREVIEW_EVIDENCE_SECRET: \$\{\{ secrets\.CTA_PREVIEW_EVIDENCE_SECRET \}\}/);
   assert.match(workflow, /CTA_PREVIEW_EVIDENCE_SECRET is not configured/);
-  assert.match(workflow, /CTA_PREVIEW_EVIDENCE_SECRET_B64/);
+  assert.doesNotMatch(workflow, /CTA_PREVIEW_EVIDENCE_SECRET_B64|cta_preview_evidence_secret_b64/);
+  assert.doesNotMatch(workflow, /CTA_PREVIEW_EVIDENCE_SECRET[^\n]*ssh|ssh[^\n]*CTA_PREVIEW_EVIDENCE_SECRET/);
+  assert.match(workflow, /chmod 600 "\$cta_secret_file"/);
+  assert.match(workflow, /cat >"\$remote_secret_file"/);
   assert.match(workflow, /printf 'CTA_PREVIEW_EVIDENCE_SECRET=%s\\n'/);
   const workflowValidation = workflow.indexOf("assertStrongCtaPreviewEvidenceSecret");
   const archiveBuild = workflow.indexOf('archive_path="$RUNNER_TEMP');
   assert.ok(workflowValidation >= 0, "workflow must reject a weak secret before touching production");
   assert.ok(workflowValidation < archiveBuild, "workflow validation must happen before upload");
+  assert.ok(workflowValidation < workflow.indexOf("sshpass -e scp"));
+  assert.ok(workflowValidation < workflow.indexOf("sshpass -e ssh"));
+  assert.match(workflow, /assertStrongCtaPreviewEvidenceSecret[\s\S]*sudo install -m 0600/);
 
   const validation = deploy.indexOf("assertStrongCtaPreviewEvidenceSecret");
   const installCurrent = deploy.indexOf('sudo ln -sfn "$release" "$APP_ROOT/current"');
   assert.ok(validation >= 0, "deployment must invoke the production strength validator");
   assert.ok(validation < installCurrent, "secret validation must happen before switching current release");
+  assert.ok(validation < deploy.indexOf("sudo install -m 0600"), "secret validation must happen before production env updates");
+  assert.match(deploy, /sudo install -m 0600[\s\S]*sudo mv -f [^\n]*"\$ENV_FILE"/);
   assert.match(deploy, /CTA_PREVIEW_EVIDENCE_SECRET/);
   assert.doesNotMatch(deploy, /echo[^\n]*\$cta_preview_evidence_secret/);
+  assert.match(envExample, /exactly 64 lowercase hexadecimal characters/);
 });

@@ -47,16 +47,6 @@ discord_credentials_key="$(sudo awk -F= '$1 == "DISCORD_CREDENTIALS_ENCRYPTION_K
 if [[ -z "$discord_credentials_key" ]]; then
   discord_credentials_key="$(openssl rand -hex 32)"
 fi
-primary_env="$(mktemp)"
-sudo awk '!/^(JSON_STORE_BACKEND|JSON_STORE_DIRECTORY|DISCORD_APP_ID|DISCORD_PUBLIC_KEY|DISCORD_BOT_TOKEN|DISCORD_GATEWAY_ENABLED|DISCORD_CREDENTIALS_ENCRYPTION_KEY)=/' "$ENV_FILE" >"$primary_env"
-{
-  printf 'JSON_STORE_BACKEND=local\n'
-  printf 'JSON_STORE_DIRECTORY=%s\n' "$STATE_ROOT"
-  printf 'DISCORD_CREDENTIALS_ENCRYPTION_KEY=%s\n' "$discord_credentials_key"
-} >>"$primary_env"
-sudo install -m 0600 -o root -g root "$primary_env" "$ENV_FILE"
-rm -f "$primary_env"
-unset discord_credentials_key
 
 if [[ -n "$SOURCE_DIR" ]]; then
   if [[ ! "${EXPECTED_COMMIT:-}" =~ ^[0-9a-f]{40}$ ]]; then
@@ -102,6 +92,11 @@ if [[ "$installed_commit" != "$commit" ]]; then
 fi
 
 cd "$release"
+cta_preview_evidence_secret_count="$(sudo awk -F= '$1 == "CTA_PREVIEW_EVIDENCE_SECRET" { count += 1 } END { print count + 0 }' "$ENV_FILE")"
+if [[ "$cta_preview_evidence_secret_count" != "1" ]]; then
+  echo "CTA_PREVIEW_EVIDENCE_SECRET must be configured exactly once." >&2
+  exit 1
+fi
 cta_preview_evidence_secret="$(sudo awk -F= '$1 == "CTA_PREVIEW_EVIDENCE_SECRET" { sub(/^[^=]*=/, ""); print; exit }' "$ENV_FILE")"
 if [[ -z "$cta_preview_evidence_secret" ]]; then
   echo "CTA_PREVIEW_EVIDENCE_SECRET is not configured." >&2
@@ -112,11 +107,32 @@ try {
   const { assertStrongCtaPreviewEvidenceSecret } = require("./lib/cta-preview-evidence.cjs");
   assertStrongCtaPreviewEvidenceSecret(process.env.CTA_PREVIEW_EVIDENCE_SECRET);
 } catch {
-  console.error("CTA_PREVIEW_EVIDENCE_SECRET is missing or too weak.");
+  console.error("CTA_PREVIEW_EVIDENCE_SECRET is missing or invalid.");
   process.exit(1);
 }
 NODE
 unset cta_preview_evidence_secret
+unset cta_preview_evidence_secret_count
+
+primary_env="$(mktemp)"
+env_pending="${ENV_FILE}.pending-$$"
+cleanup_env_update() {
+  rm -f "$primary_env"
+  sudo rm -f "$env_pending"
+}
+trap cleanup_env_update EXIT
+sudo awk '!/^(JSON_STORE_BACKEND|JSON_STORE_DIRECTORY|DISCORD_APP_ID|DISCORD_PUBLIC_KEY|DISCORD_BOT_TOKEN|DISCORD_GATEWAY_ENABLED|DISCORD_CREDENTIALS_ENCRYPTION_KEY)=/' "$ENV_FILE" >"$primary_env"
+{
+  printf 'JSON_STORE_BACKEND=local\n'
+  printf 'JSON_STORE_DIRECTORY=%s\n' "$STATE_ROOT"
+  printf 'DISCORD_CREDENTIALS_ENCRYPTION_KEY=%s\n' "$discord_credentials_key"
+} >>"$primary_env"
+sudo install -m 0600 -o root -g root "$primary_env" "$env_pending"
+sudo mv -f "$env_pending" "$ENV_FILE"
+rm -f "$primary_env"
+env_pending=""
+trap - EXIT
+unset discord_credentials_key
 npm ci --no-audit --no-fund
 npm run check
 npm test
