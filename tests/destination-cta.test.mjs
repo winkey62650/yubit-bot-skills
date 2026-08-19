@@ -11,6 +11,10 @@ import {
   saveDestinationCtaRegistry,
 } from "../lib/destination-cta.mjs";
 import { composeManualMessage } from "../lib/manual-cta.mjs";
+import {
+  buildAutomationDiscordPlans,
+  buildAutomationTelegramPlans,
+} from "../lib/automation-jobs.mjs";
 
 function repository() {
   const meta = new Map();
@@ -176,4 +180,55 @@ test("legacy Discord channel CTA records are read as one server CTA", async () =
   const registry = await loadDestinationCtaRegistry(repo);
   assert.equal(registry["discord:guild-1"].ctaContent, "Legacy Discord CTA\nhttps://example.com/legacy");
   assert.equal(registry["discord:guild-1"].channelId, "");
+});
+
+test("market send plans hydrate the latest rich CTA once per Telegram group and Discord guild", async () => {
+  const repo = repository();
+  await saveDestinationCtaRegistry(repo, [
+    { platform: "telegram", chatId: "-1001", ctaEnabled: true, ctaContent: "**Stale TG CTA**" },
+    { platform: "discord", guildId: "g1", ctaEnabled: true, ctaContent: "**Stale DC CTA**" },
+  ]);
+  await saveDestinationCtaConfig(repo, {
+    platform: "telegram",
+    chatId: "-1001",
+    ctaEnabled: true,
+    ctaContent: "**Latest TG CTA**\n[Join TG](https://example.com/tg?a=1&b=2)",
+  });
+  await saveDestinationCtaConfig(repo, {
+    platform: "discord",
+    guildId: "g1",
+    ctaEnabled: true,
+    ctaContent: "**Latest DC CTA**\n[Join DC](https://example.com/dc?a=1&b=2)",
+  });
+
+  const registry = await loadDestinationCtaRegistry(repo);
+  assert.deepEqual(Object.keys(registry).sort(), ["discord:g1", "telegram:-1001"]);
+
+  const targets = await hydrateDestinationCtas(repo, [
+    { platform: "telegram", chatId: "-1001", threadId: 7 },
+    { platform: "telegram", chatId: "-1001", threadId: 8 },
+    { platform: "discord", guildId: "g1", channelId: "c1" },
+    { platform: "discord", guildId: "g1", channelId: "c2" },
+  ]);
+  const document = {
+    templateId: "crypto-daily",
+    nodes: [{ type: "heading", text: "Verified market update" }],
+  };
+  const telegramPlans = buildAutomationTelegramPlans("crypto-daily", { document }, targets);
+  const discordPlans = buildAutomationDiscordPlans("crypto-daily", { document }, targets);
+
+  assert.deepEqual(telegramPlans.map((plan) => plan.target.threadId), [7, 8]);
+  assert.deepEqual(discordPlans.map((plan) => plan.target.channelId), ["c1", "c2"]);
+  for (const plan of telegramPlans) {
+    const payload = plan.steps.at(-1).payload.text;
+    assert.match(payload, /<b>Latest TG CTA<\/b>/);
+    assert.match(payload, /<a href="https:\/\/example\.com\/tg\?a=1&amp;b=2">Join TG<\/a>/);
+    assert.doesNotMatch(payload, /Stale TG CTA/);
+  }
+  for (const plan of discordPlans) {
+    const payload = plan.steps.at(-1).payload.content;
+    assert.match(payload, /\*\*Latest DC CTA\*\*/);
+    assert.match(payload, /\[Join DC\]\(https:\/\/example\.com\/dc\?a=1&b=2\)/);
+    assert.doesNotMatch(payload, /Stale DC CTA/);
+  }
 });

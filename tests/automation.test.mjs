@@ -1459,6 +1459,68 @@ test("market plans use platform renderers, strict paragraph chunks, and one fina
   assert.match(discord.steps.at(-1).payload.content, /\*\*Join YUBIT\*\*/);
 });
 
+for (const jobId of ["crypto-daily", "weekly-calendar", "data-release-updates"]) {
+  test(`${jobId} plans preserve platform formatting and append one CTA to each destination final chunk`, () => {
+    const document = {
+      templateId: jobId,
+      version: "market-content-v1",
+      nodes: [{ type: "heading", text: "Market <Update>" }],
+      sections: [
+        { nodes: [{ type: "paragraph", text: `A-${"x".repeat(1600)}` }] },
+        { nodes: [{ type: "paragraph", text: `B-${"y".repeat(1600)}` }] },
+        { nodes: [{ type: "paragraph", text: `C-${"z".repeat(1600)}` }] },
+        { nodes: [{ type: "link", text: "Verified source", url: "https://example.com/source?a=1&b=2" }] },
+      ],
+    };
+    const ctaContent = "**START TRADING NOW**\n[Open YUBIT](https://example.com/join?a=1&b=2)";
+    const telegramPlans = automation.buildAutomationTelegramPlans(jobId, { document }, [
+      { platform: "telegram", chatId: "-1001", threadId: 7, ctaEnabled: true, ctaContent },
+      { platform: "telegram", chatId: "-1001", threadId: 8, ctaEnabled: true, ctaContent },
+    ]);
+    const discordPlans = automation.buildAutomationDiscordPlans(jobId, { document }, [
+      { platform: "discord", guildId: "g1", channelId: "c1", ctaEnabled: true, ctaContent },
+      { platform: "discord", guildId: "g1", channelId: "c2", ctaEnabled: true, ctaContent },
+    ]);
+
+    assert.deepEqual(telegramPlans.map((plan) => plan.target.threadId), [7, 8]);
+    assert.deepEqual(discordPlans.map((plan) => plan.target.channelId), ["c1", "c2"]);
+    for (const plan of telegramPlans) {
+      assert.ok(plan.steps.length > 1);
+      assert.ok(plan.steps.every((step) => step.payload.parse_mode === "HTML"));
+      assert.match(plan.steps[0].payload.text, /<b>Market &lt;Update&gt;<\/b>/);
+      assert.match(plan.steps.at(-1).payload.text, /<a href="https:\/\/example\.com\/join\?a=1&amp;b=2">Open YUBIT<\/a>/);
+      assert.equal(plan.steps.filter((step) => step.payload.text.includes("START TRADING NOW")).length, 1);
+      assert.doesNotMatch(plan.steps.map((step) => step.payload.text).join("\n"), /\[Open YUBIT\]\(/);
+    }
+    for (const plan of discordPlans) {
+      assert.ok(plan.steps.length > 1);
+      assert.match(plan.steps[0].payload.content, /\*\*Market \\<Update\\>\*\*/);
+      assert.match(plan.steps.at(-1).payload.content, /\[Open YUBIT\]\(https:\/\/example\.com\/join\?a=1&b=2\)/);
+      assert.equal(plan.steps.filter((step) => step.payload.content.includes("START TRADING NOW")).length, 1);
+      assert.doesNotMatch(plan.steps.map((step) => step.payload.content).join("\n"), /<a href=/);
+    }
+  });
+
+  test(`${jobId} plans add no CTA divider when destination CTA is empty`, () => {
+    const document = {
+      templateId: jobId,
+      version: "market-content-v1",
+      nodes: [{ type: "paragraph", text: "Verified update" }],
+    };
+    const [telegram] = automation.buildAutomationTelegramPlans(jobId, { document }, [
+      { platform: "telegram", chatId: "-1001", threadId: 7, ctaEnabled: true, ctaContent: "" },
+    ]);
+    const [discord] = automation.buildAutomationDiscordPlans(jobId, { document }, [
+      { platform: "discord", guildId: "g1", channelId: "c1", ctaEnabled: true, ctaContent: "" },
+    ]);
+
+    assert.equal(telegram.steps.length, 1);
+    assert.equal(telegram.steps[0].payload.text, "Verified update");
+    assert.equal(discord.steps.length, 1);
+    assert.equal(discord.steps[0].payload.content, "Verified update");
+  });
+}
+
 function marketDocumentWithParagraphs(lengths) {
   return {
     templateId: "crypto-daily",

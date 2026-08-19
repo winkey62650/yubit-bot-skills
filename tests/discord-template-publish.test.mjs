@@ -95,3 +95,29 @@ test("Discord template publishing sends only the selected live channels", async 
   assert.equal(result.results[0].messageId, "message-one");
   assert.equal(result.results[1].error, "missing permission");
 });
+
+for (const jobId of ["crypto-daily", "weekly-calendar", "data-release-updates"]) {
+  test(`Discord template publishing maps ${jobId} directly to its automation job`, async () => {
+    let capturedJobId;
+    let capturedOptions;
+    const result = await publishDiscordTemplate({
+      contentType: jobId,
+      channelIds: ["channel-market"],
+    }, {
+      health,
+      runJob: async (resolvedJobId, options) => {
+        capturedJobId = resolvedJobId;
+        capturedOptions = options;
+        return { status: "success", preview: { targetResults: [] } };
+      },
+    });
+
+    assert.equal(capturedJobId, jobId);
+    assert.equal(result.jobId, jobId);
+    assert.equal(capturedOptions.dryRun, false);
+    assert.equal(capturedOptions.force, true);
+    assert.deepEqual(capturedOptions.targets.map(({ guildId, channelId }) => ({ guildId, channelId })), [
+      { guildId: "guild-one", channelId: "channel-market" },
+    ]);
+  });
+}
