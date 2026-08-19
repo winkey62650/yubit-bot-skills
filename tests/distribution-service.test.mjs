@@ -1078,7 +1078,7 @@ test("telemetry failure after reliable external receipts preserves delivery succ
   assert.equal(savedRules[0].nextRunAt, null);
 });
 
-test("delivery persistence failure after a reliable external receipt does not schedule a duplicate send", async () => {
+test("delivery and receipt persistence failure requires manual reconciliation even when event telemetry succeeds", async () => {
   const target = { id: "target-delivery-store-after-send", chatId: "-100200", threadId: 8 };
   const rule = {
     id: "rule-delivery-store-after-send",
@@ -1117,14 +1117,42 @@ test("delivery persistence failure after a reliable external receipt does not sc
   const result = execution.results[0];
 
   assert.equal(runnerCalls, 1);
-  assert.equal(result.status, "success");
+  assert.equal(result.status, "manual-reconciliation");
   assert.equal(result.deliveryPersisted, false);
   assert.equal(result.deliveryError, "DELIVERY_RECEIPT_WRITE_FAILED");
   assert.equal(result.telemetryPersisted, true);
-  assert.equal(events[0].payload.outcome, "success");
+  assert.equal(events[0].payload.outcome, "manual-reconciliation");
   assert.equal(savedRules[0].enabled, false);
-  assert.equal(savedRules[0].status, "completed");
+  assert.equal(savedRules[0].status, "manual-reconciliation");
   assert.equal(savedRules[0].nextRunAt, null);
+});
+
+test("a stale manual invocation cannot resend after delivery and receipt persistence both fail", async () => {
+  const target = { id: "stale-manual-target", chatId: "-100209", threadId: 8 };
+  const staleRule = {
+    id: "stale-manual-rule", kind: "automation", contentType: "crypto-daily", enabled: true,
+    runOnce: true, status: "ready", schedulePreset: "daily-1100", targets: [target]
+  };
+  const harness = createAutomationReviewRepository(staleRule, { failMetaAfterRunner: true, failDeliveries: true });
+  let runnerCalls = 0;
+  const runner = async () => {
+    runnerCalls += 1;
+    harness.markRunnerStarted();
+    return { status: "success", preview: { targetResults: [{ target, status: "success", messageId: 919 }] } };
+  };
+
+  const first = await runDistributionAutomationRule(staleRule.id, { repository: harness.repository, runner });
+  const staleRepositoryView = {
+    ...harness.repository,
+    async claimDueAutomationRules() { return [structuredClone(staleRule)]; }
+  };
+  const second = await runDistributionAutomationRule(staleRule.id, { repository: staleRepositoryView, runner });
+
+  assert.equal(first.status, "manual-reconciliation");
+  assert.equal(second.status, "manual-reconciliation");
+  assert.equal(harness.rule().status, "manual-reconciliation");
+  assert.equal(harness.rule().enabled, false);
+  assert.equal(runnerCalls, 1);
 });
 
 test("missing empty and invalid runner statuses fail closed and schedule a retry", async () => {

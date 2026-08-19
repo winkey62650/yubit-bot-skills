@@ -462,3 +462,52 @@ test("MTProto publisher can restore encrypted API credentials saved by the web a
   assert.equal(created.options.apiId, 54321);
   assert.equal(created.options.apiHash, "persisted-api-hash");
 });
+
+test("an already-aborted MTProto request does not load a session or call the shared client", async () => {
+  const harness = fakeClientHarness();
+  let sessionLoads = 0;
+  const transport = createTelegramMtprotoTransport(configuredOptions(harness, {
+    loadSession: async () => {
+      sessionLoads += 1;
+      return { session: "must-not-load" };
+    }
+  }));
+  const controller = new AbortController();
+  controller.abort();
+
+  await assert.rejects(
+    () => transport("ignored", "sendMessage", { chat_id: GROUP_ID, text: "stop" }, { signal: controller.signal }),
+    (error) => error?.name === "AbortError"
+  );
+
+  assert.equal(sessionLoads, 0);
+  assert.equal(harness.calls.length, 0);
+});
+
+test("inflight MTProto send and invoke boundaries reject promptly when aborted", async () => {
+  const cases = [
+    { method: "sendMessage", clientMethod: "sendMessage", payload: { chat_id: GROUP_ID, text: "message" } },
+    { method: "sendPhoto", clientMethod: "sendFile", payload: { chat_id: GROUP_ID, photo: "poster.jpg" } },
+    { method: "copyMessage", clientMethod: "forwardMessages", payload: { chat_id: GROUP_ID, from_chat_id: GROUP_ID, message_id: 42 } },
+    { method: "getForumTopics", clientMethod: "invoke", payload: { chat_id: GROUP_ID } }
+  ];
+
+  for (const item of cases) {
+    const harness = fakeClientHarness();
+    let boundaryEntered;
+    const entered = new Promise((resolve) => { boundaryEntered = resolve; });
+    harness.client[item.clientMethod] = async () => {
+      boundaryEntered();
+      return new Promise(() => {});
+    };
+    const transport = createTelegramMtprotoTransport(configuredOptions(harness));
+    const controller = new AbortController();
+    const operation = transport("ignored", item.method, item.payload, { signal: controller.signal });
+    await entered;
+
+    const started = Date.now();
+    controller.abort();
+    await assert.rejects(operation, (error) => error?.name === "AbortError", item.clientMethod);
+    assert.ok(Date.now() - started < 100, `${item.clientMethod} did not reject promptly`);
+  }
+});
