@@ -27,6 +27,20 @@ function jsonResponse(body, status = 200) {
   });
 }
 
+async function settleWithin(promise, timeoutMs, message) {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 test("exports the eight-second default source timeout", () => {
   assert.equal(DEFAULT_SOURCE_TIMEOUT_MS, 8_000);
 });
@@ -51,6 +65,23 @@ test("normalizes TradingView fields and units without inventing missing values",
   assert.equal(events[1].timeLabel, "TBD");
   assert.deepEqual(events[1].values, { actual: null, forecast: null, previous: null });
   assert.deepEqual(events[1].rawValues, { actual: null, forecast: "", previous: "TBD", unit: "%" });
+});
+
+test("keeps blank and absent importance missing", () => {
+  const [event, withoutImportance] = normalizeCalendarEvents([
+    { title: "Rate decision", importance: "   " },
+    { title: "Unrated event" },
+  ]);
+
+  assert.equal(event.importance, null);
+  assert.equal(withoutImportance.importance, null);
+});
+
+test("preserves numeric source ids while exposing a normalized string id", () => {
+  const [event] = normalizeCalendarEvents([{ id: 42, title: "Rate decision" }]);
+
+  assert.equal(event.id, "42");
+  assert.equal(event.sourceId, 42);
 });
 
 test("parses RSS and Atom XML entities while retaining source labels and raw ids", async () => {
@@ -137,6 +168,41 @@ test("source timeout is controlled by timeoutMs and does not wait for the inject
   assert.ok(Date.now() - startedAt < 500);
   assert.equal(result.sources[0].status, "timeout");
   assert.match(result.warnings[0], /timeout/i);
+});
+
+test("source timeout covers JSON and text response bodies through the retry limit", async () => {
+  let jsonAttempts = 0;
+  const calendar = await settleWithin(
+    fetchTradingViewCalendar({
+      fetchImpl: async () => {
+        jsonAttempts += 1;
+        return { ok: true, status: 200, json: () => new Promise(() => {}) };
+      },
+      timeoutMs: 5,
+    }),
+    300,
+    "calendar body timeout did not settle",
+  );
+
+  let textAttempts = 0;
+  const daily = await settleWithin(
+    fetchCryptoDailyCandidates({
+      now: new Date("2026-08-19T08:00:00.000Z"),
+      feeds: [{ id: "industry", label: "Industry Wire", url: "https://industry.example/rss" }],
+      fetchImpl: async () => {
+        textAttempts += 1;
+        return { ok: true, status: 200, text: () => new Promise(() => {}) };
+      },
+      timeoutMs: 5,
+    }),
+    300,
+    "RSS body timeout did not settle",
+  );
+
+  assert.equal(jsonAttempts, 3);
+  assert.equal(calendar.sources[0].status, "timeout");
+  assert.equal(textAttempts, 3);
+  assert.equal(daily.sources[0].status, "timeout");
 });
 
 test("daily candidates fetch configured official and industry RSS without network access", async () => {
