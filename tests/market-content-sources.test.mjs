@@ -57,6 +57,7 @@ test("normalizes TradingView fields and units without inventing missing values",
     importance: 3,
     scheduledAt: "2026-08-12T12:30:00.000Z",
     timeLabel: "2026-08-12T12:30:00.000Z",
+    rawScheduledAt: "2026-08-12T12:30:00.000Z",
     unit: "%",
     values: { actual: "2.7%", forecast: "2.8%", previous: "2.9%" },
     rawValues: { actual: "2.7", forecast: "2.8", previous: "2.9", unit: "%" },
@@ -65,6 +66,20 @@ test("normalizes TradingView fields and units without inventing missing values",
   assert.equal(events[1].timeLabel, "TBD");
   assert.deepEqual(events[1].values, { actual: null, forecast: null, previous: null });
   assert.deepEqual(events[1].rawValues, { actual: null, forecast: "", previous: "TBD", unit: "%" });
+});
+
+test("keeps date-only calendar values unscheduled while preserving the source value", () => {
+  const [dateOnly, fullyScheduled] = normalizeCalendarEvents([
+    { id: "date-only", title: "Policy window", date: "2026-08-19" },
+    { id: "timed", title: "Policy decision", date: "2026-08-19T12:30:00Z" },
+  ]);
+
+  assert.equal(dateOnly.scheduledAt, null);
+  assert.equal(dateOnly.timeLabel, "TBD");
+  assert.equal(dateOnly.rawScheduledAt, "2026-08-19");
+  assert.equal(fullyScheduled.scheduledAt, "2026-08-19T12:30:00.000Z");
+  assert.equal(fullyScheduled.timeLabel, "2026-08-19T12:30:00.000Z");
+  assert.equal(fullyScheduled.rawScheduledAt, "2026-08-19T12:30:00Z");
 });
 
 test("keeps blank and absent importance missing", () => {
