@@ -266,6 +266,41 @@ test("deduplication still collapses an identical story key when fact evidence ag
   assert.equal(result[0].source.kind, "official");
 });
 
+test("deduplication counts stable unique sources rather than duplicate reports", () => {
+  const sameSourceFirst = story({
+    id: "wire:first",
+    canonicalId: "ibit-flow-aug-18",
+    source: { id: "industry-wire", label: "Industry Wire", kind: "industry" },
+  });
+  const sameSourceAgain = story({
+    id: "wire:second",
+    canonicalId: "ibit-flow-aug-18",
+    url: "https://industry.example/bitcoin-etf-inflows?edition=2",
+    source: { id: "industry-wire", label: "Industry Wire", kind: "industry" },
+  });
+  const official = story({
+    id: "blackrock:flow",
+    canonicalId: "ibit-flow-aug-18",
+    url: "https://blackrock.example/ibit/flows",
+    source: { id: "blackrock", label: "BlackRock", kind: "official" },
+  });
+  const independent = story({
+    id: "terminal:flow",
+    canonicalId: "ibit-flow-aug-18",
+    url: "https://terminal.example/ibit-flow",
+    source: { name: "Independent Terminal", kind: "industry" },
+  });
+
+  const twoReports = deduplicateCryptoStories([sameSourceFirst, sameSourceAgain]);
+  assert.equal(twoReports.length, 1);
+  assert.equal(twoReports[0].sourceConfirmations, 1);
+
+  const threeSources = deduplicateCryptoStories([independent, sameSourceAgain, official, sameSourceFirst]);
+  assert.equal(threeSources.length, 1);
+  assert.equal(threeSources[0].sourceConfirmations, 3);
+  assert.equal(threeSources[0].url, official.url);
+});
+
 test("deduplication does not merge the same entities and action when the event objects differ", () => {
   const etfFiling = story({
     id: "sec-etf-filing",
@@ -440,6 +475,30 @@ test("Crypto Daily uses directional evidence even when a non-directional rationa
   assert.equal(document.sections[0].impact, "Bullish");
 });
 
+test("Crypto Daily publishes the evidence that supports its directional impact", () => {
+  const genericRationale = "The report was checked against the official publication.";
+  const bullishEvidence = "Verified net inflows indicate stronger institutional demand.";
+  const document = buildCryptoDailyDocument({
+    now,
+    candidates: [story({
+      title: "Bitcoin institutional market update",
+      summary: undefined,
+      rationale: genericRationale,
+      evidence: bullishEvidence,
+      impact: "Bullish",
+    })],
+  });
+  const section = document.sections[0];
+  const rationaleNode = section.nodes.find((node, index) => node.type === "paragraph" && index > 1);
+
+  assert.equal(section.impact, "Bullish");
+  assert.equal(rationaleNode.text, bullishEvidence);
+  for (const output of [renderTelegramMarketDocument(document), renderDiscordMarketDocument(document)]) {
+    assert.match(output, /Verified net inflows indicate stronger institutional demand/);
+    assert.doesNotMatch(output, /checked against the official publication/);
+  }
+});
+
 test("Crypto Daily stays Neutral when explicit evidence sources conflict", () => {
   const document = buildCryptoDailyDocument({
     now,
@@ -453,6 +512,28 @@ test("Crypto Daily stays Neutral when explicit evidence sources conflict", () =>
   });
 
   assert.equal(document.sections[0].impact, "Neutral");
+});
+
+test("Crypto Daily publishes a neutral explanation instead of one-sided conflicting evidence", () => {
+  const document = buildCryptoDailyDocument({
+    now,
+    candidates: [story({
+      title: "Bitcoin institutional market update",
+      summary: undefined,
+      rationale: "Verified net inflows indicate stronger institutional demand.",
+      evidence: "Verified net outflows indicate weakening institutional demand.",
+      impact: "Bullish",
+    })],
+  });
+  const section = document.sections[0];
+  const rationaleNode = section.nodes.find((node, index) => node.type === "paragraph" && index > 1);
+
+  assert.equal(section.impact, "Neutral");
+  assert.equal(rationaleNode.text, "Verified directional evidence is conflicting, so no clear market impact is established.");
+  for (const output of [renderTelegramMarketDocument(document), renderDiscordMarketDocument(document)]) {
+    assert.match(output, /directional evidence is conflicting/);
+    assert.doesNotMatch(output, /net inflows|net outflows/);
+  }
 });
 
 test("Crypto Daily retains a supplied directional impact with explicit rationale", () => {
@@ -524,6 +605,34 @@ test("weekly calendar treats a date-only scheduledAt as TBD while retaining its 
   assert.equal(document.days[0].events[0].time, "TBD");
   assert.match(document.days[0].events[0].nodes[0].text, /^TBD —/);
   assert.doesNotMatch(renderTelegramMarketDocument(document), /00:00/);
+});
+
+test("weekly calendar deduplicates deterministically and preserves the official source", () => {
+  const industry = {
+    id: "wire-cpi",
+    title: "US CPI YoY",
+    indicator: "cpi",
+    country: "US",
+    importance: 3,
+    scheduledAt: "2026-08-19T12:30:00Z",
+    source: { id: "aaa-wire", label: "AAA Wire", kind: "industry", url: "https://aaa.example/cpi" },
+  };
+  const official = {
+    id: "bls-cpi",
+    title: "US CPI YoY",
+    indicator: "cpi",
+    country: "US",
+    importance: 3,
+    scheduledAt: "2026-08-19T12:30:00Z",
+    source: { label: "BLS", url: "https://www.bls.gov/cpi/" },
+  };
+
+  const forward = buildWeeklyCalendarDocument({ now, events: [industry, official] });
+  const reverse = buildWeeklyCalendarDocument({ now, events: [official, industry] });
+  assert.deepEqual(forward, reverse);
+  assert.equal(forward.days[0].events.length, 1);
+  assert.equal(forward.days[0].events[0].id, "bls-cpi");
+  assert.ok(forward.days[0].events[0].nodes.some((node) => node.type === "link" && node.url === "https://www.bls.gov/cpi/"));
 });
 
 test("release impact rules cover inflation, employment, growth, and FOMC deterministically", () => {
