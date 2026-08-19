@@ -11,6 +11,7 @@ import {
   buildDiscordDistributionTargetOptions,
   buildBroadcastRouteSummary,
   buildMarketPreviewFacts,
+  buildMarketPreviewText,
   buildPublisherStatusChecks,
   buildSocialSourceRouteReadiness,
   buildSocialSourceReadiness,
@@ -26,6 +27,12 @@ import {
   resolveScheduleForContentType,
   distributionDestinationLabel
 } from "../lib/distribution-ui.mjs";
+import { AUTOMATION_JOBS } from "../lib/automation-jobs.mjs";
+import {
+  buildCryptoDailyDocument,
+  buildWeeklyCalendarDocument,
+  renderTelegramMarketDocument
+} from "../lib/market-content-templates.mjs";
 
 test("Telegram CTA options contain one entry per group or channel", () => {
   const options = buildTelegramDestinationCtaOptions([
@@ -637,7 +644,11 @@ test("each automatic content template recommends the production schedule and rea
   assert.equal(recommendedScheduleFor("data-release-updates"), "event-driven");
   assert.equal(getContentTemplate("crypto-daily").jobId, "crypto-daily");
   assert.equal(getContentTemplate("weekly-calendar").jobId, "weekly-calendar");
-  assert.equal(getContentTemplate("data-release-updates").jobId, "data-release-monitor");
+  assert.equal(getContentTemplate("data-release-updates").jobId, "data-release-updates");
+  assert.deepEqual(
+    Object.keys(CONTENT_TEMPLATES).slice(0, 3).map((templateId) => getContentTemplate(templateId).jobId),
+    AUTOMATION_JOBS.slice(0, 3).map((job) => job.id)
+  );
   assert.equal(getContentTemplate("data-release-updates").scheduleLocked, true);
   assert.equal(getContentTemplate("weekly-calendar").scheduleLocked, true);
   assert.equal(getContentTemplate("crypto-daily").scheduleLocked, true);
@@ -666,7 +677,8 @@ test("market preview facts summarize selection diagnostics and the next monitore
     selectedCount: 3,
     missingCount: 0,
     conflictCount: 0,
-    nextMonitoredEvent: "US CPI · Aug 19 12:30 UTC"
+    nextMonitoredEvent: "US CPI · Aug 19 12:30 UTC",
+    sources: []
   });
 });
 
@@ -677,6 +689,83 @@ test("market preview facts turn a structured monitored event into safe display t
       scheduledAt: "2026-08-19T12:30:00.000Z"
     }
   }).nextMonitoredEvent, "US CPI · Aug 19, 12:30 UTC");
+});
+
+test("market preview facts understand a real Crypto Daily envelope and normalize source health", () => {
+  const now = new Date("2026-08-19T13:00:00.000Z");
+  const document = buildCryptoDailyDocument({
+    now,
+    candidates: [
+      {
+        id: "etf-flow",
+        title: "US spot BTC ETF inflows increased",
+        category: "institutional",
+        publishedAt: "2026-08-19T10:00:00.000Z",
+        url: "https://example.com/etf",
+        source: { id: "wire", label: "Wire" }
+      },
+      {
+        id: "eu-rule",
+        title: "European regulator publishes crypto custody rules",
+        category: "regulation",
+        publishedAt: "2026-08-19T09:00:00.000Z",
+        url: "https://example.com/rule",
+        source: { id: "regulator", label: "Regulator" }
+      }
+    ]
+  });
+  const facts = buildMarketPreviewFacts({
+    templateId: "crypto-daily",
+    document,
+    publishable: true,
+    sources: [{
+      id: "wire",
+      status: "ok",
+      lastSuccessAt: "2026-08-19T12:59:00.000Z",
+      freshnessSeconds: 60,
+      fallbackFrom: "primary-wire"
+    }]
+  });
+
+  assert.equal(facts.selectedCount, 2);
+  assert.equal(facts.missingCount, 1);
+  assert.equal(facts.conflictCount, 0);
+  assert.deepEqual(facts.sources, [{
+    id: "wire",
+    label: "wire",
+    status: "ok",
+    lastSuccess: "2026-08-19T12:59:00.000Z",
+    freshness: "60 秒",
+    fallback: "primary-wire"
+  }]);
+});
+
+test("market preview facts count real Weekly Calendar document events and derive the next event", () => {
+  const document = buildWeeklyCalendarDocument({
+    now: new Date("2026-08-19T08:00:00.000Z"),
+    events: [
+      { id: "cpi", title: "US CPI", indicator: "cpi", country: "US", importance: 3, scheduledAt: "2026-08-19T12:30:00.000Z", source: { label: "BLS", url: "https://www.bls.gov/cpi/" } },
+      { id: "gdp", title: "US GDP", indicator: "gdp", country: "US", importance: 3, scheduledAt: "2026-08-20T12:30:00.000Z", source: { label: "BEA", url: "https://www.bea.gov/" } }
+    ]
+  });
+
+  const facts = buildMarketPreviewFacts({ templateId: "weekly-calendar", document, sources: [] });
+  assert.equal(facts.candidateCount, 2);
+  assert.equal(facts.selectedCount, 2);
+  assert.equal(facts.missingCount, 0);
+  assert.equal(facts.nextMonitoredEvent, "US CPI · Aug 19, 12:30 UTC");
+});
+
+test("market dry-run document is rendered as the real safe Telegram preview", () => {
+  const document = buildWeeklyCalendarDocument({
+    now: new Date("2026-08-19T08:00:00.000Z"),
+    events: [{ id: "cpi", title: "US CPI", indicator: "cpi", country: "US", importance: 3, scheduledAt: "2026-08-19T12:30:00.000Z", source: { label: "BLS", url: "https://www.bls.gov/cpi/" } }]
+  });
+  const envelope = { templateId: "weekly-calendar", document, deliveryPlans: { invalid: true } };
+
+  assert.equal(buildMarketPreviewText(envelope), renderTelegramMarketDocument(document));
+  assert.doesNotMatch(buildMarketPreviewText(envelope), /当前模板还没有样稿/);
+  assert.doesNotThrow(() => buildMarketPreviewText({ deliveryPlans: { find: "not-an-array" } }));
 });
 
 test("unknown content types return a safe incomplete template", () => {

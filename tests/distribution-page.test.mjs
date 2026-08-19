@@ -4,6 +4,7 @@ import test from "node:test";
 
 const pageSource = await readFile(new URL("../app/distribution/page.jsx", import.meta.url), "utf8");
 const discordPageSource = await readFile(new URL("../app/discord/distribution/page.jsx", import.meta.url), "utf8");
+const automationTestRouteSource = await readFile(new URL("../app/api/automation-test/route.js", import.meta.url), "utf8");
 
 test("automatic publishing defaults to Crypto Daily and exposes the three fixed market templates first", () => {
   assert.match(pageSource, /contentType: "crypto-daily"/);
@@ -33,9 +34,20 @@ test("market preview shows publishability, source health, selection counts and n
   assert.match(pageSource, /跳过原因/);
   assert.match(pageSource, /下一个监控事件/);
   assert.match(pageSource, /stripTelegramHtml/);
-  assert.match(pageSource, /source\.freshnessSeconds/);
-  assert.match(pageSource, /source\.fallbackFrom/);
+  assert.match(pageSource, /buildMarketPreviewText/);
+  assert.match(pageSource, /Array\.isArray\(displayPreview\?\.deliveryPlans\)/);
+  assert.match(pageSource, /Array\.isArray\(displayPreview\?\.items\)/);
+  assert.match(pageSource, /const sourceRows = facts\.sources/);
+  assert.match(pageSource, /source\.freshness/);
+  assert.match(pageSource, /source\.fallback/);
   assert.match(pageSource, /labelFor\(schedules, resolveScheduleForContentType\(form\.contentType, form\.schedulePreset\)\)/);
+});
+
+test("market preview posts each production job id through the dry-run API", () => {
+  assert.match(pageSource, /body: JSON\.stringify\(\{ jobId: template\.jobId \}\)/);
+  assert.match(automationTestRouteSource, /runAutomationJob\(String\(body\.jobId \|\| ""\)/);
+  assert.match(automationTestRouteSource, /dryRun: true/);
+  assert.match(automationTestRouteSource, /force: true/);
 });
 
 test("CTA guidance stays scoped to a Telegram group and Discord server", () => {

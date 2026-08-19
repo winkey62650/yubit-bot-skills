@@ -14,6 +14,7 @@ import {
   bulkDeleteNotice,
   buildBroadcastRouteSummary,
   buildMarketPreviewFacts,
+  buildMarketPreviewText,
   buildDistributionSourceOptions,
   buildDistributionTargetOptions,
   buildTelegramDestinationCtaOptions,
@@ -681,13 +682,12 @@ function DeliveryIdentitySelector({ purpose, value, botLabel, userLabel, botDesc
 function TelegramTemplatePreview({ form, template, publisherName, preview, previewState, onGenerate }) {
   const templatePreview = template.preview || null;
   const displayPreview = preview || templatePreview;
-  const telegramPlan = displayPreview?.deliveryPlans?.find((plan) => plan.platform === "telegram");
-  const telegramHtml = displayPreview?.telegramHtml
-    || displayPreview?.caption
-    || telegramPlan?.steps?.map((step) => step?.payload?.text || step?.payload?.caption).filter(Boolean).join("\n\n");
+  const deliveryPlans = Array.isArray(displayPreview?.deliveryPlans) ? displayPreview.deliveryPlans : [];
+  const previewItems = Array.isArray(displayPreview?.items) ? displayPreview.items : [];
+  const telegramHtml = buildMarketPreviewText({ ...(displayPreview || {}), deliveryPlans });
   const caption = telegramHtml ? stripTelegramHtml(telegramHtml) : "当前模板还没有样稿，请生成一次真实内容预览。";
   const facts = buildMarketPreviewFacts(displayPreview || {});
-  const sourceRows = [displayPreview?.sources, displayPreview?.sourceHealth?.sources, displayPreview?.document?.sources].find(Array.isArray) || [];
+  const sourceRows = facts.sources;
   const warnings = Array.isArray(displayPreview?.warnings) ? displayPreview.warnings : [];
   const publishable = displayPreview?.publishable ?? displayPreview?.document?.publishable;
   const skipReason = displayPreview?.skipReason || displayPreview?.outcome?.skipReason;
@@ -701,9 +701,9 @@ function TelegramTemplatePreview({ form, template, publisherName, preview, previ
         <p className="mt-3 max-h-72 overflow-y-auto whitespace-pre-wrap break-words text-sm leading-6 text-[#24362f]">{caption}</p>
         <div className="mt-3 border-t border-[#edf1ef] pt-2 text-[11px] leading-5 text-ops-muted">{template.runtimeNote}</div>
       </div>
-      {displayPreview?.items?.length ? <div className="mx-auto mt-2 max-w-[520px] rounded-xl rounded-tl-sm bg-white p-3 shadow-sm">
+      {previewItems.length ? <div className="mx-auto mt-2 max-w-[520px] rounded-xl rounded-tl-sm bg-white p-3 shadow-sm">
         <div className="flex items-center justify-between gap-3"><strong className="text-sm text-ops-accent">目标群官方身份</strong><span className="text-[11px] text-ops-muted">English brief · 2/2</span></div>
-        <ol className="mt-3 max-h-80 list-decimal space-y-3 overflow-y-auto pl-5 text-sm leading-6 text-[#24362f]">{displayPreview.items.map((item, index) => <li key={`${index}-${String(item).slice(0, 24)}`}>{typeof item === "string" ? item : item.title || item.name || JSON.stringify(item)}</li>)}</ol>
+        <ol className="mt-3 max-h-80 list-decimal space-y-3 overflow-y-auto pl-5 text-sm leading-6 text-[#24362f]">{previewItems.map((item, index) => <li key={`${index}-${String(item).slice(0, 24)}`}>{typeof item === "string" ? item : item.title || item.name || JSON.stringify(item)}</li>)}</ol>
         <p className="mt-3 border-t border-[#edf1ef] pt-2 text-[11px] leading-5 text-[#9a5f31]">{displayPreview.disclaimer || templatePreview?.disclaimer}</p>
       </div> : null}
     </div>
@@ -711,7 +711,7 @@ function TelegramTemplatePreview({ form, template, publisherName, preview, previ
       {templatePreview?.sections?.length ? <div><p className="mb-2 text-xs font-black text-ops-muted">模板内容结构</p><div className="flex flex-wrap gap-2">{templatePreview.sections.map((section) => <span className="rounded-full bg-[#edf6f1] px-2.5 py-1 text-xs font-bold text-[#2d5a48]" key={section}>{section}</span>)}</div></div> : null}
       <div className="grid gap-2 text-sm sm:grid-cols-2"><PreviewFact label="发送频率" value={labelFor(schedules, resolveScheduleForContentType(form.contentType, form.schedulePreset))} /><PreviewFact label="目标数量" value={`${form.targets.length} 个目标`} />{template.itemCountPolicy ? <PreviewFact label="内容条数" value={template.itemCountPolicy} /> : <PreviewFact label="建议位置" value={template.destinationHint} />}<PreviewFact label="发布身份" value={`目标群名称和头像（由 ${publisherName} 匿名授权）`} /></div>
       {isLivePreview ? <div className="grid gap-2 text-sm sm:grid-cols-2"><PreviewFact label="可发布" value={publishable === true ? "是" : publishable === false ? "否" : "待判断"} /><PreviewFact label="候选 / 已选" value={`${facts.candidateCount} / ${facts.selectedCount}`} /><PreviewFact label="缺失 / 冲突" value={`${facts.missingCount} / ${facts.conflictCount}`} /><PreviewFact label="下一个监控事件" value={facts.nextMonitoredEvent || "暂无"} /></div> : null}
-      {sourceRows.length ? <div><p className="mb-2 text-xs font-black text-ops-muted">来源状态</p><div className="grid gap-2">{sourceRows.map((source, index) => <div className="rounded-lg border border-ops-line p-3 text-xs leading-5" key={source.id || source.name || index}><strong>{source.label || source.name || source.id || `来源 ${index + 1}`}</strong><div>状态：{source.status || "未知"} · 最近成功：{source.lastSuccessAt || source.lastSuccess || "暂无"}</div><div>新鲜度：{source.freshnessSeconds == null ? source.freshness || source.freshnessStatus || "未知" : `${source.freshnessSeconds} 秒`} · 回退来源：{source.fallbackFrom || source.fallback || source.fallbackSource || "无"}</div></div>)}</div></div> : null}
+      {sourceRows.length ? <div><p className="mb-2 text-xs font-black text-ops-muted">来源状态</p><div className="grid gap-2">{sourceRows.map((source, index) => <div className="rounded-lg border border-ops-line p-3 text-xs leading-5" key={source.id || index}><strong>{source.label}</strong><div>状态：{source.status || "未知"} · 最近成功：{source.lastSuccess || "暂无"}</div><div>新鲜度：{source.freshness || "未知"} · 回退来源：{source.fallback || "无"}</div></div>)}</div></div> : null}
       {warnings.length ? <p className="rounded-lg bg-[#fff8e8] p-3 text-xs font-bold leading-5 text-[#79591e]">警告：{warnings.join("；")}</p> : null}
       {skipReason ? <p className="rounded-lg bg-[#f3f4f4] p-3 text-xs font-bold text-ops-muted">跳过原因：{skipReason}</p> : null}
       {previewState && previewState !== "success" && previewState !== "loading" ? <p role="alert" className="rounded-lg bg-[#fff2ef] p-3 text-xs font-bold text-[#a04a3d]">{previewState}</p> : null}
