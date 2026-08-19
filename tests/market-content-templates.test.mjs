@@ -148,6 +148,43 @@ test("deduplication rejects successful and failed launches despite shared canoni
   }
 });
 
+test("deduplication preserves affirmative and negated event assertions", () => {
+  const assertions = [
+    ["The protocol was hacked.", "The protocol wasn't hacked."],
+    ["The application was approved.", "The application wasn't approved."],
+    ["The launch succeeded.", "The launch wasn't successful."],
+    ["The launch failed.", "The launch hasn't failed."],
+  ];
+
+  for (const identity of ["canonical", "title"]) {
+    for (const [index, [affirmative, negated]] of assertions.entries()) {
+      const canonicalId = identity === "canonical" ? `assertion-${index}` : undefined;
+      const title = `Protocol event assertion ${index}`;
+      const first = story({
+        id: `${identity}:affirmative:${index}`,
+        canonicalId,
+        title,
+        summary: affirmative,
+        categories: ["Market / Project"],
+      });
+      const second = story({
+        id: `${identity}:negated:${index}`,
+        canonicalId,
+        title,
+        summary: negated,
+        url: `https://industry.example/${identity}-negated-${index}`,
+        categories: ["Market / Project"],
+      });
+
+      assert.equal(
+        deduplicateCryptoStories([first, second]).length,
+        2,
+        `${identity}: ${affirmative} / ${negated}`,
+      );
+    }
+  }
+});
+
 test("deduplication fingerprints differently worded reports of the same sourced fact", () => {
   const industry = story({
     id: "wire:ibit-flow",
@@ -354,6 +391,8 @@ test("Crypto Daily normalizes n't contractions before checking directional evide
   const cases = [
     { impact: "Bullish", rationale: "The application wasn't approved." },
     { impact: "Bearish", rationale: "The protocol wasn't hacked." },
+    { impact: "Bullish", rationale: "The launch wasn't successful." },
+    { impact: "Bearish", rationale: "The launch hasn't failed." },
   ];
 
   for (const [index, candidate] of cases.entries()) {
