@@ -785,6 +785,68 @@ test("data release retries only global acknowledgement when release-state persis
   assert.equal((await repository.getMeta("market-content:release-state:v1")).monitoredEvents[0].observedAt, "2026-08-19T12:31:00.000Z");
 });
 
+test("data release does not resend after an external send when target receipt persistence fails once", async () => {
+  const calendar = { result: [{ id: "us-cpi-target-ack", title: "US CPI YoY", country: "US", importance: 3, date: "2026-08-19T12:30:00Z", actual: "2.7", forecast: "2.8", previous: "2.9", unit: "%" }] };
+  const base = automationRepository();
+  let rejectTargetAck = true;
+  const repository = {
+    ...base,
+    async setMeta(key, value) {
+      const target = value?.entries?.[0]?.targets?.["discord:g1:c1"];
+      if (key === "market-content:release-delivery:v1" && target?.status === "success" && rejectTargetAck) {
+        rejectTargetAck = false;
+        throw new Error("target receipt unavailable");
+      }
+      return base.setMeta(key, value);
+    },
+  };
+  let sends = 0;
+  const options = {
+    force: true, dryRun: false, repository, fetchImpl: fixtureFetch(calendar),
+    fetchReaction: async () => ({ prices: {}, sources: [], warnings: [] }),
+    targets: [{ platform: "discord", guildId: "g1", channelId: "c1" }],
+    discordSender: async () => ({ id: `message-${++sends}` }),
+  };
+
+  const first = await automation.runAutomationJob("data-release-updates", { ...options, now: "2026-08-19T12:31:00Z" });
+  const second = await automation.runAutomationJob("data-release-updates", { ...options, now: "2026-08-19T12:32:00Z" });
+
+  assert.equal(first.status, "success");
+  assert.equal(second.status, "skipped");
+  assert.equal(sends, 1);
+});
+
+test("Telegram release remains fail-closed without resending while its success receipt cannot persist", async () => {
+  const calendar = { result: [{ id: "us-cpi-tg-receipt", title: "US CPI YoY", country: "US", importance: 3, date: "2026-08-19T12:30:00Z", actual: "2.7", forecast: "2.8", previous: "2.9", unit: "%" }] };
+  const base = automationRepository();
+  const repository = {
+    ...base,
+    async setMeta(key, value) {
+      const target = value?.entries?.[0]?.targets?.["telegram:-1001:8"];
+      if (key === "market-content:release-delivery:v1" && target?.status === "success") {
+        throw new Error("target receipt unavailable");
+      }
+      return base.setMeta(key, value);
+    },
+  };
+  let sends = 0;
+  const options = {
+    force: true, dryRun: false, repository, fetchImpl: fixtureFetch(calendar),
+    fetchReaction: async () => ({ prices: {}, sources: [], warnings: [] }),
+    targets: [{ chatId: "-1001", threadId: 8 }],
+    telegramSender: async () => ({ message_id: ++sends }),
+  };
+
+  const first = await automation.runAutomationJob("data-release-updates", { ...options, now: "2026-08-19T12:31:00Z" });
+  const second = await automation.runAutomationJob("data-release-updates", { ...options, now: "2026-08-19T12:32:00Z" });
+
+  assert.equal(first.status, "queued");
+  assert.equal(first.preview.targetResults[0].receiptFinalizationPending, true);
+  assert.equal(second.status, "queued");
+  assert.equal(second.preview.deliveryPlans.length, 0);
+  assert.equal(sends, 1);
+});
+
 test("concurrent data-release runs send once and acknowledge before the queued run polls", async () => {
   const actualCalendar = { result: [{
     id: "us-cpi-concurrent",
@@ -825,6 +887,42 @@ test("concurrent data-release runs send once and acknowledge before the queued r
   assert.deepEqual((await repository.getMeta("market-content:release-state:v1")).publishedKeys, [
     success.preview.deduplicationKey,
   ]);
+});
+
+test("data-release run lease serializes two repository instances on one backend", async () => {
+  const calendar = { result: [{ id: "us-cpi-shared-workers", title: "US CPI YoY", country: "US", importance: 3, date: "2026-08-19T12:30:00Z", actual: "2.7", forecast: "2.8", previous: "2.9", unit: "%" }] };
+  const meta = new Map();
+  const repository = () => ({
+    async getMeta(key) { return structuredClone(meta.get(key) ?? null); },
+    async setMeta(key, value) { meta.set(key, structuredClone(value)); return structuredClone(value); },
+    async acquireMetaLease(key, lease, now) {
+      const current = meta.get(key);
+      if (current?.leaseUntil && Date.parse(current.leaseUntil) > new Date(now).getTime()) return null;
+      meta.set(key, structuredClone(lease));
+      return structuredClone(lease);
+    },
+    async releaseMetaLease(key, leaseId) {
+      if (meta.get(key)?.leaseId !== leaseId) return false;
+      meta.delete(key);
+      return true;
+    },
+  });
+  let sends = 0;
+  const baseOptions = {
+    now: "2026-08-19T12:31:00Z", force: true, dryRun: false,
+    fetchImpl: fixtureFetch(calendar),
+    fetchReaction: async () => ({ prices: {}, sources: [], warnings: [] }),
+    targets: [{ platform: "discord", guildId: "g1", channelId: "c1" }],
+    discordSender: async () => ({ id: `message-${++sends}` }),
+  };
+
+  const results = await Promise.all([
+    automation.runAutomationJob("data-release-updates", { ...baseOptions, repository: repository() }),
+    automation.runAutomationJob("data-release-updates", { ...baseOptions, repository: repository() }),
+  ]);
+
+  assert.deepEqual(results.map(({ status }) => status).sort(), ["skipped", "success"]);
+  assert.equal(sends, 1);
 });
 
 test("an injected Telegram sender runs without a production bot token", async () => {

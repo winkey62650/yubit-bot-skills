@@ -356,6 +356,27 @@ test("production retry refuses a failed delivery outside the Demo group", async 
   );
 });
 
+test("data-release automation retry passes the active repository to its runner", async () => {
+  const delivery = { id: "delivery-release-retry", eventId: "event-release-retry", status: "failed", attempts: 1, target: { id: "release-target", chatId: "-1001", threadId: 8 } };
+  const event = { id: delivery.eventId, eventType: "automation", createdAt: "2026-08-19T12:31:00.000Z", payload: { jobId: "data-release-updates", slotAt: "2026-08-19T12:31:00.000Z" } };
+  const repository = {
+    async getDelivery() { return delivery; },
+    async getEvent() { return event; },
+    async claimDelivery() { return { ...delivery, status: "sending" }; },
+    async updateDelivery(_id, patch) { return Object.assign(delivery, patch); },
+  };
+  let receivedRepository;
+  await retryDistributionDelivery(delivery.id, {
+    repository,
+    env: { NODE_ENV: "test", DEMO_TELEGRAM_CHAT_ID: "-1001" },
+    runner: async (_jobId, options) => {
+      receivedRepository = options.repository;
+      return { status: "success", preview: { targetResults: [{ target: delivery.target, status: "success", messageId: 1 }] } };
+    },
+  });
+  assert.equal(receivedRepository, repository);
+});
+
 test("webhook secret verification rejects missing configuration and wrong values", () => {
   assert.equal(verifyTelegramWebhookSecret("a", "a"), true);
   assert.equal(verifyTelegramWebhookSecret("a", "b"), false);
@@ -1074,6 +1095,8 @@ test("desktop publisher prioritizes a realtime broadcast over an older automatio
 });
 
 test("desktop publisher archives a stale zero-progress delivery instead of blocking fresh work", async () => {
+  const releaseEvent = { id: "expired-release", sourceId: "expired-release", scheduledAt: "2026-07-20T00:00:00.000Z", values: { actual: "2.7%" } };
+  const releaseKey = buildReleaseDeduplicationKey(releaseEvent);
   const expiredDelivery = {
     id: "delivery-expired",
     eventId: "event-expired",
@@ -1081,6 +1104,7 @@ test("desktop publisher archives a stale zero-progress delivery instead of block
     status: "sending",
     createdAt: "2026-07-20T00:00:00.000Z",
     attempts: 0,
+    payload: { releaseDeduplicationKey: releaseKey, releaseTargetKey: "telegram:-1003710405969:16", releaseEvent },
     target: {
       id: "demo-whale",
       chatId: "-1003710405969",
@@ -1127,7 +1151,10 @@ test("desktop publisher archives a stale zero-progress delivery instead of block
       }
     }]
   ]);
+  const meta = new Map();
   const repository = {
+    async getMeta(key) { return structuredClone(meta.get(key) ?? null); },
+    async setMeta(key, value) { meta.set(key, structuredClone(value)); return value; },
     async listDeliveries({ status } = {}) {
       return deliveries.filter((delivery) => delivery.status === status);
     },
@@ -1149,6 +1176,8 @@ test("desktop publisher archives a stale zero-progress delivery instead of block
     DEMO_TELEGRAM_CHAT_ID: "-1003710405969",
     TELEGRAM_USER_PUBLISHER_TARGETS: "-1003710405969,-1004378187866"
   };
+  await prepareDataReleaseDelivery({ repository, deduplicationKey: releaseKey, event: releaseEvent, targetKeys: [expiredDelivery.payload.releaseTargetKey], now: "2026-07-20T00:00:01Z" });
+  await markDataReleaseTargetPending({ repository, deduplicationKey: releaseKey, targetKey: expiredDelivery.payload.releaseTargetKey, event: releaseEvent, now: "2026-07-20T00:00:02Z" });
 
   const claimed = await claimDesktopPublisherDelivery({
     repository,
@@ -1160,6 +1189,28 @@ test("desktop publisher archives a stale zero-progress delivery instead of block
   assert.equal(expiredDelivery.status, "failed");
   assert.equal(expiredDelivery.attempts, 1);
   assert.match(expiredDelivery.error, /安全归档/);
+  const receipt = await prepareDataReleaseDelivery({ repository, deduplicationKey: releaseKey, event: releaseEvent, targetKeys: [expiredDelivery.payload.releaseTargetKey], now: "2026-07-22T06:01:01Z" });
+  assert.deepEqual(receipt.readyTargetKeys, [expiredDelivery.payload.releaseTargetKey]);
+});
+
+test("desktop publisher releases a queued release claim when its plan is missing", async () => {
+  const target = { id: "release-invalid", chatId: "-1001", threadId: 8, groupName: "DEMO Academy" };
+  const eventData = { id: "invalid-release", sourceId: "invalid-release", scheduledAt: "2026-08-19T12:30:00.000Z", values: { actual: "2.7%" } };
+  const deduplicationKey = buildReleaseDeduplicationKey(eventData);
+  const targetKey = buildDataReleaseTargetKey(target);
+  const meta = new Map();
+  const delivery = { id: "delivery-invalid-release", eventId: "event-invalid-release", ruleId: "rule-invalid-release", status: "pending", attempts: 0, target, payload: { releaseDeduplicationKey: deduplicationKey, releaseTargetKey: targetKey, releaseEvent: eventData } };
+  const repository = {
+    async getMeta(key) { return structuredClone(meta.get(key) ?? null); }, async setMeta(key, value) { meta.set(key, structuredClone(value)); return value; },
+    async listDeliveries({ status }) { return delivery.status === status ? [delivery] : []; }, async getRule() { return { kind: "automation" }; },
+    async claimDelivery() { delivery.status = "sending"; return delivery; }, async getEvent() { return { id: delivery.eventId, payload: { deliveryPlans: [] } }; },
+    async updateDelivery(_id, patch) { return Object.assign(delivery, patch); },
+  };
+  await prepareDataReleaseDelivery({ repository, deduplicationKey, event: eventData, targetKeys: [targetKey], now: "2026-08-19T12:30:00Z" });
+  await markDataReleaseTargetPending({ repository, deduplicationKey, targetKey, event: eventData, now: "2026-08-19T12:30:01Z" });
+  assert.equal(await claimDesktopPublisherDelivery({ repository, env: { TELEGRAM_USER_PUBLISHER_TARGETS: "-1001" }, now: "2026-08-19T12:31:00Z" }), null);
+  const receipt = await prepareDataReleaseDelivery({ repository, deduplicationKey, event: eventData, targetKeys: [targetKey], now: "2026-08-19T12:31:01Z" });
+  assert.deepEqual(receipt.readyTargetKeys, [targetKey]);
 });
 
 test("desktop publisher resumes an old delivery when at least one step already succeeded", async () => {
@@ -1450,6 +1501,34 @@ test("queued release automation passes its repository and does not recreate an e
   assert.equal(events[0].payload.releaseDeduplicationKey, deduplicationKey);
   assert.deepEqual(events[0].payload.releaseExpectedTargetKeys, [targetKey]);
   assert.equal(deliveries[0].payload.releaseTargetKey, targetKey);
+});
+
+test("queued release claim is released when delivery persistence fails after the claim", async () => {
+  const target = { id: "release-persist-failure", chatId: "-1001", threadId: 8 };
+  const targetKey = buildDataReleaseTargetKey(target);
+  const eventData = { id: "us-cpi-persist", sourceId: "us-cpi-persist", scheduledAt: "2026-08-19T12:30:00.000Z", values: { actual: "2.7%" } };
+  const deduplicationKey = buildReleaseDeduplicationKey(eventData);
+  const meta = new Map();
+  const events = [];
+  let createAttempts = 0;
+  const rule = { id: "release-persist-rule", kind: "automation", contentType: "data-release-updates", targets: [target] };
+  const repository = {
+    async getMeta(key) { return structuredClone(meta.get(key) ?? null); }, async setMeta(key, value) { meta.set(key, structuredClone(value)); return value; },
+    async getRule() { return rule; }, async listRules() { return []; },
+    async createEvent(value) { const saved = { id: "event-persist", ...value }; events.push(saved); return saved; },
+    async updateEvent(_id, patch) { Object.assign(events[0], patch); },
+    async createDelivery(value) { createAttempts += 1; if (createAttempts === 1) throw new Error("delivery store unavailable"); return { id: `failed-${createAttempts}`, ...value }; },
+    async updateDelivery(_id, patch) { return patch; }, async saveMapping() {},
+  };
+  const runner = async () => {
+    await prepareDataReleaseDelivery({ repository, deduplicationKey, event: eventData, targetKeys: [targetKey], now: "2026-08-19T12:31:00Z" });
+    await markDataReleaseTargetPending({ repository, deduplicationKey, targetKey, event: eventData, now: "2026-08-19T12:31:01Z" });
+    return { status: "queued", preview: { event: eventData, deliveryReceipt: { deduplicationKey, event: eventData, expectedTargetKeys: [targetKey] }, targetResults: [{ target, status: "pending", releaseTargetKey: targetKey }], deliveryPlans: [{ target, steps: [{ method: "sendMessage", payload: { text: "release" } }] }] } };
+  };
+  const result = await runDistributionAutomationRule(rule.id, { repository, runner, env: { TELEGRAM_DESKTOP_PUBLISHER_REQUIRED: "true", TELEGRAM_USER_PUBLISHER_TARGETS: "-1001" } });
+  assert.equal(result.status, "failed");
+  const receipt = await prepareDataReleaseDelivery({ repository, deduplicationKey, event: eventData, targetKeys: [targetKey], now: "2026-08-19T12:32:00Z" });
+  assert.deepEqual(receipt.readyTargetKeys, [targetKey]);
 });
 
 test("desktop release completion records its target receipt and globally acknowledges the release", async () => {

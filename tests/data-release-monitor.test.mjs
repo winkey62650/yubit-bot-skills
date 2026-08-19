@@ -90,6 +90,42 @@ test("delivery receipts persist expected targets and preserve successful targets
   assert.ok(await repository.getMeta(DATA_RELEASE_DELIVERY_META_KEY));
 });
 
+test("delivery receipt mutations are serialized across repository instances sharing one backend", async () => {
+  const meta = new Map();
+  const leases = new Map();
+  const makeRepository = () => ({
+    async getMeta(key) { await Promise.resolve(); return structuredClone(meta.get(key) ?? null); },
+    async setMeta(key, value) { await Promise.resolve(); meta.set(key, structuredClone(value)); return value; },
+    async acquireMetaLease(key, lease) {
+      if (leases.has(key)) return null;
+      leases.set(key, lease.leaseId);
+      return lease;
+    },
+    async releaseMetaLease(key, leaseId) {
+      if (leases.get(key) !== leaseId) return false;
+      leases.delete(key);
+      return true;
+    },
+  });
+  const firstRepository = makeRepository();
+  const secondRepository = makeRepository();
+  const event = release({ values: { actual: "2.7%", forecast: "2.8%", previous: "2.9%" } });
+  const deduplicationKey = buildReleaseDeduplicationKey(event);
+  const targetKeys = ["discord:g1:c1", "discord:g1:c2"];
+  await prepareDataReleaseDelivery({ repository: firstRepository, deduplicationKey, event, targetKeys, now: "2026-08-19T12:31:00Z" });
+
+  await Promise.all(targetKeys.map((targetKey, index) => acknowledgeDataReleaseTarget({
+    repository: index ? secondRepository : firstRepository,
+    deduplicationKey,
+    targetKey,
+    event,
+    now: `2026-08-19T12:31:0${index + 1}Z`,
+  })));
+
+  const snapshot = await prepareDataReleaseDelivery({ repository: firstRepository, deduplicationKey, event, targetKeys, now: "2026-08-19T12:31:10Z" });
+  assert.deepEqual(snapshot.successfulTargetKeys.sort(), targetKeys);
+});
+
 test("classifies the -5 minute through +15 minute release window inclusively", () => {
   assert.equal(releaseWindowStatus(release(), "2026-08-19T12:24:59.999Z"), "upcoming");
   assert.equal(releaseWindowStatus(release(), "2026-08-19T12:25:00.000Z"), "monitoring");

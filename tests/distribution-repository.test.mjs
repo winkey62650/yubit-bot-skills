@@ -96,6 +96,7 @@ test("Postgres target migrations and reads preserve per-target CTA fields", asyn
   assert.ok(calls.some((sql) => /ADD COLUMN IF NOT EXISTS cta_enabled/.test(sql)));
   assert.ok(calls.some((sql) => /ADD COLUMN IF NOT EXISTS cta_text/.test(sql)));
   assert.ok(calls.some((sql) => /ADD COLUMN IF NOT EXISTS cta_url/.test(sql)));
+  assert.ok(calls.some((sql) => /distribution_deliveries ADD COLUMN IF NOT EXISTS payload jsonb/.test(sql)));
 
   const rule = await repository.getRule("cta-rule");
   assert.equal(rule.targets[0].ctaEnabled, true);
@@ -118,6 +119,7 @@ test("Postgres delivery records preserve every Telegram message id", async () =>
     targetMessageIds: [],
     publisherProgress: [],
     publisherVerification: null,
+    payload: { releaseDeduplicationKey: "release-1" },
     error: null,
     deliveredAt: null
   });
@@ -136,8 +138,9 @@ test("Postgres delivery records preserve every Telegram message id", async () =>
         target_message_ids: JSON.parse(params[4]),
         publisher_progress: JSON.parse(params[5]),
         publisher_verification: JSON.parse(params[6]),
-        error: params[7],
-        delivered_at: params[8],
+        payload: JSON.parse(params[7]),
+        error: params[8],
+        delivered_at: params[9],
         created_at: "2026-07-15T00:00:00.000Z",
         updated_at: "2026-07-15T00:00:00.000Z"
       }];
@@ -163,9 +166,25 @@ test("Postgres delivery records preserve every Telegram message id", async () =>
   assert.equal(captured.params[4], "[521,522]");
   assert.equal(captured.params[5], '[{"stepId":"1-photo-a1","checksum":"a1","targetMessageId":521}]');
   assert.equal(captured.params[6], '{"leaseId":"lease-1","stepId":"1-photo-a1","observedGroupName":"DEMO Academy"}');
+  assert.equal(captured.params[7], '{"releaseDeduplicationKey":"release-1"}');
   assert.deepEqual(delivery.targetMessageIds, [521, 522]);
   assert.deepEqual(delivery.publisherProgress, [{ stepId: "1-photo-a1", checksum: "a1", targetMessageId: 521 }]);
   assert.equal(delivery.publisherVerification.leaseId, "lease-1");
+  assert.deepEqual(delivery.payload, { releaseDeduplicationKey: "release-1" });
+});
+
+test("Postgres creates delivery rows with their queued release payload", async () => {
+  const repository = Object.create(PostgresDistributionRepository.prototype);
+  let captured;
+  repository.sql = { async query(sql, params) {
+    captured = { sql, params };
+    return [{ id: "delivery-payload", event_id: "event-1", rule_id: "rule-1", target_id: "target-1", target: {}, payload: JSON.parse(params[7]), status: "pending", attempts: 0 }];
+  } };
+  const payload = { releaseDeduplicationKey: "release-1", releaseTargetKey: "telegram:-1001:8" };
+  const delivery = await repository.createDelivery({ eventId: "event-1", ruleId: "rule-1", targetId: "target-1", target: {}, status: "pending", payload });
+  assert.match(captured.sql, /payload/);
+  assert.equal(captured.params[7], JSON.stringify(payload));
+  assert.deepEqual(delivery.payload, payload);
 });
 
 test("Postgres delivery records hide legacy zero Telegram message ids", async () => {
