@@ -789,6 +789,20 @@ test("market preview facts count real Weekly Calendar document events and derive
   assert.equal(facts.nextMonitoredEvent, "US CPI · Aug 19, 12:30 UTC");
 });
 
+test("market preview facts select the first non-empty source health array", () => {
+  const facts = buildMarketPreviewFacts({
+    sources: [],
+    sourceHealth: { sources: [] },
+    diagnostics: {
+      sources: [{ id: "diagnostic-source", status: "ok", lastSuccessAt: "2026-08-19T08:00:00.000Z" }]
+    },
+    document: { sources: [{ id: "document-source", status: "ok" }] }
+  });
+
+  assert.deepEqual(facts.sources.map((source) => source.id), ["diagnostic-source"]);
+  assert.deepEqual(buildMarketPreviewFacts({ sources: [], diagnostics: { sources: [] } }).sources, []);
+});
+
 test("market dry-run document is rendered as the real safe Telegram preview", () => {
   const document = buildWeeklyCalendarDocument({
     now: new Date("2026-08-19T08:00:00.000Z"),

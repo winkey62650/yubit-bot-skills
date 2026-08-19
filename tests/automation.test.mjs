@@ -765,6 +765,74 @@ test("real market job previews preserve structured diagnostics for the distribut
   assert.match(releasedFacts.nextMonitoredEvent, /US GDP/);
 });
 
+test("weekly diagnostics select the deduplicated sorted document events while retaining raw candidates", async () => {
+  const calendar = { result: [
+    { id: "gdp", title: "US GDP", country: "US", importance: 3, date: "2026-08-20T12:30:00Z", forecast: "2.1", previous: "2.0", unit: "%" },
+    { id: "cpi-secondary", title: "US CPI YoY", country: "US", importance: 3, date: "2026-08-19T12:30:00Z", forecast: "2.8", previous: "2.9", unit: "%", source: "secondary" },
+    { id: "cpi-primary", title: "US CPI YoY", country: "US", importance: 3, date: "2026-08-19T12:30:00Z", forecast: "2.8", previous: "2.9", unit: "%", source: "primary" },
+    { id: "minor", title: "Minor survey", country: "US", importance: 1, date: "2026-08-19T09:00:00Z" }
+  ] };
+
+  const result = await automation.runAutomationJob("weekly-calendar", {
+    now: "2026-08-19T08:00:00Z",
+    force: true,
+    dryRun: true,
+    repository: automationRepository(),
+    fetchImpl: fixtureFetch(calendar),
+    targets: []
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.preview.diagnostics.candidates.length, 4);
+  assert.deepEqual(result.preview.diagnostics.selected.map((event) => event.title), ["US CPI YoY", "US GDP"]);
+  assert.equal(result.preview.diagnostics.nextMonitoredEvent.title, "US CPI YoY");
+  assert.equal(result.preview.diagnostics.nextMonitoredEvent.scheduledAt, "2026-08-19T12:30:00.000Z");
+  assert.equal(result.preview.sources[0].lastSuccessAt, "2026-08-19T08:00:00.000Z");
+});
+
+test("daily and weekly jobs fail closed without sending when every source is unavailable", async () => {
+  const unavailableFetch = async () => new Response("unavailable", { status: 400 });
+  for (const jobId of ["crypto-daily", "weekly-calendar"]) {
+    let sends = 0;
+    const result = await automation.runAutomationJob(jobId, {
+      now: "2026-08-19T08:00:00Z",
+      force: true,
+      dryRun: false,
+      repository: automationRepository(),
+      fetchImpl: unavailableFetch,
+      targets: [{ platform: "discord", guildId: "g1", channelId: "c1" }],
+      discordSender: async () => { sends += 1; }
+    });
+
+    assert.equal(result.status, "skipped", jobId);
+    assert.equal(result.preview.publishable, false, jobId);
+    assert.equal(result.preview.skipReason, "sources-unavailable", jobId);
+    assert.equal(result.preview.diagnostics.selected.length, 0, jobId);
+    assert.equal(sends, 0, jobId);
+  }
+});
+
+test("healthy sources with no significant market content skip as no-publishable-content", async () => {
+  const emptyRss = `<?xml version="1.0"?><rss><channel></channel></rss>`;
+  const cases = [
+    ["crypto-daily", fixtureFetch(emptyRss)],
+    ["weekly-calendar", fixtureFetch({ result: [] })]
+  ];
+  for (const [jobId, fetchImpl] of cases) {
+    const result = await automation.runAutomationJob(jobId, {
+      now: "2026-08-19T08:00:00Z",
+      force: true,
+      dryRun: true,
+      repository: automationRepository(),
+      fetchImpl,
+      targets: []
+    });
+    assert.equal(result.status, "skipped", jobId);
+    assert.equal(result.preview.skipReason, "no-publishable-content", jobId);
+    assert.ok(result.preview.sources.some((source) => source.status === "ok"), jobId);
+  }
+});
+
 test("weekly calendar caches only when persist is explicitly true", async () => {
   const calendar = { result: [{ id: "us-cpi", title: "US CPI YoY", country: "US", importance: 3, date: "2026-08-20T12:30:00Z", forecast: "2.8", previous: "2.9", unit: "%" }] };
   const repository = automationRepository();
