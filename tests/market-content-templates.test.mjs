@@ -142,6 +142,24 @@ test("deduplication does not merge the same entities and action when the event o
   assert.equal(deduplicateCryptoStories([etfFiling, custodyLicense]).length, 2);
 });
 
+test("deduplication keeps the same actor and legal action separate when the objects differ", () => {
+  const staking = story({
+    id: "coinbase-staking-lawsuit",
+    canonicalId: undefined,
+    title: "SEC files lawsuit against Coinbase staking service",
+    summary: "The SEC lawsuit challenges Coinbase's staking service.",
+  });
+  const registration = story({
+    id: "coinbase-registration-lawsuit",
+    canonicalId: undefined,
+    title: "SEC files lawsuit against Coinbase exchange registration",
+    summary: "The SEC lawsuit challenges Coinbase's exchange registration.",
+    url: "https://industry.example/coinbase-registration",
+  });
+
+  assert.equal(deduplicateCryptoStories([staking, registration]).length, 2);
+});
+
 test("ranking is deterministic and independent of candidate input order", () => {
   const official = story({ id: "official", title: "Official ETF filing", url: "https://sec.gov/official", source: { id: "sec", kind: "official", label: "SEC" }, importance: 2 });
   const recent = story({ id: "recent", title: "Recent ETF report", url: "https://wire.example/recent", publishedAt: "2026-08-19T07:59:00Z", importance: 2 });
