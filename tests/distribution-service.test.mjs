@@ -846,6 +846,126 @@ test("complete mixed target receipts aggregate to partial and keep a one-time ru
   assert.equal(savedRules[0].nextRunAt, "2026-08-19T10:45:37.000Z");
 });
 
+test("a one-time partial retry sends only targets without a durable success receipt", async () => {
+  const targets = [
+    { id: "target-retry-a", chatId: "-100200", threadId: 8 },
+    { id: "target-retry-b", chatId: "-100201", threadId: 8 }
+  ];
+  let rule = {
+    id: "rule-targeted-retry",
+    kind: "automation",
+    contentType: "crypto-daily",
+    enabled: true,
+    runOnce: true,
+    status: "ready",
+    schedulePreset: "daily-1100",
+    nextRunAt: "2026-08-19T10:40:00.000Z",
+    targets
+  };
+  const meta = new Map();
+  const events = [];
+  const deliveries = [];
+  const runnerTargetIds = [];
+  const repository = {
+    async cleanupExpired() {},
+    async getMeta(key) { return structuredClone(meta.get(key) ?? (key === "legacy-migration-v1" ? { completedAt: "2026-08-01T00:00:00.000Z" } : null)); },
+    async setMeta(key, value) { meta.set(key, structuredClone(value)); return value; },
+    async claimDueAutomationRules(now) {
+      if (!rule.enabled || Date.parse(rule.nextRunAt) > now.getTime()) return [];
+      rule = { ...rule, status: "running" };
+      return [structuredClone(rule)];
+    },
+    async listRules() { return []; },
+    async listDeliveries() { return structuredClone(deliveries); },
+    async createEvent(event) { const saved = { id: `event-${events.length + 1}`, ...event }; events.push(saved); return saved; },
+    async updateEvent(id, patch) { Object.assign(events.find((event) => event.id === id), structuredClone(patch)); },
+    async createDelivery(delivery) { const saved = { id: `delivery-${deliveries.length + 1}`, ...structuredClone(delivery) }; deliveries.push(saved); return saved; },
+    async updateDelivery(id, patch) { return Object.assign(deliveries.find((delivery) => delivery.id === id), structuredClone(patch)); },
+    async saveMapping() {},
+    async saveRule(saved) { rule = structuredClone(saved); return saved; }
+  };
+  let run = 0;
+  const runner = async (_jobId, options) => {
+    run += 1;
+    runnerTargetIds.push(options.targets.map((target) => target.id));
+    if (run === 1) {
+      return { status: "success", preview: { targetResults: [
+        { target: targets[0], status: "success", messageId: 1001 },
+        { target: targets[1], status: "failed", error: "TEMPORARY_FAILURE" }
+      ] } };
+    }
+    return { status: "success", preview: { targetResults: [
+      { target: targets[1], status: "success", messageId: 1002 }
+    ] } };
+  };
+
+  const first = await runDueDistributionJobs(new Date("2026-08-19T10:40:37.000Z"), { repository, runner });
+  const second = await runDueDistributionJobs(new Date("2026-08-19T10:45:37.000Z"), { repository, runner });
+
+  assert.equal(first.results[0].status, "partial");
+  assert.equal(second.results[0].status, "success");
+  assert.deepEqual(runnerTargetIds, [["target-retry-a", "target-retry-b"], ["target-retry-b"]]);
+  assert.equal(deliveries.filter((delivery) => delivery.targetId === "target-retry-a").length, 1);
+  assert.equal(rule.enabled, false);
+  assert.equal(rule.status, "completed");
+});
+
+test("a mixed external result survives delivery persistence failure and retries only the unsent target", async () => {
+  const targets = [
+    { id: "target-store-a", chatId: "-100210", threadId: 8 },
+    { id: "target-store-b", chatId: "-100211", threadId: 8 }
+  ];
+  let rule = {
+    id: "rule-store-targeted-retry", kind: "automation", contentType: "crypto-daily",
+    enabled: true, runOnce: true, status: "ready", schedulePreset: "daily-1100",
+    nextRunAt: "2026-08-19T10:40:00.000Z", targets
+  };
+  const meta = new Map();
+  const events = [];
+  const deliveries = [];
+  const runnerTargetIds = [];
+  let createAttempts = 0;
+  const repository = {
+    async cleanupExpired() {},
+    async getMeta(key) { return structuredClone(meta.get(key) ?? (key === "legacy-migration-v1" ? { completedAt: "2026-08-01T00:00:00.000Z" } : null)); },
+    async setMeta(key, value) { meta.set(key, structuredClone(value)); return value; },
+    async claimDueAutomationRules(now) { if (!rule.enabled || Date.parse(rule.nextRunAt) > now.getTime()) return []; rule = { ...rule, status: "running" }; return [structuredClone(rule)]; },
+    async listRules() { return []; }, async listDeliveries() { return structuredClone(deliveries); },
+    async createEvent(event) { const saved = { id: `event-store-${events.length + 1}`, ...event }; events.push(saved); return saved; },
+    async updateEvent(id, patch) { Object.assign(events.find((event) => event.id === id), structuredClone(patch)); },
+    async createDelivery(delivery) {
+      createAttempts += 1;
+      if (createAttempts === 1) throw new Error("DELIVERY_STORE_UNAVAILABLE");
+      const saved = { id: `delivery-store-${deliveries.length + 1}`, ...structuredClone(delivery) };
+      deliveries.push(saved);
+      return saved;
+    },
+    async updateDelivery(id, patch) { return Object.assign(deliveries.find((delivery) => delivery.id === id), structuredClone(patch)); },
+    async saveMapping() {}, async saveRule(saved) { rule = structuredClone(saved); return saved; }
+  };
+  let run = 0;
+  const runner = async (_jobId, options) => {
+    run += 1;
+    runnerTargetIds.push(options.targets.map((target) => target.id));
+    return run === 1
+      ? { status: "success", preview: { targetResults: [
+        { target: targets[0], status: "success", messageId: 1101 },
+        { target: targets[1], status: "failed", error: "TEMPORARY_FAILURE" }
+      ] } }
+      : { status: "success", preview: { targetResults: [{ target: targets[1], status: "success", messageId: 1102 }] } };
+  };
+
+  const first = await runDueDistributionJobs(new Date("2026-08-19T10:40:37.000Z"), { repository, runner });
+  const second = await runDueDistributionJobs(new Date("2026-08-19T10:45:37.000Z"), { repository, runner });
+
+  assert.equal(first.results[0].status, "partial");
+  assert.equal(first.results[0].deliveryPersisted, false);
+  assert.equal(second.results[0].status, "success");
+  assert.deepEqual(runnerTargetIds, [["target-store-a", "target-store-b"], ["target-store-b"]]);
+  assert.equal(events[0].payload.targetReceipts["-100210:8"].messageId, 1101);
+  assert.equal(rule.status, "completed");
+});
+
 test("a partial target receipt set aggregates success plus a missing receipt to partial", async () => {
   const targets = [
     { id: "target-partial-present", chatId: "-100200", threadId: 8 },
@@ -1022,6 +1142,87 @@ test("missing empty and invalid runner statuses fail closed and schedule a retry
     assert.equal(savedRules[0].status, "retrying");
     assert.equal(savedRules[0].nextRunAt, "2026-08-19T10:45:37.000Z");
   }
+});
+
+test("success target receipts without a valid message id fail closed", async () => {
+  const invalidReceipts = [
+    { messageId: null },
+    { messageId: undefined },
+    { messageId: 0 },
+    { messageId: "" },
+    { messageIds: [] },
+    { messageIds: [""] },
+    { messageIds: [null] }
+  ];
+  for (const [index, receipt] of invalidReceipts.entries()) {
+    const target = { id: `target-invalid-receipt-${index}`, chatId: `-10030${index}`, threadId: 8 };
+    const rule = { id: `rule-invalid-receipt-${index}`, kind: "automation", contentType: "crypto-daily", targets: [target] };
+    const deliveries = [];
+    let eventPayload = null;
+    const repository = {
+      async getRule() { return rule; }, async listRules() { return []; },
+      async createEvent(event) { return { id: `event-invalid-receipt-${index}`, ...event }; },
+      async updateEvent(_id, patch) { eventPayload = patch.payload; },
+      async createDelivery(delivery) { const saved = { id: `delivery-invalid-receipt-${index}`, ...delivery }; deliveries.push(saved); return saved; },
+      async updateDelivery(id, patch) { return Object.assign(deliveries.find((delivery) => delivery.id === id), patch); },
+      async saveMapping() {}
+    };
+
+    const result = await runDistributionAutomationRule(rule.id, {
+      repository,
+      runner: async () => ({ status: "success", preview: { targetResults: [
+        { target, status: "success", ...receipt }
+      ] } })
+    });
+
+    assert.equal(result.status, "failed", `invalid receipt ${index}`);
+    assert.equal(result.error, "AUTOMATION_SUCCESS_RECEIPT_INVALID", `invalid receipt ${index}`);
+    assert.equal(deliveries[0].status, "failed", `invalid receipt ${index}`);
+    assert.equal(deliveries[0].targetMessageId, null, `invalid receipt ${index}`);
+    assert.equal(eventPayload.outcome, "failed", `invalid receipt ${index}`);
+  }
+});
+
+test("an invalid runner envelope with reliable receipts completes without automatic resend", async () => {
+  const target = { id: "target-invalid-envelope-sent", chatId: "-100400", threadId: 8 };
+  const rule = {
+    id: "rule-invalid-envelope-sent", kind: "automation", contentType: "crypto-daily",
+    enabled: true, runOnce: true, status: "running", schedulePreset: "daily-1100", targets: [target]
+  };
+  const events = [];
+  const deliveries = [];
+  const savedRules = [];
+  const meta = new Map();
+  let runnerCalls = 0;
+  const repository = {
+    async cleanupExpired() {},
+    async getMeta(key) { return structuredClone(meta.get(key) ?? (key === "legacy-migration-v1" ? { completedAt: "2026-08-01T00:00:00.000Z" } : null)); },
+    async setMeta(key, value) { meta.set(key, structuredClone(value)); return value; },
+    async claimDueAutomationRules() { return [rule]; }, async listRules() { return []; }, async listDeliveries() { return structuredClone(deliveries); },
+    async createEvent(event) { const saved = { id: "event-invalid-envelope-sent", ...event }; events.push(saved); return saved; },
+    async updateEvent(id, patch) { Object.assign(events.find((event) => event.id === id), structuredClone(patch)); },
+    async createDelivery(delivery) { const saved = { id: "delivery-invalid-envelope-sent", ...delivery }; deliveries.push(saved); return saved; },
+    async updateDelivery(id, patch) { return Object.assign(deliveries.find((delivery) => delivery.id === id), patch); },
+    async saveMapping() {}, async saveRule(saved) { savedRules.push(saved); return saved; }
+  };
+
+  const execution = await runDueDistributionJobs(new Date("2026-08-19T10:40:37.000Z"), {
+    repository,
+    runner: async () => {
+      runnerCalls += 1;
+      return { status: "bogus", preview: { targetResults: [{ target, status: "success", messageId: 1201 }] } };
+    }
+  });
+
+  assert.equal(runnerCalls, 1);
+  assert.equal(execution.results[0].status, "success");
+  assert.equal(execution.results[0].diagnostic, "AUTOMATION_RUN_STATUS_INVALID");
+  assert.equal(deliveries[0].status, "success");
+  assert.equal(events[0].payload.outcome, "success");
+  assert.equal(events[0].payload.outcomeDiagnostic, "AUTOMATION_RUN_STATUS_INVALID");
+  assert.equal(savedRules[0].enabled, false);
+  assert.equal(savedRules[0].status, "completed");
+  assert.equal(savedRules[0].nextRunAt, null);
 });
 
 test("scheduled release checks are rescheduled at the next whole minute after a non-publishable result", async () => {
