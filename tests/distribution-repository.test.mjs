@@ -156,6 +156,8 @@ test("Postgres target migrations and reads preserve per-target CTA fields", asyn
   };
 
   await repository.initialize();
+  assert.ok(calls.some((sql) => /target_message_id text/.test(sql)), "new delivery tables must use text message ids");
+  assert.ok(calls.some((sql) => /ALTER COLUMN target_message_id TYPE text USING target_message_id::text/.test(sql)), "legacy bigint ids must migrate to text");
   assert.ok(calls.some((sql) => /ADD COLUMN IF NOT EXISTS cta_enabled/.test(sql)));
   assert.ok(calls.some((sql) => /ADD COLUMN IF NOT EXISTS cta_text/.test(sql)));
   assert.ok(calls.some((sql) => /ADD COLUMN IF NOT EXISTS cta_url/.test(sql)));
@@ -165,6 +167,56 @@ test("Postgres target migrations and reads preserve per-target CTA fields", asyn
   assert.equal(rule.targets[0].ctaEnabled, true);
   assert.equal(rule.targets[0].ctaText, "Read more");
   assert.equal(rule.targets[0].ctaUrl, "https://example.com/analysis");
+});
+
+test("Postgres delivery schema and row mapping preserve max uint64 message ids as text", async () => {
+  const repository = Object.create(PostgresDistributionRepository.prototype);
+  const snowflake = "18446744073709551615";
+  const calls = [];
+  repository.sql = { async query(sql) {
+    calls.push(sql);
+    if (/SELECT \* FROM distribution_deliveries/.test(sql)) return [{
+      id: "max-snowflake", event_id: "event", rule_id: "rule", target_id: "target", target: {},
+      status: "success", attempts: 1, target_message_id: snowflake,
+      target_message_ids: [snowflake], publisher_progress: [], payload: {}
+    }];
+    return [];
+  } };
+
+  await repository.initialize();
+  const [delivery] = await repository.listDeliveries({ limit: 1 });
+
+  assert.equal(delivery.targetMessageId, snowflake);
+  assert.deepEqual(delivery.targetMessageIds, [snowflake]);
+  assert.ok(calls.some((sql) => /ALTER COLUMN target_message_id TYPE text USING target_message_id::text/.test(sql)));
+});
+
+test("Postgres message mappings preserve max uint64 ids without Number coercion", async () => {
+  const repository = Object.create(PostgresDistributionRepository.prototype);
+  const snowflake = "18446744073709551615";
+  let insertParams;
+  repository.sql = { async query(sql, params) {
+    if (/INSERT INTO distribution_message_mappings/.test(sql)) insertParams = params;
+    if (/SELECT \* FROM distribution_message_mappings/.test(sql)) return [{
+      rule_id: "mapping-rule", source_chat_id: "source", source_message_id: snowflake,
+      target_chat_id: "target", target_thread_id: 8, target_message_id: snowflake
+    }];
+    return [];
+  } };
+
+  await repository.saveMapping({
+    ruleId: "mapping-rule", sourceChatId: "source", sourceMessageId: snowflake,
+    targetChatId: "target", targetThreadId: 8, targetMessageId: snowflake
+  });
+  const mapping = await repository.findMapping({
+    ruleId: "mapping-rule", sourceChatId: "source", sourceMessageId: snowflake,
+    targetChatId: "target", targetThreadId: 8
+  });
+
+  assert.equal(insertParams[2], snowflake);
+  assert.equal(insertParams[5], snowflake);
+  assert.equal(mapping.sourceMessageId, snowflake);
+  assert.equal(mapping.targetMessageId, snowflake);
 });
 
 test("Postgres delivery records preserve every Telegram message id", async () => {

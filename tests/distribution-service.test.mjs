@@ -1290,6 +1290,9 @@ function createAutomationReviewRepository(initialRule, options = {}) {
       return structuredClone(value);
     },
     async deleteMeta(key) { return meta.delete(key); },
+    async listMetaByPrefix(prefix) {
+      return [...meta.entries()].filter(([key]) => key.startsWith(prefix)).map(([key, value]) => ({ key, value: structuredClone(value) }));
+    },
     async acquireMetaLease(key, lease, now = new Date()) {
       const current = leases.get(key);
       const currentLeaseUntil = options.leaseTtlMs ? current?.testLeaseUntil : Date.parse(current?.leaseUntil ?? "");
@@ -1593,6 +1596,43 @@ test("automation execution lease heartbeat prevents a second repository runner a
   assert.equal(second.status, "busy");
 });
 
+test("heartbeat and critical lease renewals never overlap", async () => {
+  const target = { id: "slow-renew-target", chatId: "-100593", threadId: 8 };
+  const harness = createAutomationReviewRepository({
+    id: "slow-renew-rule", kind: "automation", contentType: "crypto-daily", runOnce: true,
+    enabled: true, status: "ready", targets: [target]
+  });
+  const originalRenew = harness.repository.renewMetaLease;
+  let active = 0;
+  let maximumActive = 0;
+  let releaseRenew;
+  const renewGate = new Promise((resolve) => { releaseRenew = resolve; });
+  let renewEntered;
+  const firstRenew = new Promise((resolve) => { renewEntered = resolve; });
+  harness.repository.renewMetaLease = async (...args) => {
+    active += 1;
+    maximumActive = Math.max(maximumActive, active);
+    renewEntered();
+    await renewGate;
+    try { return await originalRenew(...args); }
+    finally { active -= 1; }
+  };
+  const running = runDistributionAutomationRule("slow-renew-rule", {
+    repository: harness.repository,
+    env: { AUTOMATION_EXECUTION_LEASE_HEARTBEAT_MS: "5" },
+    runner: async () => {
+      await firstRenew;
+      return { status: "success", preview: { targetResults: [{ target, status: "success", messageId: 1809 }] } };
+    }
+  });
+  await firstRenew;
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  releaseRenew();
+  await running;
+
+  assert.equal(maximumActive, 1);
+});
+
 test("lease release failure cannot overwrite a confirmed result or cause resend", async () => {
   const target = { id: "release-throw-target", chatId: "-100561", threadId: 8 };
   const harness = createAutomationReviewRepository({
@@ -1612,7 +1652,7 @@ test("lease release failure cannot overwrite a confirmed result or cause resend"
   assert.equal(runnerCalls, 1);
 });
 
-test("manual reconciliation blocks direct retries until an operator resets it", async () => {
+test("manual reconciliation can only be acknowledged as sent by an authorized operator and never retries", async () => {
   const targets = [
     { id: "manual-a", chatId: "-100562", threadId: 8 },
     { id: "manual-b", chatId: "-100563", threadId: 8 }
@@ -1646,11 +1686,20 @@ test("manual reconciliation blocks direct retries until an operator resets it", 
     /AUTOMATION_RECONCILIATION_GENERATION_REQUIRED/
   );
   await assert.rejects(
-    resetAutomationManualReconciliation("manual-reset-rule", { repository: harness.repository, actor: "ops", expectedGeneration: "wrong" }),
+    resetAutomationManualReconciliation("manual-reset-rule", { repository: harness.repository, actor: "ops", expectedGeneration: "wrong", resolution: "acknowledge-sent", authorize: async () => true }),
     /AUTOMATION_RECONCILIATION_GENERATION_MISMATCH/
+  );
+  await assert.rejects(
+    resetAutomationManualReconciliation("manual-reset-rule", { repository: harness.repository, actor: "ops", expectedGeneration: generation, resolution: "acknowledge-sent" }),
+    /AUTOMATION_RECONCILIATION_AUTHORIZATION_REQUIRED/
+  );
+  await assert.rejects(
+    resetAutomationManualReconciliation("manual-reset-rule", { repository: harness.repository, actor: "ops", expectedGeneration: generation, resolution: "retry", authorize: async () => true }),
+    /AUTOMATION_RECONCILIATION_RESOLUTION_INVALID/
   );
   const reset = await resetAutomationManualReconciliation("manual-reset-rule", {
     repository: harness.repository, actor: "ops", expectedGeneration: generation,
+    resolution: "acknowledge-sent", authorize: async ({ actor }) => actor === "ops",
     now: new Date("2026-08-19T09:00:00.000Z")
   });
   const afterReset = await runDistributionAutomationRule("manual-reset-rule", {
@@ -1663,9 +1712,66 @@ test("manual reconciliation blocks direct retries until an operator resets it", 
 
   assert.equal(first.results[0].status, "manual-reconciliation");
   assert.equal(blocked.status, "manual-reconciliation");
-  assert.equal(reset.status, "ready");
-  assert.equal(afterReset.status, "success");
-  assert.equal(runnerCalls, 2);
+  assert.equal(reset.status, "completed");
+  assert.equal(reset.enabled, false);
+  assert.equal(afterReset.alreadyDelivered, true);
+  assert.equal(runnerCalls, 1);
+});
+
+test("runner timeout aborts the job and permanently fences the execution", async () => {
+  const target = { id: "timeout-target", chatId: "-100590", threadId: 8 };
+  const harness = createAutomationReviewRepository({
+    id: "timeout-rule", kind: "automation", contentType: "crypto-daily", enabled: true,
+    runOnce: true, status: "ready", targets: [target]
+  });
+  let calls = 0;
+  let observedSignal;
+  const runner = async (_job, options) => {
+    calls += 1;
+    observedSignal = options.signal;
+    await new Promise(() => {});
+  };
+
+  const first = await runDistributionAutomationRule("timeout-rule", {
+    repository: harness.repository, runner, env: { AUTOMATION_RUNNER_TIMEOUT_MS: "15" }
+  });
+  const second = await runDistributionAutomationRule("timeout-rule", {
+    repository: harness.repository, runner, env: { AUTOMATION_RUNNER_TIMEOUT_MS: "15" }
+  });
+
+  assert.equal(first.status, "manual-reconciliation");
+  assert.equal(first.error, "AUTOMATION_RUNNER_TIMEOUT");
+  assert.equal(observedSignal.aborted, true);
+  assert.equal(second.status, "manual-reconciliation");
+  assert.equal(calls, 1);
+});
+
+test("a sending CAS that commits then throws is treated as uncertain and never invokes the runner", async () => {
+  const target = { id: "commit-throw", chatId: "-100591", threadId: 8 };
+  const harness = createAutomationReviewRepository({
+    id: "commit-throw-rule", kind: "automation", contentType: "crypto-daily", enabled: true,
+    runOnce: true, status: "ready", targets: [target]
+  });
+  const originalCas = harness.repository.compareAndSetMeta;
+  harness.repository.compareAndSetMeta = async (key, expected, value) => {
+    const result = await originalCas(key, expected, value);
+    if (value?.phase === "sending") throw new Error("CLIENT_LOST_AFTER_COMMIT");
+    return result;
+  };
+  let calls = 0;
+  const result = await runDistributionAutomationRule("commit-throw-rule", {
+    repository: harness.repository,
+    runner: async () => { calls += 1; return {}; }
+  });
+  const retry = await runDistributionAutomationRule("commit-throw-rule", {
+    repository: harness.repository,
+    runner: async () => { calls += 1; return {}; }
+  });
+
+  assert.equal(result.status, "manual-reconciliation");
+  assert.equal(result.error, "AUTOMATION_SENDING_FENCE_COMMIT_UNCERTAIN");
+  assert.equal(retry.status, "manual-reconciliation");
+  assert.equal(calls, 0);
 });
 
 test("repository-maintained updatedAt does not invalidate a partial retry generation", async () => {
@@ -1925,6 +2031,33 @@ test("failed event telemetry is queued and flushed on the next execution", async
   assert.equal(second.alreadyDelivered, true);
   assert.equal(remaining, undefined);
   assert.equal(runnerCalls, 1);
+});
+
+test("telemetry failures use independent event keys and flush acknowledges only successful items", async () => {
+  const target = { id: "telemetry-isolated-target", chatId: "-100592", threadId: 8 };
+  const harness = createAutomationReviewRepository({
+    id: "telemetry-isolated-rule", kind: "automation", contentType: "crypto-daily", targets: [target]
+  });
+  let fail = true;
+  const originalUpdate = harness.repository.updateEvent;
+  harness.repository.updateEvent = async (...args) => {
+    if (fail) throw new Error("TELEMETRY_DOWN");
+    return originalUpdate(...args);
+  };
+  let message = 2000;
+  const runner = async () => ({ status: "success", preview: { targetResults: [
+    { target, status: "success", messageId: ++message }
+  ] } });
+
+  await runDistributionAutomationRule("telemetry-isolated-rule", { repository: harness.repository, runner, now: new Date("2026-08-19T08:00:00Z") });
+  await runDistributionAutomationRule("telemetry-isolated-rule", { repository: harness.repository, runner, now: new Date("2026-08-20T08:00:00Z") });
+  const queuedKeys = [...harness.meta.keys()].filter((key) => key.startsWith("automation-telemetry-pending-v1:telemetry-isolated-rule:"));
+  assert.equal(queuedKeys.length, 2);
+  assert.notEqual(queuedKeys[0], queuedKeys[1]);
+
+  fail = false;
+  await runDistributionAutomationRule("telemetry-isolated-rule", { repository: harness.repository, runner, now: new Date("2026-08-21T08:00:00Z") });
+  assert.equal([...harness.meta.keys()].filter((key) => key.startsWith("automation-telemetry-pending-v1:telemetry-isolated-rule:")).length, 0);
 });
 
 test("scheduled release checks are rescheduled at the next whole minute after a non-publishable result", async () => {

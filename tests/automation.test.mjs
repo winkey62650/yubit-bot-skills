@@ -1073,16 +1073,23 @@ test("data-release run lease serializes two repository instances on one backend"
 test("an injected Telegram sender runs without a production bot token", async () => {
   const rss = `<?xml version="1.0"?><rss><channel><item><guid>btc-etf-send</guid><title>Bitcoin ETF records net inflow</title><link>https://example.com/etf-send</link><description>Institutional demand increased.</description><pubDate>Wed, 19 Aug 2026 06:00:00 GMT</pubDate></item></channel></rss>`;
   let sends = 0;
+  const controller = new AbortController();
+  let senderSignal;
   const result = await automation.runAutomationJob("crypto-daily", {
     now: "2026-08-19T08:00:00Z",
     force: true,
     dryRun: false,
     fetchImpl: fixtureFetch(rss),
     targets: [{ chatId: "-1001", threadId: 8 }],
-    telegramSender: async () => ({ message_id: ++sends })
+    signal: controller.signal,
+    telegramSender: async (_token, _method, _payload, options) => {
+      senderSignal = options.signal;
+      return { message_id: ++sends };
+    }
   });
   assert.equal(result.status, "success");
   assert.ok(sends > 0);
+  assert.equal(senderSignal, controller.signal);
 });
 
 test("market plans use platform renderers, strict paragraph chunks, and one final CTA", () => {
