@@ -6,6 +6,27 @@ import test from "node:test";
 
 import { JsonDistributionRepository, PostgresDistributionRepository } from "../lib/distribution-repository.mjs";
 
+test("production repositories expose stable non-secret automation circuit namespaces", () => {
+  const previousDirectory = process.env.JSON_STORE_DIRECTORY;
+  process.env.JSON_STORE_DIRECTORY = "/tmp/distribution-namespace-a";
+  try {
+    const jsonA = new JsonDistributionRepository();
+    const jsonB = new JsonDistributionRepository();
+    process.env.JSON_STORE_DIRECTORY = "/tmp/distribution-namespace-b";
+    const jsonOther = new JsonDistributionRepository();
+    const postgres = new PostgresDistributionRepository("postgresql://secret-user:secret-password@example.test/database");
+
+    assert.match(jsonA.automationCircuitNamespace, /^distribution-json-[a-z]+-v1:[a-f0-9]{64}$/);
+    assert.equal(jsonA.automationCircuitNamespace, jsonB.automationCircuitNamespace);
+    assert.notEqual(jsonA.automationCircuitNamespace, jsonOther.automationCircuitNamespace);
+    assert.equal(postgres.automationCircuitNamespace, "distribution-postgres-production-v1");
+    assert.doesNotMatch(postgres.automationCircuitNamespace, /secret|example|database/);
+  } finally {
+    if (previousDirectory === undefined) delete process.env.JSON_STORE_DIRECTORY;
+    else process.env.JSON_STORE_DIRECTORY = previousDirectory;
+  }
+});
+
 test("JSON reads expose migrated market rules without implicitly persisting them", async () => {
   const directory = await mkdtemp(join(tmpdir(), "distribution-migration-"));
   const previousDirectory = process.env.JSON_STORE_DIRECTORY;

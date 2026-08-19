@@ -1198,6 +1198,7 @@ test("four failed persistence fences trip a repository-scoped circuit before a f
   assert.equal(blocked.status, "manual-reconciliation-unpersisted");
   assert.equal(blocked.error, "AUTOMATION_RECONCILIATION_PERSISTENCE_UNAVAILABLE");
   assert.equal(blocked.circuitBreakerOpen, true);
+  assert.equal(blocked.circuitRequiresRestart, true);
   assert.equal(blocked.ruleReconciliationPersisted, false);
 
   failures.failMetaAfterRunner = false;
@@ -1210,11 +1211,117 @@ test("four failed persistence fences trip a repository-scoped circuit before a f
   });
 
   assert.equal(runnerCalls, 1);
-  assert.equal(recovered.status, "manual-reconciliation");
-  assert.equal(recovered.circuitBreakerOpen, false);
-  assert.equal(recovered.ruleReconciliationPersisted, true);
-  assert.equal(harness.rule().status, "manual-reconciliation");
-  assert.equal(harness.rule().enabled, false);
+  assert.equal(recovered.status, "manual-reconciliation-unpersisted");
+  assert.equal(recovered.circuitBreakerOpen, true);
+  assert.equal(recovered.circuitRequiresRestart, true);
+  assert.equal(recovered.ruleReconciliationPersisted, false);
+  assert.equal(harness.rule().status, "ready");
+  assert.equal(harness.rule().enabled, true);
+});
+
+test("a foreign completed repository cannot clear an unscoped circuit for the same rule id", async () => {
+  const rule = {
+    id: "foreign-collision-rule", kind: "automation", contentType: "crypto-daily", enabled: true,
+    runOnce: true, status: "ready", schedulePreset: "daily-1100",
+    targets: [{ id: "foreign-collision-target", chatId: "-100230", threadId: 8 }]
+  };
+  const failures = {
+    failMetaAfterRunner: true,
+    failManualExecutionStateAfterRunner: true,
+    failDeliveries: true,
+    failRuleSavesAfterRunner: true
+  };
+  const owner = createAutomationReviewRepository(rule, failures);
+  const foreign = createAutomationReviewRepository({ ...rule, enabled: false, status: "completed" });
+  let runnerCalls = 0;
+  const runner = async () => {
+    runnerCalls += 1;
+    owner.markRunnerStarted();
+    return { status: "success", preview: { targetResults: [
+      { target: rule.targets[0], status: "success", messageId: "953" }
+    ] } };
+  };
+
+  const first = await runDistributionAutomationRule(rule.id, {
+    repository: owner.repository, runner, now: new Date("2026-08-19T10:45:01.000Z")
+  });
+  const foreignCompleted = await runDistributionAutomationRule(rule.id, {
+    repository: foreign.repository, runner, now: new Date("2026-08-19T10:45:02.000Z")
+  });
+  failures.failMetaAfterRunner = false;
+  failures.failManualExecutionStateAfterRunner = false;
+  failures.failDeliveries = false;
+  failures.failRuleSavesAfterRunner = false;
+  const ownerAgain = await runDistributionAutomationRule(rule.id, {
+    repository: owner.repository, runner, now: new Date("2026-08-19T10:45:03.000Z")
+  });
+
+  assert.equal(first.status, "manual-reconciliation-unpersisted");
+  assert.equal(foreignCompleted.status, "manual-reconciliation-unpersisted");
+  assert.equal(foreignCompleted.error, "AUTOMATION_RECONCILIATION_PERSISTENCE_UNAVAILABLE");
+  assert.equal(foreignCompleted.circuitRequiresRestart, true);
+  assert.equal(ownerAgain.status, "manual-reconciliation-unpersisted");
+  assert.equal(ownerAgain.circuitRequiresRestart, true);
+  assert.equal(runnerCalls, 1);
+});
+
+test("operator reset cannot clear an unscoped fallback circuit without a process restart", async () => {
+  const rule = {
+    id: "fallback-reset-rule", kind: "automation", contentType: "crypto-daily", enabled: true,
+    runOnce: true, status: "ready", schedulePreset: "daily-1100",
+    targets: [{ id: "fallback-reset-target", chatId: "-100231", threadId: 8 }]
+  };
+  const failures = {
+    failMetaAfterRunner: true,
+    failManualExecutionStateAfterRunner: true,
+    failDeliveries: true,
+    failRuleSavesAfterRunner: true
+  };
+  const harness = createAutomationReviewRepository(rule, failures);
+  let runnerCalls = 0;
+  const first = await runDistributionAutomationRule(rule.id, {
+    repository: harness.repository,
+    now: new Date("2026-08-19T10:46:01.000Z"),
+    runner: async () => {
+      runnerCalls += 1;
+      harness.markRunnerStarted();
+      return { status: "success", preview: { targetResults: [
+        { target: rule.targets[0], status: "success", messageId: "954" }
+      ] } };
+    }
+  });
+
+  failures.failMetaAfterRunner = false;
+  failures.failManualExecutionStateAfterRunner = false;
+  failures.failDeliveries = false;
+  failures.failRuleSavesAfterRunner = false;
+  harness.replaceRule({ ...rule, enabled: false, status: "manual-reconciliation" });
+  await harness.repository.setMeta(`automation-execution-state-v1:${rule.id}`, {
+    generation: first.generation,
+    status: "manual-reconciliation",
+    phase: "operator-required"
+  });
+  const reset = await resetAutomationManualReconciliation(rule.id, {
+    repository: harness.repository,
+    actor: "ops",
+    expectedGeneration: first.generation,
+    resolution: "acknowledge-sent",
+    authorize: async () => true,
+    now: new Date("2026-08-19T10:47:01.000Z")
+  });
+  const blocked = await runDistributionAutomationRule(rule.id, {
+    repository: harness.repository,
+    runner: async () => {
+      runnerCalls += 1;
+      throw new Error("must not run");
+    }
+  });
+
+  assert.equal(reset.status, "completed");
+  assert.equal(blocked.status, "manual-reconciliation-unpersisted");
+  assert.equal(blocked.error, "AUTOMATION_RECONCILIATION_PERSISTENCE_UNAVAILABLE");
+  assert.equal(blocked.circuitRequiresRestart, true);
+  assert.equal(runnerCalls, 1);
 });
 
 test("explicit stable repository namespaces isolate tenants that reuse a rule id", async () => {
@@ -1275,6 +1382,7 @@ test("explicit stable repository namespaces isolate tenants that reuse a rule id
     runner: async () => { tenantACalls += 1; }
   });
   assert.equal(recovered.status, "manual-reconciliation");
+  assert.equal(recovered.circuitRequiresRestart, undefined);
   assert.equal(tenantACalls, 1);
 });
 
