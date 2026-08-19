@@ -64,18 +64,27 @@ function evaluateDemoCtaAcceptance(cta, preview, expectedTarget) {
     plan?.target?.ctaEnabled === true && normalize(plan?.target?.ctaContent) === ctaContent
   ));
   const ctaBlock = canonicalBlock(ctaContent);
-  const containsCompleteCta = (value) => {
-    const messageBlock = canonicalBlock(value);
-    const offset = messageBlock.length - ctaBlock.length;
+  const containsCompleteCta = (step) => {
+    const boundary = step?.ctaBoundary;
+    const field = boundary?.field;
+    if (boundary?.kind !== "destination-cta"
+      || boundary?.placement !== "suffix"
+      || !["text", "caption", "content"].includes(field)) return false;
+    const value = String(step?.payload?.[field] ?? "");
+    if (!Number.isSafeInteger(boundary.start)
+      || !Number.isSafeInteger(boundary.end)
+      || boundary.start < 0
+      || boundary.start >= boundary.end
+      || boundary.end !== value.length) return false;
+    const renderedCtaBlock = canonicalBlock(value.slice(boundary.start, boundary.end));
     return ctaBlock.length > 0
-      && offset >= 0
-      && ctaBlock.every((line, index) => messageBlock[offset + index] === line);
+      && renderedCtaBlock.length === ctaBlock.length
+      && ctaBlock.every((line, index) => renderedCtaBlock[index] === line);
   };
   const renderedSteps = matchingPlans.flatMap((plan) => {
     const steps = Array.isArray(plan?.steps) ? plan.steps : [];
     return steps.flatMap((step, index) => {
-      const payload = step?.payload || {};
-      const matched = [payload.text, payload.caption, payload.content].some(containsCompleteCta);
+      const matched = containsCompleteCta(step);
       return matched ? [{ index, lastIndex: steps.length - 1 }] : [];
     });
   });

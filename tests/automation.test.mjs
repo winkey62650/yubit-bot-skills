@@ -1476,10 +1476,24 @@ test("market plans use platform renderers, strict paragraph chunks, and one fina
   assert.ok(telegram.steps.every((step) => step.method === "sendMessage" && step.payload.parse_mode === "HTML" && step.payload.text.length < 4096));
   assert.equal(telegram.steps.filter((step) => step.payload.text.includes("Join YUBIT")).length, 1);
   assert.match(telegram.steps.at(-1).payload.text, /<b>Join YUBIT<\/b>/);
+  assert.deepEqual(telegram.steps.at(-1).ctaBoundary, {
+    kind: "destination-cta",
+    placement: "suffix",
+    field: "text",
+    start: telegram.steps.at(-1).payload.text.indexOf("<b>Join YUBIT</b>"),
+    end: telegram.steps.at(-1).payload.text.length,
+  });
   assert.ok(discord.steps.length > 1);
   assert.ok(discord.steps.every((step) => step.payload.content.length < 2000));
   assert.equal(discord.steps.filter((step) => step.payload.content.includes("Join YUBIT")).length, 1);
   assert.match(discord.steps.at(-1).payload.content, /\*\*Join YUBIT\*\*/);
+  assert.deepEqual(discord.steps.at(-1).ctaBoundary, {
+    kind: "destination-cta",
+    placement: "suffix",
+    field: "content",
+    start: discord.steps.at(-1).payload.content.indexOf("**Join YUBIT**"),
+    end: discord.steps.at(-1).payload.content.length,
+  });
 });
 
 for (const jobId of ["crypto-daily", "weekly-calendar", "data-release-updates"]) {

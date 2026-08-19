@@ -221,26 +221,43 @@ test("template audits and previews use dry-run automation preview without a deli
 test("DEMO CTA acceptance requires enabled non-empty CTA hydrated into the final dry-run rendering", async () => {
   const acceptance = await readFile(new URL("scripts/accept-demo-target-cta.cjs", root), "utf8");
   const previewRoute = await readFile(new URL("app/api/automation-test/route.js", root), "utf8");
+  const automation = await import(new URL("lib/automation-jobs.mjs", root));
   const evaluateDemoCtaAcceptance = extractFunction(acceptance, "evaluateDemoCtaAcceptance");
   const telegramTarget = { platform: "telegram", chatId: "-1001", threadId: 8 };
   const discordTarget = { platform: "discord", guildId: "guild-1", channelId: "channel-1" };
+  const ctaStep = (field, value, ctaSuffix) => ({
+    payload: { [field]: value },
+    ctaBoundary: {
+      kind: "destination-cta",
+      placement: "suffix",
+      field,
+      start: value.length - ctaSuffix.length,
+      end: value.length,
+    },
+  });
+  const telegramCta = "<b>LATEST TG CTA</b>\n<a href=\"https://example.com/tg\">Join TG</a>";
+  const discordCta = "**LATEST DC CTA**\n[Join DC](https://example.com/dc)";
   const telegramPreview = {
     deliveryPlans: [{
       target: { ...telegramTarget, ctaEnabled: true, ctaContent: "**LATEST TG CTA**\n[Join TG](https://example.com/tg)" },
-      steps: [{ payload: { text: "Market update\n\n────────\n<b>LATEST TG CTA</b>\n<a href=\"https://example.com/tg\">Join TG</a>" } }]
+      steps: [ctaStep("text", `Market update\n\n────────\n${telegramCta}`, telegramCta)]
     }]
   };
   const discordPreview = {
     deliveryPlans: [{
       target: { ...discordTarget, ctaEnabled: true, ctaContent: "**LATEST DC CTA**\n[Join DC](https://example.com/dc)" },
-      steps: [{ payload: { content: "Market update\n\n────────\n**LATEST DC CTA**\n[Join DC](https://example.com/dc)" } }]
+      steps: [ctaStep("content", `Market update\n\n────────\n${discordCta}`, discordCta)]
     }]
   };
   const telegramQueryCta = "**TRADE WITH YUBIT**\n[Register](https://example.com/register?ref=demo&source=tg)\n[View fees](https://example.com/fees?tier=vip&lang=en)";
   const telegramQueryPreview = {
     deliveryPlans: [{
       target: { ...telegramTarget, ctaEnabled: true, ctaContent: telegramQueryCta },
-      steps: [{ payload: { text: "Market update\n\n────────\n<b>TRADE WITH YUBIT</b>\n<a href=\"https://example.com/register?ref=demo&amp;source=tg\">Register</a>\n<a href=\"https://example.com/fees?tier=vip&amp;lang=en\">View fees</a>" } }]
+      steps: [ctaStep(
+        "text",
+        "Market update\n\n────────\n<b>TRADE WITH YUBIT</b>\n<a href=\"https://example.com/register?ref=demo&amp;source=tg\">Register</a>\n<a href=\"https://example.com/fees?tier=vip&amp;lang=en\">View fees</a>",
+        "<b>TRADE WITH YUBIT</b>\n<a href=\"https://example.com/register?ref=demo&amp;source=tg\">Register</a>\n<a href=\"https://example.com/fees?tier=vip&amp;lang=en\">View fees</a>",
+      )]
     }]
   };
   const bodyCollisionWithoutLink = {
@@ -255,6 +272,12 @@ test("DEMO CTA acceptance requires enabled non-empty CTA hydrated into the final
       steps: [{ payload: { text: "BTC surged today" } }]
     }]
   };
+  const exactBodySuffixCollision = {
+    deliveryPlans: [{
+      target: { ...telegramTarget, ctaEnabled: true, ctaContent: "**BTC**" },
+      steps: [{ payload: { text: "Market summary\nBTC" } }]
+    }]
+  };
   const scatteredCtaTokens = {
     deliveryPlans: [{
       target: { ...telegramTarget, ctaEnabled: true, ctaContent: "**LATEST TG CTA**\n[Join TG](https://example.com/tg)" },
@@ -265,10 +288,20 @@ test("DEMO CTA acceptance requires enabled non-empty CTA hydrated into the final
     deliveryPlans: [{
       target: { ...telegramTarget, ctaEnabled: true, ctaContent: "**LATEST TG CTA**\n[Join TG](https://example.com/tg)" },
       steps: [
-        { payload: { text: "<b>LATEST TG CTA</b>\n<a href=\"https://example.com/tg\">Join TG</a>" } },
+        ctaStep("text", telegramCta, telegramCta),
         { payload: { text: "Final market note without CTA" } }
       ]
     }]
+  };
+  const realPlannerTarget = { ...telegramTarget, ctaEnabled: true, ctaContent: "**BTC**" };
+  const realPlannerPreview = {
+    deliveryPlans: automation.buildAutomationTelegramPlans("crypto-daily", {
+      document: {
+        templateId: "crypto-daily",
+        version: "market-content-v1",
+        nodes: [{ type: "paragraph", text: "Market summary\nBTC" }],
+      },
+    }, [realPlannerTarget]),
   };
 
   assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: false, ctaContent: "LATEST TG CTA" }, telegramPreview, telegramTarget).passed, false);
@@ -278,6 +311,8 @@ test("DEMO CTA acceptance requires enabled non-empty CTA hydrated into the final
   assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**LATEST DC CTA**\n[Join DC](https://example.com/dc)" }, discordPreview, discordTarget).passed, true);
   assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**BTC**\n[Trade now](https://example.com/trade)" }, bodyCollisionWithoutLink, telegramTarget).passed, false);
   assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**BTC**" }, plainTextBodyCollision, telegramTarget).passed, false);
+  assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**BTC**" }, exactBodySuffixCollision, telegramTarget).passed, false);
+  assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**BTC**" }, realPlannerPreview, telegramTarget).passed, true);
   assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**LATEST TG CTA**\n[Join TG](https://example.com/tg)" }, scatteredCtaTokens, telegramTarget).passed, false);
   assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**LATEST TG CTA**\n[Join TG](https://example.com/tg)" }, ctaBeforeFinalStep, telegramTarget).passed, false);
 
