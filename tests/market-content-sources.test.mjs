@@ -402,6 +402,33 @@ test("market reaction falls back from Binance to OKX and treats DXY as optional"
   assert.match(result.warnings.join("\n"), /DXY/);
 });
 
+test("DXY skips the target-minute bar when it closes after a mid-minute event", async () => {
+  const target = Date.parse("2026-08-18T12:00:30.000Z");
+  const targetMinute = Date.parse("2026-08-18T12:00:00.000Z");
+  const previousMinute = targetMinute - 60_000;
+  const olderMinute = previousMinute - 60_000;
+  const latestMinute = targetMinute + 14 * 60_000;
+  const fetchImpl = async () => jsonResponse({
+    chart: {
+      result: [{
+        timestamp: [previousMinute / 1000, targetMinute / 1000, olderMinute / 1000, latestMinute / 1000],
+        indicators: { quote: [{ close: [100, 999, 90, 101] }] },
+      }],
+      error: null,
+    },
+  });
+
+  const result = await fetchMarketReaction({
+    beforeAt: target,
+    now: target + 15 * 60_000,
+    fetchImpl,
+    symbols: ["DXY"],
+  });
+
+  assert.equal(result.data.DXY.beforePrice, 100);
+  assert.equal(result.data.DXY.beforePriceAt, new Date(previousMinute).toISOString());
+});
+
 test("OKX fallback requests candles before the target and selects only completed non-future candles", async () => {
   const target = Date.parse("2026-08-18T12:00:00.000Z");
   const urls = [];
