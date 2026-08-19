@@ -1479,9 +1479,13 @@ test("market plans use platform renderers, strict paragraph chunks, and one fina
   assert.deepEqual(telegram.steps.at(-1).ctaBoundary, {
     kind: "destination-cta",
     placement: "suffix",
+    platform: "telegram",
+    method: "sendMessage",
     field: "text",
     start: telegram.steps.at(-1).payload.text.indexOf("<b>Join YUBIT</b>"),
     end: telegram.steps.at(-1).payload.text.length,
+    stepIndex: telegram.steps.length - 1,
+    stepCount: telegram.steps.length,
   });
   assert.ok(discord.steps.length > 1);
   assert.ok(discord.steps.every((step) => step.payload.content.length < 2000));
@@ -1490,10 +1494,35 @@ test("market plans use platform renderers, strict paragraph chunks, and one fina
   assert.deepEqual(discord.steps.at(-1).ctaBoundary, {
     kind: "destination-cta",
     placement: "suffix",
+    platform: "discord",
+    method: "sendMessage",
     field: "content",
     start: discord.steps.at(-1).payload.content.indexOf("**Join YUBIT**"),
     end: discord.steps.at(-1).payload.content.length,
+    stepIndex: discord.steps.length - 1,
+    stepCount: discord.steps.length,
   });
+});
+
+test("market planners mark only the CTA they append, not an identical non-final heading", () => {
+  const target = { platform: "telegram", chatId: "-1001", threadId: 8, ctaEnabled: true, ctaContent: "**BTC**" };
+  const [plan] = automation.buildAutomationTelegramPlans("crypto-daily", {
+    document: {
+      templateId: "crypto-daily",
+      version: "market-content-v1",
+      nodes: [
+        { type: "paragraph", text: `Opening ${"x".repeat(2050)}` },
+        { type: "heading", text: "BTC" },
+      ],
+      sections: [{ nodes: [{ type: "paragraph", text: `Update ${"y".repeat(2050)}` }] }],
+    },
+  }, [target]);
+
+  assert.ok(plan.steps.length > 1);
+  assert.match(plan.steps[0].payload.text, /<b>BTC<\/b>$/);
+  assert.equal(plan.steps[0].ctaBoundary, undefined);
+  assert.equal(plan.steps.filter((step) => step.ctaBoundary).length, 1);
+  assert.equal(plan.steps.at(-1).ctaBoundary.stepIndex, plan.steps.length - 1);
 });
 
 for (const jobId of ["crypto-daily", "weekly-calendar", "data-release-updates"]) {

@@ -64,12 +64,25 @@ function evaluateDemoCtaAcceptance(cta, preview, expectedTarget) {
     plan?.target?.ctaEnabled === true && normalize(plan?.target?.ctaContent) === ctaContent
   ));
   const ctaBlock = canonicalBlock(ctaContent);
-  const containsCompleteCta = (step) => {
+  const containsCompleteCta = (step, stepIndex, steps, platform) => {
     const boundary = step?.ctaBoundary;
     const field = boundary?.field;
+    const expectedField = platform === "telegram" && step?.method === "sendMessage"
+      ? "text"
+      : platform === "telegram" && step?.method === "sendPhoto"
+        ? "caption"
+        : platform === "discord" && step?.method === "sendMessage"
+          ? "content"
+          : null;
     if (boundary?.kind !== "destination-cta"
       || boundary?.placement !== "suffix"
-      || !["text", "caption", "content"].includes(field)) return false;
+      || boundary?.platform !== platform
+      || boundary?.method !== step?.method
+      || !expectedField
+      || field !== expectedField
+      || boundary?.stepIndex !== stepIndex
+      || boundary?.stepCount !== steps.length
+      || stepIndex !== steps.length - 1) return false;
     const value = String(step?.payload?.[field] ?? "");
     if (!Number.isSafeInteger(boundary.start)
       || !Number.isSafeInteger(boundary.end)
@@ -83,8 +96,9 @@ function evaluateDemoCtaAcceptance(cta, preview, expectedTarget) {
   };
   const renderedSteps = matchingPlans.flatMap((plan) => {
     const steps = Array.isArray(plan?.steps) ? plan.steps : [];
+    const platform = plan?.target?.platform === "discord" || plan?.target?.guildId ? "discord" : "telegram";
     return steps.flatMap((step, index) => {
-      const matched = containsCompleteCta(step);
+      const matched = containsCompleteCta(step, index, steps, platform);
       return matched ? [{ index, lastIndex: steps.length - 1 }] : [];
     });
   });
