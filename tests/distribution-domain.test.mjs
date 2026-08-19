@@ -5,6 +5,7 @@ import {
   computeNextRunAt,
   ensureAutomationNextRunAt,
   migrateLegacyDistribution,
+  migrateMarketContentRules,
   normalizeDistributionRule,
   reconcileDistributionRouting,
   reconcileDistributionTargets,
@@ -58,14 +59,15 @@ test("standard production provisioning keeps editorial SpeakerBot automations in
   const rules = distributionDomain.buildStandardProductionDistributionRules(productionGroups());
   const repeated = distributionDomain.buildStandardProductionDistributionRules(productionGroups());
 
-  assert.equal(rules.length, 12);
+  assert.equal(rules.length, 13);
   assert.ok(rules.every((rule) => rule.enabled === false));
   assert.deepEqual(rules.map((rule) => rule.id), repeated.map((rule) => rule.id));
 
   const automations = rules.filter((rule) => rule.kind === "automation");
   assert.deepEqual(automations.map(({ contentType, schedulePreset }) => ({ contentType, schedulePreset })), [
-    { contentType: "news", schedulePreset: "every-5-minutes" },
-    { contentType: "daily-events", schedulePreset: "daily-0800-utc" },
+    { contentType: "crypto-daily", schedulePreset: "daily-0800-utc" },
+    { contentType: "weekly-calendar", schedulePreset: "weekly-monday-0030-utc" },
+    { contentType: "data-release-updates", schedulePreset: "event-driven" },
     { contentType: "daily-analysis", schedulePreset: "daily-0800-utc" },
     { contentType: "whale-signals", schedulePreset: "hourly" },
     { contentType: "agent-sync", schedulePreset: "hourly" },
@@ -73,23 +75,26 @@ test("standard production provisioning keeps editorial SpeakerBot automations in
   assert.deepEqual(automations.map((rule) => rule.targets.map((target) => target.threadId)), [
     [107, 207],
     [103],
+    [103],
     [104],
     [106],
     [102, 202],
   ]);
   assert.deepEqual(
     automations
-      .filter((rule) => ["daily-events", "daily-analysis", "whale-signals"].includes(rule.contentType))
+      .filter((rule) => ["weekly-calendar", "data-release-updates", "daily-analysis", "whale-signals"].includes(rule.contentType))
       .map((rule) => rule.targets.map((target) => target.chatId)),
-    [["-1003710405969"], ["-1003710405969"], ["-1003710405969"]],
+    [["-1003710405969"], ["-1003710405969"], ["-1003710405969"], ["-1003710405969"]],
   );
   assert.deepEqual(automations.map((rule) => rule.targets[0].topicName), [
     "7. YUBIT Updates",
+    "3. Market Events",
     "3. Market Events",
     "4. Market Analysis - Crypto/Stocks/TradFi",
     "6. Smart Money Tracker",
     "2. CryptoGuy Trading Zone",
   ]);
+  assert.equal(automations.find((rule) => rule.contentType === "data-release-updates").enabled, false);
 
   const broadcasts = rules.filter((rule) => rule.kind === "broadcast");
   assert.equal(broadcasts.length, 7);
@@ -121,6 +126,15 @@ test("standard production provisioning preserves existing rule identity and enab
       targets: [{ chatId: "-1", threadId: 1 }],
     }),
     normalizeDistributionRule({
+      id: "existing-events-data-release-updates",
+      kind: "automation",
+      name: "Old release monitor",
+      contentType: "data-release-updates",
+      schedulePreset: "event-driven",
+      enabled: true,
+      targets: [{ chatId: "-1", threadId: 1 }],
+    }),
+    normalizeDistributionRule({
       id: "temporary-events",
       kind: "automation",
       name: "Temporary events",
@@ -142,11 +156,14 @@ test("standard production provisioning preserves existing rule identity and enab
   ];
   const rules = distributionDomain.buildStandardProductionDistributionRules(productionGroups(), { currentRules: existing });
 
-  const events = rules.find((rule) => rule.contentType === "daily-events");
+  const events = rules.find((rule) => rule.contentType === "weekly-calendar");
   assert.equal(events.id, "existing-events");
   assert.equal(events.enabled, true);
-  assert.equal(events.schedulePreset, "daily-0800-utc");
+  assert.equal(events.schedulePreset, "weekly-monday-0030-utc");
   assert.deepEqual(events.targets.map((target) => target.threadId), [103]);
+  const release = rules.find((rule) => rule.contentType === "data-release-updates");
+  assert.equal(release.id, "existing-events-data-release-updates");
+  assert.equal(release.enabled, false);
 
   const topicOne = rules.find((rule) => rule.kind === "broadcast" && rule.source.threadId === 101);
   assert.equal(topicOne.id, "existing-topic-one");
@@ -518,6 +535,107 @@ test("preset schedules calculate the next UTC execution boundary", () => {
   assert.equal(computeNextRunAt("hourly", now).toISOString(), "2026-07-14T09:00:00.000Z");
   assert.equal(computeNextRunAt("every-4-hours", now).toISOString(), "2026-07-14T12:00:00.000Z");
   assert.equal(computeNextRunAt("every-5-minutes", now).toISOString(), "2026-07-14T08:05:00.000Z");
+});
+
+test("weekly calendar always advances to the next Monday 00:30 UTC boundary", () => {
+  assert.deepEqual(distributionDomain.DISTRIBUTION_SCHEDULES["weekly-monday-0030-utc"], {
+    label: "每周一 00:30 UTC",
+    kind: "weekly",
+  });
+  const expected = [
+    ["2026-08-17T00:29:59.000Z", "2026-08-17T00:30:00.000Z"],
+    ["2026-08-17T00:30:00.000Z", "2026-08-24T00:30:00.000Z"],
+    ["2026-08-18T12:00:00.000Z", "2026-08-24T00:30:00.000Z"],
+    ["2026-08-19T12:00:00.000Z", "2026-08-24T00:30:00.000Z"],
+    ["2026-08-20T12:00:00.000Z", "2026-08-24T00:30:00.000Z"],
+    ["2026-08-21T12:00:00.000Z", "2026-08-24T00:30:00.000Z"],
+    ["2026-08-22T12:00:00.000Z", "2026-08-24T00:30:00.000Z"],
+    ["2026-08-23T12:00:00.000Z", "2026-08-24T00:30:00.000Z"],
+  ];
+  for (const [now, next] of expected) {
+    assert.equal(computeNextRunAt("weekly-monday-0030-utc", new Date(now)).toISOString(), next);
+  }
+});
+
+test("event-driven monitoring advances to the next whole minute", () => {
+  assert.deepEqual(distributionDomain.DISTRIBUTION_SCHEDULES["event-driven"], {
+    label: "事件驱动，每分钟检查",
+    minutes: 1,
+    kind: "monitor",
+  });
+  assert.equal(
+    computeNextRunAt("event-driven", new Date("2026-08-19T10:40:01.000Z")).toISOString(),
+    "2026-08-19T10:41:00.000Z",
+  );
+  assert.equal(
+    computeNextRunAt("event-driven", new Date("2026-08-19T10:41:00.000Z")).toISOString(),
+    "2026-08-19T10:42:00.000Z",
+  );
+});
+
+test("market content migration preserves legacy rule state and creates one disabled release sibling", () => {
+  const legacy = [
+    {
+      id: "legacy-news",
+      kind: "automation",
+      name: "Legacy News",
+      contentType: "news",
+      schedulePreset: "every-5-minutes",
+      targets: [{ id: "news-target", chatId: "-1001", threadId: 7 }],
+      enabled: true,
+      status: "paused-by-operator",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    },
+    {
+      id: "legacy-calendar",
+      kind: "automation",
+      name: "Legacy Events",
+      contentType: "daily-events",
+      schedulePreset: "daily-0800-utc",
+      targets: [{ id: "calendar-target", chatId: "-1001", threadId: 3 }],
+      enabled: true,
+      status: "ready",
+    },
+  ];
+  const now = new Date("2026-08-19T10:40:01.000Z");
+  const first = migrateMarketContentRules(legacy, now);
+  const news = first.rules.find((rule) => rule.id === "legacy-news");
+  const calendar = first.rules.find((rule) => rule.id === "legacy-calendar");
+  const release = first.rules.find((rule) => rule.contentType === "data-release-updates");
+
+  assert.equal(news.contentType, "crypto-daily");
+  assert.equal(news.schedulePreset, "daily-0800-utc");
+  assert.equal(news.enabled, true);
+  assert.equal(news.status, "paused-by-operator");
+  assert.equal(news.targets[0].id, "news-target");
+  assert.equal(calendar.contentType, "weekly-calendar");
+  assert.equal(calendar.schedulePreset, "weekly-monday-0030-utc");
+  assert.equal(calendar.enabled, true);
+  assert.equal(release.id, "legacy-calendar-data-release-updates");
+  assert.equal(release.enabled, false);
+  assert.equal(release.schedulePreset, "event-driven");
+  assert.deepEqual(release.targets.map(({ chatId, threadId }) => ({ chatId, threadId })), [{ chatId: "-1001", threadId: 3 }]);
+  assert.notEqual(release.targets[0].id, calendar.targets[0].id);
+  assert.ok(first.changes.length >= 3);
+
+  const second = migrateMarketContentRules(first.rules, now);
+  assert.deepEqual(second.rules, first.rules);
+  assert.deepEqual(second.changes, []);
+});
+
+test("market content migration never invents a destination missing from the legacy calendar", () => {
+  const migrated = migrateMarketContentRules([{
+    id: "calendar-without-targets",
+    kind: "automation",
+    name: "No destination",
+    contentType: "daily-events",
+    schedulePreset: "daily-0800-utc",
+    targets: [],
+    enabled: false,
+  }], new Date("2026-08-19T10:40:01.000Z"));
+  const release = migrated.rules.find((rule) => rule.contentType === "data-release-updates");
+  assert.deepEqual(release.targets, []);
+  assert.equal(release.enabled, false);
 });
 
 test("enabled automation rules receive a future first run while disabled rules stay unscheduled", () => {

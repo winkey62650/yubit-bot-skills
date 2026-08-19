@@ -1,7 +1,67 @@
 import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import test from "node:test";
 
-import { PostgresDistributionRepository } from "../lib/distribution-repository.mjs";
+import { JsonDistributionRepository, PostgresDistributionRepository } from "../lib/distribution-repository.mjs";
+
+test("JSON reads expose migrated market rules without implicitly persisting them", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "distribution-migration-"));
+  const previousDirectory = process.env.JSON_STORE_DIRECTORY;
+  const previousBackend = process.env.JSON_STORE_BACKEND;
+  process.env.JSON_STORE_DIRECTORY = directory;
+  process.env.JSON_STORE_BACKEND = "local";
+  const stored = {
+    schemaVersion: 1,
+    rules: [{
+      id: "json-events",
+      kind: "automation",
+      name: "JSON events",
+      contentType: "daily-events",
+      schedulePreset: "daily-0800-utc",
+      targets: [{ chatId: "-1001", threadId: 3 }],
+      enabled: true,
+    }],
+  };
+  await writeFile(join(directory, "distribution-center.json"), JSON.stringify(stored));
+  try {
+    const state = await new JsonDistributionRepository().read();
+    assert.deepEqual(state.rules.map((rule) => rule.contentType), ["weekly-calendar", "data-release-updates"]);
+    assert.equal(state.rules[1].enabled, false);
+    const unchanged = JSON.parse(await readFile(join(directory, "distribution-center.json"), "utf8"));
+    assert.equal(unchanged.rules.length, 1);
+    assert.equal(unchanged.rules[0].contentType, "daily-events");
+  } finally {
+    if (previousDirectory === undefined) delete process.env.JSON_STORE_DIRECTORY;
+    else process.env.JSON_STORE_DIRECTORY = previousDirectory;
+    if (previousBackend === undefined) delete process.env.JSON_STORE_BACKEND;
+    else process.env.JSON_STORE_BACKEND = previousBackend;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("Postgres listRules exposes migrated market rules without writing them", async () => {
+  const repository = Object.create(PostgresDistributionRepository.prototype);
+  const calls = [];
+  repository.sql = { async query(sql) {
+    calls.push(sql);
+    if (/SELECT \* FROM distribution_rules/.test(sql)) return [{
+      id: "pg-events", kind: "automation", name: "PG events", content_type: "daily-events",
+      schedule_preset: "daily-0800-utc", enabled: true, run_once: false, status: "ready",
+    }];
+    if (/SELECT \* FROM distribution_targets/.test(sql)) return [{
+      id: "pg-target", rule_id: "pg-events", platform: "telegram", chat_id: "-1001",
+      chat_type: "supergroup", thread_id: 3, enabled: true, sort_order: 0,
+    }];
+    return [];
+  } };
+
+  const rules = await repository.listRules();
+  assert.deepEqual(rules.map((rule) => rule.contentType), ["weekly-calendar", "data-release-updates"]);
+  assert.equal(rules[1].enabled, false);
+  assert.ok(calls.every((sql) => /^SELECT/.test(sql.trim())));
+});
 
 test("Postgres rules persist and claim one due automation with a recoverable lease", async () => {
   const repository = Object.create(PostgresDistributionRepository.prototype);
