@@ -6,6 +6,7 @@ import {
   prepareDataReleaseDelivery,
   prepareDataReleaseSend,
 } from "../lib/data-release-monitor.mjs";
+import { buildMarketPreviewFacts } from "../lib/distribution-ui.mjs";
 
 const { AUTOMATION_JOBS, automationSlot, automationTopicMatches } = automation;
 
@@ -647,6 +648,121 @@ test("fixture-backed market jobs return the common automation envelope", async (
     "2026-08-19T08:00:00.000Z"
   ]);
   assert.equal(repository.writes.length, 0);
+});
+
+test("real market job previews preserve structured diagnostics for the distribution UI", async () => {
+  const rss = `<?xml version="1.0"?><rss><channel><item><guid>btc-etf</guid><title>Bitcoin ETF records net inflow</title><link>https://example.com/etf</link><description>Institutional demand increased.</description><pubDate>Wed, 19 Aug 2026 06:00:00 GMT</pubDate></item></channel></rss>`;
+  const daily = await automation.runAutomationJob("crypto-daily", {
+    now: "2026-08-19T08:00:00Z",
+    force: true,
+    dryRun: true,
+    repository: automationRepository(),
+    fetchImpl: fixtureFetch(rss),
+    targets: []
+  });
+  const dailyFacts = buildMarketPreviewFacts(daily.preview);
+
+  assert.equal(daily.status, "success");
+  assert.equal(daily.preview.diagnostics.candidates.length, 2);
+  assert.equal(dailyFacts.candidateCount, 2);
+  assert.equal(dailyFacts.selectedCount, 1);
+  assert.equal(dailyFacts.missingCount, 2);
+  assert.equal(dailyFacts.sources.length, 2);
+
+  const unavailableCalendar = { result: [{
+    id: "us-cpi-waiting",
+    title: "US CPI YoY",
+    country: "US",
+    importance: 3,
+    date: "2026-08-19T12:30:00Z",
+    forecast: "2.8",
+    previous: "2.9",
+    unit: "%"
+  }] };
+  const unavailable = await automation.runAutomationJob("data-release-updates", {
+    now: "2026-08-19T12:31:00Z",
+    force: true,
+    dryRun: true,
+    repository: automationRepository(),
+    fetchImpl: fixtureFetch(unavailableCalendar),
+    targets: []
+  });
+  const unavailableFacts = buildMarketPreviewFacts(unavailable.preview);
+
+  assert.equal(unavailable.status, "skipped");
+  assert.equal(unavailable.preview.skipReason, "actual-unavailable");
+  assert.equal(unavailableFacts.candidateCount, 1);
+  assert.equal(unavailableFacts.selectedCount, 0);
+  assert.equal(unavailableFacts.missingCount, 1);
+  assert.match(unavailableFacts.nextMonitoredEvent, /US CPI YoY/);
+  assert.equal(unavailableFacts.sources[0].id, "tradingview-calendar");
+
+  const conflictingCalendar = { result: ["2.7", "2.8"].map((actual, index) => ({
+    id: "us-cpi-conflict",
+    title: "US CPI YoY",
+    country: "US",
+    importance: 3,
+    date: "2026-08-19T12:30:00Z",
+    actual,
+    forecast: "2.8",
+    previous: "2.9",
+    unit: "%",
+    source: index ? "bls" : "tradingview"
+  })) };
+  const conflict = await automation.runAutomationJob("data-release-updates", {
+    now: "2026-08-19T12:31:00Z",
+    force: true,
+    dryRun: true,
+    repository: automationRepository(),
+    fetchImpl: fixtureFetch(conflictingCalendar),
+    targets: []
+  });
+  const conflictFacts = buildMarketPreviewFacts(conflict.preview);
+
+  assert.equal(conflict.preview.skipReason, "source-conflict");
+  assert.equal(conflictFacts.conflictCount, 1);
+  assert.deepEqual(conflict.preview.diagnostics.conflicts[0].rawValues, ["2.7", "2.8"]);
+  assert.equal(conflictFacts.sources[0].id, "tradingview-calendar");
+
+  const releasedCalendar = { result: [
+    {
+      id: "us-cpi-released",
+      title: "US CPI YoY",
+      country: "US",
+      importance: 3,
+      date: "2026-08-19T12:30:00Z",
+      actual: "2.7",
+      forecast: "2.8",
+      previous: "2.9",
+      unit: "%"
+    },
+    {
+      id: "us-gdp-next",
+      title: "US GDP",
+      country: "US",
+      importance: 3,
+      date: "2026-08-19T14:00:00Z",
+      forecast: "2.1",
+      previous: "2.0",
+      unit: "%"
+    }
+  ] };
+  const released = await automation.runAutomationJob("data-release-updates", {
+    now: "2026-08-19T12:31:00Z",
+    force: true,
+    dryRun: true,
+    repository: automationRepository(),
+    fetchImpl: fixtureFetch(releasedCalendar),
+    fetchReaction: async () => ({ prices: {}, sources: [], warnings: [] }),
+    targets: []
+  });
+  const releasedFacts = buildMarketPreviewFacts(released.preview);
+
+  assert.equal(released.preview.publishable, true);
+  assert.equal(releasedFacts.candidateCount, 1);
+  assert.equal(releasedFacts.selectedCount, 1);
+  assert.equal(releasedFacts.missingCount, 0);
+  assert.match(releasedFacts.nextMonitoredEvent, /US GDP/);
 });
 
 test("weekly calendar caches only when persist is explicitly true", async () => {

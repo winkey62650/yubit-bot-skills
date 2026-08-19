@@ -691,6 +691,39 @@ test("market preview facts turn a structured monitored event into safe display t
   }).nextMonitoredEvent, "US CPI · Aug 19, 12:30 UTC");
 });
 
+test("market preview facts read diagnostics-only source health and release counts", () => {
+  const facts = buildMarketPreviewFacts({
+    diagnostics: {
+      candidates: [{ id: "cpi" }],
+      selected: [],
+      missing: [{ id: "cpi", reason: "actual-unavailable" }],
+      conflicts: [],
+      nextMonitoredEvent: { title: "US CPI", scheduledAt: "2026-08-19T12:30:00Z" },
+      sources: [{
+        id: "tradingview-calendar",
+        status: "ok",
+        lastSuccessAt: "2026-08-19T12:29:59Z",
+        freshnessSeconds: 1,
+        fallbackFrom: null
+      }]
+    }
+  });
+
+  assert.equal(facts.candidateCount, 1);
+  assert.equal(facts.selectedCount, 0);
+  assert.equal(facts.missingCount, 1);
+  assert.equal(facts.conflictCount, 0);
+  assert.equal(facts.nextMonitoredEvent, "US CPI · Aug 19, 12:30 UTC");
+  assert.deepEqual(facts.sources, [{
+    id: "tradingview-calendar",
+    label: "tradingview-calendar",
+    status: "ok",
+    lastSuccess: "2026-08-19T12:29:59Z",
+    freshness: "1 秒",
+    fallback: null
+  }]);
+});
+
 test("market preview facts understand a real Crypto Daily envelope and normalize source health", () => {
   const now = new Date("2026-08-19T13:00:00.000Z");
   const document = buildCryptoDailyDocument({

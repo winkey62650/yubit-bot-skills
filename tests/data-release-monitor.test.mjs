@@ -856,6 +856,8 @@ test("rejects conflicting source Actual values and returns both raw values", asy
   assert.equal(result.publishable, false);
   assert.equal(result.skipReason, "source-conflict");
   assert.deepEqual(result.conflict.rawValues, ["2.7", "2.8"]);
+  assert.deepEqual(result.sources, calendarResult([]).sources);
+  assert.equal(result.nextMonitoredEvent, null);
 });
 
 test("waits for every required composite Actual before publishing", async () => {
@@ -888,7 +890,10 @@ test("waits for every required composite Actual before publishing", async () => 
   assert.equal(buildReleaseDeduplicationKey(partial), null);
   assert.equal(pending.publishable, false);
   assert.equal(pending.skipReason, "actual-unavailable");
+  assert.deepEqual(pending.sources, calendarResult([]).sources);
+  assert.equal(pending.nextMonitoredEvent.id, partial.id);
   assert.equal(published.publishable, true);
+  assert.deepEqual(published.sources, calendarResult([]).sources);
   assert.equal(published.deduplicationKey, buildReleaseDeduplicationKey(complete));
 });
 
