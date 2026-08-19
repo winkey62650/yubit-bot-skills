@@ -46,6 +46,9 @@ function fakeClientHarness({
     if (value?.className === "Channel") {
       return { className: "InputPeerChannel", channelId: value.id, accessHash: value.accessHash };
     }
+    if (value?.id !== undefined && (value?.megagroup === true || value?.broadcast === true)) {
+      return { className: "InputPeerChannel", channelId: value.id, accessHash: value.accessHash ?? 22n };
+    }
     return {
       className: "InputPeerChannel",
       channelId: BigInt(String(value).replace("-100", "")),
@@ -227,6 +230,37 @@ test("getDialogs reports whether the selected account can publish to each dialog
   assert.equal(dialogs.find((dialog) => dialog.id === "-100111").canManageTopics, true);
   assert.equal(dialogs.find((dialog) => dialog.id === "-100222").canManageTopics, false);
   assert.equal(dialogs.find((dialog) => dialog.id === "-100555").canManageTopics, true);
+});
+
+test("getDialogs excludes a writable supergroup when its official Send As identity is unavailable", async () => {
+  const harness = fakeClientHarness({
+    groupIdentityAvailable: false,
+    dialogs: [{
+      isGroup: true,
+      isChannel: true,
+      title: "Writable but not official",
+      entity: {
+        className: "Channel",
+        id: 1702053978n,
+        accessHash: 22n,
+        megagroup: true,
+        broadcast: false,
+        adminRights: { postMessages: true }
+      }
+    }]
+  });
+  const transport = createTelegramMtprotoTransport(configuredOptions(harness));
+
+  const dialogs = await transport(null, "getDialogs", {}, { userId: "8749261694" });
+
+  assert.equal(dialogs[0].id, "-1001702053978");
+  assert.equal(dialogs[0].canSendMessages, false);
+  assert.equal(dialogs[0].canSendAsOfficialIdentity, false);
+  assert.equal(dialogs[0].publishUnavailableReason, "official_identity_unavailable");
+  assert.equal(
+    harness.calls.some((call) => call.kind === "invoke" && call.request.className === "channels.GetSendAs"),
+    true
+  );
 });
 
 test("topic management permission accepts creators and manage-topics admins only", () => {
