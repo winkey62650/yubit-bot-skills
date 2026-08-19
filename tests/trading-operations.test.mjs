@@ -236,15 +236,33 @@ test("DEMO CTA acceptance requires enabled non-empty CTA hydrated into the final
       steps: [{ payload: { content: "Market update\n\n────────\n**LATEST DC CTA**\n[Join DC](https://example.com/dc)" } }]
     }]
   };
+  const bodyCollisionWithoutLink = {
+    deliveryPlans: [{
+      target: { ...telegramTarget, ctaEnabled: true, ctaContent: "**BTC**\n[Trade now](https://example.com/trade)" },
+      steps: [{ payload: { text: "BTC market body only; the CTA link is absent." } }]
+    }]
+  };
+  const ctaBeforeFinalStep = {
+    deliveryPlans: [{
+      target: { ...telegramTarget, ctaEnabled: true, ctaContent: "**LATEST TG CTA**\n[Join TG](https://example.com/tg)" },
+      steps: [
+        { payload: { text: "<b>LATEST TG CTA</b>\n<a href=\"https://example.com/tg\">Join TG</a>" } },
+        { payload: { text: "Final market note without CTA" } }
+      ]
+    }]
+  };
 
   assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: false, ctaContent: "LATEST TG CTA" }, telegramPreview, telegramTarget).passed, false);
   assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "   \n " }, telegramPreview, telegramTarget).passed, false);
   assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**LATEST TG CTA**\n[Join TG](https://example.com/tg)" }, telegramPreview, telegramTarget).passed, true);
   assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**LATEST DC CTA**\n[Join DC](https://example.com/dc)" }, discordPreview, discordTarget).passed, true);
+  assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**BTC**\n[Trade now](https://example.com/trade)" }, bodyCollisionWithoutLink, telegramTarget).passed, false);
+  assert.equal(evaluateDemoCtaAcceptance({ ctaEnabled: true, ctaContent: "**LATEST TG CTA**\n[Join TG](https://example.com/tg)" }, ctaBeforeFinalStep, telegramTarget).passed, false);
 
   assert.match(acceptance, /data:\s*\{\s*jobId:\s*"crypto-daily",\s*targets:/);
   assert.match(previewRoute, /hydrateDestinationCtas/);
   assert.match(previewRoute, /targets:\s*hydratedTargets/);
+  assert.match(previewRoute, /readOnlyPreview:\s*true/);
   assert.match(previewRoute, /buildAutomationTelegramPlans/);
   assert.match(previewRoute, /buildAutomationDiscordPlans/);
   assert.doesNotMatch(acceptance, /run-now|setMeta|saveRule|createDelivery/);

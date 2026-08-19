@@ -23,6 +23,7 @@ export async function POST(request) {
     const result = await runAutomationJob(String(body.jobId || ""), {
       dryRun: true,
       force: true,
+      readOnlyPreview: true,
       repository: previewRepository,
       targets: hydratedTargets,
       publicBaseUrl: resolveAutomationPreviewBaseUrl(request.url)

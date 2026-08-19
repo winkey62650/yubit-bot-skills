@@ -771,6 +771,29 @@ test("real market job previews preserve structured diagnostics for the distribut
   assert.match(releasedFacts.nextMonitoredEvent, /US GDP/);
 });
 
+test("read-only automation previews suppress the run audit log without changing normal dry-run auditing", async () => {
+  const rss = `<?xml version="1.0"?><rss><channel><item><guid>btc-etf-readonly</guid><title>Bitcoin ETF records net inflow</title><link>https://example.com/etf-readonly</link><description>Institutional demand increased.</description><pubDate>Wed, 19 Aug 2026 06:00:00 GMT</pubDate></item></channel></rss>`;
+  const logged = [];
+  const options = {
+    now: "2026-08-19T08:00:00Z",
+    force: true,
+    dryRun: true,
+    repository: automationRepository(),
+    fetchImpl: fixtureFetch(rss),
+    targets: [{ chatId: "-1001", threadId: 8 }],
+    runLogWriter: async (entry) => {
+      logged.push(entry);
+      return entry;
+    }
+  };
+  const preview = await automation.runAutomationJob("crypto-daily", { ...options, readOnlyPreview: true });
+  assert.equal(preview.status, "success");
+  assert.equal(logged.length, 0);
+
+  await automation.runAutomationJob("crypto-daily", options);
+  assert.equal(logged.length, 1);
+});
+
 test("weekly diagnostics select the deduplicated sorted document events while retaining raw candidates", async () => {
   const calendar = { result: [
     { id: "gdp", title: "US GDP", country: "US", importance: 3, date: "2026-08-20T12:30:00Z", forecast: "2.1", previous: "2.0", unit: "%" },

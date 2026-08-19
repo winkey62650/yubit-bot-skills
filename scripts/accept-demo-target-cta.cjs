@@ -46,21 +46,39 @@ function evaluateDemoCtaAcceptance(cta, preview, expectedTarget) {
   const ctaContent = normalize(cta?.ctaContent);
   const usable = cta?.ctaEnabled === true && Boolean(ctaContent);
   const plans = Array.isArray(preview?.deliveryPlans) ? preview.deliveryPlans : [];
-  const matchesTarget = (target) => expectedTarget?.platform === "discord" || expectedTarget?.guildId
-    ? String(target?.guildId || "") === String(expectedTarget?.guildId || "")
-    : String(target?.chatId || "") === String(expectedTarget?.chatId || "");
+  const matchesTarget = (target) => {
+    if (expectedTarget?.platform === "discord" || expectedTarget?.guildId) {
+      return String(target?.guildId || "") === String(expectedTarget?.guildId || "")
+        && (!expectedTarget?.channelId || String(target?.channelId || "") === String(expectedTarget.channelId));
+    }
+    return String(target?.chatId || "") === String(expectedTarget?.chatId || "")
+      && (!expectedTarget?.threadId || String(target?.threadId || "") === String(expectedTarget.threadId));
+  };
   const matchingPlans = plans.filter((plan) => matchesTarget(plan?.target));
   const hydrated = usable && matchingPlans.some((plan) => (
     plan?.target?.ctaEnabled === true && normalize(plan?.target?.ctaContent) === ctaContent
   ));
-  const marker = plainText(ctaContent.split("\n").find((line) => plainText(line)) || ctaContent);
-  const rendered = Boolean(marker) && matchingPlans.some((plan) => (
-    (Array.isArray(plan?.steps) ? plan.steps : []).some((step) => {
+  const visibleLines = ctaContent.split("\n").map(plainText).filter(Boolean);
+  const urls = [...new Set(Array.from(ctaContent.matchAll(/https?:\/\/[^\s)>]+/g), (match) => match[0]))];
+  const containsCompleteCta = (value) => {
+    const raw = normalize(value);
+    const visible = plainText(raw);
+    return Boolean(raw)
+      && visibleLines.every((line) => visible.includes(line))
+      && urls.every((url) => raw.includes(url));
+  };
+  const renderedSteps = matchingPlans.flatMap((plan) => {
+    const steps = Array.isArray(plan?.steps) ? plan.steps : [];
+    return steps.flatMap((step, index) => {
       const payload = step?.payload || {};
-      return [payload.text, payload.caption, payload.content]
-        .some((value) => plainText(value).includes(marker));
-    })
-  ));
+      const matched = [payload.text, payload.caption, payload.content].some(containsCompleteCta);
+      return matched ? [{ index, lastIndex: steps.length - 1 }] : [];
+    });
+  });
+  const rendered = Boolean(visibleLines.length || urls.length)
+    && renderedSteps.length === 1
+    && renderedSteps[0].index === renderedSteps[0].lastIndex;
+  const marker = visibleLines[0] || urls[0] || "";
   return { passed: usable && hydrated && rendered, usable, hydrated, rendered, marker };
 }
 
