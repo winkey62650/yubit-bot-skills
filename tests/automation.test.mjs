@@ -5,16 +5,18 @@ import * as automation from "../lib/automation-jobs.mjs";
 const { AUTOMATION_JOBS, automationSlot, automationTopicMatches } = automation;
 
 test("all requested automation schedules are registered", () => {
-  assert.deepEqual(AUTOMATION_JOBS.map((job) => job.id), ["news-feed", "daily-events", "daily-analysis", "whale-hourly", "agent-sync-4h"]);
-  assert.equal(AUTOMATION_JOBS.find((job) => job.id === "news-feed").schedule, "最短每 5 分钟");
-  assert.equal(AUTOMATION_JOBS.find((job) => job.id === "daily-events").schedule, "每日 08:00 UTC");
+  assert.deepEqual(AUTOMATION_JOBS.map((job) => job.id), ["crypto-daily", "weekly-calendar", "data-release-updates", "daily-analysis", "whale-hourly", "agent-sync-4h"]);
+  assert.equal(AUTOMATION_JOBS.find((job) => job.id === "crypto-daily").schedule, "每日 08:00 UTC");
+  assert.equal(AUTOMATION_JOBS.find((job) => job.id === "weekly-calendar").schedule, "每周一 00:30 UTC");
+  assert.equal(AUTOMATION_JOBS.find((job) => job.id === "data-release-updates").schedule, "每分钟检查重点数据发布");
   assert.equal(AUTOMATION_JOBS.find((job) => job.id === "daily-analysis").schedule, "每日 08:00 UTC");
   assert.equal(AUTOMATION_JOBS.find((job) => job.id === "whale-hourly").schedule, "每小时检查，重大异动才发布");
   assert.equal(AUTOMATION_JOBS.find((job) => job.id === "agent-sync-4h").schedule, "每小时");
   assert.equal(AUTOMATION_JOBS.find((job) => job.id === "agent-sync-4h").cron, "15 * * * *");
   assert.deepEqual(AUTOMATION_JOBS.map(({ id, topic, bot }) => ({ id, topic, bot })), [
-    { id: "news-feed", topic: "7. YUBIT Updates", bot: "SpeakerBot" },
-    { id: "daily-events", topic: "3. Market Events", bot: "SpeakerBot" },
+    { id: "crypto-daily", topic: "7. YUBIT Updates", bot: "SpeakerBot" },
+    { id: "weekly-calendar", topic: "3. Market Events", bot: "SpeakerBot" },
+    { id: "data-release-updates", topic: "3. Market Events", bot: "SpeakerBot" },
     { id: "daily-analysis", topic: "4. Market Analysis - Crypto/Stocks/TradFi", bot: "SpeakerBot" },
     { id: "whale-hourly", topic: "6. Smart Money Tracker", bot: "SpeakerBot" },
     { id: "agent-sync-4h", topic: "2. CryptoGuy Trading Zone", bot: "SpeakerBot" }
@@ -23,13 +25,14 @@ test("all requested automation schedules are registered", () => {
   assert.equal(automationTopicMatches("⚡️ 2. CryptoGuy Trading Zone", "CryptoGuy Trading Zone"), true);
 });
 
-test("idempotency slots follow daily, hourly and five-minute windows", () => {
-  const now = new Date("2026-07-14T10:42:00.000Z");
-  assert.equal(automationSlot("daily-events", now), "2026-07-14");
-  assert.equal(automationSlot("daily-analysis", now), "2026-07-14");
-  assert.equal(automationSlot("whale-hourly", now), "2026-07-14T10");
-  assert.equal(automationSlot("agent-sync-4h", now), "2026-07-14T10");
-  assert.equal(automationSlot("news-feed", now), "2026-07-14T10:40");
+test("idempotency slots follow weekly, daily, minute and hourly windows", () => {
+  const now = new Date("2026-08-19T10:42:00.000Z");
+  assert.equal(automationSlot("weekly-calendar", now), "2026-W34");
+  assert.equal(automationSlot("crypto-daily", now), "2026-08-19");
+  assert.equal(automationSlot("data-release-updates", now), "2026-08-19T10:42");
+  assert.equal(automationSlot("daily-analysis", now), "2026-08-19");
+  assert.equal(automationSlot("whale-hourly", now), "2026-08-19T10");
+  assert.equal(automationSlot("agent-sync-4h", now), "2026-08-19T10");
 });
 
 test("agent updates use the compact platform, date and link template", () => {
@@ -116,11 +119,11 @@ test("legacy automation status resolves every database-backed distribution targe
 });
 
 test("automation target resolution keeps a whole-channel destination", () => {
-  const job = AUTOMATION_JOBS.find((item) => item.id === "daily-events");
+  const job = AUTOMATION_JOBS.find((item) => item.id === "weekly-calendar");
   const target = automation.distributionTargetsForJob(job, [{
     id: "channel-events",
     kind: "automation",
-    contentType: "daily-events",
+    contentType: "weekly-calendar",
     enabled: true,
     targets: [{
       chatId: "-1009001",
@@ -542,8 +545,16 @@ test("automation preview card URL stays on the immutable deployment origin", () 
 });
 
 test("live automation previews expose the fixed editorial contract", () => {
-  assert.deepEqual(automation.automationTemplateMetadata("daily-events"), {
-    templateVersion: "editorial-template-v1",
+  assert.deepEqual(automation.automationTemplateMetadata("crypto-daily"), {
+    templateVersion: "market-content-v1",
+    contentPolicy: "fixed-template"
+  });
+  assert.deepEqual(automation.automationTemplateMetadata("weekly-calendar"), {
+    templateVersion: "market-content-v1",
+    contentPolicy: "fixed-template"
+  });
+  assert.deepEqual(automation.automationTemplateMetadata("data-release-updates"), {
+    templateVersion: "market-content-v1",
     contentPolicy: "fixed-template"
   });
   assert.deepEqual(automation.automationTemplateMetadata("daily-analysis"), {
@@ -583,4 +594,114 @@ test("daily analysis Telegram copy matches the complete approved preview structu
   assert.match(snapshot.caption, /Not investment advice/);
   assert.doesNotMatch(snapshot.caption, /OKX fallback|fallback market data/i);
   assert.doesNotMatch(snapshot.caption, /YUBIT|08:00 UTC|updates hourly/i);
+});
+
+function automationRepository(initial = {}) {
+  const meta = new Map(Object.entries(structuredClone(initial)));
+  return {
+    writes: [],
+    async getMeta(key) { return structuredClone(meta.get(key) ?? null); },
+    async setMeta(key, value) {
+      const saved = structuredClone(value);
+      this.writes.push([key, saved]);
+      meta.set(key, saved);
+      return structuredClone(saved);
+    }
+  };
+}
+
+function fixtureFetch(body) {
+  return async () => new Response(typeof body === "string" ? body : JSON.stringify(body), {
+    status: 200,
+    headers: { "content-type": typeof body === "string" ? "application/xml" : "application/json" }
+  });
+}
+
+const marketEnvelopeKeys = ["templateId", "document", "sources", "warnings", "deduplicationKey", "publishable"];
+
+test("fixture-backed market jobs return the common automation envelope", async () => {
+  const rss = `<?xml version="1.0"?><rss><channel><item><guid>btc-etf</guid><title>Bitcoin ETF records net inflow</title><link>https://example.com/etf</link><description>Institutional demand increased.</description><pubDate>Wed, 19 Aug 2026 06:00:00 GMT</pubDate></item></channel></rss>`;
+  const calendar = { result: [{ id: "us-cpi", title: "US CPI YoY", country: "US", importance: 3, date: "2026-08-20T12:30:00Z", forecast: "2.8", previous: "2.9", unit: "%" }] };
+  const repository = automationRepository();
+  const daily = await automation.buildContent("crypto-daily", new Date("2026-08-19T08:00:00Z"), { fetchImpl: fixtureFetch(rss), repository, persist: false });
+  const weekly = await automation.buildContent("weekly-calendar", new Date("2026-08-19T08:00:00Z"), { fetchImpl: fixtureFetch(calendar), repository, persist: false });
+  const release = await automation.buildContent("data-release-updates", new Date("2026-08-19T08:00:00Z"), { fetchImpl: fixtureFetch(calendar), repository, persist: false });
+
+  for (const result of [daily, weekly, release]) {
+    for (const key of marketEnvelopeKeys) assert.equal(Object.hasOwn(result, key), true, `${result.templateId} missing ${key}`);
+    assert.ok(Array.isArray(result.sources));
+    assert.ok(Array.isArray(result.warnings));
+  }
+  assert.equal(daily.document.templateId, "crypto-daily");
+  assert.equal(weekly.document.templateId, "weekly-calendar");
+  assert.equal(release.publishable, false);
+  assert.equal(typeof release.skipReason, "string");
+  assert.equal(repository.writes.length, 0);
+});
+
+test("weekly calendar caches only when persist is explicitly true", async () => {
+  const calendar = { result: [{ id: "us-cpi", title: "US CPI YoY", country: "US", importance: 3, date: "2026-08-20T12:30:00Z", forecast: "2.8", previous: "2.9", unit: "%" }] };
+  const repository = automationRepository();
+  await automation.buildContent("weekly-calendar", new Date("2026-08-19T08:00:00Z"), { fetchImpl: fixtureFetch(calendar), repository, persist: false });
+  assert.equal(repository.writes.length, 0);
+  await automation.buildContent("weekly-calendar", new Date("2026-08-19T08:00:00Z"), { fetchImpl: fixtureFetch(calendar), repository, persist: true });
+  assert.equal(repository.writes.filter(([key]) => key === "market-content:weekly-calendar:v1").length, 1);
+});
+
+test("non-publishable data releases are skipped before any sender is called", async () => {
+  const repository = automationRepository();
+  let sends = 0;
+  const result = await automation.runAutomationJob("data-release-updates", {
+    now: "2026-08-19T08:00:00Z",
+    force: true,
+    dryRun: false,
+    repository,
+    fetchImpl: fixtureFetch({ result: [] }),
+    targets: [{ platform: "discord", guildId: "g1", channelId: "c1" }],
+    discordSender: async () => { sends += 1; }
+  });
+  assert.equal(result.status, "skipped");
+  assert.equal(result.preview.skipReason, "no-monitored-event");
+  assert.equal(sends, 0);
+});
+
+test("an injected Telegram sender runs without a production bot token", async () => {
+  const rss = `<?xml version="1.0"?><rss><channel><item><guid>btc-etf-send</guid><title>Bitcoin ETF records net inflow</title><link>https://example.com/etf-send</link><description>Institutional demand increased.</description><pubDate>Wed, 19 Aug 2026 06:00:00 GMT</pubDate></item></channel></rss>`;
+  let sends = 0;
+  const result = await automation.runAutomationJob("crypto-daily", {
+    now: "2026-08-19T08:00:00Z",
+    force: true,
+    dryRun: false,
+    fetchImpl: fixtureFetch(rss),
+    targets: [{ chatId: "-1001", threadId: 8 }],
+    telegramSender: async () => ({ message_id: ++sends })
+  });
+  assert.equal(result.status, "success");
+  assert.ok(sends > 0);
+});
+
+test("market plans use platform renderers, strict paragraph chunks, and one final CTA", () => {
+  const document = {
+    templateId: "crypto-daily",
+    version: "market-content-v1",
+    nodes: [{ type: "heading", text: "Crypto Daily" }],
+    sections: [
+      { nodes: [{ type: "paragraph", text: `A-${"x".repeat(1800)}` }] },
+      { nodes: [{ type: "paragraph", text: `B-${"y".repeat(1800)}` }] },
+      { nodes: [{ type: "paragraph", text: `C-${"z".repeat(1800)}` }] }
+    ]
+  };
+  const ctaContent = "**Join YUBIT**\n[Open](https://example.com/join)";
+  const generated = { document };
+  const [telegram] = automation.buildAutomationTelegramPlans("crypto-daily", generated, [{ chatId: "-1001", threadId: 8, ctaEnabled: true, ctaContent }]);
+  const [discord] = automation.buildAutomationDiscordPlans("crypto-daily", generated, [{ platform: "discord", guildId: "g1", channelId: "c1", ctaEnabled: true, ctaContent }]);
+
+  assert.ok(telegram.steps.length > 1);
+  assert.ok(telegram.steps.every((step) => step.method === "sendMessage" && step.payload.parse_mode === "HTML" && step.payload.text.length < 4096));
+  assert.equal(telegram.steps.filter((step) => step.payload.text.includes("Join YUBIT")).length, 1);
+  assert.match(telegram.steps.at(-1).payload.text, /<b>Join YUBIT<\/b>/);
+  assert.ok(discord.steps.length > 1);
+  assert.ok(discord.steps.every((step) => step.payload.content.length < 2000));
+  assert.equal(discord.steps.filter((step) => step.payload.content.includes("Join YUBIT")).length, 1);
+  assert.match(discord.steps.at(-1).payload.content, /\*\*Join YUBIT\*\*/);
 });
