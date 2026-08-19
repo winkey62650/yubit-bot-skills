@@ -1,12 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import * as automation from "../lib/automation-jobs.mjs";
 import {
+  WEEKLY_CALENDAR_META_KEY,
   markDataReleaseTargetPending,
+  pollDataReleaseUpdates,
   prepareDataReleaseDelivery,
   prepareDataReleaseSend,
 } from "../lib/data-release-monitor.mjs";
 import { buildMarketPreviewFacts } from "../lib/distribution-ui.mjs";
+import { JsonDistributionRepository } from "../lib/distribution-repository.mjs";
 
 const { AUTOMATION_JOBS, automationSlot, automationTopicMatches } = automation;
 
@@ -790,6 +796,48 @@ test("weekly diagnostics select the deduplicated sorted document events while re
   assert.equal(result.preview.sources[0].lastSuccessAt, "2026-08-19T08:00:00.000Z");
 });
 
+test("weekly diagnostics choose the earliest exact event at or after now", async () => {
+  const calendar = { result: [
+    { id: "past", title: "US Retail Sales", country: "US", importance: 3, date: "2026-08-19T11:00:00Z" },
+    { id: "later", title: "US GDP", country: "US", importance: 3, date: "2026-08-19T14:00:00Z" },
+    { id: "boundary", title: "US CPI YoY", country: "US", importance: 3, date: "2026-08-19T12:30:00Z" }
+  ] };
+
+  const result = await automation.runAutomationJob("weekly-calendar", {
+    now: "2026-08-19T12:30:00Z",
+    force: true,
+    dryRun: true,
+    repository: automationRepository(),
+    fetchImpl: fixtureFetch(calendar),
+    targets: []
+  });
+
+  assert.deepEqual(result.preview.diagnostics.selected.map((event) => event.title), [
+    "US Retail Sales", "US CPI YoY", "US GDP"
+  ]);
+  assert.equal(result.preview.diagnostics.nextMonitoredEvent.title, "US CPI YoY");
+  assert.equal(result.preview.diagnostics.nextMonitoredEvent.scheduledAt, "2026-08-19T12:30:00.000Z");
+});
+
+test("weekly diagnostics return no next event when exact events are past and remaining dates are TBD", async () => {
+  const calendar = { result: [
+    { id: "past", title: "US CPI YoY", country: "US", importance: 3, date: "2026-08-19T12:30:00Z" },
+    { id: "date-only", title: "FOMC Minutes", country: "US", importance: 3, date: "2026-08-20" }
+  ] };
+
+  const result = await automation.runAutomationJob("weekly-calendar", {
+    now: "2026-08-19T15:00:00Z",
+    force: true,
+    dryRun: true,
+    repository: automationRepository(),
+    fetchImpl: fixtureFetch(calendar),
+    targets: []
+  });
+
+  assert.ok(result.preview.diagnostics.selected.some((event) => event.time === "TBD"));
+  assert.equal(result.preview.diagnostics.nextMonitoredEvent, null);
+});
+
 test("daily and weekly jobs fail closed without sending when every source is unavailable", async () => {
   const unavailableFetch = async () => new Response("unavailable", { status: 400 });
   for (const jobId of ["crypto-daily", "weekly-calendar"]) {
@@ -840,6 +888,91 @@ test("weekly calendar caches only when persist is explicitly true", async () => 
   assert.equal(repository.writes.length, 0);
   await automation.buildContent("weekly-calendar", new Date("2026-08-19T08:00:00Z"), { fetchImpl: fixtureFetch(calendar), repository, persist: true });
   assert.equal(repository.writes.filter(([key]) => key === "market-content:weekly-calendar:v1").length, 1);
+});
+
+test("weekly automation preserves a healthy cache when every current source fails", async () => {
+  const cachedEvent = {
+    id: "cached-cpi",
+    sourceId: "cached-cpi",
+    title: "US CPI YoY",
+    country: "US",
+    importance: 3,
+    scheduledAt: "2026-08-19T12:30:00.000Z",
+    values: { actual: null, forecast: "2.8%", previous: "2.9%" },
+    rawValues: { actual: null, forecast: "2.8", previous: "2.9" }
+  };
+  const cachedCalendar = {
+    calendarWeek: "2026-08-17",
+    events: [cachedEvent],
+    sources: [{ id: "tradingview-calendar", status: "ok" }],
+    updatedAt: "2026-08-19T08:00:00.000Z"
+  };
+  const directory = await mkdtemp(join(tmpdir(), "weekly-cache-preservation-"));
+  const previousDirectory = process.env.JSON_STORE_DIRECTORY;
+  const previousBackend = process.env.JSON_STORE_BACKEND;
+  process.env.JSON_STORE_DIRECTORY = directory;
+  process.env.JSON_STORE_BACKEND = "local";
+  try {
+    const repository = new JsonDistributionRepository();
+    await repository.setMeta(WEEKLY_CALENDAR_META_KEY, cachedCalendar);
+
+    await automation.buildContent("weekly-calendar", new Date("2026-08-19T09:00:00Z"), {
+      repository,
+      persist: true,
+      fetchImpl: async () => new Response("timeout", { status: 408 })
+    });
+
+    assert.deepEqual(await repository.getMeta(WEEKLY_CALENDAR_META_KEY), cachedCalendar);
+    const monitored = await pollDataReleaseUpdates({
+      now: "2026-08-19T12:26:00Z",
+      repository,
+      persist: false
+    });
+    assert.equal(monitored.nextMonitoredEvent.id, "cached-cpi");
+  } finally {
+    if (previousDirectory === undefined) delete process.env.JSON_STORE_DIRECTORY;
+    else process.env.JSON_STORE_DIRECTORY = previousDirectory;
+    if (previousBackend === undefined) delete process.env.JSON_STORE_BACKEND;
+    else process.env.JSON_STORE_BACKEND = previousBackend;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("weekly automation persists healthy empty and mixed-source results, but not schema failures", async () => {
+  const oldCalendar = {
+    calendarWeek: "2026-08-17",
+    events: [{ id: "old" }],
+    updatedAt: "2026-08-19T07:00:00.000Z"
+  };
+  const schemaRepository = automationRepository({ [WEEKLY_CALENDAR_META_KEY]: oldCalendar });
+  await automation.buildContent("weekly-calendar", new Date("2026-08-19T08:00:00Z"), {
+    repository: schemaRepository,
+    persist: true,
+    fetchImpl: fixtureFetch({ unexpected: true })
+  });
+  assert.deepEqual(await schemaRepository.getMeta(WEEKLY_CALENDAR_META_KEY), oldCalendar);
+
+  const emptyRepository = automationRepository({ [WEEKLY_CALENDAR_META_KEY]: oldCalendar });
+  await automation.buildContent("weekly-calendar", new Date("2026-08-19T08:00:00Z"), {
+    repository: emptyRepository,
+    persist: true,
+    fetchImpl: fixtureFetch({ result: [] })
+  });
+  assert.deepEqual((await emptyRepository.getMeta(WEEKLY_CALENDAR_META_KEY)).events, []);
+
+  const mixedRepository = automationRepository({ [WEEKLY_CALENDAR_META_KEY]: oldCalendar });
+  const mixedEvent = { id: "mixed-cpi", title: "US CPI YoY", country: "US", importance: 3, scheduledAt: "2026-08-20T12:30:00.000Z" };
+  await automation.buildContent("weekly-calendar", new Date("2026-08-19T08:00:00Z"), {
+    repository: mixedRepository,
+    persist: true,
+    fetchImpl: fixtureFetch({ result: [] }),
+    fetchCalendar: async () => ({
+      events: [mixedEvent],
+      sources: [{ id: "primary", status: "timeout" }, { id: "fallback", status: "ok" }],
+      warnings: ["primary timed out"]
+    })
+  });
+  assert.deepEqual((await mixedRepository.getMeta(WEEKLY_CALENDAR_META_KEY)).events, [mixedEvent]);
 });
 
 test("non-publishable data releases are skipped before any sender is called", async () => {
