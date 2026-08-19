@@ -107,3 +107,70 @@ test("standard production distribution provisioning is preview-only until separa
   assert.match(script, /TEST_PASSWORD\s*\|\|\s*process\.env\.AUTH_PASSWORD/);
   assert.doesNotMatch(script, /authorizeLiveTelegramOperation/);
 });
+
+test("market content migration is dry-run by default and can never execute delivery", async () => {
+  const packageJson = JSON.parse(await readFile(new URL("package.json", root), "utf8"));
+  const migration = await readFile(new URL("scripts/migrate-market-content-rules.cjs", root), "utf8");
+
+  assert.equal(packageJson.scripts["release:migrate:market-content"], "node scripts/migrate-market-content-rules.cjs");
+  assert.match(packageJson.scripts.check, /node --check scripts\/migrate-market-content-rules\.cjs/);
+  for (const file of [
+    "lib/market-content-templates.mjs",
+    "lib/market-content-sources.mjs",
+    "lib/data-release-monitor.mjs",
+  ]) {
+    assert.match(packageJson.scripts.check, new RegExp(`node --check ${file.replaceAll("/", "\\/")}`));
+  }
+  assert.match(migration, /MIGRATION_APPLY/);
+  assert.match(migration, /authorizeProductionConfiguration/);
+  assert.match(migration, /apply:\s*migrationApply/);
+  assert.match(migration, /migrateMarketContentRules/);
+  assert.match(migration, /data-release-updates/);
+  assert.match(migration, /before:/);
+  assert.match(migration, /after:/);
+  assert.doesNotMatch(migration, /run-now|\/api\/telegram|\/api\/discord/);
+});
+
+test("production distribution gates cover all six automations and seven broadcasts", async () => {
+  const audit = await readFile(new URL("scripts/audit-production-release.cjs", root), "utf8");
+  const provision = await readFile(new URL("scripts/provision-production-distribution.cjs", root), "utf8");
+  const reconciliation = await readFile(new URL("scripts/reconcile-production-release.cjs", root), "utf8");
+  const liveDelivery = await readFile(new URL("scripts/test-production-automation-delivery.cjs", root), "utf8");
+
+  for (const contentType of [
+    "crypto-daily",
+    "weekly-calendar",
+    "data-release-updates",
+    "daily-analysis",
+    "whale-signals",
+    "agent-sync",
+  ]) {
+    assert.match(audit, new RegExp(contentType));
+    assert.match(reconciliation, new RegExp(contentType));
+  }
+  for (const preset of ["daily-0800-utc", "weekly-monday-0030-utc", "event-driven", "hourly"]) {
+    assert.match(audit, new RegExp(preset));
+  }
+  assert.match(audit, /expectedBroadcastCount:\s*7/);
+  assert.match(audit, /sourceHealth/);
+  assert.match(audit, /publishable/);
+  assert.match(audit, /skipReason/);
+  assert.match(audit, /duplicateDestinations/);
+  assert.match(audit, /sourceValid/);
+  assert.match(provision, /expectedAutomationCount:\s*6/);
+  assert.match(provision, /expectedBroadcastCount:\s*7/);
+  assert.match(reconciliation, /contentType:\s*"data-release-updates"[\s\S]*enabled:\s*false/);
+  assert.match(liveDelivery, /authorizeLiveTelegramOperation/);
+});
+
+test("template audits and previews use dry-run automation preview without a delivery endpoint", async () => {
+  for (const file of [
+    "scripts/audit-production-release.cjs",
+    "scripts/audit-distribution-templates.cjs",
+    "scripts/send-demo-template-previews.cjs",
+  ]) {
+    const source = await readFile(new URL(file, root), "utf8");
+    assert.match(source, /\/api\/automation-test/);
+    assert.doesNotMatch(source, /run-now/);
+  }
+});

@@ -13,9 +13,11 @@ const reportPath = path.resolve(process.env.TEST_REPORT_PATH || "artifacts/produ
 if (!username || !password) throw new Error("TEST_USERNAME and TEST_PASSWORD are required");
 
 const requiredRules = [
-  { contentType: "daily-events", label: "每日市场事件" },
-  { contentType: "daily-analysis", label: "每日行情分析" },
-  { contentType: "whale-signals", label: "巨鲸数据 / 大户挂单" }
+  { contentType: "crypto-daily", label: "每日 Crypto 新闻", minimumTargetCount: 1 },
+  { contentType: "weekly-calendar", label: "每周数据日历", minimumTargetCount: 1 },
+  { contentType: "daily-analysis", label: "每日行情分析", minimumTargetCount: 1 },
+  { contentType: "whale-signals", label: "巨鲸数据 / 大户挂单", minimumTargetCount: 1 },
+  { contentType: "agent-sync", label: "Agent 同步", minimumTargetCount: 1 }
 ];
 
 async function readJson(response, label) {
@@ -88,7 +90,7 @@ function idsOf(result) {
         continue;
       }
       if (!rule.enabled) report.failures.push(`${expected.label}：规则未启用`);
-      if ((rule.targets || []).length !== 2) report.failures.push(`${expected.label}：目标数不是 2`);
+      if ((rule.targets || []).length < expected.minimumTargetCount) report.failures.push(`${expected.label}：没有有效目标`);
 
       const validationPayload = await readJson(await api.post("/api/distribution", {
         data: { action: "validate", id: rule.id },
@@ -158,7 +160,7 @@ function idsOf(result) {
       const logsOk = item.deliveryLogs.length === item.targets.length
         && item.deliveryLogs.every((delivery) => delivery.status === "success" && delivery.targetMessageIds.length > 0);
       item.ok = rule.enabled === true
-        && item.targets.length === 2
+        && item.targets.length >= expected.minimumTargetCount
         && item.validation.ok
         && execution.status === "success"
         && targetsOk

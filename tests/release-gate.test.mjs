@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import test from "node:test";
 
 const require = createRequire(import.meta.url);
+const root = new URL("../", import.meta.url);
 const {
   authorizeReleaseAuditMode,
   authorizeProductionConfiguration,
@@ -237,6 +239,14 @@ test("production configuration planning is read-only by default and applying req
     baseUrl: "https://academy.example.com",
     apply: true,
   });
+});
+
+test("market migration binds its apply switch to the existing production configuration gate", async () => {
+  const source = await readFile(new URL("scripts/migrate-market-content-rules.cjs", root), "utf8");
+  assert.match(source, /const migrationApply\s*=\s*process\.env\.MIGRATION_APPLY\s*===\s*"true"/);
+  assert.match(source, /authorizeProductionConfiguration\(process\.env,[\s\S]*apply:\s*migrationApply/);
+  assert.match(source, /if\s*\(migrationApply\)[\s\S]*api\.post\("\/api\/distribution"/);
+  assert.doesNotMatch(source, /action:\s*"run-now"/);
 });
 
 test("release audit cleanup runs after both success and failure", async () => {

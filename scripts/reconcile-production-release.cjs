@@ -9,7 +9,14 @@ const { baseUrl } = authorizeLiveTelegramOperation(process.env, {
 });
 const username = process.env.TEST_USERNAME;
 const password = process.env.TEST_PASSWORD;
-const requiredContentTypes = new Set(["daily-events", "daily-analysis", "whale-signals"]);
+const requiredDefinitions = [
+  { contentType: "crypto-daily", enabled: true },
+  { contentType: "weekly-calendar", enabled: true },
+  { contentType: "data-release-updates", enabled: false },
+  { contentType: "daily-analysis", enabled: true },
+  { contentType: "whale-signals", enabled: true },
+  { contentType: "agent-sync", enabled: true },
+];
 
 if (!username || !password) throw new Error("TEST_USERNAME and TEST_PASSWORD are required");
 
@@ -30,31 +37,35 @@ async function readJson(response, label) {
 
     // Reading the overview also reconciles stale display names from stable chat/thread IDs.
     const initial = await readJson(await api.get("/api/distribution"), "读取分发配置");
-    const requiredRules = [...requiredContentTypes].map((contentType) => (
-      selectAutomationRuleForReconciliation(initial.rules || [], contentType)
-    ));
+    const requiredRules = requiredDefinitions.map((definition) => ({
+      definition,
+      rule: selectAutomationRuleForReconciliation(initial.rules || [], definition.contentType),
+    }));
 
     const enabled = [];
-    for (const rule of requiredRules) {
-      if (rule.enabled) continue;
+    for (const { definition, rule } of requiredRules) {
+      if (rule.enabled === definition.enabled) continue;
       await readJson(await api.post("/api/distribution", {
-        data: { action: "toggle", id: rule.id, enabled: true }
-      }), `启用 ${rule.contentType}`);
-      enabled.push(rule.contentType);
+        data: { action: "toggle", id: rule.id, enabled: definition.enabled }
+      }), `${definition.enabled ? "启用" : "禁用"} ${rule.contentType}`);
+      enabled.push(`${rule.contentType}:${definition.enabled}`);
     }
 
     const final = await readJson(await api.get("/api/distribution"), "复核分发配置");
-    const reconciledRules = [...requiredContentTypes].map((contentType) => (
-      selectAutomationRuleForReconciliation(final.rules || [], contentType)
-    ));
-    const summary = reconciledRules.map((rule) => ({
+    const reconciledRules = requiredDefinitions.map((definition) => ({
+      definition,
+      rule: selectAutomationRuleForReconciliation(final.rules || [], definition.contentType),
+    }));
+    const summary = reconciledRules.map(({ definition, rule }) => ({
         contentType: rule.contentType,
         enabled: rule.enabled,
+        expectedEnabled: definition.enabled,
         schedulePreset: rule.schedulePreset,
         targetCount: (rule.targets || []).length
       }));
-    const ok = summary.length === requiredContentTypes.size && summary.every((rule) => rule.enabled);
-    if (!ok) throw new Error("自动发布规则对账后仍未全部启用");
+    const ok = summary.length === requiredDefinitions.length
+      && summary.every((rule) => rule.enabled === rule.expectedEnabled);
+    if (!ok) throw new Error("自动发布规则对账后仍未达到预期启用状态");
     console.log(JSON.stringify({ ok, enabled, rules: summary }, null, 2));
   } finally {
     await api.dispose();

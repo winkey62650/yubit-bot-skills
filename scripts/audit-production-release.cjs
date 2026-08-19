@@ -10,7 +10,6 @@ const {
   evaluatePreviewTradingIsolation,
   evaluateReleaseFingerprint,
   evaluateReleasePage,
-  evaluateRequiredAutomationRule,
   evaluateTradingRelease,
   resolveReleaseAuditBaseUrl,
   summarizeReleaseSocialSource,
@@ -29,6 +28,54 @@ const protectionHeaders = buildVercelProtectionHeaders(process.env.VERCEL_AUTOMA
 if (!username || !password) throw new Error("TEST_USERNAME and TEST_PASSWORD are required");
 
 const pages = PRODUCTION_RELEASE_PAGES;
+const expectedAutomationCount = 6;
+const expectedBroadcastCount = 7;
+const requiredAutomationDefinitions = [
+  { contentType: "crypto-daily", jobId: "crypto-daily", schedulePreset: "daily-0800-utc", enabled: true },
+  { contentType: "weekly-calendar", jobId: "weekly-calendar", schedulePreset: "weekly-monday-0030-utc", enabled: true },
+  { contentType: "data-release-updates", jobId: "data-release-updates", schedulePreset: "event-driven", enabled: false },
+  { contentType: "daily-analysis", jobId: "daily-analysis", schedulePreset: "daily-0800-utc", enabled: true },
+  { contentType: "whale-signals", jobId: "whale-hourly", schedulePreset: "hourly", enabled: true },
+  { contentType: "agent-sync", jobId: "agent-sync-4h", schedulePreset: "hourly", enabled: true },
+];
+
+function destinationKey(target = {}) {
+  if (target.platform === "discord" || target.guildId || target.channelId) {
+    return target.guildId && target.channelId ? `discord:${target.guildId}:${target.channelId}` : null;
+  }
+  return target.chatId && Number(target.threadId) > 0 ? `telegram:${target.chatId}:${Number(target.threadId)}` : null;
+}
+
+function inspectRuleTargets(rule) {
+  const targets = Array.isArray(rule.targets) ? rule.targets : [];
+  const keys = targets.map(destinationKey);
+  return {
+    sourceValid: rule.kind !== "broadcast" || Boolean(destinationKey(rule.source)),
+    targetsValid: keys.length > 0 && keys.every(Boolean),
+    duplicateDestinations: [...new Set(keys.filter((key, index) => key && keys.indexOf(key) !== index))],
+  };
+}
+
+function inspectMarketPreview(preview = {}) {
+  const diagnostics = preview.diagnostics || preview.document?.diagnostics || {};
+  const sources = Array.isArray(preview.sources) ? preview.sources : (Array.isArray(diagnostics.sources) ? diagnostics.sources : []);
+  const sourceHealth = sources.map((source) => ({
+    id: source.id || source.name || source.source,
+    status: source.status || "unknown",
+    lastSuccess: source.lastSuccess || source.lastSuccessAt || null,
+    freshness: source.freshness || source.freshnessStatus || null,
+    fallback: source.fallback === true || source.usedFallback === true,
+  }));
+  const publishable = preview.publishable ?? preview.document?.publishable ?? false;
+  const skipReason = preview.skipReason || preview.document?.skipReason || null;
+  return {
+    publishable,
+    skipReason,
+    sourceHealth,
+    sourceHealthOk: sourceHealth.length > 0 && sourceHealth.every((source) => source.status !== "unknown"),
+    publishabilityOk: publishable === true || (publishable === false && Boolean(skipReason)),
+  };
+}
 
 async function jsonRequest(response, label) {
   const body = await response.json().catch(() => ({}));
@@ -119,9 +166,12 @@ async function runAudit(browser) {
   }
 
   const templateExpectations = {
-    "daily-events": { kind: "events", marker: /MORNING MARKET BRIEF/i },
+    "crypto-daily": {},
+    "weekly-calendar": {},
+    "data-release-updates": {},
     "daily-analysis": { kind: "analysis", marker: /DAILY MARKET ANALYSIS/i },
-    "whale-hourly": { kind: "whale", marker: /WHALE ALERT · SMART MONEY SIGNAL/i }
+    "whale-hourly": { kind: "whale", marker: /WHALE ALERT · SMART MONEY SIGNAL/i },
+    "agent-sync-4h": {},
   };
   const templatePreviews = [];
   if (auditPolicy.allowActiveValidation) {
@@ -133,7 +183,7 @@ async function runAudit(browser) {
       const preview = payload.result?.preview || {};
       const copy = `${preview.headline || ""}\n${preview.caption || ""}\n${preview.fullText || ""}`;
       const imageUrl = preview.imageUrl;
-      let imageOk = false;
+      let imageOk = !expected.kind;
       let imageContentType = null;
       if (imageUrl) {
         const imageResponse = await context.request.get(imageUrl, { timeout: 30_000 });
@@ -146,13 +196,15 @@ async function runAudit(browser) {
         imageUrl,
         imageOk,
         imageContentType,
-        copyOk: expected.marker.test(copy),
-        kindOk: Boolean(imageUrl && new URL(imageUrl).searchParams.get("kind") === expected.kind)
+        copyOk: expected.marker ? expected.marker.test(copy) : Boolean(copy || preview.document),
+        kindOk: expected.kind ? Boolean(imageUrl && new URL(imageUrl).searchParams.get("kind") === expected.kind) : true,
+        ...inspectMarketPreview(preview),
       });
     }
   }
 
   const report = {
+    auditContract: { expectedAutomationCount: 6, expectedBroadcastCount: 7 },
     stage: releaseStage,
     auditMode: auditPolicy.mode,
     remoteMutationsPerformed: auditPolicy.allowActiveValidation,
@@ -193,7 +245,8 @@ async function runAudit(browser) {
       contentType: rule.contentType,
       enabled: rule.enabled,
       schedulePreset: rule.schedulePreset,
-      targetCount: (rule.targets || []).length
+      targetCount: (rule.targets || []).length,
+      ...inspectRuleTargets(rule),
     })),
     database: distribution.database,
     socialPackages: (social.packages || []).map(summarizeReleaseSocialSource),
@@ -214,11 +267,17 @@ async function runAudit(browser) {
   const currentRules = distribution.rules || [];
   const broadcastRules = currentRules.filter((rule) => rule.kind === "broadcast");
   const enabledBroadcastRules = broadcastRules.filter((rule) => rule.enabled);
-  const requiredAutomations = [
-    { contentType: "daily-events", schedulePreset: "daily-0800-utc" },
-    { contentType: "daily-analysis", schedulePreset: "daily-0800-utc" },
-    { contentType: "whale-signals", schedulePreset: "hourly" }
-  ].map((definition) => evaluateRequiredAutomationRule(currentRules, definition));
+  const requiredAutomations = requiredAutomationDefinitions.map((definition) => {
+    const matches = currentRules.filter((rule) => rule.kind === "automation" && rule.contentType === definition.contentType);
+    const exact = matches.filter((rule) => rule.enabled === definition.enabled && rule.schedulePreset === definition.schedulePreset);
+    return {
+      definition,
+      rule: exact[0] || null,
+      failures: exact.length === 1 && matches.length === 1
+        ? []
+        : [`自动规则 ${definition.contentType} 必须唯一、排期为 ${definition.schedulePreset} 且 enabled=${definition.enabled}`],
+    };
+  });
   const commonFailures = [
     ...pageResults.flatMap((item) => item.failures || []),
     ...evidence.failures.map((message) => `接口异常：${message}`),
@@ -247,13 +306,19 @@ async function runAudit(browser) {
     ...(!auditPolicy.allowActiveValidation
       ? ["生产规则与模板的主动验收尚未执行（当前为严格只读审计）"] : []),
     ...validations.filter((item) => !item.ok).map((item) => `规则验证失败：${item.name}`),
-    ...(enabledBroadcastRules.length < 7
-      ? ["Telegram 广播规则至少需要 7 条已启用规则"] : []),
+    ...(broadcastRules.length !== expectedBroadcastCount || enabledBroadcastRules.length !== expectedBroadcastCount
+      ? [`广播规则必须恰好 ${expectedBroadcastCount} 条且全部启用`] : []),
+    ...(currentRules.filter((rule) => rule.kind === "automation").length !== expectedAutomationCount
+      ? [`自动规则必须恰好 ${expectedAutomationCount} 条`] : []),
     ...requiredAutomations.flatMap((result) => result.failures),
-    ...["daily-events", "daily-analysis", "whale-hourly"].flatMap((jobId) => {
+    ...report.rules.filter((rule) => !rule.sourceValid || !rule.targetsValid || rule.duplicateDestinations.length).map((rule) => `规则目标无效或重复：${rule.name}`),
+    ...requiredAutomationDefinitions.map((item) => item.jobId).flatMap((jobId) => {
       const job = (automation.jobs || []).find((item) => item.id === jobId);
       return !job?.target?.configured || job.target.count < 1 ? [`自动任务状态未读取到数据库目标：${jobId}`] : [];
     }),
+    ...templatePreviews.filter((item) => ["crypto-daily", "weekly-calendar", "data-release-updates"].includes(item.jobId)
+      && (!item.sourceHealthOk || !item.publishabilityOk))
+      .map((item) => `市场模板来源或可发布状态异常：${item.jobId}`),
     ...evaluateTradingRelease(trading)
   ];
   const previewFailures = evaluatePreviewTradingIsolation(trading);

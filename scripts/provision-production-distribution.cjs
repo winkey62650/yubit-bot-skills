@@ -32,15 +32,21 @@ function comparableRule(rule) {
     schedulePreset: rule.schedulePreset ?? null,
     mode: rule.mode ?? null,
     source: rule.source ? {
+      platform: rule.source.platform,
       chatId: rule.source.chatId,
       threadId: rule.source.threadId,
+      guildId: rule.source.guildId,
+      channelId: rule.source.channelId,
       groupName: rule.source.groupName,
       topicName: rule.source.topicName,
     } : null,
     targets: (rule.targets || []).map((target) => ({
       id: target.id,
+      platform: target.platform,
       chatId: target.chatId,
       threadId: target.threadId,
+      guildId: target.guildId,
+      channelId: target.channelId,
       groupName: target.groupName,
       topicName: target.topicName,
       enabled: target.enabled !== false,
@@ -74,6 +80,16 @@ function sameRule(left, right) {
     ]);
     const currentRules = distribution.rules || [];
     const desiredRules = buildStandardProductionDistributionRules(groupConfig.groups || [], { currentRules });
+    const expectedAutomationCount = 6;
+    const expectedBroadcastCount = 7;
+    const automationCount = desiredRules.filter((rule) => rule.kind === "automation").length;
+    const broadcastCount = desiredRules.filter((rule) => rule.kind === "broadcast").length;
+    if (automationCount !== expectedAutomationCount || broadcastCount !== expectedBroadcastCount) {
+      throw new Error(`标准规则数量异常：automation=${automationCount}, broadcast=${broadcastCount}`);
+    }
+    if (desiredRules.some((rule) => rule.contentType === "data-release-updates" && rule.enabled)) {
+      throw new Error("数据公布快讯规则必须保持禁用，等待人工验收");
+    }
     for (const rule of desiredRules) {
       const errors = validateDistributionRule(rule);
       if (errors.length) throw new Error(`${rule.name}: ${errors.map((item) => item.message).join("；")}`);
@@ -109,6 +125,8 @@ function sameRule(left, right) {
       dryRun: !provisionApply,
       baseUrl,
       summary: {
+        expectedAutomationCount: 6,
+        expectedBroadcastCount: 7,
         total: operations.length,
         create: operations.filter((item) => item.action === "create").length,
         update: operations.filter((item) => item.action === "update").length,
