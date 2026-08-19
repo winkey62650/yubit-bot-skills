@@ -675,7 +675,7 @@ test("non-publishable data releases are skipped before any sender is called", as
   assert.equal(sends, 0);
 });
 
-test("data release retries after send failure and acknowledges only after every target succeeds", async () => {
+test("data release preserves successful receipts but never retries an uncertain failed send", async () => {
   const actualCalendar = { result: [{
     id: "us-cpi-retry",
     title: "US CPI YoY",
@@ -692,11 +692,10 @@ test("data release retries after send failure and acknowledges only after every 
     { platform: "discord", guildId: "g1", channelId: "c1" },
     { platform: "discord", guildId: "g1", channelId: "c2" }
   ];
-  let failSecondTarget = true;
   const sends = new Map();
   const discordSender = async (channelId) => {
     sends.set(channelId, (sends.get(channelId) || 0) + 1);
-    if (channelId === "c2" && failSecondTarget) throw new Error("Discord unavailable");
+    if (channelId === "c2") throw new Error("response timeout after remote accept");
     return { id: `message-${channelId}-${sends.get(channelId)}` };
   };
   const run = (now) => automation.runAutomationJob("data-release-updates", {
@@ -710,21 +709,14 @@ test("data release retries after send failure and acknowledges only after every 
     discordSender
   });
 
-  const partial = await run("2026-08-19T12:31:00Z");
-  assert.equal(partial.status, "partial");
+  const uncertain = await run("2026-08-19T12:31:00Z");
+  assert.equal(uncertain.status, "manual-reconciliation");
   assert.deepEqual((await repository.getMeta("market-content:release-state:v1")).publishedKeys, []);
 
-  failSecondTarget = false;
-  const success = await run("2026-08-19T12:32:00Z");
-  assert.equal(success.status, "success");
-  assert.deepEqual(Object.fromEntries(sends), { c1: 1, c2: 2 });
-  assert.deepEqual((await repository.getMeta("market-content:release-state:v1")).publishedKeys, [success.preview.deduplicationKey]);
-
-  const sendsAfterSuccess = Object.fromEntries(sends);
-  const duplicate = await run("2026-08-19T12:33:00Z");
-  assert.equal(duplicate.status, "skipped");
-  assert.equal(duplicate.preview.skipReason, "duplicate-release");
-  assert.deepEqual(Object.fromEntries(sends), sendsAfterSuccess);
+  const retry = await run("2026-08-19T12:32:00Z");
+  assert.ok(["manual-reconciliation", "skipped"].includes(retry.status));
+  assert.deepEqual(Object.fromEntries(sends), { c1: 1, c2: 1 });
+  assert.deepEqual((await repository.getMeta("market-content:release-state:v1")).publishedKeys, []);
 });
 
 test("queued data release keeps its target claim and does not create another plan next minute", async () => {
@@ -909,6 +901,41 @@ test("a multi-step crash remains uncertain and never falsely acknowledges or res
   assert.equal(marker.status, "sending");
   assert.deepEqual(marker.messageIds, ["first-step-message"]);
 });
+
+for (const platform of ["Telegram", "Discord"]) {
+  test(`${platform} accepted-then-timeout without an id remains uncertain and is never resent`, async () => {
+    const calendar = { result: [{ id: `us-cpi-${platform.toLowerCase()}-timeout`, title: "US CPI YoY", country: "US", importance: 3, date: "2026-08-19T12:30:00Z", actual: "2.7", forecast: "2.8", previous: "2.9", unit: "%" }] };
+    const repository = automationRepository();
+    const target = platform === "Telegram"
+      ? { chatId: "-1001", threadId: 8 }
+      : { platform: "discord", guildId: "g1", channelId: "c1" };
+    let calls = 0;
+    const sender = async () => {
+      calls += 1;
+      throw new Error("response timeout after remote accept");
+    };
+    const options = {
+      force: true,
+      dryRun: false,
+      repository,
+      fetchImpl: fixtureFetch(calendar),
+      fetchReaction: async () => ({ prices: {}, sources: [], warnings: [] }),
+      targets: [target],
+      ...(platform === "Telegram" ? { telegramSender: sender } : { discordSender: sender }),
+    };
+
+    const first = await automation.runAutomationJob("data-release-updates", { ...options, now: "2026-08-19T12:31:00Z" });
+    const second = await automation.runAutomationJob("data-release-updates", { ...options, now: "2026-08-19T12:32:00Z" });
+
+    assert.equal(first.status, "manual-reconciliation");
+    assert.equal(first.preview.targetResults[0].deliveryState, "uncertain-delivery");
+    assert.equal(first.preview.targetResults[0].manualReconciliationRequired, true);
+    assert.ok(["manual-reconciliation", "skipped"].includes(second.status));
+    assert.equal(calls, 1);
+    assert.deepEqual((await repository.getMeta("market-content:release-state:v1")).publishedKeys, []);
+    assert.equal((await repository.getMeta("market-content:release-sent:v1")).entries[0].status, "sending");
+  });
+}
 
 test("data-release run lease renews across its TTL and releases after an exception", async () => {
   const calendar = { result: [{ id: "us-cpi-lease-heartbeat", title: "US CPI YoY", country: "US", importance: 3, date: "2026-08-19T12:30:00Z", actual: "2.7", forecast: "2.8", previous: "2.9", unit: "%" }] };
