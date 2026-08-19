@@ -1155,6 +1155,109 @@ test("a stale manual invocation cannot resend after delivery and receipt persist
   assert.equal(runnerCalls, 1);
 });
 
+test("four failed persistence fences trip a repository-scoped circuit before a fresh manual generation can resend", async () => {
+  const target = { id: "hard-persistence-target", chatId: "-100219", threadId: 8 };
+  const rule = {
+    id: "hard-persistence-rule", kind: "automation", contentType: "crypto-daily", enabled: true,
+    runOnce: true, status: "ready", schedulePreset: "daily-1100", targets: [target]
+  };
+  const failures = {
+    failMetaAfterRunner: true,
+    failManualExecutionStateAfterRunner: true,
+    failDeliveries: true,
+    failRuleSavesAfterRunner: true
+  };
+  const harness = createAutomationReviewRepository(rule, failures);
+  let runnerCalls = 0;
+  const runner = async () => {
+    runnerCalls += 1;
+    harness.markRunnerStarted();
+    return { status: "success", preview: { targetResults: [
+      { target, status: "success", messageId: 929 }
+    ] } };
+  };
+
+  const first = await runDistributionAutomationRule(rule.id, {
+    repository: harness.repository, runner, now: new Date("2026-08-19T10:40:01.000Z")
+  });
+  const blocked = await runDistributionAutomationRule(rule.id, {
+    repository: harness.repository, runner, now: new Date("2026-08-19T10:41:01.000Z")
+  });
+
+  assert.equal(runnerCalls, 1);
+  assert.equal(first.status, "manual-reconciliation-unpersisted");
+  assert.equal(first.ruleReconciliationPersisted, false);
+  assert.equal(first.rulePersistenceError, "RULE_STORE_UNAVAILABLE");
+  assert.equal(first.executionStateError, "EXECUTION_STATE_STORE_UNAVAILABLE");
+  assert.equal(first.telemetryPersisted, true);
+  assert.equal(blocked.status, "manual-reconciliation-unpersisted");
+  assert.equal(blocked.circuitBreakerOpen, true);
+  assert.equal(blocked.ruleReconciliationPersisted, false);
+
+  failures.failMetaAfterRunner = false;
+  failures.failManualExecutionStateAfterRunner = false;
+  failures.failDeliveries = false;
+  failures.failRuleSavesAfterRunner = false;
+  const recovered = await runDistributionAutomationRule(rule.id, {
+    repository: harness.repository, runner, now: new Date("2026-08-19T10:42:01.000Z")
+  });
+
+  assert.equal(runnerCalls, 1);
+  assert.equal(recovered.status, "manual-reconciliation");
+  assert.equal(recovered.circuitBreakerOpen, false);
+  assert.equal(recovered.ruleReconciliationPersisted, true);
+  assert.equal(harness.rule().status, "manual-reconciliation");
+  assert.equal(harness.rule().enabled, false);
+});
+
+test("a scheduled rule save failure is reported without interrupting later claimed rules", async () => {
+  const rules = [1, 2].map((index) => ({
+    id: `scheduler-save-rule-${index}`, kind: "automation", contentType: "crypto-daily",
+    enabled: true, runOnce: true, status: "ready", schedulePreset: "daily-1100",
+    targets: [{ id: `scheduler-save-target-${index}`, chatId: `-10022${index}`, threadId: 8 }]
+  }));
+  let runnerCalls = 0;
+  const deliveries = [];
+  const repository = {
+    async cleanupExpired() {},
+    async getRule(id) { return structuredClone(rules.find((rule) => rule.id === id)); },
+    async getMeta(key) { return key === "legacy-migration-v1" ? { completedAt: "2026-08-01T00:00:00.000Z" } : null; },
+    async claimDueAutomationRules() { return structuredClone(rules); },
+    async listRules() { return []; },
+    async createEvent(event) { return { id: `scheduler-save-event-${event.ruleId}`, ...event }; },
+    async updateEvent() {},
+    async createDelivery(delivery) {
+      const saved = { id: `scheduler-save-delivery-${deliveries.length + 1}`, ...structuredClone(delivery) };
+      deliveries.push(saved);
+      return saved;
+    },
+    async updateDelivery(id, patch) { Object.assign(deliveries.find((delivery) => delivery.id === id), patch); },
+    async saveMapping() {},
+    async saveRule(saved) {
+      if (saved.id === rules[0].id) throw new Error("FIRST_RULE_SAVE_FAILED");
+      return saved;
+    }
+  };
+
+  const execution = await runDueDistributionJobs(new Date("2026-08-19T10:40:37.000Z"), {
+    repository,
+    limit: 2,
+    runner: async (_jobId, input) => {
+      runnerCalls += 1;
+      return { status: "success", preview: { targetResults: input.targets.map((target, index) => ({
+        target, status: "success", messageId: String(940 + runnerCalls + index)
+      })) } };
+    }
+  });
+
+  assert.equal(execution.claimed, 2);
+  assert.equal(execution.results.length, 2);
+  assert.equal(runnerCalls, 2);
+  assert.equal(execution.results[0].status, "success");
+  assert.equal(execution.results[0].rulePersistenceError, "FIRST_RULE_SAVE_FAILED");
+  assert.equal(execution.results[1].status, "success");
+});
+
 test("missing empty and invalid runner statuses fail closed and schedule a retry", async () => {
   for (const status of [undefined, "", "not-a-status"]) {
     const suffix = status || "missing";
@@ -1328,6 +1431,10 @@ function createAutomationReviewRepository(initialRule, options = {}) {
       return value;
     },
     async compareAndSetMeta(key, expected, value) {
+      if (runnerStarted && options.failManualExecutionStateAfterRunner
+        && value?.status === "manual-reconciliation") {
+        throw new Error("EXECUTION_STATE_STORE_UNAVAILABLE");
+      }
       const current = meta.get(key) ?? null;
       if (expected?.absent === true && current !== null) return null;
       for (const [field, expectedValue] of Object.entries(expected ?? {})) {
@@ -1389,7 +1496,11 @@ function createAutomationReviewRepository(initialRule, options = {}) {
     },
     async updateDelivery(id, patch) { return Object.assign(deliveries.find((delivery) => delivery.id === id), structuredClone(patch)); },
     async saveMapping() {},
-    async saveRule(saved) { rule = structuredClone(saved); return structuredClone(saved); }
+    async saveRule(saved) {
+      if (runnerStarted && options.failRuleSavesAfterRunner) throw new Error("RULE_STORE_UNAVAILABLE");
+      rule = structuredClone(saved);
+      return structuredClone(saved);
+    }
   };
   return {
     repository,
