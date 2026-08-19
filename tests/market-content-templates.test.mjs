@@ -301,6 +301,47 @@ test("deduplication counts stable unique sources rather than duplicate reports",
   assert.equal(threeSources[0].url, official.url);
 });
 
+test("deduplication unifies trusted source identities across mixed field completeness", () => {
+  const identified = story({
+    id: "sec:identified",
+    canonicalId: "sec-order-77",
+    url: "https://www.sec.gov/orders/77",
+    source: { id: "sec", label: "SEC", kind: "official" },
+  });
+  const labelOnly = story({
+    id: "sec:label-only",
+    canonicalId: "sec-order-77",
+    url: "https://www.sec.gov/orders/77?format=html",
+    source: { label: "SEC" },
+  });
+
+  const result = deduplicateCryptoStories([identified, labelOnly]);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].sourceConfirmations, 1);
+});
+
+test("deduplication resolves otherwise identical conflicting candidates deterministically", () => {
+  const lowImportance = story({
+    id: "wire:stable-conflict",
+    canonicalId: "stable-conflict",
+    importance: 1,
+    rationale: "Verified net inflows support demand.",
+  });
+  const highImportance = story({
+    id: "wire:stable-conflict",
+    canonicalId: "stable-conflict",
+    importance: 5,
+    rationale: "Verified net inflows indicate stronger institutional demand.",
+    evidence: "The official flow table confirms the reported net inflows.",
+  });
+
+  const forward = deduplicateCryptoStories([lowImportance, highImportance]);
+  const reverse = deduplicateCryptoStories([highImportance, lowImportance]);
+  assert.deepEqual(forward, reverse);
+  assert.equal(forward[0].importance, 5);
+  assert.equal(forward[0].rationale, highImportance.rationale);
+});
+
 test("deduplication does not merge the same entities and action when the event objects differ", () => {
   const etfFiling = story({
     id: "sec-etf-filing",
@@ -633,6 +674,32 @@ test("weekly calendar deduplicates deterministically and preserves the official 
   assert.equal(forward.days[0].events.length, 1);
   assert.equal(forward.days[0].events[0].id, "bls-cpi");
   assert.ok(forward.days[0].events[0].nodes.some((node) => node.type === "link" && node.url === "https://www.bls.gov/cpi/"));
+});
+
+test("weekly calendar fails closed on conflicting duplicate values independent of input order", () => {
+  const first = {
+    id: "bls-cpi",
+    title: "US CPI YoY",
+    indicator: "cpi",
+    country: "US",
+    importance: 3,
+    scheduledAt: "2026-08-19T12:30:00Z",
+    values: { forecast: "2.8%", previous: "2.9%" },
+    source: { label: "BLS", url: "https://www.bls.gov/cpi/" },
+  };
+  const conflicting = {
+    ...first,
+    importance: 4,
+    values: { forecast: "3.1%", previous: "2.9%" },
+  };
+
+  const forward = buildWeeklyCalendarDocument({ now, events: [first, conflicting] });
+  const reverse = buildWeeklyCalendarDocument({ now, events: [conflicting, first] });
+  assert.deepEqual(forward, reverse);
+  const nodes = forward.days[0].events[0].nodes;
+  assert.ok(!nodes.some((node) => node.type === "metric" && node.label === "Forecast"));
+  assert.ok(!nodes.some((node) => node.type === "metric" && node.label === "Importance"));
+  assert.ok(nodes.some((node) => node.type === "metric" && node.label === "Previous" && node.value === "2.9%"));
 });
 
 test("release impact rules cover inflation, employment, growth, and FOMC deterministically", () => {
