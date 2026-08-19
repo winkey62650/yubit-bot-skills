@@ -105,6 +105,26 @@ test("deduplication trusts a shared canonical identity when one title has no rec
   assert.equal(result[0].source.kind, "official");
 });
 
+test("deduplication rejects opposite lifecycle and security facts despite shared canonical identity", () => {
+  const successfulLaunch = story({
+    id: "protocol:launch",
+    canonicalId: "protocol-release-7",
+    title: "Protocol launch succeeds",
+    summary: "The mainnet launched successfully.",
+    categories: ["Market / Project"],
+  });
+  const shutdownAfterExploit = story({
+    id: "wire:shutdown",
+    canonicalId: "protocol-release-7",
+    title: "Protocol shuts down after hack exploit",
+    summary: "A verified hack exploit forced the protocol shutdown.",
+    url: "https://industry.example/protocol-shutdown",
+    categories: ["Market / Project"],
+  });
+
+  assert.equal(deduplicateCryptoStories([successfulLaunch, shutdownAfterExploit]).length, 2);
+});
+
 test("deduplication fingerprints differently worded reports of the same sourced fact", () => {
   const industry = story({
     id: "wire:ibit-flow",
@@ -280,6 +300,31 @@ test("Crypto Daily rejects a directional impact backed only by an evidence discl
   });
 
   assert.equal(document.sections[0].impact, "Neutral");
+});
+
+test("Crypto Daily does not treat explicitly negated directional terms as evidence", () => {
+  const cases = [
+    { impact: "Bullish", rationale: "No net inflows were verified." },
+    { impact: "Bullish", rationale: "The application was not approved." },
+    { impact: "Bullish", rationale: "The filing proceeded without any verified net inflows." },
+    { impact: "Bullish", rationale: "The applicant failed to secure approval." },
+    { impact: "Bearish", rationale: "The protocol was not hacked." },
+  ];
+
+  for (const [index, candidate] of cases.entries()) {
+    const document = buildCryptoDailyDocument({
+      now,
+      candidates: [story({
+        id: `negated-direction-${index}`,
+        title: "Bitcoin institutional market update",
+        summary: undefined,
+        evidence: undefined,
+        ...candidate,
+      })],
+    });
+
+    assert.equal(document.sections[0].impact, "Neutral", candidate.rationale);
+  }
 });
 
 test("Crypto Daily rejects a supplied impact contradicted by directional evidence", () => {
