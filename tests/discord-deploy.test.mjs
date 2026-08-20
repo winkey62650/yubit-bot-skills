@@ -70,8 +70,8 @@ test("生产部署在切换版本前强制验证 CTA preview evidence secret", (
   assert.match(workflow, /CTA_PREVIEW_EVIDENCE_SECRET is not configured/);
   assert.doesNotMatch(workflow, /CTA_PREVIEW_EVIDENCE_SECRET_B64|cta_preview_evidence_secret_b64/);
   assert.doesNotMatch(workflow, /CTA_PREVIEW_EVIDENCE_SECRET[^\n]*ssh|ssh[^\n]*CTA_PREVIEW_EVIDENCE_SECRET/);
-  assert.match(workflow, /chmod 600 "\$cta_secret_file"/);
-  assert.match(workflow, /cat >"\$remote_secret_file"/);
+  assert.match(workflow, /chmod 600 "\$deployment_secrets_file"/);
+  assert.match(workflow, /cat >"\$remote_secrets_file"/);
   assert.match(workflow, /printf 'CTA_PREVIEW_EVIDENCE_SECRET=%s\\n'/);
   const workflowValidation = workflow.indexOf("assertStrongCtaPreviewEvidenceSecret");
   const archiveBuild = workflow.indexOf('archive_path="$RUNNER_TEMP');
@@ -90,4 +90,27 @@ test("生产部署在切换版本前强制验证 CTA preview evidence secret", (
   assert.match(deploy, /CTA_PREVIEW_EVIDENCE_SECRET/);
   assert.doesNotMatch(deploy, /echo[^\n]*\$cta_preview_evidence_secret/);
   assert.match(envExample, /exactly 64 lowercase hexadecimal characters/);
+});
+
+test("生产部署通过受保护文件传输所有敏感发布凭证且不写入 SSH argv", () => {
+  const workflow = read(".github/workflows/deploy-production-server.yml");
+
+  assert.doesNotMatch(workflow, /TELEGRAM_API_HASH_B64|telegram_api_hash_b64/);
+  assert.doesNotMatch(workflow, /DESKTOP_SECRET_B64|desktop_secret_b64/);
+  assert.doesNotMatch(workflow, /ssh[^\n]*(?:TELEGRAM_API_HASH|DESKTOP_PUBLISHER_SECRET)|(?:TELEGRAM_API_HASH|DESKTOP_PUBLISHER_SECRET)[^\n]*ssh/);
+  assert.match(workflow, /chmod 600 "\$deployment_secrets_file"/);
+  assert.match(workflow, /printf '%s\\n' "\$TELEGRAM_API_HASH"/);
+  assert.match(workflow, /printf '%s\\n' "\$DESKTOP_PUBLISHER_SECRET"/);
+  assert.match(workflow, /printf '%s\\n' "\$CTA_PREVIEW_EVIDENCE_SECRET"/);
+  assert.match(workflow, /cat >"\$remote_secrets_file"/);
+  assert.match(workflow, /stat -c '%a' "\$DEPLOY_SECRETS_FILE"[\s\S]*!= "600"/);
+  assert.match(workflow, /read -r telegram_api_hash[\s\S]*read -r desktop_publisher_secret[\s\S]*read -r cta_preview_evidence_secret/);
+
+  const remoteValidation = workflow.indexOf("Telegram API hash staging is invalid.");
+  const desktopValidation = workflow.indexOf("Desktop publisher secret staging is invalid.");
+  const envInstall = workflow.indexOf("sudo install -m 0600");
+  assert.ok(remoteValidation >= 0 && remoteValidation < envInstall, "Telegram API hash must be validated before production.env is written");
+  assert.ok(desktopValidation >= 0 && desktopValidation < envInstall, "desktop secret must be validated before production.env is written");
+  assert.match(workflow, /trap cleanup_remote EXIT[\s\S]*rm -f "\$DEPLOY_SECRETS_FILE"/);
+  assert.match(workflow, /sudo install -m 0600[\s\S]*sudo mv -f [^\n]*"\$env_file"/);
 });

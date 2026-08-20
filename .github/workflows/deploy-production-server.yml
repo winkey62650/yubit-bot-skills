@@ -52,6 +52,14 @@ jobs:
             echo "CTA_PREVIEW_EVIDENCE_SECRET is not configured." >&2
             exit 1
           fi
+          if ! [[ "$TELEGRAM_API_HASH" =~ ^[0-9a-f]{32}$ ]]; then
+            echo "TELEGRAM_API_HASH must be exactly 32 lowercase hexadecimal characters." >&2
+            exit 1
+          fi
+          if [[ "$DESKTOP_PUBLISHER_SECRET" == *$'\n'* || "$DESKTOP_PUBLISHER_SECRET" == *$'\r'* ]]; then
+            echo "DESKTOP_PUBLISHER_SECRET contains an invalid line break." >&2
+            exit 1
+          fi
           CTA_PREVIEW_EVIDENCE_SECRET="$CTA_PREVIEW_EVIDENCE_SECRET" node <<'NODE'
           try {
             const { assertStrongCtaPreviewEvidenceSecret } = require("./lib/cta-preview-evidence.cjs");
@@ -69,37 +77,41 @@ jobs:
             echo "GitHub target commit is invalid." >&2
             exit 1
           fi
-          cta_secret_file="$(mktemp)"
-          remote_secret_file=""
+          deployment_secrets_file="$(mktemp)"
+          remote_secrets_file=""
           archive_path="$RUNNER_TEMP/yubit-academy-$DEPLOY_SHA.tar.gz"
           remote_archive="/tmp/yubit-academy-$DEPLOY_SHA.tar.gz"
           cleanup_local() {
-            rm -f "$cta_secret_file" "$archive_path"
-            if [ -n "$remote_secret_file" ]; then
+            rm -f "$deployment_secrets_file" "$archive_path"
+            if [ -n "$remote_secrets_file" ]; then
               sshpass -e ssh \
                 -o ConnectTimeout=20 \
                 -o ServerAliveInterval=10 \
                 -o StrictHostKeyChecking=accept-new \
                 ubuntu@152.32.161.174 \
-                "rm -f -- '$remote_secret_file'" >/dev/null 2>&1 || true
+                "rm -f -- '$remote_secrets_file'" >/dev/null 2>&1 || true
             fi
           }
           trap cleanup_local EXIT
-          chmod 600 "$cta_secret_file"
-          printf '%s' "$CTA_PREVIEW_EVIDENCE_SECRET" >"$cta_secret_file"
-          unset CTA_PREVIEW_EVIDENCE_SECRET
+          chmod 600 "$deployment_secrets_file"
+          {
+            printf '%s\n' "$TELEGRAM_API_HASH"
+            printf '%s\n' "$DESKTOP_PUBLISHER_SECRET"
+            printf '%s\n' "$CTA_PREVIEW_EVIDENCE_SECRET"
+          } >"$deployment_secrets_file"
+          unset TELEGRAM_API_HASH DESKTOP_PUBLISHER_SECRET CTA_PREVIEW_EVIDENCE_SECRET
           tar --exclude=".git" -czf "$archive_path" .
-          remote_secret_file="$(
+          remote_secrets_file="$(
             sshpass -e ssh \
               -o ConnectTimeout=20 \
               -o ServerAliveInterval=10 \
               -o StrictHostKeyChecking=accept-new \
               ubuntu@152.32.161.174 \
-              'set -eu; umask 077; remote_secret_file="$(mktemp /tmp/yubit-cta-preview.XXXXXX)"; cat >"$remote_secret_file"; chmod 600 "$remote_secret_file"; printf "%s" "$remote_secret_file"' \
-              <"$cta_secret_file"
+              'set -eu; umask 077; remote_secrets_file="$(mktemp /tmp/yubit-deploy-secrets.XXXXXX)"; cat >"$remote_secrets_file"; chmod 600 "$remote_secrets_file"; printf "%s" "$remote_secrets_file"' \
+              <"$deployment_secrets_file"
           )"
-          if ! [[ "$remote_secret_file" =~ ^/tmp/yubit-cta-preview\.[A-Za-z0-9]+$ ]]; then
-            echo "Remote CTA preview secret staging failed." >&2
+          if ! [[ "$remote_secrets_file" =~ ^/tmp/yubit-deploy-secrets\.[A-Za-z0-9]+$ ]]; then
+            echo "Remote deployment secret staging failed." >&2
             exit 1
           fi
           sshpass -e scp \
@@ -110,14 +122,12 @@ jobs:
             "ubuntu@152.32.161.174:$remote_archive"
           policy_b64="$(printf '%s' "$APPROVED_DISTRIBUTION_TARGETS" | base64 -w0)"
           telegram_api_id_b64="$(printf '%s' "$TELEGRAM_API_ID" | base64 -w0)"
-          telegram_api_hash_b64="$(printf '%s' "$TELEGRAM_API_HASH" | base64 -w0)"
-          desktop_secret_b64="$(printf '%s' "$DESKTOP_PUBLISHER_SECRET" | base64 -w0)"
           sshpass -e ssh \
             -o ConnectTimeout=20 \
             -o ServerAliveInterval=10 \
             -o StrictHostKeyChecking=accept-new \
             ubuntu@152.32.161.174 \
-            "POLICY_B64='$policy_b64' TELEGRAM_API_ID_B64='$telegram_api_id_b64' TELEGRAM_API_HASH_B64='$telegram_api_hash_b64' DESKTOP_SECRET_B64='$desktop_secret_b64' CTA_SECRET_FILE='$remote_secret_file' DEPLOY_SHA='$DEPLOY_SHA' REMOTE_ARCHIVE='$remote_archive' bash -s" <<'REMOTE'
+            "POLICY_B64='$policy_b64' TELEGRAM_API_ID_B64='$telegram_api_id_b64' DEPLOY_SECRETS_FILE='$remote_secrets_file' DEPLOY_SHA='$DEPLOY_SHA' REMOTE_ARCHIVE='$remote_archive' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           bootstrap_dir=""
           env_tmp=""
@@ -127,23 +137,41 @@ jobs:
             if [ -n "$env_tmp" ]; then rm -f "$env_tmp"; fi
             if [ -n "$env_pending" ]; then sudo rm -f "$env_pending"; fi
             rm -f "$REMOTE_ARCHIVE"
-            if [ -n "${CTA_SECRET_FILE:-}" ]; then rm -f "$CTA_SECRET_FILE"; fi
+            if [ -n "${DEPLOY_SECRETS_FILE:-}" ]; then rm -f "$DEPLOY_SECRETS_FILE"; fi
           }
           trap cleanup_remote EXIT
           env_file=/etc/yubit-academy/production.env
-          if ! [[ "${CTA_SECRET_FILE:-}" =~ ^/tmp/yubit-cta-preview\.[A-Za-z0-9]+$ ]] \
-            || [ ! -f "$CTA_SECRET_FILE" ] \
-            || [ "$(stat -c '%a' "$CTA_SECRET_FILE")" != "600" ]; then
-            echo "CTA preview secret staging is invalid." >&2
+          if ! [[ "${DEPLOY_SECRETS_FILE:-}" =~ ^/tmp/yubit-deploy-secrets\.[A-Za-z0-9]+$ ]] \
+            || [ ! -f "$DEPLOY_SECRETS_FILE" ] \
+            || [ "$(stat -c '%a' "$DEPLOY_SECRETS_FILE")" != "600" ]; then
+            echo "Deployment secret staging is invalid." >&2
             exit 1
           fi
-          cta_preview_evidence_secret="$(<"$CTA_SECRET_FILE")"
-          rm -f "$CTA_SECRET_FILE"
-          CTA_SECRET_FILE=""
+          {
+            IFS= read -r telegram_api_hash
+            IFS= read -r desktop_publisher_secret
+            IFS= read -r cta_preview_evidence_secret
+            if IFS= read -r unexpected_secret_record; then
+              echo "Deployment secret staging contains unexpected records." >&2
+              exit 1
+            fi
+          } <"$DEPLOY_SECRETS_FILE"
+          rm -f "$DEPLOY_SECRETS_FILE"
+          DEPLOY_SECRETS_FILE=""
+          if ! [[ "$telegram_api_hash" =~ ^[0-9a-f]{32}$ ]]; then
+            echo "Telegram API hash staging is invalid." >&2
+            exit 1
+          fi
+          if [ -z "$desktop_publisher_secret" ]; then
+            echo "Desktop publisher secret staging is invalid." >&2
+            exit 1
+          fi
+          if [ -z "$cta_preview_evidence_secret" ]; then
+            echo "CTA preview evidence secret staging is invalid." >&2
+            exit 1
+          fi
           approved_targets="$(printf '%s' "$POLICY_B64" | base64 -d)"
           telegram_api_id="$(printf '%s' "$TELEGRAM_API_ID_B64" | base64 -d)"
-          telegram_api_hash="$(printf '%s' "$TELEGRAM_API_HASH_B64" | base64 -d)"
-          desktop_publisher_secret="$(printf '%s' "$DESKTOP_SECRET_B64" | base64 -d)"
           bootstrap_dir="$(mktemp -d)"
           tar -xzf "$REMOTE_ARCHIVE" -C "$bootstrap_dir"
           rm -f "$REMOTE_ARCHIVE"

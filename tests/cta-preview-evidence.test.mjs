@@ -99,6 +99,10 @@ test("CTA preview evidence fails closed without a strong operational secret or v
     "this-is-a-public-demo-secret-12345",
     "12345678901234567890123456789012",
     "abcdefghijklmnopqrstuvwxyzABCDEF",
+    "0".repeat(64),
+    "f".repeat(64),
+    "deadbeef".repeat(8),
+    "0123456789abcdef".repeat(4),
     `${"a".repeat(64)}\nINJECTED=value`,
     randomBytes(32).toString("hex").toUpperCase(),
   ]) {
@@ -109,7 +113,9 @@ test("CTA preview evidence fails closed without a strong operational secret or v
         && !error.message.includes(secret),
     );
   }
-  assert.doesNotThrow(() => assertStrongCtaPreviewEvidenceSecret(randomBytes(32).toString("hex")));
+  for (let index = 0; index < 32; index += 1) {
+    assert.doesNotThrow(() => assertStrongCtaPreviewEvidenceSecret(randomBytes(32).toString("hex")));
+  }
   assert.throws(() => signCtaPreviewPlans(fixture(), { secret: randomBytes(32).toString("hex"), challenge: "predictable" }), /preview challenge/);
 });
 
