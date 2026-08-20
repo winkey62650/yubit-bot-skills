@@ -41,6 +41,20 @@ if [[ ! -x "$NODE_HOME/bin/node" ]]; then
   exit 1
 fi
 
+if [[ -f "$SOURCE_DIR/.production-data-audit-only" ]]; then
+  echo "Production data path audit (metadata only)"
+  printf 'current_release='; readlink -f "$APP_ROOT/current" || true
+  printf 'configured_backend='; sudo awk -F= '$1 == "JSON_STORE_BACKEND" { print $2; exit }' "$ENV_FILE"
+  printf 'configured_directory='; sudo awk -F= '$1 == "JSON_STORE_DIRECTORY" { print $2; exit }' "$ENV_FILE"
+  printf 'blob_token_present='; sudo awk -F= '$1 == "BLOB_READ_WRITE_TOKEN" { found = ($2 != "") } END { print found ? "yes" : "no" }' "$ENV_FILE"
+  echo "runtime_symlinks:"
+  sudo find "$APP_ROOT" -maxdepth 4 -type l -name .runtime -printf '%p -> %l\n' 2>/dev/null | sort || true
+  echo "local_json_files:"
+  sudo find "$STATE_ROOT" "$APP_ROOT" -maxdepth 7 -type f -name '*.json' \
+    -printf '%p|%s bytes|%TY-%Tm-%Td %TH:%TM:%TS\n' 2>/dev/null | sort || true
+  exit 0
+fi
+
 sudo install -d -m 0755 -o ubuntu -g ubuntu "$APP_ROOT/releases"
 sudo install -d -m 0750 -o ubuntu -g ubuntu "$STATE_ROOT"
 discord_credentials_key="$(sudo awk -F= '$1 == "DISCORD_CREDENTIALS_ENCRYPTION_KEY" { sub(/^[^=]*=/, ""); print; exit }' "$ENV_FILE")"
