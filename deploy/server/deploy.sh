@@ -50,8 +50,98 @@ if [[ -f "$SOURCE_DIR/.production-data-audit-only" ]]; then
   echo "runtime_symlinks:"
   sudo find "$APP_ROOT" -maxdepth 4 -type l -name .runtime -printf '%p -> %l\n' 2>/dev/null | sort || true
   echo "local_json_files:"
-  sudo find "$STATE_ROOT" "$APP_ROOT" -maxdepth 7 -type f -name '*.json' \
+  sudo find "$STATE_ROOT" -maxdepth 5 -type f -name '*.json' \
     -printf '%p|%s bytes|%TY-%Tm-%Td %TH:%TM:%TS\n' 2>/dev/null | sort || true
+  echo "local_store_shape:"
+  sudo ENV_FILE="$ENV_FILE" STATE_ROOT="$STATE_ROOT" "$NODE_HOME/bin/node" <<'NODE'
+const fs = require("node:fs");
+const path = require("node:path");
+
+function shape(value, depth = 0) {
+  if (Array.isArray(value)) return `array:${value.length}`;
+  if (!value || typeof value !== "object" || depth >= 2) return typeof value;
+  return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, shape(child, depth + 1)]));
+}
+
+for (const name of [
+  "group-config.json",
+  "telegram-group-registry.json",
+  "distribution-center.json",
+  "social-packages.json",
+  "trading.json",
+  "discord-config.json"
+]) {
+  const filename = path.join(process.env.STATE_ROOT, name);
+  if (!fs.existsSync(filename)) {
+    console.log(`${name}=missing`);
+    continue;
+  }
+  try {
+    console.log(`${name}=${JSON.stringify(shape(JSON.parse(fs.readFileSync(filename, "utf8"))))}`);
+  } catch (error) {
+    console.log(`${name}=invalid-json:${error.name}`);
+  }
+}
+NODE
+  echo "authenticated_api_shape:"
+  sudo ENV_FILE="$ENV_FILE" "$NODE_HOME/bin/node" <<'NODE'
+const fs = require("node:fs");
+
+function readEnv(filename) {
+  const result = {};
+  for (const rawLine of fs.readFileSync(filename, "utf8").split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const separator = line.indexOf("=");
+    if (separator < 1) continue;
+    const key = line.slice(0, separator).trim();
+    let value = line.slice(separator + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    result[key] = value;
+  }
+  return result;
+}
+
+function shape(value, depth = 0) {
+  if (Array.isArray(value)) return `array:${value.length}`;
+  if (!value || typeof value !== "object" || depth >= 2) return typeof value;
+  return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, shape(child, depth + 1)]));
+}
+
+(async () => {
+  const env = readEnv(process.env.ENV_FILE);
+  const baseUrl = "http://127.0.0.1:4174";
+  const login = await fetch(`${baseUrl}/api/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": "127.0.0.1" },
+    body: JSON.stringify({ username: env.AUTH_USERNAME, password: env.AUTH_PASSWORD })
+  });
+  const loginBody = await login.json().catch(() => ({}));
+  console.log(`login=${login.status};role=${loginBody.role || "none"}`);
+  const cookie = login.headers.get("set-cookie")?.split(";", 1)[0];
+  if (!login.ok || !cookie) process.exit(2);
+
+  for (const endpoint of [
+    "/api/auth/session",
+    "/api/group-config",
+    "/api/distribution",
+    "/api/social-packages",
+    "/api/discord",
+    "/api/destination-cta",
+    "/api/trading",
+    "/api/telegram/user-authorization"
+  ]) {
+    const response = await fetch(`${baseUrl}${endpoint}`, { headers: { cookie } });
+    const body = await response.json().catch(() => null);
+    console.log(`${endpoint}=${response.status};${JSON.stringify(shape(body))}`);
+  }
+})().catch((error) => {
+  console.error(`api-audit-failed:${error.name}:${error.message}`);
+  process.exit(2);
+});
+NODE
   exit 0
 fi
 
