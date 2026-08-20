@@ -12,6 +12,7 @@ test("production deploy provisions a local primary and preserves the Neon archiv
   assert.match(deploy, /NEON_ARCHIVE_DATABASE_URL/);
   assert.match(deploy, /restore-distribution-snapshot\.mjs/);
   assert.match(deploy, /distribution-before-disable-current-broadcasts-20260812T091051Z\.json/);
+  assert.doesNotMatch(deploy, /sudo -u ubuntu env[\s\S]*restore-distribution-snapshot\.mjs/);
   assert.doesNotMatch(deploy, /psql "\$local_database_url"/);
 });
 

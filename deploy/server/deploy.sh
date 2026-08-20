@@ -185,7 +185,7 @@ if [[ -n "${distribution_table//[[:space:]]/}" ]]; then
 fi
 restore_snapshot="$STATE_ROOT/backups/distribution-before-disable-current-broadcasts-20260812T091051Z.json"
 if [[ "${rule_count//[[:space:]]/}" == "0" && -s "$restore_snapshot" ]]; then
-  sudo -u ubuntu env \
+  sudo env \
     DATABASE_URL="$local_database_url" \
     DATABASE_DRIVER=pg \
     RESTORE_DISTRIBUTION_SNAPSHOT="$restore_snapshot" \
