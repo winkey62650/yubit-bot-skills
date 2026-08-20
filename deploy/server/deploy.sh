@@ -47,6 +47,10 @@ if [[ -f "$SOURCE_DIR/.production-data-audit-only" ]]; then
   printf 'configured_backend='; sudo awk -F= '$1 == "JSON_STORE_BACKEND" { print $2; exit }' "$ENV_FILE"
   printf 'configured_directory='; sudo awk -F= '$1 == "JSON_STORE_DIRECTORY" { print $2; exit }' "$ENV_FILE"
   printf 'blob_token_present='; sudo awk -F= '$1 == "BLOB_READ_WRITE_TOKEN" { found = ($2 != "") } END { print found ? "yes" : "no" }' "$ENV_FILE"
+  printf 'database_url_present='; sudo awk -F= '$1 == "DATABASE_URL" { found = ($2 != "") } END { print found ? "yes" : "no" }' "$ENV_FILE"
+  printf 'postgres_url_present='; sudo awk -F= '$1 == "POSTGRES_URL" { found = ($2 != "") } END { print found ? "yes" : "no" }' "$ENV_FILE"
+  printf 'discord_app_id_present='; sudo awk -F= '$1 == "DISCORD_APP_ID" { found = ($2 != "") } END { print found ? "yes" : "no" }' "$ENV_FILE"
+  printf 'discord_bot_token_present='; sudo awk -F= '$1 == "DISCORD_BOT_TOKEN" { found = ($2 != "") } END { print found ? "yes" : "no" }' "$ENV_FILE"
   echo "runtime_symlinks:"
   sudo find "$APP_ROOT" -maxdepth 4 -type l -name .runtime -printf '%p -> %l\n' 2>/dev/null | sort || true
   echo "local_json_files:"
@@ -110,6 +114,16 @@ function shape(value, depth = 0) {
   return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, shape(child, depth + 1)]));
 }
 
+function errorClass(message) {
+  const text = String(message || "");
+  if (/DATABASE_URL|数据库未配置/.test(text)) return "database_missing";
+  if (/relation .* does not exist|table .* does not exist/i.test(text)) return "database_schema_missing";
+  if (/fetch failed|network|connect|timeout|ECONN|ENOTFOUND/i.test(text)) return "database_connection_failed";
+  if (/credential|token|凭证|密钥|未配置/i.test(text)) return "credential_missing_or_invalid";
+  if (/https/i.test(text)) return "https_configuration";
+  return text ? "unclassified" : "none";
+}
+
 (async () => {
   const env = readEnv(process.env.ENV_FILE);
   const baseUrl = "http://127.0.0.1:4174";
@@ -135,7 +149,7 @@ function shape(value, depth = 0) {
   ]) {
     const response = await fetch(`${baseUrl}${endpoint}`, { headers: { cookie } });
     const body = await response.json().catch(() => null);
-    console.log(`${endpoint}=${response.status};${JSON.stringify(shape(body))}`);
+    console.log(`${endpoint}=${response.status};error_class=${errorClass(body?.error)};${JSON.stringify(shape(body))}`);
   }
 })().catch((error) => {
   console.error(`api-audit-failed:${error.name}:${error.message}`);
