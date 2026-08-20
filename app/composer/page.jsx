@@ -10,6 +10,7 @@ import {
   buildAccountTargetGroups,
   filterTelegramComposerTargets
 } from "../../lib/telegram-composer-targets.mjs";
+import { applyComposerTargetFolder } from "../../lib/composer-target-folders.mjs";
 
 export default function ComposerPage() {
   const { t } = useLanguage();
@@ -18,6 +19,9 @@ export default function ComposerPage() {
   const [accounts, setAccounts] = useState([]);
   const [groups, setGroups] = useState([]);
   const [configuredGroups, setConfiguredGroups] = useState([]);
+  const [targetFolders, setTargetFolders] = useState([]);
+  const [targetFolderName, setTargetFolderName] = useState("");
+  const [targetFolderBusy, setTargetFolderBusy] = useState(false);
   const [targetsLoading, setTargetsLoading] = useState(false);
   const [lastCheckedAt, setLastCheckedAt] = useState("");
   
@@ -88,13 +92,16 @@ export default function ComposerPage() {
   useEffect(() => {
     async function loadData() {
       try {
-        const [authRes, groupsRes] = await Promise.all([
+        const [authRes, groupsRes, foldersRes] = await Promise.all([
           fetch("/api/telegram/user-authorization"),
-          fetch("/api/group-config")
+          fetch("/api/group-config"),
+          fetch("/api/composer/target-folders")
         ]);
         
         const authData = await authRes.json();
         const groupsData = await groupsRes.json();
+        const foldersData = await foldersRes.json();
+        if (foldersRes.ok && foldersData.ok) setTargetFolders(foldersData.folders || []);
         
         let initialUserId = "";
         if (authData.ok) {
@@ -180,6 +187,77 @@ export default function ComposerPage() {
       : prev.filter((id) => !writableIds.includes(id))
     );
   };
+
+  async function saveTargetFolder() {
+    const name = targetFolderName.trim();
+    if (!name || selectedTargets.length === 0) return;
+    const targetLookup = new Map(targetGroups.flatMap((group) => group.options.map((option) => [
+      option.id,
+      { id: option.id, groupTitle: group.title, topicTitle: option.label }
+    ])));
+    setTargetFolderBusy(true);
+    setError("");
+    setSuccess("");
+    try {
+      const res = await fetch("/api/composer/target-folders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "save",
+          folder: { name, targets: selectedTargets.map((id) => targetLookup.get(id)).filter(Boolean) }
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || t("composer.folderSaveError"));
+      setTargetFolders(data.folders || []);
+      setTargetFolderName("");
+      setSuccess(t("composer.folderSaved", { name }));
+    } catch (err) {
+      setError(err.message || t("composer.folderSaveError"));
+    } finally {
+      setTargetFolderBusy(false);
+    }
+  }
+
+  function applyTargetFolder(folder) {
+    const result = applyComposerTargetFolder(
+      folder,
+      targetOptions.filter((option) => option.available).map((option) => option.id)
+    );
+    setSelectedTargets(result.selectedTargetIds);
+    setError("");
+    if (result.selectedTargetIds.length === 0) {
+      setSuccess("");
+      setError(t("composer.folderUnavailable"));
+      return;
+    }
+    setSuccess(t("composer.folderApplied", {
+      name: folder.name,
+      count: result.selectedTargetIds.length,
+      skipped: result.unavailableTargets.length
+    }));
+  }
+
+  async function deleteTargetFolder(folder) {
+    if (!window.confirm(t("composer.folderDeleteConfirm", { name: folder.name }))) return;
+    setTargetFolderBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/composer/target-folders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete", id: folder.id })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || t("composer.folderDeleteError"));
+      setTargetFolders(data.folders || []);
+      setSuccess(t("composer.folderDeleted", { name: folder.name }));
+    } catch (err) {
+      setError(err.message || t("composer.folderDeleteError"));
+    } finally {
+      setTargetFolderBusy(false);
+    }
+  }
 
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files || []);
@@ -403,6 +481,57 @@ export default function ComposerPage() {
                 </Link>
               ) : null}
             </div>
+          </div>
+
+          <div className="mb-4 rounded-xl border border-[#cae5da] bg-[#f2faf6] p-3">
+            <div className="text-sm font-black text-[#173f31]">{t("composer.folderTitle")}</div>
+            <p className="mt-1 text-xs leading-5 text-[#41564d]">{t("composer.folderHint")}</p>
+            <div className="mt-3 flex gap-2">
+              <input
+                className={inputClass}
+                value={targetFolderName}
+                onChange={(event) => setTargetFolderName(event.target.value)}
+                placeholder={t("composer.folderNamePlaceholder")}
+                maxLength={60}
+                disabled={sending || targetFolderBusy}
+              />
+              <button
+                type="button"
+                onClick={saveTargetFolder}
+                disabled={sending || targetFolderBusy || !targetFolderName.trim() || selectedTargets.length === 0}
+                className="shrink-0 rounded-lg bg-[#173f31] px-3 py-2 text-xs font-black text-white disabled:opacity-50"
+              >
+                {t("composer.folderSave")}
+              </button>
+            </div>
+            {targetFolders.length > 0 ? (
+              <div className="mt-3 space-y-2">
+                {targetFolders.map((folder) => (
+                  <div key={folder.id} className="flex items-center gap-2 rounded-lg border border-[#cae5da] bg-white p-2">
+                    <button
+                      type="button"
+                      onClick={() => applyTargetFolder(folder)}
+                      disabled={sending || targetFolderBusy || targetsLoading || !selectedUserId}
+                      className="min-w-0 flex-1 text-left disabled:opacity-50"
+                    >
+                      <span className="block truncate text-sm font-black">{folder.name}</span>
+                      <span className="block text-xs text-ops-muted">{t("composer.folderTargetCount", { count: folder.targets.length })}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteTargetFolder(folder)}
+                      disabled={sending || targetFolderBusy}
+                      className="rounded px-2 py-1 text-xs font-bold text-[#a04a3d] hover:bg-[#fef5f4] disabled:opacity-50"
+                      aria-label={t("composer.folderDelete", { name: folder.name })}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-3 text-xs text-ops-muted">{t("composer.folderEmpty")}</p>
+            )}
           </div>
           
           {targetsLoading ? (

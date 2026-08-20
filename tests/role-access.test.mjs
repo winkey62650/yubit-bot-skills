@@ -14,6 +14,8 @@ test("manual publisher only sees manual publishing and readonly publisher status
   assert.equal(canAccessPath("manual_publisher", "/composer", "GET"), true);
   assert.equal(canAccessPath("manual_publisher", "/telegram-user-authorization", "GET"), true);
   assert.equal(canAccessPath("manual_publisher", "/api/composer/send", "POST"), true);
+  assert.equal(canAccessPath("manual_publisher", "/api/composer/target-folders", "GET"), true);
+  assert.equal(canAccessPath("manual_publisher", "/api/composer/target-folders", "POST"), true);
   assert.equal(canAccessPath("manual_publisher", "/api/telegram/dialogs", "GET"), true);
   assert.equal(canAccessPath("manual_publisher", "/api/telegram/user-authorization", "GET"), true);
   assert.equal(canAccessPath("manual_publisher", "/api/telegram/user-authorization", "POST"), false);
