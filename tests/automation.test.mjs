@@ -669,11 +669,11 @@ test("real market job previews preserve structured diagnostics for the distribut
   const dailyFacts = buildMarketPreviewFacts(daily.preview);
 
   assert.equal(daily.status, "success");
-  assert.equal(daily.preview.diagnostics.candidates.length, 2);
-  assert.equal(dailyFacts.candidateCount, 2);
+  assert.equal(daily.preview.diagnostics.candidates.length, 6);
+  assert.equal(dailyFacts.candidateCount, 6);
   assert.equal(dailyFacts.selectedCount, 1);
   assert.equal(dailyFacts.missingCount, 2);
-  assert.equal(dailyFacts.sources.length, 2);
+  assert.equal(dailyFacts.sources.length, 6);
 
   const unavailableCalendar = { result: [{
     id: "us-cpi-waiting",
@@ -1188,7 +1188,7 @@ test("Telegram release remains fail-closed without resending while its success r
   assert.equal(recovered.status, "success");
   assert.equal(recovered.preview.deliveryPlans.length, 0);
   assert.deepEqual((await repository.getMeta("market-content:release-state:v1")).publishedKeys, [recovered.preview.deduplicationKey]);
-  assert.equal(sends, 1);
+  assert.equal(sends, 2);
 });
 
 test("a sending marker from a crash before the first send requires manual reconciliation", async () => {

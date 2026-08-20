@@ -12,6 +12,73 @@ export async function GET(request) {
   const metrics = normalizePosterMetrics([url.searchParams.get("m1"), url.searchParams.get("m2"), url.searchParams.get("m3")]);
   const artworkUrl = await loadMediaCardArtwork(kind);
   const e = React.createElement;
+  const poster = decodePosterData(url.searchParams.get("data"));
+  if (kind === "crypto-daily") {
+    const stories = Array.isArray(poster.stories) ? poster.stories.slice(0, 3) : [];
+    return new ImageResponse(
+      e("div", { style: editorialCanvas() },
+        e("div", { style: { position: "absolute", right: -58, top: -170, width: 570, height: 570, display: "flex", border: "58px solid #171714", borderRadius: "50%" } }),
+        e("div", { style: { position: "absolute", right: 133, top: 126, width: 64, height: 410, display: "flex", background: "#efb62f", transform: "rotate(11deg)" } }),
+        editorialHeader(e, "01 / DAILY", poster.date || "MARKET IMPACT"),
+        e("div", { style: { position: "absolute", left: 56, top: 114, width: 680, display: "flex", flexDirection: "column" } },
+          e("div", { style: { display: "flex", fontSize: 76, lineHeight: .86, fontWeight: 900, letterSpacing: -5 } }, "MARKET"),
+          e("div", { style: { display: "flex", fontSize: 76, lineHeight: .86, fontWeight: 900, letterSpacing: -5 } }, "SIGNALS"),
+          e("div", { style: { width: 620, marginTop: 38, display: "flex", flexDirection: "column", borderTop: "2px solid #171714" } },
+            ...stories.map((story) => e("div", { key: story.rank, style: { display: "flex", alignItems: "center", minHeight: 96, borderBottom: "1px solid #b9b5aa" } },
+              e("span", { style: { width: 68, display: "flex", color: "#77746c", fontSize: 16, fontWeight: 800, letterSpacing: 2 } }, story.rank),
+              e("span", { style: { width: 465, display: "flex", fontSize: 20, lineHeight: 1.25, fontWeight: 800 } }, cleanPosterText(story.title, "Verified market development", 68)),
+              e("span", { style: { marginLeft: "auto", display: "flex", alignItems: "baseline", color: "#ef9e00", fontSize: 24, fontWeight: 900 } },
+                String(story.score ?? 0),
+                e("span", { style: { display: "flex", marginLeft: 3, color: "#77746c", fontSize: 9, letterSpacing: 1 } }, "/100")
+              )
+            ))
+          )
+        ),
+        editorialFooter(e, "RANKED BY VERIFIED MARKET IMPACT")
+      ), { width: 1200, height: 675 }
+    );
+  }
+  if (kind === "weekly-calendar") {
+    const columns = Array.isArray(poster.columns) ? poster.columns.slice(0, 5) : [];
+    return new ImageResponse(
+      e("div", { style: editorialCanvas() },
+        e("div", { style: { position: "absolute", left: 30, top: 100, display: "flex", color: "#ded9cc", fontSize: 310, lineHeight: .75, fontWeight: 900, letterSpacing: -28 } }, "W"),
+        editorialHeader(e, "02 / WEEK", poster.weekStart || "UTC CALENDAR"),
+        e("div", { style: { position: "absolute", left: 56, top: 118, display: "flex", fontSize: 57, lineHeight: .9, fontWeight: 900, letterSpacing: -3 } }, "MARKET\nCALENDAR"),
+        e("div", { style: { position: "absolute", left: 56, right: 56, top: 270, bottom: 70, display: "flex", borderTop: "2px solid #171714" } },
+          ...columns.map((column, columnIndex) => e("div", { key: columnIndex, style: { flex: 1, display: "flex", flexDirection: "column", borderLeft: columnIndex ? "1px solid #b9b5aa" : "none", padding: "18px 14px" } },
+            e("div", { style: { display: "flex", fontSize: 14, fontWeight: 900, letterSpacing: 2 } }, column.label || `DAY ${columnIndex + 1}`),
+            ...(column.events || []).map((event) => e("div", { key: event.id, style: { display: "flex", flexDirection: "column", marginTop: 18, padding: "10px 9px", borderLeft: `5px solid ${event.accent === "amber" ? "#efb62f" : "#171714"}`, background: "#ebe6da" } },
+              e("span", { style: { display: "flex", color: "#77746c", fontSize: 11, fontWeight: 800 } }, event.time),
+              e("span", { style: { display: "flex", marginTop: 4, fontSize: 14, lineHeight: 1.2, fontWeight: 800 } }, cleanPosterText(event.title, "Verified event", 44))
+            ))
+          ))
+        ),
+        editorialFooter(e, "TOP 8 · HIGH-IMPACT EVENTS FIRST")
+      ), { width: 1200, height: 675 }
+    );
+  }
+  if (kind === "data-update") {
+    const impactColor = poster.impact === "Bullish" ? "#17845c" : poster.impact === "Bearish" ? "#b64232" : "#ef9e00";
+    return new ImageResponse(
+      e("div", { style: editorialCanvas() },
+        e("div", { style: { position: "absolute", right: 72, top: 90, width: 425, height: 425, display: "flex", border: "54px solid #171714", borderRadius: "50%" } }),
+        e("div", { style: { position: "absolute", right: 170, bottom: 50, width: 215, height: 82, display: "flex", background: "#efb62f", borderRadius: "50%" } }),
+        editorialHeader(e, "03 / RELEASE", poster.source || "OFFICIAL DATA"),
+        e("div", { style: { position: "absolute", left: 56, top: 118, width: 650, display: "flex", flexDirection: "column" } },
+          e("div", { style: { display: "flex", color: "#77746c", fontSize: 16, fontWeight: 800, letterSpacing: 4 } }, poster.indicator || "DATA UPDATE"),
+          e("div", { style: { display: "flex", marginTop: 10, fontSize: 112, lineHeight: .86, fontWeight: 900, letterSpacing: -7 } }, poster.actual || "—"),
+          e("div", { style: { display: "flex", marginTop: 26, gap: 12 } },
+            dataPill(e, "PREVIOUS", poster.previous || "—"),
+            poster.forecast ? dataPill(e, "AUX FORECAST", poster.forecast) : null,
+            dataPill(e, "IMPACT", poster.impact || "Neutral", impactColor)
+          ),
+          e("div", { style: { display: "flex", marginTop: 38, maxWidth: 620, fontSize: 25, lineHeight: 1.15, fontWeight: 900 } }, cleanPosterText(poster.title, "DATA UPDATE", 70))
+        ),
+        editorialFooter(e, "ACTUAL FIRST · FORECAST IS AUXILIARY")
+      ), { width: 1200, height: 675 }
+    );
+  }
   if (kind === "events") {
     const dateLabel = cleanPosterText(url.searchParams.get("date"), "TODAY", 24);
     const subline = cleanPosterText(url.searchParams.get("subline"), "GLOBAL MARKETS · CRYPTO · COMPANIES", 72);
@@ -144,4 +211,38 @@ export async function GET(request) {
 function cleanPosterText(value, fallback, maxLength) {
   const text = String(value || fallback).replace(/[<>\r\n]/g, " ").replace(/\s+/g, " ").trim();
   return (text || fallback).slice(0, maxLength);
+}
+
+function decodePosterData(value) {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(Buffer.from(String(value), "base64url").toString("utf8"));
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function editorialCanvas() {
+  return { position: "relative", width: "100%", height: "100%", display: "flex", overflow: "hidden", color: "#171714", background: "#f4f0e7", fontFamily: "Arial" };
+}
+
+function editorialHeader(e, section, meta) {
+  return e("div", { style: { position: "absolute", left: 56, right: 56, top: 34, display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 12, borderBottom: "1px solid #b9b5aa", color: "#77746c", fontSize: 12, fontWeight: 900, letterSpacing: 3 } },
+    e("span", null, `YUBIT MARKET INTELLIGENCE · ${section}`),
+    e("span", null, cleanPosterText(meta, "VERIFIED", 52))
+  );
+}
+
+function editorialFooter(e, label) {
+  return e("div", { style: { position: "absolute", left: 56, right: 56, bottom: 28, display: "flex", justifyContent: "space-between", color: "#77746c", fontSize: 11, fontWeight: 900, letterSpacing: 2.2 } },
+    e("span", null, label), e("span", null, "YUBIT · MARKET COMMENTARY")
+  );
+}
+
+function dataPill(e, label, value, color = "#171714") {
+  return e("div", { style: { minWidth: 150, display: "flex", flexDirection: "column", padding: "13px 15px", borderTop: `4px solid ${color}`, background: "#e8e2d6" } },
+    e("span", { style: { display: "flex", color: "#77746c", fontSize: 10, fontWeight: 900, letterSpacing: 1.8 } }, label),
+    e("span", { style: { display: "flex", marginTop: 5, color, fontSize: 25, fontWeight: 900 } }, value)
+  );
 }

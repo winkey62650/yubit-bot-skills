@@ -837,6 +837,21 @@ test("Telegram renders Bot API HTML with escaped text and attributes and no Mark
   assert.doesNotMatch(output, /\]\(https?:|<script>|undefined|null/);
 });
 
+test("crypto daily excludes traceable but unrelated official stories from market-impact selection", () => {
+  const document = buildCryptoDailyDocument({
+    now,
+    candidates: [story({
+      title: "SEC announces annual accounting conference",
+      summary: "The conference covers general reporting standards.",
+      categories: [],
+      source: { id: "sec", label: "SEC", kind: "official", url: "https://www.sec.gov/" },
+      url: "https://www.sec.gov/newsroom/press-releases/example",
+    })],
+  });
+
+  assert.deepEqual(document.selectedStories, []);
+});
+
 test("Discord renders escaped Markdown text and URL with no Telegram HTML leakage", () => {
   const document = buildCryptoDailyDocument({
     now,

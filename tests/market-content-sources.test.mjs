@@ -45,6 +45,17 @@ test("exports the eight-second default source timeout", () => {
   assert.equal(DEFAULT_SOURCE_TIMEOUT_MS, 8_000);
 });
 
+test("default Crypto Daily stack has three official and three industry fallbacks", async () => {
+  const feed = `<?xml version="1.0"?><rss><channel><item><guid>one</guid><title>Bitcoin market update</title><link>https://example.test/one</link><pubDate>Thu, 20 Aug 2026 08:00:00 GMT</pubDate></item></channel></rss>`;
+  const result = await fetchCryptoDailyCandidates({
+    now: "2026-08-20T12:00:00.000Z",
+    fetchImpl: async () => new Response(feed, { status: 200 }),
+  });
+
+  assert.deepEqual(result.sources.map((source) => source.id), ["sec", "cftc", "federal-reserve", "coindesk", "decrypt", "cointelegraph"]);
+  assert.equal(result.sources.every((source) => source.status === "ok"), true);
+});
+
 test("normalizes TradingView fields and units without inventing missing values", async () => {
   const fixture = await jsonFixture("tradingview-calendar.json");
   const events = normalizeCalendarEvents(fixture.result);
