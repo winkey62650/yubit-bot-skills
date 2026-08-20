@@ -110,8 +110,10 @@ for (const name of [
   "group-config.json",
   "telegram-group-registry.json",
   "distribution-center.json",
+  "backups/distribution-before-team-nase-read-20260812T073311Z.json",
+  "backups/distribution-before-disable-current-broadcasts-20260812T091051Z.json",
   "social-packages.json",
-  "trading.json",
+  "trading-center.json",
   "discord-config.json"
 ]) {
   const filename = path.join(process.env.STATE_ROOT, name);
@@ -125,6 +127,47 @@ for (const name of [
     console.log(`${name}=invalid-json:${error.name}`);
   }
 }
+NODE
+  echo "blob_store_shape:"
+  sudo ENV_FILE="$ENV_FILE" APP_ROOT="$APP_ROOT" "$NODE_HOME/bin/node" <<'NODE'
+const fs = require("node:fs");
+const path = require("node:path");
+const { pathToFileURL } = require("node:url");
+
+const env = Object.fromEntries(fs.readFileSync(process.env.ENV_FILE, "utf8").split(/\r?\n/).flatMap((line) => {
+  const separator = line.indexOf("=");
+  if (separator < 1 || line.trim().startsWith("#")) return [];
+  return [[line.slice(0, separator).trim(), line.slice(separator + 1).trim().replace(/^(['"])(.*)\1$/, "$2")]];
+}));
+process.env.BLOB_READ_WRITE_TOKEN = env.BLOB_READ_WRITE_TOKEN || "";
+
+function shape(value, depth = 0) {
+  if (Array.isArray(value)) return `array:${value.length}`;
+  if (!value || typeof value !== "object" || depth >= 2) return typeof value;
+  return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, shape(child, depth + 1)]));
+}
+
+(async () => {
+  const moduleUrl = pathToFileURL(path.join(process.env.APP_ROOT, "current/node_modules/@vercel/blob/dist/index.js"));
+  const { get, list } = await import(moduleUrl);
+  const listing = await list({ limit: 1000 });
+  console.log(`json_blob_count=${listing.blobs.filter((blob) => blob.pathname.endsWith(".json")).length}`);
+  for (const name of ["distribution-center.json", "trading-center.json", "discord-config.json"]) {
+    try {
+      const result = await get(name, { access: "private", useCache: false });
+      if (!result) {
+        console.log(`${name}=missing`);
+        continue;
+      }
+      const value = JSON.parse(await new Response(result.stream).text());
+      console.log(`${name}=${JSON.stringify(shape(value))}`);
+    } catch (error) {
+      console.log(`${name}=unavailable:${error.name}`);
+    }
+  }
+})().catch((error) => {
+  console.log(`blob_audit=failed:${error.name}`);
+});
 NODE
   echo "authenticated_api_shape:"
   sudo ENV_FILE="$ENV_FILE" "$NODE_HOME/bin/node" <<'NODE'
