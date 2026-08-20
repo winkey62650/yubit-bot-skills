@@ -124,6 +124,13 @@ function errorClass(message) {
   return text ? "unclassified" : "none";
 }
 
+function safeError(message) {
+  return String(message || "none")
+    .replace(/(?:postgres(?:ql)?|https?):\/\/[^\s]+/gi, "[redacted-url]")
+    .replace(/[A-Za-z0-9_-]{32,}/g, "[redacted-token]")
+    .slice(0, 240);
+}
+
 (async () => {
   const env = readEnv(process.env.ENV_FILE);
   const baseUrl = "http://127.0.0.1:4174";
@@ -149,7 +156,7 @@ function errorClass(message) {
   ]) {
     const response = await fetch(`${baseUrl}${endpoint}`, { headers: { cookie } });
     const body = await response.json().catch(() => null);
-    console.log(`${endpoint}=${response.status};error_class=${errorClass(body?.error)};${JSON.stringify(shape(body))}`);
+    console.log(`${endpoint}=${response.status};error_class=${errorClass(body?.error)};error=${safeError(body?.error)};${JSON.stringify(shape(body))}`);
   }
 })().catch((error) => {
   console.error(`api-audit-failed:${error.name}:${error.message}`);
