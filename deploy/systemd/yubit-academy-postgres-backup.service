@@ -1,0 +1,11 @@
+[Unit]
+Description=Yubit Academy local PostgreSQL backup
+After=postgresql.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+EnvironmentFile=/etc/yubit-academy/production.env
+Environment=BACKUP_ROOT=/var/backups/yubit-academy/postgres
+ExecStart=/opt/yubit-academy/current/scripts/backup-production-postgres.sh

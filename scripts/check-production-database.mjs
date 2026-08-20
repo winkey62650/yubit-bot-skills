@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
-import { neon } from "@neondatabase/serverless";
+import { createPostgresClient } from "../lib/postgres-client.mjs";
 
 export function classifyDatabaseFailure(error) {
   const message = String(error?.message || error);
@@ -23,7 +23,12 @@ export async function checkProductionDatabase({ env, query = queryDatabase }) {
 }
 
 async function queryDatabase(url) {
-  await neon(url)`SELECT 1 AS ok`;
+  const client = createPostgresClient(url);
+  try {
+    await client.query("SELECT 1 AS ok");
+  } finally {
+    await client.close?.();
+  }
 }
 
 export function parseEnvFile(source) {

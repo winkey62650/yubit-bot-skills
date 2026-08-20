@@ -12,6 +12,12 @@ SERVER_IP="${SERVER_IP:-152.32.161.174}"
 ENV_FILE="${ENV_FILE:-/etc/yubit-academy/production.env}"
 ENABLE_HTTPS="${ENABLE_HTTPS:-1}"
 PATH="$NODE_HOME/bin:$PATH"
+LOCAL_DATABASE_NAME="${LOCAL_DATABASE_NAME:-yubit_academy}"
+LOCAL_DATABASE_USER="${LOCAL_DATABASE_USER:-yubit_academy}"
+if [[ ! "$LOCAL_DATABASE_NAME" =~ ^[a-z_][a-z0-9_]*$ || ! "$LOCAL_DATABASE_USER" =~ ^[a-z_][a-z0-9_]*$ ]]; then
+  echo "Local PostgreSQL database and user names are invalid." >&2
+  exit 1
+fi
 
 wait_for_service_active() {
   local service="$1"
@@ -39,6 +45,35 @@ fi
 if [[ ! -x "$NODE_HOME/bin/node" ]]; then
   echo "Node runtime not found at $NODE_HOME/bin/node" >&2
   exit 1
+fi
+
+if ! command -v psql >/dev/null 2>&1; then
+  sudo apt-get update -qq
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql postgresql-client
+fi
+sudo systemctl enable --now postgresql
+local_database_password="$(sudo awk -F= '$1 == "LOCAL_DATABASE_PASSWORD" { sub(/^[^=]*=/, ""); print; exit }' "$ENV_FILE")"
+if [[ -z "$local_database_password" ]]; then
+  local_database_password="$(openssl rand -hex 32)"
+fi
+if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$LOCAL_DATABASE_USER'" | grep -qx 1; then
+  printf 'CREATE ROLE "%s" LOGIN PASSWORD '\''%s'\'';\n' "$LOCAL_DATABASE_USER" "$local_database_password" \
+    | sudo -u postgres psql --set=ON_ERROR_STOP=1
+else
+  printf 'ALTER ROLE "%s" PASSWORD '\''%s'\'';\n' "$LOCAL_DATABASE_USER" "$local_database_password" \
+    | sudo -u postgres psql --set=ON_ERROR_STOP=1
+fi
+if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='$LOCAL_DATABASE_NAME'" | grep -qx 1; then
+  sudo -u postgres createdb --owner="$LOCAL_DATABASE_USER" "$LOCAL_DATABASE_NAME"
+fi
+local_database_url="postgresql://$LOCAL_DATABASE_USER:$local_database_password@127.0.0.1:5432/$LOCAL_DATABASE_NAME"
+local_database_dsn="postgresql://$LOCAL_DATABASE_USER@127.0.0.1:5432/$LOCAL_DATABASE_NAME"
+neon_archive_url="$(sudo awk -F= '$1 == "NEON_ARCHIVE_DATABASE_URL" { sub(/^[^=]*=/, ""); print; exit }' "$ENV_FILE")"
+if [[ -z "$neon_archive_url" ]]; then
+  candidate_database_url="$(sudo awk -F= '$1 == "DATABASE_URL" { sub(/^[^=]*=/, ""); print; exit }' "$ENV_FILE")"
+  if [[ -n "$candidate_database_url" && "$candidate_database_url" != *"127.0.0.1"* && "$candidate_database_url" != *"localhost"* ]]; then
+    neon_archive_url="$candidate_database_url"
+  fi
 fi
 
 sudo install -d -m 0755 -o ubuntu -g ubuntu "$APP_ROOT/releases"
@@ -121,11 +156,19 @@ cleanup_env_update() {
   sudo rm -f "$env_pending"
 }
 trap cleanup_env_update EXIT
-sudo awk '!/^(JSON_STORE_BACKEND|JSON_STORE_DIRECTORY|DISCORD_APP_ID|DISCORD_PUBLIC_KEY|DISCORD_BOT_TOKEN|DISCORD_GATEWAY_ENABLED|DISCORD_CREDENTIALS_ENCRYPTION_KEY)=/' "$ENV_FILE" >"$primary_env"
+sudo awk '!/^(JSON_STORE_BACKEND|JSON_STORE_DIRECTORY|DISCORD_APP_ID|DISCORD_PUBLIC_KEY|DISCORD_BOT_TOKEN|DISCORD_GATEWAY_ENABLED|DISCORD_CREDENTIALS_ENCRYPTION_KEY|DATABASE_URL|POSTGRES_URL|DATABASE_DRIVER|DATABASE_POOL_MAX|LOCAL_DATABASE_PASSWORD|NEON_ARCHIVE_DATABASE_URL)=/' "$ENV_FILE" >"$primary_env"
 {
   printf 'JSON_STORE_BACKEND=local\n'
   printf 'JSON_STORE_DIRECTORY=%s\n' "$STATE_ROOT"
   printf 'DISCORD_CREDENTIALS_ENCRYPTION_KEY=%s\n' "$discord_credentials_key"
+  printf 'DATABASE_URL=%s\n' "$local_database_url"
+  printf 'POSTGRES_URL=%s\n' "$local_database_url"
+  printf 'DATABASE_DRIVER=pg\n'
+  printf 'DATABASE_POOL_MAX=10\n'
+  printf 'LOCAL_DATABASE_PASSWORD=%s\n' "$local_database_password"
+  if [[ -n "$neon_archive_url" ]]; then
+    printf 'NEON_ARCHIVE_DATABASE_URL=%s\n' "$neon_archive_url"
+  fi
 } >>"$primary_env"
 sudo install -m 0600 -o root -g root "$primary_env" "$env_pending"
 sudo mv -f "$env_pending" "$ENV_FILE"
@@ -135,6 +178,19 @@ trap - EXIT
 unset discord_credentials_key
 npm ci --no-audit --no-fund
 sudo ENV_FILE="$ENV_FILE" "$NODE_HOME/bin/node" scripts/check-production-database.mjs
+distribution_table="$(PGPASSWORD="$local_database_password" psql "$local_database_dsn" -tAc "SELECT to_regclass('public.distribution_rules')")"
+rule_count="0"
+if [[ -n "${distribution_table//[[:space:]]/}" ]]; then
+  rule_count="$(PGPASSWORD="$local_database_password" psql "$local_database_dsn" -tAc "SELECT count(*) FROM distribution_rules")"
+fi
+restore_snapshot="$STATE_ROOT/backups/distribution-before-disable-current-broadcasts-20260812T091051Z.json"
+if [[ "${rule_count//[[:space:]]/}" == "0" && -s "$restore_snapshot" ]]; then
+  sudo -u ubuntu env \
+    DATABASE_URL="$local_database_url" \
+    DATABASE_DRIVER=pg \
+    RESTORE_DISTRIBUTION_SNAPSHOT="$restore_snapshot" \
+    "$NODE_HOME/bin/node" scripts/restore-distribution-snapshot.mjs
+fi
 npm run check
 npm test
 npm run build
@@ -166,6 +222,9 @@ fi
 sudo install -m 0644 deploy/systemd/yubit-academy-web.service /etc/systemd/system/yubit-academy-web.service
 sudo install -m 0644 deploy/systemd/yubit-academy-worker.service /etc/systemd/system/yubit-academy-worker.service
 sudo install -m 0644 deploy/systemd/yubit-academy-discord.service /etc/systemd/system/yubit-academy-discord.service
+sudo install -m 0644 deploy/systemd/yubit-academy-postgres-backup.service /etc/systemd/system/yubit-academy-postgres-backup.service
+sudo install -m 0644 deploy/systemd/yubit-academy-postgres-backup.timer /etc/systemd/system/yubit-academy-postgres-backup.timer
+sudo install -d -m 0750 -o ubuntu -g ubuntu /var/backups/yubit-academy/postgres
 release_env="$(mktemp)"
 {
   printf 'APP_RELEASE_SHA=%s\n' "$commit"
@@ -189,6 +248,7 @@ sudo rm -f /etc/nginx/sites-enabled/yubit-tg.conf
 sudo nginx -t
 
 sudo systemctl daemon-reload
+sudo systemctl enable --now yubit-academy-postgres-backup.timer
 sudo systemctl disable --now yubit-bot-skills.service yubit-news-console.service 2>/dev/null || true
 sudo systemctl stop yubit-academy-worker.service 2>/dev/null || true
 sudo systemctl enable yubit-academy-web.service
@@ -238,12 +298,27 @@ fi
 wait_for_service_active yubit-academy-web.service 5
 wait_for_service_active yubit-academy-worker.service 5
 wait_for_service_active yubit-academy-discord.service 5
+sudo systemctl start yubit-academy-postgres-backup.service
+PGPASSWORD="$local_database_password" pg_isready --dbname="$local_database_dsn"
+final_rule_count="$(PGPASSWORD="$local_database_password" psql "$local_database_dsn" -tAc "SELECT count(*) FROM distribution_rules")"
+if [[ "${final_rule_count//[[:space:]]/}" == "0" ]]; then
+  echo "Local PostgreSQL primary contains no distribution rules after restore." >&2
+  exit 1
+fi
+sudo systemctl is-active --quiet yubit-academy-postgres-backup.timer
+if ! find /var/backups/yubit-academy/postgres -maxdepth 1 -type f -name 'yubit-academy-*.dump' -print -quit | grep -q .; then
+  echo "No local PostgreSQL backup was created." >&2
+  exit 1
+fi
 if sudo grep -Eq '^(DISCORD_APP_ID|DISCORD_PUBLIC_KEY|DISCORD_BOT_TOKEN|DISCORD_GATEWAY_ENABLED)=' "$ENV_FILE"; then
   echo "Legacy Discord environment credentials remain configured." >&2
   exit 1
 fi
 echo "Discord legacy environment credentials: absent"
 echo "Discord gateway service: active"
+echo "Local PostgreSQL primary: active"
+echo "Local PostgreSQL distribution rules: ${final_rule_count//[[:space:]]/}"
+echo "Local PostgreSQL daily backup timer: active"
 
 find "$APP_ROOT/releases" -mindepth 1 -maxdepth 1 -type d ! -path "$release" -printf '%T@ %p\n' \
   | sort -nr | awk 'NR > 2 {sub(/^[^ ]+ /, ""); print}' \

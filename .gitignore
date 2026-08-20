@@ -9,6 +9,7 @@ node_modules/
 .venv/
 .market-discussion-state.json
 .runtime/
+.runtime-test/
 tmp/
 dist/
 coverage/
