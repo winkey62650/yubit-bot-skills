@@ -4,7 +4,8 @@ import { realpathSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const DEFAULTS = Object.freeze({
-  distributionIntervalMs: 15_000,
+  distributionIntervalMs: 5 * 60_000,
+  composerIntervalMs: 15_000,
   tradingIntervalMs: 5 * 60_000,
   agentIntervalMs: 60 * 60_000,
   larkIntervalMs: 60_000,
@@ -31,6 +32,10 @@ export function buildWorkerConfig(env = process.env) {
     distributionIntervalMs: positiveInteger(
       env.WORKER_DISTRIBUTION_INTERVAL_MS,
       DEFAULTS.distributionIntervalMs,
+    ),
+    composerIntervalMs: positiveInteger(
+      env.WORKER_COMPOSER_INTERVAL_MS,
+      DEFAULTS.composerIntervalMs,
     ),
     tradingIntervalMs: positiveInteger(env.WORKER_TRADING_INTERVAL_MS, DEFAULTS.tradingIntervalMs),
     agentIntervalMs: positiveInteger(env.WORKER_AGENT_INTERVAL_MS, DEFAULTS.agentIntervalMs),
@@ -136,6 +141,7 @@ export async function startProductionWorker({ env = process.env, fetchImpl = fet
   logger("info", "worker.started", {
     baseUrl: config.baseUrl,
     distributionIntervalMs: config.distributionIntervalMs,
+    composerIntervalMs: config.composerIntervalMs,
     tradingIntervalMs: config.tradingIntervalMs,
     agentIntervalMs: config.agentIntervalMs,
     larkIntervalMs: config.larkIntervalMs,
@@ -179,7 +185,7 @@ export async function startProductionWorker({ env = process.env, fetchImpl = fet
     }),
     runLoop({
       name: "composer-queue",
-      intervalMs: config.distributionIntervalMs, // Same cadence as distribution (15s)
+      intervalMs: config.composerIntervalMs,
       initialDelayMs: 5_000,
       signal: controller.signal,
       logger,

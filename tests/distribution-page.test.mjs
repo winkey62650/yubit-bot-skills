@@ -167,6 +167,13 @@ test("core distribution rules stay visible when optional page data fails to load
   assert.doesNotMatch(pageSource, /\[overviewResponse, groupsResponse, socialResponse, savedSettings, savedPresets\] = await Promise\.all/);
 });
 
+test("database load failures are shown as unavailable instead of empty rule lists", () => {
+  assert.match(pageSource, /const \[loadError, setLoadError\] = useState\(""\)/);
+  assert.match(pageSource, /后台数据暂时不可用/);
+  assert.match(pageSource, /loadError \? <Card/);
+  assert.match(pageSource, /!loadError && view === "automation"/);
+});
+
 test("desktop publisher status distinguishes online, stalled, degraded and offline states", () => {
   assert.match(pageSource, /operationalStatus === "stalled"/);
   assert.match(pageSource, /发布任务卡住/);

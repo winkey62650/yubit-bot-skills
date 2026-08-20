@@ -117,6 +117,7 @@ function DistributionPageContent() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState("");
+  const [loadError, setLoadError] = useState("");
   const [automationForm, setAutomationForm] = useState(emptyAutomation);
   const [broadcastForm, setBroadcastForm] = useState(emptyBroadcast);
   const [validation, setValidation] = useState(null);
@@ -144,6 +145,7 @@ function DistributionPageContent() {
 
   async function loadAll() {
     setLoading(true);
+    setLoadError("");
     try {
       const overviewResponse = await fetch("/api/distribution", { cache: "no-store" });
       const overview = await overviewResponse.json();
@@ -197,7 +199,7 @@ function DistributionPageContent() {
         setNotice(`自动发布和内容同步规则已恢复显示；${failedOptionalLoads.join("、")}暂时读取失败，可稍后刷新重试。`);
       }
     } catch (error) {
-      setNotice(error.message);
+      setLoadError(error.message || "内容分发数据读取失败");
     } finally {
       setLoading(false);
     }
@@ -499,7 +501,7 @@ function DistributionPageContent() {
         <Summary label="待审核" value={loading ? "—" : data.review.length} detail={loading ? "正在读取…" : "默认保留 7 天"} />
       </div> : null}
 
-      {view === "automation" ? loading
+      {!loadError && view === "automation" ? loading
         ? <Card className="mb-5 p-5 text-sm font-bold text-ops-muted">正在核验官方群发布闭环…</Card>
         : <OfficialPublishingWorkflow status={automationPublisherStatus} detail={automationPublisherDetail} ready={automationPublisherReady} deliveryMode={deliverySettings.telegramPublishMode} busy={busy} onDeliveryModeChange={(value) => saveDeliveryIdentity("telegramPublishMode", value)} /> : null}
 
@@ -517,11 +519,17 @@ function DistributionPageContent() {
 
       {analyticsView ? <SiteAnalyticsPanel /> : null}
       {loading && !analyticsView ? <Card className="p-8 text-center font-bold text-ops-muted">正在加载持久化配置…</Card> : null}
-      {!loading && view === "automation" ? <AutomationView form={automationForm} setForm={setAutomationForm} rules={automationRules} groups={groups} discordState={discordState} socialPackages={socialPackages} publisherName={automaticPublisherName} deliveryMode={deliverySettings.telegramPublishMode} onDeliveryModeChange={(value) => saveDeliveryIdentity("telegramPublishMode", value)} busy={busy} selected={selectedAutomationRules} setSelected={setSelectedAutomationRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedAutomationRules, "自动任务")} onSave={() => saveRule(automationForm, () => setAutomationForm(emptyAutomation))} onEdit={setAutomationForm} onAction={post} onValidate={validate} onPersistSocial={saveSocialPackages} onNotice={setNotice} presets={targetPresets} onSavePreset={savePreset} onDeletePreset={deletePreset} /> : null}
-      {!loading && view === "destination-cta" ? <DestinationCtaView options={destinationCtaTargetOptions(groups, discordState)} registry={destinationCtas} setRegistry={setDestinationCtas} busy={busy} onSave={saveDestinationCtas} onSaveOne={saveDestinationCta} /> : null}
-      {!loading && view === "broadcast" ? <BroadcastView form={broadcastForm} setForm={setBroadcastForm} rules={broadcastRules} groups={groups} approvedTargetIds={data.publisher?.approvedTargetIds} publisherName={forwardPublisherName} deliveryMode={deliverySettings.telegramForwardMode} onDeliveryModeChange={(value) => saveDeliveryIdentity("telegramForwardMode", value)} busy={busy} selected={selectedBroadcastRules} setSelected={setSelectedBroadcastRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedBroadcastRules, "内容同步规则")} backfill={backfill} setBackfill={setBackfill} onBackfill={previewBackfill} onSave={() => saveRule(broadcastForm, () => setBroadcastForm(emptyBroadcast))} onEdit={setBroadcastForm} onAction={post} onValidate={validate} presets={targetPresets} onSavePreset={savePreset} onDeletePreset={deletePreset} /> : null}
-      {!loading && view === "review" ? <ReviewView events={data.review} selected={selectedReviews} setSelected={setSelectedReviews} busy={busy} onAction={reviewAction} /> : null}
-      {!loading && view === "logs" ? <LogsView deliveries={data.deliveries} busy={busy} onRetry={async (id) => { setBusy("retry"); try { const response = await fetch("/api/distribution/logs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "retry", deliveryId: id }) }); const result = await response.json(); if (!response.ok || !result.ok) throw new Error(result.error); setNotice("失败目标已单独重试，不影响其他目标。"); await loadAll(); } catch (error) { setNotice(error.message); } finally { setBusy(""); } }} /> : null}
+      {!loading && !analyticsView && loadError ? <Card className="p-8 text-center" role="alert">
+        <p className="text-base font-black text-[#a04a3d]">后台数据暂时不可用</p>
+        <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-ops-muted">数据库连接异常，系统已停止把读取失败显示成空列表。原有规则和运行记录不会在这里被覆盖。</p>
+        <p className="mx-auto mt-2 max-w-2xl text-xs leading-5 text-[#7b642f]">{loadError}</p>
+        <button className="mt-4 min-h-11 rounded-lg bg-ops-accent px-5 text-sm font-black text-white" onClick={loadAll} type="button">重新读取</button>
+      </Card> : null}
+      {!loading && !loadError && view === "automation" ? <AutomationView form={automationForm} setForm={setAutomationForm} rules={automationRules} groups={groups} discordState={discordState} socialPackages={socialPackages} publisherName={automaticPublisherName} deliveryMode={deliverySettings.telegramPublishMode} onDeliveryModeChange={(value) => saveDeliveryIdentity("telegramPublishMode", value)} busy={busy} selected={selectedAutomationRules} setSelected={setSelectedAutomationRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedAutomationRules, "自动任务")} onSave={() => saveRule(automationForm, () => setAutomationForm(emptyAutomation))} onEdit={setAutomationForm} onAction={post} onValidate={validate} onPersistSocial={saveSocialPackages} onNotice={setNotice} presets={targetPresets} onSavePreset={savePreset} onDeletePreset={deletePreset} /> : null}
+      {!loading && !loadError && view === "destination-cta" ? <DestinationCtaView options={destinationCtaTargetOptions(groups, discordState)} registry={destinationCtas} setRegistry={setDestinationCtas} busy={busy} onSave={saveDestinationCtas} onSaveOne={saveDestinationCta} /> : null}
+      {!loading && !loadError && view === "broadcast" ? <BroadcastView form={broadcastForm} setForm={setBroadcastForm} rules={broadcastRules} groups={groups} approvedTargetIds={data.publisher?.approvedTargetIds} publisherName={forwardPublisherName} deliveryMode={deliverySettings.telegramForwardMode} onDeliveryModeChange={(value) => saveDeliveryIdentity("telegramForwardMode", value)} busy={busy} selected={selectedBroadcastRules} setSelected={setSelectedBroadcastRules} onDeleteMany={(ids) => deleteManyRules(ids, setSelectedBroadcastRules, "内容同步规则")} backfill={backfill} setBackfill={setBackfill} onBackfill={previewBackfill} onSave={() => saveRule(broadcastForm, () => setBroadcastForm(emptyBroadcast))} onEdit={setBroadcastForm} onAction={post} onValidate={validate} presets={targetPresets} onSavePreset={savePreset} onDeletePreset={deletePreset} /> : null}
+      {!loading && !loadError && view === "review" ? <ReviewView events={data.review} selected={selectedReviews} setSelected={setSelectedReviews} busy={busy} onAction={reviewAction} /> : null}
+      {!loading && !loadError && view === "logs" ? <LogsView deliveries={data.deliveries} busy={busy} onRetry={async (id) => { setBusy("retry"); try { const response = await fetch("/api/distribution/logs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "retry", deliveryId: id }) }); const result = await response.json(); if (!response.ok || !result.ok) throw new Error(result.error); setNotice("失败目标已单独重试，不影响其他目标。"); await loadAll(); } catch (error) { setNotice(error.message); } finally { setBusy(""); } }} /> : null}
     </ConsoleShell>
   );
 
