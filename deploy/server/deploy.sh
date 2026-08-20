@@ -51,6 +51,45 @@ if [[ -f "$SOURCE_DIR/.production-data-audit-only" ]]; then
   printf 'postgres_url_present='; sudo awk -F= '$1 == "POSTGRES_URL" { found = ($2 != "") } END { print found ? "yes" : "no" }' "$ENV_FILE"
   printf 'discord_app_id_present='; sudo awk -F= '$1 == "DISCORD_APP_ID" { found = ($2 != "") } END { print found ? "yes" : "no" }' "$ENV_FILE"
   printf 'discord_bot_token_present='; sudo awk -F= '$1 == "DISCORD_BOT_TOKEN" { found = ($2 != "") } END { print found ? "yes" : "no" }' "$ENV_FILE"
+  echo "database_connectivity:"
+  sudo ENV_FILE="$ENV_FILE" APP_ROOT="$APP_ROOT" "$NODE_HOME/bin/node" <<'NODE'
+const fs = require("node:fs");
+const path = require("node:path");
+const { pathToFileURL } = require("node:url");
+
+const env = Object.fromEntries(fs.readFileSync(process.env.ENV_FILE, "utf8").split(/\r?\n/).flatMap((line) => {
+  const separator = line.indexOf("=");
+  if (separator < 1 || line.trim().startsWith("#")) return [];
+  return [[line.slice(0, separator).trim(), line.slice(separator + 1).trim().replace(/^(['"])(.*)\1$/, "$2")]];
+}));
+
+(async () => {
+  const moduleUrl = pathToFileURL(path.join(process.env.APP_ROOT, "current/node_modules/@neondatabase/serverless/index.js"));
+  const { neon } = await import(moduleUrl);
+  console.log(`database_and_postgres_same=${env.DATABASE_URL === env.POSTGRES_URL ? "yes" : "no"}`);
+  for (const key of ["DATABASE_URL", "POSTGRES_URL"]) {
+    if (!env[key]) {
+      console.log(`${key}=missing`);
+      continue;
+    }
+    try {
+      await neon(env[key])`SELECT 1 AS ok`;
+      console.log(`${key}=ok`);
+    } catch (error) {
+      const message = String(error?.message || error);
+      const result = /HTTP status 402|compute time quota/i.test(message)
+        ? "quota_exceeded"
+        : /fetch failed|network|connect|timeout|ECONN|ENOTFOUND/i.test(message)
+          ? "connection_failed"
+          : "query_failed";
+      console.log(`${key}=${result}`);
+    }
+  }
+})().catch((error) => {
+  console.log(`database_audit=failed:${error.name}`);
+  process.exit(2);
+});
+NODE
   echo "runtime_symlinks:"
   sudo find "$APP_ROOT" -maxdepth 4 -type l -name .runtime -printf '%p -> %l\n' 2>/dev/null | sort || true
   echo "local_json_files:"
