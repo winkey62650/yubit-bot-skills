@@ -141,6 +141,21 @@ test("server deployment removes conflicting JSON storage settings from the prima
   assert.match(deployScript, /mv -f "\$env_pending" "\$ENV_FILE"/);
 });
 
+test("server deployment verifies production database access before switching releases", async () => {
+  const deployScript = await readFile(
+    fileURLToPath(new URL("../deploy/server/deploy.sh", import.meta.url)),
+    "utf8",
+  );
+
+  const installDependencies = deployScript.indexOf("npm ci --no-audit --no-fund");
+  const databasePreflight = deployScript.indexOf("check-production-database.mjs");
+  const installCurrent = deployScript.indexOf('sudo ln -sfn "$release" "$APP_ROOT/current"');
+
+  assert.ok(databasePreflight >= 0, "deployment must run the production database preflight");
+  assert.ok(installDependencies < databasePreflight, "database preflight requires installed dependencies");
+  assert.ok(databasePreflight < installCurrent, "database preflight must pass before switching releases");
+});
+
 test("server deployment can prune old releases containing root-owned build files", async () => {
   const deployScript = await readFile(
     fileURLToPath(new URL("../deploy/server/deploy.sh", import.meta.url)),
