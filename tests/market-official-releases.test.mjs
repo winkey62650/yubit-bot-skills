@@ -10,6 +10,7 @@ import {
 
 const FIXTURE_DIR = new URL("./fixtures/market-content/", import.meta.url);
 const RETRIEVED_AT = "2026-08-26T12:30:05.000Z";
+const BEA_RELEASES_URL_FOR_TEST = "https://www.bea.gov/news/current-releases";
 const BEA_PCE_INDEX = `
   <table><tr class="release-row">
     <td headers="view-title-table-column"><a href="/news/2026/personal-income-and-outlays-june-2026" hreflang="en">Personal Income and Outlays, June 2026</a></td>
@@ -61,6 +62,15 @@ function assertOfficialRecord(record, { indicator, rawValue, normalizedValue, un
   assert.match(record.publishedAt, /^2026-/);
 }
 
+function beaGdpArticle({ path, heading, value = "2.4", date = "August 27, 2026", zone = "EDT" }) {
+  return `
+    <article about="${path}">
+      <div class="field field--name-field-release-date field--type-string field--label-hidden field--item">EMBARGOED UNTIL RELEASE AT 8:30 a.m. ${zone}, Thursday, ${date}</div>
+      <h1>${heading}</h1>
+      <div class="release-body"><p>Real gross domestic product (GDP) increased at an annual rate of ${value} percent in the second quarter of 2026.</p></div>
+    </article>`;
+}
+
 test("parses BLS CPI headline and core month-over-month and year-over-year actuals", async () => {
   const html = await fixture("bls-cpi-release.html");
   const result = await fetchBlsOfficialRelease({
@@ -88,6 +98,25 @@ test("parses BLS CPI headline and core month-over-month and year-over-year actua
     indicator: "core-cpi", rawValue: "2.5", normalizedValue: 2.5, unit: "%", releasePeriod: "July 2026",
     sourceUrl: "https://www.bls.gov/news.release/cpi.nr0.htm",
   });
+});
+
+test("normalizes legal BLS unchanged wording to zero for headline and core CPI", async () => {
+  const cases = [
+    ["bls-cpi-headline-unchanged-release.html", "cpi-mom"],
+    ["bls-cpi-core-unchanged-release.html", "core-cpi-mom"],
+  ];
+
+  for (const [fixtureName, indicator] of cases) {
+    const result = await fetchBlsOfficialRelease({
+      indicator: "cpi",
+      fetchImpl: offlineFetch(await fixture(fixtureName)),
+      now: () => new Date(RETRIEVED_AT),
+      timeoutMs: 100,
+    });
+    const record = result.records.find((item) => item.indicator === indicator);
+    assert.equal(record.rawValue, "0");
+    assert.equal(record.normalizedValue, 0);
+  }
 });
 
 test("parses BLS payroll change and unemployment rate", async () => {
@@ -134,6 +163,18 @@ test("parses BEA headline and core PCE month-over-month and year-over-year value
   });
 });
 
+test("normalizes official BEA PCE unchanged wording to zero", async () => {
+  const result = await fetchBeaOfficialRelease({
+    indicator: "pce",
+    fetchImpl: offlineFetchSequence([BEA_PCE_INDEX, await fixture("bea-pce-unchanged-release.html")]),
+    now: () => new Date(RETRIEVED_AT),
+    timeoutMs: 100,
+  });
+
+  assert.equal(result.records.find(({ indicator }) => indicator === "pce-mom").normalizedValue, 0);
+  assert.equal(result.records.find(({ indicator }) => indicator === "core-pce-mom").normalizedValue, 0);
+});
+
 test("parses BEA headline real GDP annualized change", async () => {
   const calls = [];
   const result = await fetchBeaOfficialRelease({
@@ -154,6 +195,54 @@ test("parses BEA headline real GDP annualized change", async () => {
     indicator: "gdp", rawValue: "1.5", normalizedValue: 1.5, unit: "% annualized", releasePeriod: "Q2 2026",
     sourceUrl: "https://www.bea.gov/news/2026/gdp-advance-estimate-2nd-quarter-2026",
   });
+});
+
+test("normalizes official BEA GDP unchanged wording to zero", async () => {
+  const result = await fetchBeaOfficialRelease({
+    indicator: "gdp",
+    fetchImpl: offlineFetchSequence([BEA_GDP_INDEX, await fixture("bea-gdp-unchanged-release.html")]),
+    now: () => new Date(RETRIEVED_AT),
+    timeoutMs: 100,
+  });
+
+  assert.equal(result.records[0].rawValue, "0");
+  assert.equal(result.records[0].normalizedValue, 0);
+});
+
+test("selects and parses Advance, Second, and modern combined Third national GDP releases", async () => {
+  const cases = [
+    {
+      path: "/news/2026/gdp-advance-estimate-2nd-quarter-2026",
+      heading: "GDP (Advance Estimate), 2nd Quarter 2026",
+      value: "1.5",
+    },
+    {
+      path: "/news/2026/gdp-second-estimate-2nd-quarter-2026",
+      heading: "GDP (Second Estimate), 2nd Quarter 2026",
+      value: "2.1",
+    },
+    {
+      path: "/news/2026/gdp-third-estimate-industries-corporate-profits-state-gdp-and-state-personal-income-2nd-quarter-2026",
+      heading: "GDP (Third Estimate), Industries, Corporate Profits, State GDP, and State Personal Income, 2nd Quarter 2026",
+      value: "2.4",
+    },
+  ];
+
+  for (const item of cases) {
+    const index = `
+      <a href="/news/2026/gross-domestic-product-county-and-personal-income-county-2024">Gross Domestic Product by County and Personal Income by County, 2024</a>
+      <a href="${item.path}">${item.heading}</a>`;
+    const calls = [];
+    const result = await fetchBeaOfficialRelease({
+      indicator: "gdp",
+      fetchImpl: offlineFetchSequence([index, beaGdpArticle(item)], calls),
+      now: () => new Date(RETRIEVED_AT),
+      timeoutMs: 100,
+    });
+    assert.deepEqual(calls.map(({ url }) => url), [BEA_RELEASES_URL_FOR_TEST, `https://www.bea.gov${item.path}`]);
+    assert.equal(result.records[0].rawValue, item.value);
+    assert.equal(result.records[0].releasePeriod, "Q2 2026");
+  }
 });
 
 test("parses the FOMC target range and canonical statement and implementation-note URLs", async () => {
@@ -191,6 +280,60 @@ test("fetchOfficialActual routes supported events and selects the requested rele
   assert.equal(record.indicator, "core-cpi");
   assert.equal(record.value, "2.5%");
   assert.equal(record.source.type, "official");
+});
+
+test("fetchOfficialActual accepts only missing or explicit US country aliases", async () => {
+  const html = await fixture("bls-cpi-release.html");
+  for (const country of [undefined, "US", "USA", "United States", "U.S."]) {
+    const event = { indicator: "cpi" };
+    if (country !== undefined) event.country = country;
+    const record = await fetchOfficialActual({
+      event,
+      fetchImpl: offlineFetch(html),
+      now: () => new Date(RETRIEVED_AT),
+      timeoutMs: 100,
+    });
+    assert.equal(record.indicator, "cpi");
+  }
+});
+
+test("fetchOfficialActual rejects explicit non-US CPI, GDP, and PCE events before fetching", async () => {
+  const calls = [];
+  for (const indicator of ["cpi", "gdp", "pce"]) {
+    await assert.rejects(
+      fetchOfficialActual({
+        event: { indicator, country: "Japan" },
+        fetchImpl: offlineFetch("should not be fetched", calls),
+        now: () => new Date(RETRIEVED_AT),
+        timeoutMs: 100,
+      }),
+      (error) => error?.code === "OFFICIAL_RELEASE_UNSUPPORTED",
+    );
+  }
+  assert.equal(calls.length, 0);
+});
+
+test("Eastern timestamps honor explicit zones and exact US DST transition dates", async () => {
+  const base = await fixture("bls-cpi-release.html");
+  const cases = [
+    ["8:30 a.m. (ET) Saturday, March 7, 2026", "2026-03-07T13:30:00.000Z"],
+    ["8:30 a.m. (ET) Sunday, March 8, 2026", "2026-03-08T12:30:00.000Z"],
+    ["8:30 a.m. (ET) Saturday, October 31, 2026", "2026-10-31T12:30:00.000Z"],
+    ["8:30 a.m. (ET) Sunday, November 1, 2026", "2026-11-01T13:30:00.000Z"],
+    ["8:30 a.m. EST Sunday, March 8, 2026", "2026-03-08T13:30:00.000Z"],
+    ["8:30 a.m. EDT Sunday, November 1, 2026", "2026-11-01T12:30:00.000Z"],
+  ];
+
+  for (const [stamp, expected] of cases) {
+    const html = base.replace(/8:30 a\.m\. \(ET\) Wednesday, August 12, 2026/, stamp);
+    const result = await fetchBlsOfficialRelease({
+      indicator: "cpi",
+      fetchImpl: offlineFetch(html),
+      now: () => new Date(RETRIEVED_AT),
+      timeoutMs: 100,
+    });
+    assert.equal(result.publishedAt, expected);
+  }
 });
 
 test("BLS API data is not requested or substituted during immediate release ingestion", async () => {
@@ -251,4 +394,41 @@ test("fetch settings are injected: retries are bounded, offline, and abort signa
   assert.equal(result.records[0].value, "1.5");
   assert.equal(attempts, 3);
   assert.equal(signals.every((signal) => signal instanceof AbortSignal), true);
+});
+
+test("final network, body-read, and timeout failures use OFFICIAL_RELEASE_FETCH_FAILED and preserve cause", async () => {
+  const networkCause = new Error("network offline");
+  await assert.rejects(
+    fetchBlsOfficialRelease({
+      indicator: "cpi",
+      fetchImpl: async () => { throw networkCause; },
+      now: () => new Date(RETRIEVED_AT),
+      timeoutMs: 100,
+      retry: { attempts: 1 },
+    }),
+    (error) => error?.code === "OFFICIAL_RELEASE_FETCH_FAILED" && error.cause === networkCause,
+  );
+
+  const bodyCause = new Error("body stream failed");
+  await assert.rejects(
+    fetchBlsOfficialRelease({
+      indicator: "cpi",
+      fetchImpl: async () => ({ ok: true, text: async () => { throw bodyCause; } }),
+      now: () => new Date(RETRIEVED_AT),
+      timeoutMs: 100,
+      retry: { attempts: 1 },
+    }),
+    (error) => error?.code === "OFFICIAL_RELEASE_FETCH_FAILED" && error.cause === bodyCause,
+  );
+
+  await assert.rejects(
+    fetchBlsOfficialRelease({
+      indicator: "cpi",
+      fetchImpl: async () => new Promise(() => {}),
+      now: () => new Date(RETRIEVED_AT),
+      timeoutMs: 5,
+      retry: { attempts: 1 },
+    }),
+    (error) => error?.code === "OFFICIAL_RELEASE_FETCH_FAILED" && error.cause?.code === "OFFICIAL_RELEASE_TIMEOUT",
+  );
 });
