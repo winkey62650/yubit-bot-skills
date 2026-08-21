@@ -11,12 +11,8 @@ import {
 const RETRIEVED_AT = "2026-08-12T12:30:05.000Z";
 const PUBLISHED_AT = "2026-08-12T12:30:00.000Z";
 
-function sourcedField(overrides = {}) {
+function sourceInput(overrides = {}) {
   return {
-    value: "3.4%",
-    rawValue: "3.4",
-    unit: "%",
-    status: "verified",
     authority: "official",
     sourceId: "bls-cpi",
     sourceUrl: "https://www.bls.gov/news.release/cpi.nr0.htm",
@@ -25,6 +21,16 @@ function sourcedField(overrides = {}) {
     comparisons: [],
     ...overrides,
   };
+}
+
+function sourcedField(overrides = {}) {
+  return sourceInput({
+    value: "3.4%",
+    rawValue: "3.4",
+    unit: "%",
+    status: "verified",
+    ...overrides,
+  });
 }
 
 test("normalizes the sourced-field contract without dropping provenance", () => {
@@ -63,16 +69,24 @@ test("conflicting official actuals fail closed", () => {
   assert.equal(actual.publishable, false);
 });
 
-test("reconciles equivalent units and rejects incompatible units", () => {
+test("infers literal unit suffixes before reconciling equivalent and incompatible units", () => {
+  const inferredPercent = normalizeSourcedField(sourceInput({ rawValue: "3.4%" }));
+  const inferredThousands = normalizeSourcedField(sourceInput({ rawValue: "3.4K" }));
   const matching = reconcileSourcedField([
-    sourcedField({ value: "3.4", rawValue: "3.4", unit: "%" }),
-    sourcedField({ authority: "auxiliary", sourceId: "tradingview-calendar" }),
+    sourceInput({ value: "3.4", rawValue: "3.4", unit: "%" }),
+    sourceInput({ authority: "auxiliary", sourceId: "tradingview-calendar", rawValue: "3.4%" }),
   ]);
   const incompatible = reconcileSourcedField([
-    sourcedField(),
-    sourcedField({ authority: "auxiliary", sourceId: "jobs-calendar", value: "3.4K", rawValue: "3.4", unit: "K" }),
+    sourceInput({ rawValue: "3.4%" }),
+    sourceInput({ authority: "auxiliary", sourceId: "jobs-calendar", rawValue: "3.4K" }),
   ]);
 
+  assert.deepEqual({ value: inferredPercent.value, rawValue: inferredPercent.rawValue, unit: inferredPercent.unit }, {
+    value: "3.4%", rawValue: "3.4", unit: "%",
+  });
+  assert.deepEqual({ value: inferredThousands.value, rawValue: inferredThousands.rawValue, unit: inferredThousands.unit }, {
+    value: "3.4K", rawValue: "3.4", unit: "K",
+  });
   assert.equal(matching.status, "verified");
   assert.equal(matching.value, "3.4%");
   assert.equal(incompatible.status, "unit-conflict");

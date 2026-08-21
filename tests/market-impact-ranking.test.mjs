@@ -108,3 +108,11 @@ test("secondary promotion and tier-one demotion retain explicit ranking evidence
     tier: "secondary", decision: "demoted", score: 20, reasons: ["official-calendar-correction"],
   });
 });
+
+test("a promoted secondary event without ranking reasons remains secondary", () => {
+  assert.deepEqual(classifyDataReleaseTier({ title: "US Retail Sales" }, {
+    decision: "promoted", score: 80, reasons: [], promotionThreshold: 75,
+  }), {
+    tier: "secondary", decision: "not-promoted", score: 80, reasons: [],
+  });
+});
