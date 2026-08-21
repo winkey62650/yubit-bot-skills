@@ -215,6 +215,16 @@ test("Weekly Calendar excludes out-of-week events and rejects canonical or seman
       /duplicate.*event|event.*duplicate/i,
     );
   }
+
+  const jurisdictionAliasDuplicate = structuredClone(events[0]);
+  jurisdictionAliasDuplicate.id = "alternate-us-cpi";
+  jurisdictionAliasDuplicate.country = "United States";
+  for (const rankedEvents of [[...events, jurisdictionAliasDuplicate], [jurisdictionAliasDuplicate, ...events]]) {
+    assert.throws(
+      () => buildWeeklyCalendarArticle({ document, rankedEvents, sourceManifest }),
+      /duplicate.*event|event.*duplicate/i,
+    );
+  }
 });
 
 test("Weekly Calendar rejects provenance values that do not match adopted field facts", () => {
@@ -232,6 +242,15 @@ test("Weekly Calendar rejects provenance values that do not match adopted field 
   );
 
   events[0].provenance.forecast = provenance("2.8%", "consensus-wire", "https://consensus.example/calendar", { authority: "auxiliary" });
+  events[0].values.previous = "300K";
+  events[0].provenance.previous = provenance("300K", "official-history", "https://official.example/history", { unit: "M" });
+  assert.throws(
+    () => buildWeeklyCalendarArticle({ document, rankedEvents: events, sourceManifest: [] }),
+    /previous.*provenance.*unit|provenance.*previous.*unit/i,
+  );
+
+  events[0].values.previous = "300000";
+  events[0].provenance.previous = provenance("0.3M", "official-history", "https://official.example/history", { rawValue: "0.3", unit: "M" });
   const article = buildWeeklyCalendarArticle({ document, rankedEvents: events, sourceManifest: [] });
   const cpi = article.impactRankedEvents.find((event) => event.id === "us-cpi");
   assert.equal(cpi.values.previous, "300000");
@@ -451,6 +470,29 @@ test("tier-one Data Update separates facts, observation and labelled inference",
   assert.ok(article.sources.length >= 1);
   assert.ok(article.limitations.length >= 1);
   assert.match(article.disclaimer, /informational|not investment advice/i);
+});
+
+test("Data Update canonicalizes jurisdiction aliases into collision-safe release identities", () => {
+  const marketReaction = reaction();
+  const build = (jurisdiction, slug) => {
+    const event = releaseEvent();
+    event.jurisdiction = jurisdiction;
+    if (slug === undefined) delete event.slug;
+    else event.slug = slug;
+    const document = buildDataReleaseDocument({ event, reaction: marketReaction });
+    return buildDataUpdateArticle({ document, event, reaction: marketReaction, tierDecision: { tier: "tier-one" }, sourceManifest });
+  };
+
+  for (const jurisdiction of ["US", "United States", "USA"]) {
+    assert.equal(build(jurisdiction, "us-cpi").slug, "us-cpi/2026-08-12");
+    assert.equal(build(jurisdiction).slug, "us-cpi/2026-08-12");
+  }
+  for (const jurisdiction of ["UK", "United Kingdom", "GB"]) {
+    assert.equal(build(jurisdiction, "uk-cpi").slug, "uk-cpi/2026-08-12");
+    assert.equal(build(jurisdiction).slug, "uk-cpi/2026-08-12");
+  }
+  assert.notEqual(build("US").slug, build("UK").slug);
+  assert.throws(() => build("United Kingdom", "us-cpi"), /release slug.*identity|identity.*release slug/i);
 });
 
 test("Data Update excludes anonymous observations from providers and tape confirmation", () => {
@@ -678,10 +720,19 @@ test("Data Update rejects provenance values that contradict adopted release fact
 
   const equivalent = releaseEvent();
   equivalent.values.previous = "300000";
-  equivalent.provenance.previous = provenance("0.3M", "official-history", "https://official.example/history");
+  equivalent.provenance.previous = provenance("0.3M", "official-history", "https://official.example/history", { rawValue: "0.3", unit: "M" });
   const document = buildDataReleaseDocument({ event: equivalent, reaction: marketReaction });
   const article = buildDataUpdateArticle({ document, event: equivalent, reaction: marketReaction, tierDecision: { tier: "tier-one" }, sourceManifest });
   assert.equal(article.facts.previous, "300000");
+
+  const contradictoryUnit = releaseEvent();
+  contradictoryUnit.values.previous = "300K";
+  contradictoryUnit.provenance.previous = provenance("300K", "official-history", "https://official.example/history", { unit: "M" });
+  const contradictoryDocument = buildDataReleaseDocument({ event: contradictoryUnit, reaction: marketReaction });
+  assert.throws(
+    () => buildDataUpdateArticle({ document: contradictoryDocument, event: contradictoryUnit, reaction: marketReaction, tierDecision: { tier: "tier-one" }, sourceManifest }),
+    /previous.*provenance.*unit|provenance.*previous.*unit/i,
+  );
 });
 
 test("Data Update community separates facts, surprise direction and the bounded market reaction", () => {
