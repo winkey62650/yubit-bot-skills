@@ -1021,6 +1021,44 @@ test("returns the official component values for a composite source conflict", as
   ]);
 });
 
+test("preserves both canonical values when conflicting official composites share metadata", async () => {
+  const component = (id) => ({
+    id, sourceId: id, title: id,
+    values: { actual: null, forecast: "2.9%", previous: "3.0%" },
+    rawValues: { actual: null, unit: "%" },
+  });
+  const input = release({ components: [component("headline"), component("core")] });
+  const composite = (headline, core) => officialActual("ignored", {
+    value: "ignored",
+    rawValue: "ignored",
+    unit: "composite",
+    sourceId: "bls-cpi-composite",
+    sourceUrl: "https://official.example/releases/cpi",
+    components: [
+      officialActual(headline, { id: "headline", value: `${headline}%`, sourceId: "bls-headline" }),
+      officialActual(core, { id: "core", value: `${core}%`, sourceId: "bls-core" }),
+    ],
+  });
+  const repository = repositoryDouble({
+    [WEEKLY_CALENDAR_META_KEY]: {
+      calendarWeek: "2026-08-17", events: [release()], updatedAt: "2026-08-19T10:00:00Z",
+    },
+  });
+
+  const result = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:31:00Z", repository,
+    fetchCalendar: async () => calendarResult([input]),
+    fetchOfficialActual: async () => [composite("2.7", "2.8"), composite("2.6", "2.9")],
+    persist: true,
+  });
+
+  assert.equal(result.skipReason, "source-conflict");
+  assert.deepEqual(result.conflict.rawValues, [
+    "core=2.8%;headline=2.7%",
+    "core=2.9%;headline=2.6%",
+  ]);
+});
+
 test("fails closed when a composite official Actual lacks complete component evidence", async () => {
   const component = (id, actual) => ({
     id, sourceId: id, title: id,
@@ -1145,6 +1183,114 @@ test("uses one canonical official component set for payload, deduplication, stat
   assert.notEqual(correction.deduplicationKey, first.deduplicationKey);
   assert.equal(correction.deduplicationKey, buildReleaseDeduplicationKey(correction.event));
   assert.deepEqual(correctedOfficialReference, correctedOfficialSnapshot);
+});
+
+test("rejects mixed and fully stale official composite components without mutating evidence or state", async () => {
+  const calendarComponent = (id, ownSchedule) => ({
+    id, sourceId: id, title: id,
+    ...(ownSchedule ? { scheduledAt: ownSchedule } : {}),
+    values: { actual: null, forecast: "2.9%", previous: "3.0%" },
+    rawValues: { actual: null, unit: "%" },
+  });
+  const officialComponent = (id, rawValue, publishedAt) => officialActual(rawValue, {
+    id,
+    value: `${rawValue}%`,
+    sourceId: `official-${id}`,
+    sourceUrl: `https://official.example/releases/${id}`,
+    publishedAt,
+  });
+  const cases = [
+    {
+      label: "mixed",
+      components: [
+        officialComponent("headline", "2.7", "2026-08-19T12:29:59.999Z"),
+        officialComponent("core", "2.8", "2026-08-19T12:29:00.000Z"),
+      ],
+    },
+    {
+      label: "all stale reordered",
+      components: [
+        officialComponent("core", "2.8", "2026-08-19T12:28:59.999Z"),
+        officialComponent("headline", "2.7", "2026-08-19T12:29:59.999Z"),
+      ],
+    },
+  ];
+
+  for (const { label, components } of cases) {
+    const input = release({
+      components: [
+        calendarComponent("headline"),
+        calendarComponent("core", "2026-08-19T12:29:00.000Z"),
+      ],
+    });
+    const official = officialActual("ignored", {
+      value: "ignored", rawValue: "ignored", unit: "composite",
+      sourceId: "bls-cpi-composite", publishedAt: scheduledAt, components,
+    });
+    const inputSnapshot = structuredClone(input);
+    const officialSnapshot = structuredClone(official);
+    const repository = repositoryDouble({
+      [WEEKLY_CALENDAR_META_KEY]: {
+        calendarWeek: "2026-08-17", events: [release()], updatedAt: "2026-08-19T10:00:00Z",
+      },
+    });
+    const result = await pollDataReleaseUpdates({
+      now: "2026-08-19T12:31:00Z", repository,
+      fetchCalendar: async () => calendarResult([input]),
+      fetchOfficialActual: async () => official,
+      persist: true,
+    });
+
+    assert.equal(result.publishable, false, label);
+    assert.equal(result.skipReason, "stale-actual", label);
+    assert.equal(result.eligibility.reason, "stale-actual", label);
+    const state = await repository.getMeta(RELEASE_STATE_META_KEY);
+    assert.equal(state.monitoredEvents[0].lastActual, null, label);
+    assert.equal(state.monitoredEvents[0].lastActualAuthority, undefined, label);
+    assert.deepEqual(state.publishedKeys, [], label);
+    assert.deepEqual(state.timedOutKeys, [], label);
+    assert.deepEqual(input, inputSnapshot, label);
+    assert.deepEqual(official, officialSnapshot, label);
+  }
+});
+
+test("accepts official composite components published exactly at their own or parent schedule", async () => {
+  const component = (id, ownSchedule) => ({
+    id, sourceId: id, title: id,
+    ...(ownSchedule ? { scheduledAt: ownSchedule } : {}),
+    values: { actual: null, forecast: "2.9%", previous: "3.0%" },
+    rawValues: { actual: null, unit: "%" },
+  });
+  const input = release({
+    components: [component("headline"), component("core", "2026-08-19T12:29:00.000Z")],
+  });
+  const official = officialActual("ignored", {
+    value: "ignored", rawValue: "ignored", unit: "composite", sourceId: "bls-cpi-composite",
+    publishedAt: scheduledAt,
+    components: [
+      officialActual("2.8", { id: "core", value: "2.8%", sourceId: "official-core", publishedAt: "2026-08-19T12:29:00.000Z" }),
+      officialActual("2.7", { id: "headline", value: "2.7%", sourceId: "official-headline", publishedAt: scheduledAt }),
+    ],
+  });
+  const inputSnapshot = structuredClone(input);
+  const officialSnapshot = structuredClone(official);
+  const repository = repositoryDouble({
+    [WEEKLY_CALENDAR_META_KEY]: {
+      calendarWeek: "2026-08-17", events: [release()], updatedAt: "2026-08-19T10:00:00Z",
+    },
+  });
+
+  const result = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:31:00Z", repository,
+    fetchCalendar: async () => calendarResult([input]),
+    fetchOfficialActual: async () => official,
+    persist: true,
+  });
+
+  assert.equal(result.publishable, true);
+  assert.equal(result.event.values.actual, "core=2.8%;headline=2.7%");
+  assert.deepEqual(input, inputSnapshot);
+  assert.deepEqual(official, officialSnapshot);
 });
 
 test("does not report a conflict for equivalent numeric Actual formatting", async () => {
