@@ -329,3 +329,32 @@ test("calendar reconciliation does not mutate schedule inputs and is idempotent"
   assert.deepEqual(event, before);
   assert.deepEqual(second, first);
 });
+
+test("two disagreeing auxiliary calendar times are excluded from priority three", () => {
+  const result = reconcileCalendarEvents([{
+    id: "cpi:US:2026-08-20",
+    title: "US CPI",
+    importance: 3,
+    scheduledAtSources: [
+      verifiedSchedule({
+        authority: "auxiliary",
+        sourceId: "tradingview-calendar",
+        sourceUrl: "https://economic-calendar.tradingview.com/events",
+        value: "2026-08-20T12:30:00.000Z",
+        rawValue: "2026-08-20T12:30:00.000Z",
+      }),
+      verifiedSchedule({
+        authority: "auxiliary",
+        sourceId: "nasdaq-economic-calendar",
+        sourceUrl: "https://api.nasdaq.com/api/calendar/economicevents",
+        value: "2026-08-20T13:30:00.000Z",
+        rawValue: "2026-08-20T13:30:00.000Z",
+      }),
+    ],
+  }]);
+
+  assert.equal(result.events[0].schedule.status, "conflicting");
+  assert.equal(result.events[0].publishable, false);
+  assert.deepEqual(result.topThree, []);
+  assert.deepEqual(result.reconciliation, { verified: 0, degraded: 0, conflicting: 1, excluded: 1 });
+});
