@@ -561,7 +561,7 @@ test("detects an Actual that appears on a later one-minute poll", async () => {
   assert.equal(released.publishable, true);
 });
 
-test("never publishes an early Actual and rejects the unchanged value after release", async () => {
+test("does not acknowledge an early official Actual and publishes that value at release time", async () => {
   const repository = repositoryDouble({
     [WEEKLY_CALENDAR_META_KEY]: { calendarWeek: "2026-08-17", events: [release()], updatedAt: "2026-08-19T10:00:00Z" },
   });
@@ -569,15 +569,18 @@ test("never publishes an early Actual and rejects the unchanged value after rele
     release({ values: { actual: "2.7%", forecast: "2.8%", previous: "2.9%" } }),
   ]);
   const early = await pollDataReleaseUpdates({
-    now: "2026-08-19T12:29:00Z", repository, fetchCalendar, persist: true,
+    now: "2026-08-19T12:25:00Z", repository, fetchCalendar, persist: true,
   });
-  const unchanged = await pollDataReleaseUpdates({
+  const stateBeforeRelease = await repository.getMeta(RELEASE_STATE_META_KEY);
+  const released = await pollDataReleaseUpdates({
     now: "2026-08-19T12:30:00Z", repository, fetchCalendar, persist: true,
   });
   assert.equal(early.publishable, false);
   assert.equal(early.skipReason, "stale-actual");
-  assert.equal(unchanged.publishable, false);
-  assert.equal(unchanged.skipReason, "stale-actual");
+  assert.equal(stateBeforeRelease.monitoredEvents[0].lastActual, null);
+  assert.equal(stateBeforeRelease.monitoredEvents[0].lastActualAuthority, undefined);
+  assert.equal(released.publishable, true);
+  assert.equal(released.event.values.actual, "2.7%");
 });
 
 test("enforces one-minute polling without calling adapters or mutating state", async () => {
@@ -1313,6 +1316,66 @@ test("source manifest keeps authoritative official metadata for a duplicate sour
   }]);
 });
 
+test("selected official Actual owns duplicate manifest metadata regardless of calendar source order", async () => {
+  const official = officialActual("2.7");
+  const originalOfficial = structuredClone(official);
+  const selfClaimedOfficial = {
+    id: official.sourceId,
+    url: official.sourceUrl,
+    authority: "official",
+    status: "verified",
+    retrievedAt: "2026-08-19T12:30:59Z",
+    publishedAt: "2026-08-18T12:30:00Z",
+  };
+  const unrelated = {
+    id: "calendar-mirror",
+    url: "https://calendar.example/cpi",
+    authority: "auxiliary",
+    status: "verified",
+    retrievedAt: "2026-08-19T12:30:10Z",
+  };
+  const expectedOfficialManifest = {
+    id: official.sourceId,
+    url: official.sourceUrl,
+    authority: official.authority,
+    status: official.status,
+    retrievedAt: official.retrievedAt,
+    publishedAt: official.publishedAt,
+  };
+
+  for (const sources of [[selfClaimedOfficial, unrelated], [unrelated, selfClaimedOfficial]]) {
+    const originalSources = structuredClone(sources);
+    const repository = repositoryDouble({
+      [WEEKLY_CALENDAR_META_KEY]: { calendarWeek: "2026-08-17", events: [release()], updatedAt: "2026-08-19T10:00:00Z" },
+    });
+    const result = await pollDataReleaseUpdates({
+      now: "2026-08-19T12:31:00Z", repository,
+      fetchCalendar: async () => calendarResult([release()], { sources }),
+      fetchOfficialActual: async () => official,
+      persist: true,
+    });
+
+    assert.equal(result.publishable, true);
+    assert.deepEqual(
+      result.sourceManifest.filter(({ id, url }) => id === official.sourceId && url === official.sourceUrl),
+      [expectedOfficialManifest],
+    );
+    assert.deepEqual({
+      authority: result.eligibility.actual.authority,
+      status: result.eligibility.actual.status,
+      retrievedAt: result.eligibility.actual.retrievedAt,
+      publishedAt: result.eligibility.actual.publishedAt,
+    }, {
+      authority: expectedOfficialManifest.authority,
+      status: expectedOfficialManifest.status,
+      retrievedAt: expectedOfficialManifest.retrievedAt,
+      publishedAt: expectedOfficialManifest.publishedAt,
+    });
+    assert.deepEqual(sources, originalSources);
+    assert.deepEqual(official, originalOfficial);
+  }
+});
+
 test("tier-one schedules without an explicit timezone fail closed without using the host timezone", async () => {
   const ambiguous = release({ scheduledAt: "2026-08-19T20:30:00" });
   const repository = repositoryDouble({
@@ -1332,6 +1395,29 @@ test("tier-one schedules without an explicit timezone fail closed without using 
   assert.equal(result.eligibility.reason, "timezone-ambiguous");
   assert.equal(officialCalls, 0);
   assert.deepEqual((await repository.getMeta(RELEASE_STATE_META_KEY)).timedOutKeys, []);
+});
+
+test("official allowlist schedules remain tier-one without importance metadata and do not pollute state", async () => {
+  const ambiguous = release({ scheduledAt: "2026-08-19T12:30:00", importance: undefined });
+  const repository = repositoryDouble({
+    [WEEKLY_CALENDAR_META_KEY]: { calendarWeek: "2026-08-17", events: [ambiguous], updatedAt: "2026-08-19T10:00:00Z" },
+  });
+  let officialCalls = 0;
+
+  const result = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:31:00Z", repository,
+    fetchCalendar: async () => calendarResult([ambiguous]),
+    fetchOfficialActual: async () => { officialCalls += 1; return officialActual(); },
+    persist: true,
+  });
+
+  assert.equal(result.publishable, false);
+  assert.equal(result.skipReason, "timezone-ambiguous");
+  assert.equal(result.eligibility.reason, "timezone-ambiguous");
+  assert.equal(officialCalls, 0);
+  const state = await repository.getMeta(RELEASE_STATE_META_KEY);
+  assert.deepEqual(state.monitoredEvents, []);
+  assert.deepEqual(state.timedOutKeys, []);
 });
 
 test("legacy auxiliary lastActual does not suppress the first verified official publication", async () => {
