@@ -99,11 +99,11 @@ test("Weekly Calendar validates a canonical Monday-to-Sunday publication identit
 test("Weekly Calendar impact ranking ignores blank scores, is deterministic, and does not mutate input", () => {
   const { document } = weeklyFixture();
   const tied = [
-    calendarEvent({ id: "same", title: "Zulu decision", jurisdiction: "US", marketImpact: { score: null }, impactScore: 120 }),
-    calendarEvent({ id: "same", title: "Alpha decision", jurisdiction: "UK", marketImpact: { score: "" }, impactScore: 110 }),
-    calendarEvent({ id: "same", title: "Alpha decision", jurisdiction: "CA", marketImpact: { score: 90 }, impactScore: 10 }),
-    calendarEvent({ id: "same", title: "Zulu decision", jurisdiction: "US", marketImpact: { score: 90 }, impactScore: 10 }),
-    calendarEvent({ id: "same", title: "Middle decision", jurisdiction: "US", marketImpact: { score: 90 }, impactScore: 10 }),
+    calendarEvent({ id: "blank-primary-score", title: "Zulu decision", jurisdiction: "US", marketImpact: { score: null }, impactScore: 120 }),
+    calendarEvent({ id: "empty-primary-score", title: "Alpha decision", jurisdiction: "UK", marketImpact: { score: "" }, impactScore: 110 }),
+    calendarEvent({ id: "alpha-tie", title: "Alpha decision", jurisdiction: "CA", marketImpact: { score: 90 }, impactScore: 10 }),
+    calendarEvent({ id: "zulu-tie", title: "Zulu decision", jurisdiction: "US", marketImpact: { score: 90 }, impactScore: 10 }),
+    calendarEvent({ id: "middle-tie", title: "Middle decision", jurisdiction: "US", marketImpact: { score: 90 }, impactScore: 10 }),
   ];
   const before = structuredClone(tied);
   const build = (rankedEvents) => buildWeeklyCalendarArticle({
@@ -135,6 +135,60 @@ test("Weekly Calendar preserves provenance for a numeric zero forecast", () => {
 
   assert.equal(cpi.values.forecast, 0);
   assert.equal(cpi.fieldProvenance.forecast.sourceId, "tradingview-calendar");
+});
+
+test("Weekly Calendar requires independent optional-field provenance and collects every adopted field source", () => {
+  const { document, events } = weeklyFixture();
+  events[0].values.forecast = provenance("2.8%", "consensus-wire", "https://consensus.example/calendar", { authority: "auxiliary" });
+  events[0].values.previous = provenance("2.9%", "official-history", "https://official.example/history");
+  const article = buildWeeklyCalendarArticle({ document, rankedEvents: events, sourceManifest: [] });
+
+  assert.ok(article.sources.some((source) => source.url === "https://consensus.example/calendar"));
+  assert.ok(article.sources.some((source) => source.url === "https://official.example/history"));
+
+  const missingForecastSource = structuredClone(events);
+  missingForecastSource[0].values.forecast = "2.8%";
+  delete missingForecastSource[0].provenance;
+  assert.throws(
+    () => buildWeeklyCalendarArticle({ document, rankedEvents: missingForecastSource, sourceManifest: [] }),
+    /forecast.*provenance|field provenance/i,
+  );
+
+  const missingPreviousSource = structuredClone(events);
+  missingPreviousSource[0].values.previous = "2.9%";
+  delete missingPreviousSource[0].provenance;
+  assert.throws(
+    () => buildWeeklyCalendarArticle({ document, rankedEvents: missingPreviousSource, sourceManifest: [] }),
+    /previous.*provenance|field provenance/i,
+  );
+});
+
+test("Weekly Calendar excludes out-of-week events and deduplicates canonical event identities", () => {
+  const { document, events } = weeklyFixture();
+  const outside = calendarEvent({
+    id: "outside-week",
+    title: "Outside-week catalyst",
+    impactScore: 999,
+    scheduledAt: "2026-08-24T00:00:00.000Z",
+    schedule: provenance("2026-08-24T00:00:00.000Z", "outside-calendar", "https://outside.example/calendar", { unit: null }),
+  });
+  const article = buildWeeklyCalendarArticle({
+    document,
+    rankedEvents: [...events, outside, structuredClone(events[0])],
+    sourceManifest,
+  });
+
+  assert.equal(article.impactRankedEvents.length, 5);
+  assert.equal(article.impactRankedEvents.some((event) => event.id === "outside-week"), false);
+  assert.equal(article.impactRankedEvents.filter((event) => event.id === "us-cpi").length, 1);
+
+  const conflict = structuredClone(events[0]);
+  conflict.id = " US-CPI ";
+  conflict.title = "Conflicting CPI identity";
+  assert.throws(
+    () => buildWeeklyCalendarArticle({ document, rankedEvents: [...events, conflict], sourceManifest }),
+    /duplicate.*conflict/i,
+  );
 });
 
 test("Weekly Calendar article is a complete impact-ranked risk playbook", () => {
@@ -221,6 +275,9 @@ test("Weekly Calendar preserves common dotted abbreviations inside a single-sent
     "U.S. 10-year yields remain the central confirmation signal.",
     "The U.S. Treasury curve remains the central confirmation signal.",
     "U.S. dollar liquidity remains the central confirmation signal.",
+    "Growth in the U.S. economy remains the central confirmation signal.",
+    "U.S. SEC policy remains the central confirmation signal.",
+    "Inflation at .5% remains the central catalyst while rates stay restrictive.",
     "Inflation at 3.2% remains the central catalyst while BTC holds $71.5K vs. its prior range.",
     "The actual was 3.2% vs. a 3.0% forecast while BTC held $71.5K.",
   ];
@@ -258,7 +315,14 @@ test("Weekly Calendar community document follows the approved English gateway an
   assert.match(telegram, /Confirmation:/);
   assert.match(telegram, /Invalidation:/);
   assert.match(telegram, /https:\/\/academy\.yubit\.com\/market-calendar\/2026-W34/);
+  assert.equal((telegram.match(/(?:https?:\/\/|www\.)/gi) ?? []).length, 1);
   assert.throws(() => buildWeeklyCalendarCommunityDocument(article, { articleUrl: "/market-calendar/2026-W34" }), /absolute HTTPS/i);
+
+  article.coreView = "Read https://untrusted.example before acting.";
+  assert.throws(
+    () => buildWeeklyCalendarCommunityDocument(article, { articleUrl: url }),
+    /embedded URL|exactly one URL/i,
+  );
 });
 
 function releaseEvent({ forecast = "2.9%" } = {}) {
@@ -377,6 +441,43 @@ test("Data Update excludes observations without an HTTPS provider source and nor
   assert.doesNotMatch(article.marketConfirmation.summary, /DXY/);
 });
 
+test("Data Update accepts only finite numeric observations inside the declared reaction window", () => {
+  const event = releaseEvent();
+  const invalidValues = [null, "", true, false];
+  for (const invalid of invalidValues) {
+    const marketReaction = reaction();
+    marketReaction.prices.ETH.changePercent = invalid;
+    delete marketReaction.prices.DXY;
+    const document = buildDataReleaseDocument({ event, reaction: marketReaction });
+    const article = buildDataUpdateArticle({ document, event, reaction: marketReaction, tierDecision: { tier: "tier-one" }, sourceManifest });
+    assert.deepEqual(article.marketConfirmation.observations.map(({ symbol }) => symbol), ["BTC"]);
+    assert.equal(article.verdict, "Awaiting Confirmation");
+  }
+
+  const canonicalString = reaction();
+  canonicalString.prices.ETH.changePercent = "-1.6";
+  delete canonicalString.prices.DXY;
+  const stringDocument = buildDataReleaseDocument({ event, reaction: canonicalString });
+  const stringArticle = buildDataUpdateArticle({ document: stringDocument, event, reaction: canonicalString, tierDecision: { tier: "tier-one" }, sourceManifest });
+  assert.deepEqual(stringArticle.marketConfirmation.observations.map(({ symbol }) => symbol), ["BTC", "ETH"]);
+  assert.equal(stringArticle.verdict, "Confirmed");
+
+  const bounded = reaction();
+  delete bounded.prices.DXY;
+  bounded.prices.ETH.beforePriceAt = "2030-01-01T00:00:00.000Z";
+  bounded.prices.ETH.observedAt = "2030-01-01T00:15:00.000Z";
+  const boundedDocument = buildDataReleaseDocument({ event, reaction: bounded });
+  const boundedArticle = buildDataUpdateArticle({ document: boundedDocument, event, reaction: bounded, tierDecision: { tier: "tier-one" }, sourceManifest });
+  assert.deepEqual(boundedArticle.marketConfirmation.observations.map(({ symbol }) => symbol), ["BTC"]);
+  assert.equal(boundedArticle.verdict, "Awaiting Confirmation");
+
+  bounded.prices.ETH.beforePriceAt = "2026-08-12T12:40:00.000Z";
+  bounded.prices.ETH.observedAt = "2026-08-12T12:35:00.000Z";
+  const reversedDocument = buildDataReleaseDocument({ event, reaction: bounded });
+  const reversedArticle = buildDataUpdateArticle({ document: reversedDocument, event, reaction: bounded, tierDecision: { tier: "tier-one" }, sourceManifest });
+  assert.deepEqual(reversedArticle.marketConfirmation.observations.map(({ symbol }) => symbol), ["BTC"]);
+});
+
 test("Data Update rejects a reaction window with no named market provider", () => {
   const event = releaseEvent();
   const marketReaction = {
@@ -423,6 +524,19 @@ test("tier-one Data Update omits forecast and surprise claims when forecast is u
   assert.ok(community.nodes.some((node) => node.type === "paragraph" && node.text.startsWith("Time-bounded market reaction:")));
 });
 
+test("Data Update never attributes forecast or previous values to the official actual source", () => {
+  const marketReaction = reaction();
+  for (const field of ["forecast", "previous"]) {
+    const event = releaseEvent();
+    delete event.provenance[field];
+    const document = buildDataReleaseDocument({ event, reaction: marketReaction });
+    assert.throws(
+      () => buildDataUpdateArticle({ document, event, reaction: marketReaction, tierDecision: { tier: "tier-one" }, sourceManifest }),
+      new RegExp(`${field}.*provenance|field provenance`, "i"),
+    );
+  }
+});
+
 test("Data Update community separates facts, surprise direction and the bounded market reaction", () => {
   const event = releaseEvent();
   const marketReaction = reaction();
@@ -454,6 +568,7 @@ test("Data Update computes unit-aware surprises without comparing incompatible m
   const cases = [
     { actual: "300K", forecast: "250K", expected: "+50K", direction: "Above forecast" },
     { actual: "300K", forecast: "0.25M", expected: "+50K", direction: "Above forecast" },
+    { actual: "300000", forecast: "250K", expected: "+50K", direction: "Above forecast" },
     { actual: "3.0%", forecast: "2.9%", expected: "+0.1pp", direction: "Above forecast" },
   ];
 
@@ -482,6 +597,8 @@ test("Data Update computes unit-aware surprises without comparing incompatible m
   const community = buildDataUpdateCommunityDocument(article, { articleUrl: "https://academy.yubit.com/data-updates/us-cpi/2026-08-12" });
 
   assert.equal(article.facts.surprise, undefined);
+  assert.equal(article.dataSignal.impact, "Neutral");
+  assert.doesNotMatch(article.dataSignal.summary, /after comparing/i);
   assert.equal(community.nodes.some((node) => node.type === "metric" && node.label === "Surprise"), false);
 });
 
@@ -539,6 +656,7 @@ test("Task5 community builders fit Telegram's 4096-character limit without losin
   assert.ok(weeklyTelegram.length <= 4096);
   assert.equal(weeklyCommunity.nodes.filter((node) => node.type === "link").length, 1);
   assert.equal((weeklyTelegram.match(/<a href=/g) ?? []).length, 1);
+  assert.equal((weeklyTelegram.match(/(?:https?:\/\/|www\.)/gi) ?? []).length, 1);
   assert.match(weeklyTelegram, /FOMC Rate Decision/);
   assert.match(weeklyTelegram, /not investment advice/i);
   assert.match(weeklyTelegram, /<a href="https:\/\/academy\.yubit\.com\/market-calendar\/2026-W34">[^<]+<\/a>/);
@@ -556,9 +674,16 @@ test("Task5 community builders fit Telegram's 4096-character limit without losin
   assert.ok(dataTelegram.length <= 4096);
   assert.equal(dataCommunity.nodes.filter((node) => node.type === "link").length, 1);
   assert.equal((dataTelegram.match(/<a href=/g) ?? []).length, 1);
+  assert.equal((dataTelegram.match(/(?:https?:\/\/|www\.)/gi) ?? []).length, 1);
   assert.match(dataTelegram, /<b>Actual vs forecast:<\/b> 3\.0% vs 2\.9%/);
   assert.match(dataTelegram, /not investment advice/i);
   assert.match(dataTelegram, /<a href="https:\/\/academy\.yubit\.com\/data-updates\/us-cpi\/2026-08-12">[^<]+<\/a>/);
+
+  dataArticle.dataSignal.summary = "Inference: see www.untrusted.example for context.";
+  assert.throws(
+    () => buildDataUpdateCommunityDocument(dataArticle, { articleUrl: "https://academy.yubit.com/data-updates/us-cpi/2026-08-12" }),
+    /embedded URL|exactly one URL/i,
+  );
 });
 
 test("Data Update article rejects non-canonical release identity instead of silently normalizing it", () => {
