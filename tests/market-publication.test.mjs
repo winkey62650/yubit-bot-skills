@@ -1149,3 +1149,23 @@ test("every persisted health check must be at or after its rendered image", asyn
     }), /time|timestamp|health|rendered|lifecycle|invariant/i);
   }
 });
+
+test("public origin policy rejects IPv4-translatable IPv6 before fetch", async () => {
+  const origin = "https://[::ffff:0:7f00:1]";
+  const repository = new MemoryRepository();
+  await createMarketPublication({ repository, ...draftInput(), now: () => NOW });
+  let fetches = 0;
+  await assert.rejects(capturePublicationImage({
+    repository,
+    product: "weekly-calendar",
+    slug: "2026-W34",
+    publicOrigin: origin,
+    allowedOrigins: [origin],
+    fetchImpl: async (url) => {
+      fetches += 1;
+      return response(png(), { url });
+    },
+    now: () => NOW,
+  }), /public|private|origin|IP/i);
+  assert.equal(fetches, 0);
+});
