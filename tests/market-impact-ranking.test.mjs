@@ -145,7 +145,8 @@ test("CPI, Core CPI, PCE, Core PCE, NFP, unemployment, FOMC, and GDP are tier on
   const events = [
     "US CPI", "US Core CPI", "US PCE Price Index", "US Core PCE Price Index",
     "US Nonfarm Payrolls", "US Unemployment Rate", "FOMC Rate Decision", "FOMC Statement",
-    "FOMC Interest Rate Decision", "fomc-rate-decision", "FOMC Monetary Policy Statement", "US GDP",
+    "FOMC Interest Rate Decision", "fomc-rate-decision", "FOMC Decision", "FOMC Policy Decision",
+    "FOMC Monetary Policy Decision", "FOMC Monetary Policy Statement", "US GDP",
   ];
 
   for (const title of events) {

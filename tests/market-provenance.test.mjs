@@ -205,6 +205,37 @@ test("official schedule blockers and timezone ambiguity are order independent", 
   }
 });
 
+test("cached official schedules cannot mask authoritative time or timezone conflicts", () => {
+  const cached = verifiedSchedule({
+    sourceId: "bls-calendar-cache",
+    status: "cached",
+    value: "2026-08-12T12:30:00.000Z",
+    rawValue: "2026-08-12T12:30:00.000Z",
+  });
+  const differentTime = verifiedSchedule({
+    sourceId: "bls-calendar-revision",
+    value: "2026-08-12T13:30:00.000Z",
+    rawValue: "2026-08-12T13:30:00.000Z",
+  });
+  const ambiguous = verifiedSchedule({
+    sourceId: "bls-calendar-revision",
+    value: "2026-08-12",
+    rawValue: "2026-08-12",
+  });
+
+  for (const sources of [[cached, differentTime], [differentTime, cached]]) {
+    const event = reconcileCalendarEvents([{ id: "us-cpi", title: "US CPI", scheduledAtSources: sources }]).events[0];
+    assert.equal(event.schedule.status, "conflicting");
+    assert.equal(event.publishable, false);
+  }
+
+  for (const sources of [[cached, ambiguous], [ambiguous, cached]]) {
+    const event = reconcileCalendarEvents([{ id: "us-cpi", title: "US CPI", scheduledAtSources: sources }]).events[0];
+    assert.equal(event.schedule.status, "timezone-conflict");
+    assert.equal(event.publishable, false);
+  }
+});
+
 test("a status-only cached source and accepted cached event are stale at zero age", () => {
   const event = reconcileCalendarEvents([{
     id: "us-cpi",
