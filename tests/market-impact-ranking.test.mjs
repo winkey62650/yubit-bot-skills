@@ -155,8 +155,16 @@ test("CPI, Core CPI, PCE, Core PCE, NFP, unemployment, FOMC, and GDP are tier on
   }
 });
 
-test("FOMC member speeches, appearances, and previews are not tier-one releases", () => {
-  for (const title of ["FOMC Member Speech", "FOMC Chair Appearance", "FOMC Rate Decision Preview", "fomc-rate-decision-preview"]) {
+test("FOMC speeches, member statements, supervision remarks, and previews are not tier-one releases", () => {
+  for (const title of [
+    "FOMC Member Speech",
+    "FOMC Chair Appearance",
+    "FOMC Member Statement",
+    "FOMC Chair Speech — Prepared Statement",
+    "FOMC Governor statement on bank supervision",
+    "FOMC Rate Decision Preview",
+    "fomc-rate-decision-preview",
+  ]) {
     assert.equal(classifyDataReleaseTier({ title }, { score: 0, reasons: [] }).tier, "secondary");
   }
 });

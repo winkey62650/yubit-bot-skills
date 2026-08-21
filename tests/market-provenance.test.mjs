@@ -178,6 +178,49 @@ test("authoritative schedule blocking statuses survive reconciliation and reject
   }
 });
 
+test("official schedule blockers and timezone ambiguity are order independent", () => {
+  const source = sourceInput({ retrievedAt: "2026-08-12T12:30:00.000Z" });
+  const verified = verifiedSchedule();
+  const rejected = verifiedSchedule({ sourceId: "bls-calendar-revision", status: "rejected" });
+  const ambiguous = verifiedSchedule({
+    sourceId: "bls-calendar-revision",
+    value: "2026-08-12",
+    rawValue: "2026-08-12",
+  });
+
+  for (const sources of [[verified, rejected], [rejected, verified]]) {
+    const event = reconcileCalendarEvents([{ id: "us-cpi", title: "US CPI", scheduledAtSources: sources }]).events[0];
+    const weekly = validateWeeklyPublication({ events: [event], source }, { now: "2026-08-12T12:30:00.000Z" });
+
+    assert.equal(event.schedule.status, "rejected");
+    assert.equal(weekly.publishable, false);
+  }
+
+  for (const sources of [[verified, ambiguous], [ambiguous, verified]]) {
+    const event = reconcileCalendarEvents([{ id: "us-cpi", title: "US CPI", scheduledAtSources: sources }]).events[0];
+    const weekly = validateWeeklyPublication({ events: [event], source }, { now: "2026-08-12T12:30:00.000Z" });
+
+    assert.equal(event.schedule.status, "timezone-conflict");
+    assert.equal(weekly.publishable, false);
+  }
+});
+
+test("a status-only cached source and accepted cached event are stale at zero age", () => {
+  const event = reconcileCalendarEvents([{
+    id: "us-cpi",
+    title: "US CPI",
+    scheduledAtSources: [verifiedSchedule({ status: "cached" })],
+  }]).events[0];
+  const weekly = validateWeeklyPublication({
+    events: [event],
+    source: sourceInput({ status: "cached", retrievedAt: "2026-08-12T12:30:00.000Z" }),
+  }, { now: "2026-08-12T12:30:00.000Z" });
+
+  assert.equal(weekly.publishable, true);
+  assert.equal(weekly.ageSeconds, 0);
+  assert.equal(weekly.freshness, "stale");
+});
+
 test("weekly publication rejects future retrieval timestamps and blocked sources", () => {
   const event = { id: "us-cpi", title: "US CPI", schedule: verifiedSchedule() };
   const future = validateWeeklyPublication({
