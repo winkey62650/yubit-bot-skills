@@ -73,9 +73,68 @@ const sourceManifest = [
 
 test("durable editorial publication keys enforce canonical slugs", () => {
   assert.equal(weeklyCalendarPublicationKey("2026-W34"), "market-editorial-v1:weekly-calendar:2026-W34");
+  assert.equal(weeklyCalendarPublicationKey("2020-W53"), "market-editorial-v1:weekly-calendar:2020-W53");
   assert.equal(dataUpdatePublicationKey("us-cpi", "2026-08-12"), "market-editorial-v1:data-update:us-cpi:2026-08-12");
   assert.throws(() => weeklyCalendarPublicationKey("2026-34"), /ISO week/i);
+  assert.throws(() => weeklyCalendarPublicationKey("2021-W53"), /ISO week/i);
   assert.throws(() => dataUpdatePublicationKey("US CPI!", "12-08-2026"), /canonical/i);
+});
+
+test("Weekly Calendar validates a canonical Monday-to-Sunday publication identity", () => {
+  const { document, events } = weeklyFixture();
+  const build = (overrides) => buildWeeklyCalendarArticle({
+    document: { ...document, ...overrides },
+    rankedEvents: events,
+    sourceManifest,
+    marketSetup: { summary: "Liquidity remains selective.", observedAt: "2026-08-19T07:30:00.000Z" },
+  });
+
+  assert.throws(() => build({ weekStart: "2026-08-18" }), /Monday/i);
+  assert.throws(() => build({ weekEnd: "2026-08-24" }), /Sunday|seven-day/i);
+  assert.throws(() => build({ weekEnd: "2026-08-30" }), /seven-day/i);
+  assert.throws(() => build({ slug: "2026-W35" }), /slug.*range|identity/i);
+  assert.throws(() => build({ slug: "" }), /slug.*canonical|ISO week/i);
+});
+
+test("Weekly Calendar impact ranking ignores blank scores, is deterministic, and does not mutate input", () => {
+  const { document } = weeklyFixture();
+  const tied = [
+    calendarEvent({ id: "same", title: "Zulu decision", jurisdiction: "US", marketImpact: { score: null }, impactScore: 120 }),
+    calendarEvent({ id: "same", title: "Alpha decision", jurisdiction: "UK", marketImpact: { score: "" }, impactScore: 110 }),
+    calendarEvent({ id: "same", title: "Alpha decision", jurisdiction: "CA", marketImpact: { score: 90 }, impactScore: 10 }),
+    calendarEvent({ id: "same", title: "Zulu decision", jurisdiction: "US", marketImpact: { score: 90 }, impactScore: 10 }),
+    calendarEvent({ id: "same", title: "Middle decision", jurisdiction: "US", marketImpact: { score: 90 }, impactScore: 10 }),
+  ];
+  const before = structuredClone(tied);
+  const build = (rankedEvents) => buildWeeklyCalendarArticle({
+    document,
+    rankedEvents,
+    sourceManifest,
+    marketSetup: { summary: "Liquidity remains selective.", observedAt: "2026-08-19T07:30:00.000Z" },
+  });
+
+  const forward = build(tied);
+  const reverse = build([...tied].reverse());
+  assert.deepEqual(tied, before);
+  assert.deepEqual(forward.impactRankedEvents, reverse.impactRankedEvents);
+  assert.deepEqual(forward.impactRankedEvents.slice(0, 2).map((event) => event.impactScore), [120, 110]);
+  assert.deepEqual(
+    forward.impactRankedEvents.slice(2).map(({ title, jurisdiction }) => [title, jurisdiction]),
+    [["Alpha decision", "CA"], ["Middle decision", "US"], ["Zulu decision", "US"]],
+  );
+});
+
+test("Weekly Calendar preserves provenance for a numeric zero forecast", () => {
+  const { document, events } = weeklyFixture();
+  events[0].values.forecast = 0;
+  events[0].provenance = {
+    forecast: provenance(0, "tradingview-calendar", "https://www.tradingview.com/economic-calendar/", { authority: "auxiliary" }),
+  };
+  const article = buildWeeklyCalendarArticle({ document, rankedEvents: events, sourceManifest });
+  const cpi = article.impactRankedEvents.find((event) => event.id === "us-cpi");
+
+  assert.equal(cpi.values.forecast, 0);
+  assert.equal(cpi.fieldProvenance.forecast.sourceId, "tradingview-calendar");
 });
 
 test("Weekly Calendar article is a complete impact-ranked risk playbook", () => {
@@ -138,6 +197,7 @@ test("Weekly Calendar rejects a multi-sentence core view instead of rewriting ed
   for (const coreView of [
     "The catalyst is in the U.S. Confirmation still depends on rates.",
     "The catalyst is in the U.K.Confirmation still depends on rates.",
+    "Risk is concentrated around the U.S. BTC confirms the move.",
   ]) {
     document.coreView = coreView;
     assert.throws(
@@ -161,6 +221,8 @@ test("Weekly Calendar preserves common dotted abbreviations inside a single-sent
     "U.S. 10-year yields remain the central confirmation signal.",
     "The U.S. Treasury curve remains the central confirmation signal.",
     "U.S. dollar liquidity remains the central confirmation signal.",
+    "Inflation at 3.2% remains the central catalyst while BTC holds $71.5K vs. its prior range.",
+    "The actual was 3.2% vs. a 3.0% forecast while BTC held $71.5K.",
   ];
 
   for (const coreView of examples) {
@@ -221,9 +283,9 @@ function reaction() {
   return {
     window: { start: "2026-08-12T12:29:00.000Z", end: "2026-08-12T12:45:00.000Z" },
     prices: {
-      BTC: { changePercent: -1.2, provider: "binance", source: "Binance" },
-      ETH: { changePercent: -1.6, provider: "okx", source: "OKX" },
-      DXY: { changePercent: 0.35, provider: "dxy-yahoo-finance", source: "Yahoo Finance" },
+      BTC: { changePercent: -1.2, provider: "binance", source: "Binance", sourceUrl: "https://api.binance.com/api/v3/ticker/24hr" },
+      ETH: { changePercent: -1.6, provider: "okx", source: "OKX", sourceUrl: "https://www.okx.com/api/v5/market/ticker" },
+      DXY: { changePercent: 0.35, provider: "dxy-yahoo-finance", source: "Yahoo Finance", sourceUrl: "https://query1.finance.yahoo.com/v8/finance/chart/DX-Y.NYB" },
     },
   };
 }
@@ -269,7 +331,7 @@ test("Data Update excludes anonymous observations from providers and tape confir
   const marketReaction = {
     window: reaction().window,
     prices: {
-      BTC: { changePercent: -1.2, provider: "binance", source: "Binance" },
+      BTC: { changePercent: -1.2, provider: "binance", source: "Binance", sourceUrl: "https://api.binance.com/api/v3/ticker/24hr" },
       ETH: { changePercent: -1.6 },
       DXY: { changePercent: 0.35 },
     },
@@ -287,6 +349,32 @@ test("Data Update excludes anonymous observations from providers and tape confir
   assert.deepEqual(article.reactionWindow.providers, ["Binance"]);
   assert.deepEqual(article.marketConfirmation.observations.map(({ symbol }) => symbol), ["BTC"]);
   assert.doesNotMatch(article.marketConfirmation.summary, /ETH|DXY/);
+});
+
+test("Data Update excludes observations without an HTTPS provider source and normalizes provider names", () => {
+  const event = releaseEvent();
+  const marketReaction = {
+    window: reaction().window,
+    prices: {
+      BTC: { changePercent: -1.2, provider: "binance", source: "BINANCE", sourceUrl: "https://api.binance.com/api/v3/ticker/24hr" },
+      ETH: { changePercent: -1.6, provider: "binance", source: " binance ", sourceUrl: "https://api.binance.com/api/v3/ticker/price" },
+      DXY: { changePercent: 0.35, provider: "yahoo", source: "Yahoo Finance", sourceUrl: "http://query1.finance.yahoo.com/v8/finance/chart/DX-Y.NYB" },
+    },
+  };
+  const document = buildDataReleaseDocument({ event, reaction: marketReaction });
+  const article = buildDataUpdateArticle({
+    document,
+    event,
+    reaction: marketReaction,
+    tierDecision: { tier: "tier-one", decision: "tier-one", score: 90, reasons: [] },
+    sourceManifest,
+  });
+
+  assert.equal(article.verdict, "Confirmed");
+  assert.deepEqual(article.reactionWindow.providers, ["Binance"]);
+  assert.deepEqual(article.marketConfirmation.observations.map(({ symbol }) => symbol), ["BTC", "ETH"]);
+  assert.ok(article.marketConfirmation.observations.every((record) => record.sourceUrl.startsWith("https://")));
+  assert.doesNotMatch(article.marketConfirmation.summary, /DXY/);
 });
 
 test("Data Update rejects a reaction window with no named market provider", () => {
@@ -362,6 +450,41 @@ test("Data Update community separates facts, surprise direction and the bounded 
   assert.match(whatChanged[3].text, /2026-08-12T12:29:00\.000Z to 2026-08-12T12:45:00\.000Z/);
 });
 
+test("Data Update computes unit-aware surprises without comparing incompatible magnitudes", () => {
+  const cases = [
+    { actual: "300K", forecast: "250K", expected: "+50K", direction: "Above forecast" },
+    { actual: "300K", forecast: "0.25M", expected: "+50K", direction: "Above forecast" },
+    { actual: "3.0%", forecast: "2.9%", expected: "+0.1pp", direction: "Above forecast" },
+  ];
+
+  for (const example of cases) {
+    const event = releaseEvent({ forecast: example.forecast });
+    event.indicator = "nonfarm-payrolls";
+    event.title = "US Nonfarm Payrolls";
+    event.values.actual = example.actual;
+    event.provenance.actual = provenance(example.actual, "bls-nfp", "https://www.bls.gov/news.release/empsit.nr0.htm");
+    const marketReaction = reaction();
+    const document = buildDataReleaseDocument({ event, reaction: marketReaction });
+    const article = buildDataUpdateArticle({ document, event, reaction: marketReaction, tierDecision: { tier: "tier-one" }, sourceManifest });
+    const community = buildDataUpdateCommunityDocument(article, { articleUrl: "https://academy.yubit.com/data-updates/us-nfp/2026-08-12" });
+    const surprise = community.nodes.find((node) => node.type === "metric" && node.label === "Surprise");
+
+    assert.equal(article.facts.surprise, example.expected);
+    assert.equal(surprise.value, `${example.expected} · ${example.direction}`);
+  }
+
+  const incompatible = releaseEvent({ forecast: "2.9%" });
+  incompatible.values.actual = "300K";
+  incompatible.provenance.actual = provenance("300K", "bls-nfp", "https://www.bls.gov/news.release/empsit.nr0.htm");
+  const marketReaction = reaction();
+  const document = buildDataReleaseDocument({ event: incompatible, reaction: marketReaction });
+  const article = buildDataUpdateArticle({ document, event: incompatible, reaction: marketReaction, tierDecision: { tier: "tier-one" }, sourceManifest });
+  const community = buildDataUpdateCommunityDocument(article, { articleUrl: "https://academy.yubit.com/data-updates/us-cpi/2026-08-12" });
+
+  assert.equal(article.facts.surprise, undefined);
+  assert.equal(community.nodes.some((node) => node.type === "metric" && node.label === "Surprise"), false);
+});
+
 test("Data Update community routes tier-one to one HTTPS article and secondary to no article", () => {
   const event = releaseEvent();
   const marketReaction = reaction();
@@ -383,14 +506,92 @@ test("Data Update community routes tier-one to one HTTPS article and secondary t
   assert.equal(secondary.nodes.filter((node) => node.type === "link").length, 0);
   assert.doesNotMatch(JSON.stringify(secondary), /Read (?:more|the full analysis)|https:\/\/academy/i);
   assert.throws(() => buildDataUpdateCommunityDocument(article, { articleUrl: "http://academy.yubit.com/data-updates/us-cpi/2026-08-12" }), /absolute HTTPS/i);
+  assert.throws(
+    () => buildDataUpdateCommunityDocument({ ...article, tierDecision: { tier: "secondary" } }, { articleUrl }),
+    /tier-one/i,
+  );
+  assert.throws(
+    () => buildDataUpdateCommunityDocument({ ...article, tierDecision: {} }, { articleUrl }),
+    /tier-one/i,
+  );
+  assert.throws(
+    () => buildSecondaryDataUpdateCommunityDocument({ document, event, reaction: marketReaction, tierDecision: { tier: "tier-one" } }),
+    /secondary/i,
+  );
+  assert.throws(
+    () => buildSecondaryDataUpdateCommunityDocument({ document, event, reaction: marketReaction }),
+    /secondary/i,
+  );
+});
+
+test("Task5 community builders fit Telegram's 4096-character limit without losing the link or disclaimer", () => {
+  const { document: weeklyDocument, events } = weeklyFixture();
+  const weeklyArticle = buildWeeklyCalendarArticle({ document: weeklyDocument, rankedEvents: events, sourceManifest });
+  weeklyArticle.coreView = `A ${"high-conviction ".repeat(400)}weekly view.`;
+  weeklyArticle.priorityEvents = weeklyArticle.priorityEvents.map((event) => ({
+    ...event,
+    whyItMatters: `${event.whyItMatters} ${"context ".repeat(400)}`,
+    transmissionPath: `${event.transmissionPath} ${"transmission ".repeat(400)}`,
+  }));
+  const weeklyCommunity = buildWeeklyCalendarCommunityDocument(weeklyArticle, { articleUrl: "https://academy.yubit.com/market-calendar/2026-W34" });
+  const weeklyTelegram = renderTelegramMarketDocument(weeklyCommunity);
+
+  assert.ok(weeklyTelegram.length <= 4096);
+  assert.equal(weeklyCommunity.nodes.filter((node) => node.type === "link").length, 1);
+  assert.equal((weeklyTelegram.match(/<a href=/g) ?? []).length, 1);
+  assert.match(weeklyTelegram, /FOMC Rate Decision/);
+  assert.match(weeklyTelegram, /not investment advice/i);
+  assert.match(weeklyTelegram, /<a href="https:\/\/academy\.yubit\.com\/market-calendar\/2026-W34">[^<]+<\/a>/);
+
+  const event = releaseEvent();
+  const marketReaction = reaction();
+  const dataDocument = buildDataReleaseDocument({ event, reaction: marketReaction });
+  const dataArticle = buildDataUpdateArticle({ document: dataDocument, event, reaction: marketReaction, tierDecision: { tier: "tier-one" }, sourceManifest });
+  dataArticle.dataSignal.summary = `Inference: ${"macro context ".repeat(500)}`;
+  dataArticle.marketConfirmation.summary = `Observed: ${"bounded reaction ".repeat(500)}`;
+  dataArticle.invalidation = `Invalidation: ${"cross-asset reversal ".repeat(500)}`;
+  const dataCommunity = buildDataUpdateCommunityDocument(dataArticle, { articleUrl: "https://academy.yubit.com/data-updates/us-cpi/2026-08-12" });
+  const dataTelegram = renderTelegramMarketDocument(dataCommunity);
+
+  assert.ok(dataTelegram.length <= 4096);
+  assert.equal(dataCommunity.nodes.filter((node) => node.type === "link").length, 1);
+  assert.equal((dataTelegram.match(/<a href=/g) ?? []).length, 1);
+  assert.match(dataTelegram, /<b>Actual vs forecast:<\/b> 3\.0% vs 2\.9%/);
+  assert.match(dataTelegram, /not investment advice/i);
+  assert.match(dataTelegram, /<a href="https:\/\/academy\.yubit\.com\/data-updates\/us-cpi\/2026-08-12">[^<]+<\/a>/);
+});
+
+test("Data Update article rejects non-canonical release identity instead of silently normalizing it", () => {
+  const event = releaseEvent();
+  event.slug = "US CPI";
+  const marketReaction = reaction();
+  const document = buildDataReleaseDocument({ event, reaction: marketReaction });
+
+  assert.throws(
+    () => buildDataUpdateArticle({ document, event, reaction: marketReaction, tierDecision: { tier: "tier-one" }, sourceManifest }),
+    /release slug.*canonical/i,
+  );
+
+  event.slug = "";
+  assert.throws(
+    () => buildDataUpdateArticle({ document, event, reaction: marketReaction, tierDecision: { tier: "tier-one" }, sourceManifest }),
+    /release slug.*canonical/i,
+  );
+
+  delete event.slug;
+  event.indicator = "US CPI";
+  assert.throws(
+    () => buildDataUpdateArticle({ document, event, reaction: marketReaction, tierDecision: { tier: "tier-one" }, sourceManifest }),
+    /release slug.*canonical/i,
+  );
 });
 
 test("Data Update verdicts use only the approved vocabulary", () => {
   const event = releaseEvent();
   const cases = [
     [reaction(), "Confirmed"],
-    [{ ...reaction(), prices: { BTC: { changePercent: 1.2, source: "Binance" }, ETH: { changePercent: 1.6, source: "OKX" }, DXY: { changePercent: -0.35, source: "Yahoo Finance" } } }, "Divergent"],
-    [{ window: reaction().window, prices: { BTC: { changePercent: -0.2, source: "Binance" } } }, "Awaiting Confirmation"],
+    [{ ...reaction(), prices: { BTC: { changePercent: 1.2, source: "Binance", sourceUrl: "https://api.binance.com/api/v3/ticker/24hr" }, ETH: { changePercent: 1.6, source: "OKX", sourceUrl: "https://www.okx.com/api/v5/market/ticker" }, DXY: { changePercent: -0.35, source: "Yahoo Finance", sourceUrl: "https://query1.finance.yahoo.com/v8/finance/chart/DX-Y.NYB" } } }, "Divergent"],
+    [{ window: reaction().window, prices: { BTC: { changePercent: -0.2, source: "Binance", sourceUrl: "https://api.binance.com/api/v3/ticker/24hr" } } }, "Awaiting Confirmation"],
   ];
   for (const [marketReaction, expected] of cases) {
     const document = buildDataReleaseDocument({ event, reaction: marketReaction });
