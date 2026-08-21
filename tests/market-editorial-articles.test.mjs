@@ -134,6 +134,22 @@ test("Weekly Calendar rejects a multi-sentence core view instead of rewriting ed
     }),
     /core view.*one sentence/i,
   );
+
+  for (const coreView of [
+    "The catalyst is in the U.S. Confirmation still depends on rates.",
+    "The catalyst is in the U.K.Confirmation still depends on rates.",
+  ]) {
+    document.coreView = coreView;
+    assert.throws(
+      () => buildWeeklyCalendarArticle({
+        document,
+        rankedEvents: events,
+        sourceManifest,
+        marketSetup: { summary: "Liquidity remains selective.", observedAt: "2026-08-19T07:30:00.000Z" },
+      }),
+      /core view.*one sentence/i,
+    );
+  }
 });
 
 test("Weekly Calendar preserves common dotted abbreviations inside a single-sentence core view", () => {
