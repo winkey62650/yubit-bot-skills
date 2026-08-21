@@ -1304,6 +1304,28 @@ test("market reaction reports all three attempted crypto providers when every ro
   assert.match(result.warnings.join("\n"), /BTC.*Binance.*OKX.*Coinbase/i);
 });
 
+test("market reaction omits fallback health when the shared deadline expires before their first request", async () => {
+  const requestedHosts = [];
+  const result = await settleWithin(fetchMarketReaction({
+    beforeAt: "2026-08-18T12:00:00.000Z",
+    now: "2026-08-18T12:15:00.000Z",
+    timeoutMs: 50,
+    deadlineMs: 10,
+    symbols: ["BTC"],
+    fetchImpl: async (url) => {
+      requestedHosts.push(new URL(url).hostname);
+      return new Promise((resolve) => {
+        setTimeout(() => resolve(jsonResponse({ message: "unavailable" }, 404)), 30);
+      });
+    },
+  }), 200, "market reaction did not respect the shared deadline");
+
+  assert.deepEqual(requestedHosts, ["api.binance.com"]);
+  assert.deepEqual(result.sources.map((source) => source.id), ["binance"]);
+  assert.equal(result.sources[0].status, "timeout");
+  assert.match(result.warnings.join("\n"), /OKX.*Coinbase.*skipped|skipped.*OKX.*Coinbase/i);
+});
+
 test("market reaction keeps one Coinbase symbol when another symbol exhausts all fallbacks", async () => {
   const target = Date.parse("2026-08-18T12:00:00.000Z");
   const completedMinute = target - 60_000;
@@ -1358,6 +1380,77 @@ test("Coinbase fallback rejects non-positive candle and ticker prices", async ()
 
     assert.equal(result.data.BTC, undefined);
     assert.match(result.warnings.join("\n"), /Invalid BTC Coinbase (?:before|latest) price/);
+  }
+});
+
+test("Coinbase fallback fails closed on tuple shape drift and non-canonical price fields", async () => {
+  const target = Date.parse("2026-08-18T12:00:00.000Z");
+  const completedSecond = (target - 60_000) / 1000;
+  const validCandle = [completedSecond, 64000, 66000, 64500, "65000.25", 12];
+  const invalidCases = [
+    { label: "short candle", candle: validCandle.slice(0, 5), ticker: "65650" },
+    { label: "boolean timestamp", candle: [true, ...validCandle.slice(1)], ticker: "65650" },
+    { label: "NaN timestamp", candle: [Number.NaN, ...validCandle.slice(1)], ticker: "65650" },
+    { label: "boolean close", candle: [...validCandle.slice(0, 4), true, validCandle[5]], ticker: "65650" },
+    { label: "non-canonical close", candle: [...validCandle.slice(0, 4), " +65000 ", validCandle[5]], ticker: "65650" },
+    { label: "infinite close", candle: [...validCandle.slice(0, 4), Number.POSITIVE_INFINITY, validCandle[5]], ticker: "65650" },
+    { label: "negative close", candle: [...validCandle.slice(0, 4), -1, validCandle[5]], ticker: "65650" },
+    { label: "boolean ticker", candle: validCandle, ticker: true },
+    { label: "NaN ticker", candle: validCandle, ticker: Number.NaN },
+    { label: "infinite ticker", candle: validCandle, ticker: Number.POSITIVE_INFINITY },
+    { label: "non-canonical ticker", candle: validCandle, ticker: " 65650 " },
+    { label: "negative ticker", candle: validCandle, ticker: -1 },
+  ];
+
+  for (const invalidCase of invalidCases) {
+    const fetchImpl = async (url) => {
+      const parsed = new URL(url);
+      if (parsed.hostname.includes("binance") || parsed.hostname.includes("okx")) {
+        return jsonResponse({ message: "unavailable" }, 404);
+      }
+      const body = parsed.pathname.endsWith("/candles")
+        ? [invalidCase.candle]
+        : { price: invalidCase.ticker };
+      return { ok: true, status: 200, json: async () => body };
+    };
+
+    const result = await fetchMarketReaction({
+      beforeAt: target,
+      now: target + 15 * 60_000,
+      fetchImpl,
+      symbols: ["BTC"],
+    });
+
+    assert.equal(result.data.BTC, undefined, invalidCase.label);
+    assert.match(result.warnings.join("\n"), /Coinbase.*(?:schema|invalid)|(?:schema|invalid).*Coinbase/i, invalidCase.label);
+  }
+});
+
+test("Coinbase fallback deduplicates identical candles and rejects conflicting duplicates in either order", async () => {
+  const target = Date.parse("2026-08-18T12:00:00.000Z");
+  const candleTime = (target - 60_000) / 1000;
+  const original = [candleTime, 64000, 66000, 64500, 65000, 12];
+  const conflict = [candleTime, 64000, 66000, 64500, 65100, 12];
+  const run = async (candles) => fetchMarketReaction({
+    beforeAt: target,
+    now: target + 15 * 60_000,
+    symbols: ["BTC"],
+    fetchImpl: async (url) => {
+      const parsed = new URL(url);
+      if (parsed.hostname.includes("binance") || parsed.hostname.includes("okx")) {
+        return jsonResponse({ message: "unavailable" }, 404);
+      }
+      return jsonResponse(parsed.pathname.endsWith("/candles") ? candles : { price: "65650" });
+    },
+  });
+
+  const deduplicated = await run([original, [...original]]);
+  assert.equal(deduplicated.data.BTC.beforePrice, 65000);
+
+  for (const candles of [[original, conflict], [conflict, original]]) {
+    const rejected = await run(candles);
+    assert.equal(rejected.data.BTC, undefined);
+    assert.match(rejected.warnings.join("\n"), /Coinbase.*duplicate.*conflict|conflict.*duplicate.*Coinbase/i);
   }
 });
 
@@ -1523,6 +1616,53 @@ test("market reaction runs independent symbols within one shared deadline", asyn
   assert.ok(Date.now() - startedAt < 140);
   assert.deepEqual(result.data, {});
   assert.equal(result.warnings.length, 2);
+});
+
+test("market reaction assembles concurrent data and warnings in normalized symbol order", async () => {
+  const target = Date.parse("2026-08-18T12:00:00.000Z");
+  const now = target + 15 * 60_000;
+  const successful = await fetchMarketReaction({
+    beforeAt: target,
+    now,
+    symbols: ["btc", "ETH", "DXY", "BTC"],
+    fetchImpl: async (url) => {
+      const parsed = new URL(url);
+      if (parsed.hostname.includes("binance")) {
+        const asset = parsed.searchParams.get("symbol").replace("USDT", "");
+        if (asset === "BTC") await new Promise((resolve) => setTimeout(resolve, 20));
+        return jsonResponse(parsed.pathname.includes("klines")
+          ? [[target - 60_000, "0", "0", "0", asset === "BTC" ? "65000" : "3000", "0", target - 1]]
+          : { price: asset === "BTC" ? "65650" : "2970" });
+      }
+      return jsonResponse({
+        chart: {
+          result: [{
+            timestamp: [(target - 60_000) / 1000, (now - 60_000) / 1000],
+            indicators: { quote: [{ close: [100, 101] }] },
+          }],
+          error: null,
+        },
+      });
+    },
+  });
+
+  assert.deepEqual(Object.keys(successful.data), ["BTC", "ETH", "DXY"]);
+  assert.deepEqual(successful.sources.map((source) => source.id), ["binance", "dxy-yahoo-finance"]);
+
+  const failed = await fetchMarketReaction({
+    beforeAt: target,
+    now,
+    symbols: ["BTC", "ETH", "DXY"],
+    fetchImpl: async (url) => {
+      const parsed = new URL(url);
+      if (parsed.href.includes("BTC")) await new Promise((resolve) => setTimeout(resolve, 8));
+      if (parsed.hostname.includes("yahoo")) await new Promise((resolve) => setTimeout(resolve, 4));
+      return jsonResponse({ message: "unavailable" }, 404);
+    },
+  });
+
+  assert.deepEqual(failed.warnings.map((warning) => warning.match(/^(BTC|ETH|DXY)/)?.[1]), ["BTC", "ETH", "DXY"]);
+  assert.deepEqual(failed.sources.map((source) => source.id), ["binance", "okx", "coinbase-exchange", "dxy-yahoo-finance"]);
 });
 
 test("market reaction uses Binance when primary prices are available", async () => {
