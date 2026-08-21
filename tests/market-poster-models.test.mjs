@@ -332,6 +332,64 @@ test("structured numerical facts preserve a Unicode minus sign", () => {
   assert.match(model.confirmation, /−0\.2%/u);
 });
 
+test("fact tokens preserve complete times, ranges, signed currencies, and leading decimals", () => {
+  const weeklyText = "At 12:29 UTC, range is 2.7%-2.9% and floor is .5%.";
+  const dataText = "BTC holds -$71,000 while drawdown is −0.2%.";
+  const cryptoText = "BTC guards $-69,500 and spot growth is 3.0%.";
+  const weekly = buildWeeklyCalendarPosterModel({
+    weekStart: "2026-08-17",
+    days: [{
+      date: "2026-08-17",
+      events: [{ id: "lexer", title: "Lexer", whyItMatters: weeklyText }],
+    }],
+  });
+  const data = buildDataUpdatePosterModel({ confirmation: dataText });
+  const crypto = buildCryptoDailyPosterModel({
+    selectedStories: [{ title: "Lexer", rationale: cryptoText, source: { label: "SEC" } }],
+  });
+
+  assert.equal(weekly.columns[0].events[0].description, weeklyText);
+  assert.deepEqual(weekly.columns[0].events[0].descriptionFacts, ["12:29 UTC", "2.7%-2.9%", ".5%"]);
+  assert.equal(data.confirmation, dataText);
+  assert.deepEqual(data.confirmationFacts, ["-$71,000", "−0.2%"]);
+  assert.equal(crypto.stories[0].thesis, cryptoText);
+  assert.deepEqual(crypto.stories[0].thesisFacts, ["$-69,500", "3.0%"]);
+});
+
+test("overflow fact lanes stay exact, capped, and immutable in every poster model", () => {
+  const facts = ["12:29 UTC", "2.7%-2.9%", ".5%", "-$71,000", "$-69,500", "−0.2%"];
+  const expectedDisplay = facts.join(" · ");
+  const overflow = `${"UnbreakableContext".repeat(20)} ${facts.join(" ")}`;
+  const weeklyInput = deepFreeze({
+    weekStart: "2026-08-17",
+    days: [{
+      date: "2026-08-17",
+      events: [{ id: "overflow-lexer", title: "Overflow lexer", whyItMatters: overflow }],
+    }],
+  });
+  const dataInput = deepFreeze({ confirmation: overflow });
+  const cryptoInput = deepFreeze({
+    selectedStories: [{ title: "Overflow lexer", rationale: overflow, source: { label: "SEC" } }],
+  });
+
+  const weekly = buildWeeklyCalendarPosterModel(weeklyInput).columns[0].events[0];
+  const data = buildDataUpdatePosterModel(dataInput);
+  const crypto = buildCryptoDailyPosterModel(cryptoInput).stories[0];
+
+  assert.equal(weekly.description, expectedDisplay);
+  assert.deepEqual(weekly.descriptionFacts, facts);
+  assert.ok(weekly.description.length <= 120);
+  assert.equal(data.confirmation, expectedDisplay);
+  assert.deepEqual(data.confirmationFacts, facts);
+  assert.ok(data.confirmation.length <= 120);
+  assert.equal(crypto.thesis, expectedDisplay);
+  assert.deepEqual(crypto.thesisFacts, facts);
+  assert.ok(crypto.thesis.length <= 118);
+  assert.match(weeklyInput.days[0].events[0].whyItMatters, /^UnbreakableContext/u);
+  assert.match(dataInput.confirmation, /^UnbreakableContext/u);
+  assert.match(cryptoInput.selectedStories[0].rationale, /^UnbreakableContext/u);
+});
+
 test("weekly priority selection ignores ghosts and highlights three stable event occurrences", () => {
   const model = buildWeeklyCalendarPosterModel({
     weekStart: "2026-08-17",
@@ -458,6 +516,23 @@ test("missing official source never creates false provenance", () => {
   assert.equal(model.source, "");
   assert.equal(model.officialSource, "");
   assert.deepEqual(model.footer.sources, []);
+});
+
+test("crypto stories never fabricate missing provenance and retain stale source labels", () => {
+  const model = buildCryptoDailyPosterModel({
+    selectedStories: [
+      { title: "Unattributed market development" },
+      { title: "Archived filing", source: { label: "SEC archive", freshness: "stale" } },
+    ],
+  });
+
+  assert.equal(model.stories[0].source, "");
+  assert.equal(model.stories[0].sourceFooterLabel, "");
+  assert.equal(model.stories[0].sourceStatus, "");
+  assert.equal(model.stories[1].source, "SEC ARCHIVE");
+  assert.equal(model.stories[1].sourceFooterLabel, "SEC archive · STALE SOURCE");
+  assert.equal(model.stories[1].sourceStatus, "STALE SOURCE");
+  assert.deepEqual(model.footer.sources, ["SEC archive · STALE SOURCE"]);
 });
 
 test("poster builders preserve frozen inputs and return isolated JSON-serializable tokens", () => {
