@@ -93,17 +93,19 @@ test("Weekly Calendar validates a canonical Monday-to-Sunday publication identit
   assert.throws(() => build({ weekEnd: "2026-08-24" }), /Sunday|seven-day/i);
   assert.throws(() => build({ weekEnd: "2026-08-30" }), /seven-day/i);
   assert.throws(() => build({ slug: "2026-W35" }), /slug.*range|identity/i);
+  assert.throws(() => build({ slug: "2026-W34", week: "2026-W35" }), /slug.*week|identity/i);
+  assert.throws(() => build({ slug: "2026-W35", week: "2026-W34" }), /slug.*range|identity/i);
   assert.throws(() => build({ slug: "" }), /slug.*canonical|ISO week/i);
 });
 
 test("Weekly Calendar impact ranking ignores blank scores, is deterministic, and does not mutate input", () => {
   const { document } = weeklyFixture();
   const tied = [
-    calendarEvent({ id: "blank-primary-score", title: "Zulu decision", jurisdiction: "US", marketImpact: { score: null }, impactScore: 120 }),
-    calendarEvent({ id: "empty-primary-score", title: "Alpha decision", jurisdiction: "UK", marketImpact: { score: "" }, impactScore: 110 }),
-    calendarEvent({ id: "alpha-tie", title: "Alpha decision", jurisdiction: "CA", marketImpact: { score: 90 }, impactScore: 10 }),
-    calendarEvent({ id: "zulu-tie", title: "Zulu decision", jurisdiction: "US", marketImpact: { score: 90 }, impactScore: 10 }),
-    calendarEvent({ id: "middle-tie", title: "Middle decision", jurisdiction: "US", marketImpact: { score: 90 }, impactScore: 10 }),
+    calendarEvent({ id: "blank-primary-score", indicator: "blank-primary", title: "Zulu decision", jurisdiction: "US", marketImpact: { score: null }, impactScore: 120 }),
+    calendarEvent({ id: "empty-primary-score", indicator: "empty-primary", title: "Alpha decision", jurisdiction: "UK", marketImpact: { score: "" }, impactScore: 110 }),
+    calendarEvent({ id: "alpha-tie", indicator: "alpha-tie", title: "Alpha decision", jurisdiction: "CA", marketImpact: { score: 90 }, impactScore: 10 }),
+    calendarEvent({ id: "zulu-tie", indicator: "zulu-tie", title: "Zulu decision", jurisdiction: "US", marketImpact: { score: 90 }, impactScore: 10 }),
+    calendarEvent({ id: "middle-tie", indicator: "middle-tie", title: "Middle decision", jurisdiction: "US", marketImpact: { score: 90 }, impactScore: 10 }),
   ];
   const before = structuredClone(tied);
   const build = (rankedEvents) => buildWeeklyCalendarArticle({
@@ -163,7 +165,7 @@ test("Weekly Calendar requires independent optional-field provenance and collect
   );
 });
 
-test("Weekly Calendar excludes out-of-week events and deduplicates canonical event identities", () => {
+test("Weekly Calendar excludes out-of-week events and rejects canonical or semantic duplicates deterministically", () => {
   const { document, events } = weeklyFixture();
   const outside = calendarEvent({
     id: "outside-week",
@@ -174,13 +176,21 @@ test("Weekly Calendar excludes out-of-week events and deduplicates canonical eve
   });
   const article = buildWeeklyCalendarArticle({
     document,
-    rankedEvents: [...events, outside, structuredClone(events[0])],
+    rankedEvents: [...events, outside],
     sourceManifest,
   });
 
   assert.equal(article.impactRankedEvents.length, 5);
   assert.equal(article.impactRankedEvents.some((event) => event.id === "outside-week"), false);
   assert.equal(article.impactRankedEvents.filter((event) => event.id === "us-cpi").length, 1);
+
+  const exactDuplicate = structuredClone(events[0]);
+  for (const rankedEvents of [[...events, exactDuplicate], [exactDuplicate, ...events]]) {
+    assert.throws(
+      () => buildWeeklyCalendarArticle({ document, rankedEvents, sourceManifest }),
+      /duplicate.*event|event.*duplicate/i,
+    );
+  }
 
   const conflict = structuredClone(events[0]);
   conflict.id = " US-CPI ";
@@ -189,6 +199,43 @@ test("Weekly Calendar excludes out-of-week events and deduplicates canonical eve
     () => buildWeeklyCalendarArticle({ document, rankedEvents: [...events, conflict], sourceManifest }),
     /duplicate.*conflict/i,
   );
+
+  const crossProviderDuplicate = structuredClone(events[0]);
+  crossProviderDuplicate.id = "tradingview-us-cpi";
+  crossProviderDuplicate.source = { id: "tv-calendar", label: "TradingView", kind: "auxiliary", url: "https://www.tradingview.com/economic-calendar/" };
+  crossProviderDuplicate.schedule = provenance(
+    events[0].schedule.value,
+    "tv-calendar",
+    "https://www.tradingview.com/economic-calendar/",
+    { authority: "auxiliary", unit: null },
+  );
+  for (const rankedEvents of [[...events, crossProviderDuplicate], [crossProviderDuplicate, ...events]]) {
+    assert.throws(
+      () => buildWeeklyCalendarArticle({ document, rankedEvents, sourceManifest }),
+      /duplicate.*event|event.*duplicate/i,
+    );
+  }
+});
+
+test("Weekly Calendar rejects provenance values that do not match adopted field facts", () => {
+  const { document, events } = weeklyFixture();
+  events[0].values.forecast = "2.8%";
+  events[0].values.previous = "300000";
+  events[0].provenance = {
+    forecast: provenance("9.9%", "consensus-wire", "https://consensus.example/calendar", { authority: "auxiliary" }),
+    previous: provenance("0.3M", "official-history", "https://official.example/history"),
+  };
+
+  assert.throws(
+    () => buildWeeklyCalendarArticle({ document, rankedEvents: events, sourceManifest: [] }),
+    /forecast.*provenance.*match|provenance.*forecast.*match/i,
+  );
+
+  events[0].provenance.forecast = provenance("2.8%", "consensus-wire", "https://consensus.example/calendar", { authority: "auxiliary" });
+  const article = buildWeeklyCalendarArticle({ document, rankedEvents: events, sourceManifest: [] });
+  const cpi = article.impactRankedEvents.find((event) => event.id === "us-cpi");
+  assert.equal(cpi.values.previous, "300000");
+  assert.equal(cpi.fieldProvenance.previous.sourceId, "official-history");
 });
 
 test("Weekly Calendar article is a complete impact-ranked risk playbook", () => {
@@ -252,6 +299,8 @@ test("Weekly Calendar rejects a multi-sentence core view instead of rewriting ed
     "The catalyst is in the U.S. Confirmation still depends on rates.",
     "The catalyst is in the U.K.Confirmation still depends on rates.",
     "Risk is concentrated around the U.S. BTC confirms the move.",
+    "Risk remains.$71.5K confirms the move.",
+    "Risk remains.confirmation still depends on rates.",
   ]) {
     document.coreView = coreView;
     assert.throws(
@@ -323,6 +372,20 @@ test("Weekly Calendar community document follows the approved English gateway an
     () => buildWeeklyCalendarCommunityDocument(article, { articleUrl: url }),
     /embedded URL|exactly one URL/i,
   );
+
+  for (const embedded of [
+    "Read tg://resolve?domain=untrusted before acting.",
+    "Read t.me/untrusted before acting.",
+    "Read ftp://untrusted.example/report before acting.",
+    "Read untrusted.example/report before acting.",
+    "Read untrusted.example, then act.",
+  ]) {
+    article.coreView = embedded;
+    assert.throws(
+      () => buildWeeklyCalendarCommunityDocument(article, { articleUrl: url }),
+      /embedded URL|exactly one URL/i,
+    );
+  }
 });
 
 function releaseEvent({ forecast = "2.9%" } = {}) {
@@ -441,6 +504,35 @@ test("Data Update excludes observations without an HTTPS provider source and nor
   assert.doesNotMatch(article.marketConfirmation.summary, /DXY/);
 });
 
+test("Data Update never lets an observation payload overwrite its trusted reaction-map symbol", () => {
+  const event = releaseEvent();
+  const marketReaction = reaction();
+  marketReaction.prices.BTC.symbol = "DXY";
+  delete marketReaction.prices.DXY;
+  const document = buildDataReleaseDocument({ event, reaction: marketReaction });
+  const article = buildDataUpdateArticle({
+    document,
+    event,
+    reaction: marketReaction,
+    tierDecision: { tier: "tier-one" },
+    sourceManifest,
+  });
+
+  assert.deepEqual(article.marketConfirmation.observations.map(({ symbol }) => symbol), ["ETH"]);
+  assert.equal(article.verdict, "Awaiting Confirmation");
+
+  marketReaction.prices.BTC.symbol = "BTC";
+  const matchingArticle = buildDataUpdateArticle({
+    document,
+    event,
+    reaction: marketReaction,
+    tierDecision: { tier: "tier-one" },
+    sourceManifest,
+  });
+  assert.deepEqual(matchingArticle.marketConfirmation.observations.map(({ symbol }) => symbol), ["BTC", "ETH"]);
+  assert.equal(matchingArticle.verdict, "Confirmed");
+});
+
 test("Data Update accepts only finite numeric observations inside the declared reaction window", () => {
   const event = releaseEvent();
   const invalidValues = [null, "", true, false];
@@ -476,6 +568,39 @@ test("Data Update accepts only finite numeric observations inside the declared r
   const reversedDocument = buildDataReleaseDocument({ event, reaction: bounded });
   const reversedArticle = buildDataUpdateArticle({ document: reversedDocument, event, reaction: bounded, tierDecision: { tier: "tier-one" }, sourceManifest });
   assert.deepEqual(reversedArticle.marketConfirmation.observations.map(({ symbol }) => symbol), ["BTC"]);
+});
+
+test("Data Update derives its reaction window only from adopted records and always contains the release", () => {
+  const event = releaseEvent();
+  const marketReaction = reaction();
+  delete marketReaction.window;
+  marketReaction.prices.BTC.beforePriceAt = "2026-08-12T12:29:00.000Z";
+  marketReaction.prices.BTC.observedAt = "2026-08-12T12:36:00.000Z";
+  marketReaction.prices.ETH.beforePriceAt = "2026-08-12T12:29:30.000Z";
+  marketReaction.prices.ETH.observedAt = "2026-08-12T12:40:00.000Z";
+  marketReaction.prices.DXY.changePercent = null;
+  marketReaction.prices.DXY.beforePriceAt = "2030-01-01T00:00:00.000Z";
+  marketReaction.prices.DXY.observedAt = "2030-01-01T00:15:00.000Z";
+  const document = buildDataReleaseDocument({ event, reaction: reaction() });
+  const article = buildDataUpdateArticle({ document, event, reaction: marketReaction, tierDecision: { tier: "tier-one" }, sourceManifest });
+
+  assert.deepEqual(article.reactionWindow, {
+    start: "2026-08-12T12:29:00.000Z",
+    end: "2026-08-12T12:40:00.000Z",
+    providers: ["Binance", "OKX"],
+  });
+  assert.deepEqual(article.marketConfirmation.observations.map(({ symbol }) => symbol), ["BTC", "ETH"]);
+
+  for (const window of [
+    { start: "2026-08-12T12:00:00.000Z", end: "2026-08-12T12:20:00.000Z" },
+    { start: "2026-08-12T12:31:00.000Z", end: "2026-08-12T12:45:00.000Z" },
+  ]) {
+    const invalid = { ...reaction(), window };
+    assert.throws(
+      () => buildDataUpdateArticle({ document, event, reaction: invalid, tierDecision: { tier: "tier-one" }, sourceManifest }),
+      /reaction window.*release|release.*reaction window/i,
+    );
+  }
 });
 
 test("Data Update rejects a reaction window with no named market provider", () => {
@@ -537,6 +662,28 @@ test("Data Update never attributes forecast or previous values to the official a
   }
 });
 
+test("Data Update rejects provenance values that contradict adopted release facts", () => {
+  const marketReaction = reaction();
+  for (const field of ["actual", "forecast", "previous"]) {
+    const event = releaseEvent();
+    const adopted = event.values[field];
+    event.provenance[field] = provenance("9.9%", `${field}-source`, `https://${field}.example/data`);
+    const document = buildDataReleaseDocument({ event, reaction: marketReaction });
+    assert.throws(
+      () => buildDataUpdateArticle({ document, event, reaction: marketReaction, tierDecision: { tier: "tier-one" }, sourceManifest }),
+      new RegExp(`${field}.*provenance.*match|provenance.*${field}.*match`, "i"),
+      `${field} ${adopted} must not be attributed to a 9.9% provenance record`,
+    );
+  }
+
+  const equivalent = releaseEvent();
+  equivalent.values.previous = "300000";
+  equivalent.provenance.previous = provenance("0.3M", "official-history", "https://official.example/history");
+  const document = buildDataReleaseDocument({ event: equivalent, reaction: marketReaction });
+  const article = buildDataUpdateArticle({ document, event: equivalent, reaction: marketReaction, tierDecision: { tier: "tier-one" }, sourceManifest });
+  assert.equal(article.facts.previous, "300000");
+});
+
 test("Data Update community separates facts, surprise direction and the bounded market reaction", () => {
   const event = releaseEvent();
   const marketReaction = reaction();
@@ -574,6 +721,8 @@ test("Data Update computes unit-aware surprises without comparing incompatible m
 
   for (const example of cases) {
     const event = releaseEvent({ forecast: example.forecast });
+    event.id = "us-nonfarm-payrolls";
+    event.slug = "us-nonfarm-payrolls";
     event.indicator = "nonfarm-payrolls";
     event.title = "US Nonfarm Payrolls";
     event.values.actual = example.actual;
@@ -684,6 +833,20 @@ test("Task5 community builders fit Telegram's 4096-character limit without losin
     () => buildDataUpdateCommunityDocument(dataArticle, { articleUrl: "https://academy.yubit.com/data-updates/us-cpi/2026-08-12" }),
     /embedded URL|exactly one URL/i,
   );
+
+  for (const embedded of [
+    "Inference: see tg://resolve?domain=untrusted for context.",
+    "Inference: see t.me/untrusted for context.",
+    "Inference: see ftp://untrusted.example/report for context.",
+    "Inference: see untrusted.example/report for context.",
+    "Inference: see untrusted.example, then reassess.",
+  ]) {
+    dataArticle.dataSignal.summary = embedded;
+    assert.throws(
+      () => buildDataUpdateCommunityDocument(dataArticle, { articleUrl: "https://academy.yubit.com/data-updates/us-cpi/2026-08-12" }),
+      /embedded URL|exactly one URL/i,
+    );
+  }
 });
 
 test("Data Update article rejects non-canonical release identity instead of silently normalizing it", () => {
@@ -708,6 +871,14 @@ test("Data Update article rejects non-canonical release identity instead of sile
   assert.throws(
     () => buildDataUpdateArticle({ document, event, reaction: marketReaction, tierDecision: { tier: "tier-one" }, sourceManifest }),
     /release slug.*canonical/i,
+  );
+
+  const contradictory = releaseEvent();
+  contradictory.slug = "us-nfp";
+  const contradictoryDocument = buildDataReleaseDocument({ event: contradictory, reaction: marketReaction });
+  assert.throws(
+    () => buildDataUpdateArticle({ document: contradictoryDocument, event: contradictory, reaction: marketReaction, tierDecision: { tier: "tier-one" }, sourceManifest }),
+    /release slug.*identity|identity.*release slug/i,
   );
 });
 
