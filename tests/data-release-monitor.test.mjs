@@ -742,7 +742,7 @@ test("allows an empty TTL refresh to clear cached events outside their release w
   assert.deepEqual((await repository.getMeta(WEEKLY_CALENDAR_META_KEY)).events, []);
 });
 
-test("preserves an in-window Actual baseline across an empty live snapshot", async () => {
+test("preserves a legacy auxiliary baseline across an empty snapshot and migrates it on official verification", async () => {
   const eventKey = "us-cpi-yoy-2026-08|2026-08-19T12:30:00.000Z";
   const repository = repositoryDouble({
     [WEEKLY_CALENDAR_META_KEY]: {
@@ -773,8 +773,8 @@ test("preserves an in-window Actual baseline across an empty live snapshot", asy
 
   assert.equal(empty.publishable, false);
   assert.equal(stateAfterEmpty.monitoredEvents[0].lastActual, "2.7%");
-  assert.equal(unchanged.publishable, false);
-  assert.equal(unchanged.skipReason, "stale-actual");
+  assert.equal(unchanged.publishable, true);
+  assert.equal(unchanged.event.values.actual, "2.7%");
 });
 
 test("does not cache a soft-failed bootstrap response or overwrite the stale calendar", async () => {
@@ -1229,4 +1229,158 @@ test("official eligibility only invokes the official adapter for allowlisted eve
     persist: true,
   });
   assert.equal(calls, 0);
+});
+
+test("official eligibility records a timeout when only an auxiliary actual exists after the release window", async () => {
+  const auxiliary = release({
+    values: { actual: "2.7%", forecast: "2.8%", previous: "2.9%" },
+    source: { id: "calendar", authority: "auxiliary", url: "https://calendar.example/cpi" },
+  });
+  const repository = repositoryDouble({
+    [WEEKLY_CALENDAR_META_KEY]: { calendarWeek: "2026-08-17", events: [auxiliary], updatedAt: "2026-08-19T12:45:30Z" },
+  });
+  let officialCalls = 0;
+
+  const result = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:46:00Z", repository,
+    fetchCalendar: async () => calendarResult([auxiliary]),
+    fetchOfficialActual: async () => { officialCalls += 1; return officialActual(); },
+    persist: true,
+  });
+
+  assert.equal(result.publishable, false);
+  assert.equal(result.skipReason, "release-timeout");
+  assert.equal(officialCalls, 0);
+  assert.deepEqual((await repository.getMeta(RELEASE_STATE_META_KEY)).timedOutKeys, [
+    "us-cpi-yoy-2026-08|2026-08-19T12:30:00.000Z",
+  ]);
+});
+
+test("a rejected auxiliary unit cannot override a verified official actual", async () => {
+  const repository = repositoryDouble({
+    [WEEKLY_CALENDAR_META_KEY]: { calendarWeek: "2026-08-17", events: [release()], updatedAt: "2026-08-19T10:00:00Z" },
+  });
+  const rejectedAuxiliary = release({
+    values: { actual: "180K", forecast: "175K", previous: "170K" },
+    rawValues: { actual: "180", forecast: "175", previous: "170", unit: "K" },
+    actualStatus: "rejected",
+    source: { id: "calendar", authority: "auxiliary", url: "https://calendar.example/cpi" },
+  });
+
+  const result = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:31:00Z", repository,
+    fetchCalendar: async () => calendarResult([rejectedAuxiliary]),
+    fetchOfficialActual: async () => officialActual("2.7"),
+    persist: true,
+  });
+
+  assert.equal(result.publishable, true);
+  assert.equal(result.event.values.actual, "2.7%");
+  assert.ok(result.eligibility.actual.comparisons.some(({ status, unit }) => status === "rejected" && unit === "K"));
+});
+
+test("source manifest keeps authoritative official metadata for a duplicate source identity", async () => {
+  const official = officialActual("2.7");
+  const duplicateAuxiliary = release({
+    values: { actual: "2.7%", forecast: "2.8%", previous: "2.9%" },
+    rawValues: { actual: "2.7", forecast: "2.8", previous: "2.9", unit: "%" },
+    source: { id: official.sourceId, url: official.sourceUrl, authority: "auxiliary", status: "verified" },
+  });
+  const repository = repositoryDouble({
+    [WEEKLY_CALENDAR_META_KEY]: { calendarWeek: "2026-08-17", events: [release()], updatedAt: "2026-08-19T10:00:00Z" },
+  });
+
+  const result = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:31:00Z", repository,
+    fetchCalendar: async () => calendarResult([duplicateAuxiliary], {
+      sources: [{
+        id: official.sourceId, url: official.sourceUrl, authority: "auxiliary", status: "verified",
+        retrievedAt: "2026-08-19T12:30:19Z",
+      }],
+    }),
+    fetchOfficialActual: async () => official,
+    persist: true,
+  });
+
+  assert.equal(result.publishable, true);
+  assert.deepEqual(result.sourceManifest.filter(({ id, url }) => id === official.sourceId && url === official.sourceUrl), [{
+    id: official.sourceId,
+    url: official.sourceUrl,
+    authority: "official",
+    status: "verified",
+    retrievedAt: official.retrievedAt,
+    publishedAt: official.publishedAt,
+  }]);
+});
+
+test("tier-one schedules without an explicit timezone fail closed without using the host timezone", async () => {
+  const ambiguous = release({ scheduledAt: "2026-08-19T20:30:00" });
+  const repository = repositoryDouble({
+    [WEEKLY_CALENDAR_META_KEY]: { calendarWeek: "2026-08-17", events: [ambiguous], updatedAt: "2026-08-19T10:00:00Z" },
+  });
+  let officialCalls = 0;
+
+  const result = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:31:00Z", repository,
+    fetchCalendar: async () => calendarResult([ambiguous]),
+    fetchOfficialActual: async () => { officialCalls += 1; return officialActual(); },
+    persist: true,
+  });
+
+  assert.equal(result.publishable, false);
+  assert.equal(result.skipReason, "timezone-ambiguous");
+  assert.equal(result.eligibility.reason, "timezone-ambiguous");
+  assert.equal(officialCalls, 0);
+  assert.deepEqual((await repository.getMeta(RELEASE_STATE_META_KEY)).timedOutKeys, []);
+});
+
+test("legacy auxiliary lastActual does not suppress the first verified official publication", async () => {
+  const eventKey = "us-cpi-yoy-2026-08|2026-08-19T12:30:00.000Z";
+  const repository = repositoryDouble({
+    [WEEKLY_CALENDAR_META_KEY]: { calendarWeek: "2026-08-17", events: [release()], updatedAt: "2026-08-19T10:00:00Z" },
+    [RELEASE_STATE_META_KEY]: {
+      calendarWeek: "2026-08-17",
+      monitoredEvents: [{ eventKey, id: "us-cpi-yoy-2026-08", scheduledAt, lastActual: "2.7%", observedAt: "2026-08-19T12:30:10Z" }],
+      publishedKeys: [], timedOutKeys: [], updatedAt: "2026-08-19T12:30:00Z",
+    },
+  });
+
+  const result = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:31:00Z", repository,
+    fetchCalendar: async () => calendarResult([release()]),
+    fetchOfficialActual: async () => officialActual("2.7"),
+    persist: true,
+  });
+
+  assert.equal(result.publishable, true);
+  assert.equal(result.event.values.actual, "2.7%");
+  await acknowledgeDataReleasePublished({
+    repository,
+    deduplicationKey: result.deduplicationKey,
+    event: result.event,
+    now: "2026-08-19T12:31:05Z",
+  });
+  const migratedState = await repository.getMeta(RELEASE_STATE_META_KEY);
+  assert.equal(migratedState.monitoredEvents[0].lastActualAuthority, "official");
+});
+
+test("one official fetch failure does not block another simultaneous valid release", async () => {
+  const core = release({ id: "us-core-cpi-yoy-2026-08", sourceId: "us-core-cpi-yoy-2026-08", title: "US Core CPI YoY" });
+  const repository = repositoryDouble({
+    [WEEKLY_CALENDAR_META_KEY]: { calendarWeek: "2026-08-17", events: [release(), core], updatedAt: "2026-08-19T10:00:00Z" },
+  });
+
+  const result = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:31:00Z", repository,
+    fetchCalendar: async () => calendarResult([release(), core]),
+    fetchOfficialActual: async ({ event }) => {
+      if (event.id === "us-cpi-yoy-2026-08") throw new Error("BLS headline probe failed");
+      return officialActual("3.1", { sourceId: "bls-core-cpi" });
+    },
+    persist: true,
+  });
+
+  assert.equal(result.publishable, true);
+  assert.equal(result.event.id, core.id);
+  assert.match(result.warnings.join("\n"), /BLS headline probe failed/);
 });
