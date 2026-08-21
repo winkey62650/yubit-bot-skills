@@ -13,6 +13,10 @@ import {
   parseFederalReserveCalendar,
   parseRssFeed,
 } from "../lib/market-content-sources.mjs";
+import {
+  buildWeeklyCalendarDocument,
+  renderTelegramMarketDocument,
+} from "../lib/market-content-templates.mjs";
 
 const fixtureDirectory = new URL("./fixtures/market-content/", import.meta.url);
 
@@ -195,6 +199,47 @@ test("official calendar adapters reject generic HTML challenges but accept sourc
   assert.equal(emptyFed.sources[0].status, "ok");
   assert.equal((await fetchBeaStatus("<html><body><main>Access denied</main></body></html>")).status, "error");
   assert.equal((await fetchBeaStatus(EMPTY_BEA_SCHEDULE)).status, "ok");
+});
+
+test("official calendar adapters reject nonempty schedule rows when every candidate drifts from the schema", async () => {
+  const malformedFed = await fetchFederalReserveCalendar({
+    fetchImpl: async () => new Response(`
+      <a>2026 FOMC Meetings</a>
+      <div class="row fomc-meeting">
+        <div class="fomc-meeting__month">Septembruary</div>
+        <div class="fomc-meeting__date">TBA</div>
+      </div>
+    `),
+    timeoutMs: 10,
+  });
+  const result = await fetchMarketCalendar({
+    from: "2026-08-20T00:00:00.000Z",
+    to: "2026-08-21T00:00:00.000Z",
+    timeoutMs: 10,
+    fetchImpl: async (url) => {
+      const target = String(url);
+      if (target.includes("tradingview")) return jsonResponse({ result: [] });
+      if (target.includes("nasdaq")) return jsonResponse({ data: { rows: [] } });
+      if (target.includes("federalreserve.gov")) return new Response(EMPTY_FED_CALENDAR);
+      if (target.includes("bls.gov")) return new Response("BEGIN:VCALENDAR\r\nEND:VCALENDAR");
+      if (target.includes("bea.gov")) return new Response(`
+        <table id="release-schedule-table">
+          <thead><tr><th>Year 2026</th><th>Release</th></tr></thead>
+          <tbody><tr>
+            <td class="release-date">August XX <span class="text-muted">8:30 A.M.</span></td>
+            <td class="release-title">Gross Domestic Product</td>
+          </tr></tbody>
+        </table>
+      `);
+      throw new Error(`Unexpected URL: ${url}`);
+    },
+  });
+  const bea = result.sources.find((source) => source.id === "bea-release-schedule");
+
+  assert.equal(malformedFed.sources[0].status, "error");
+  assert.match(malformedFed.warnings.join("\n"), /schema/i);
+  assert.equal(bea.status, "error");
+  assert.match(result.warnings.join("\n"), /BEA.*schema/i);
 });
 
 test("market calendar deduplicates US country aliases before reconciliation", async () => {
@@ -437,6 +482,104 @@ test("official schedules augment a TBD auxiliary release by its statistical peri
   assert.equal(pceYoy[0].schedule.sourceId, "bea-release-schedule");
   assert.equal(pceYoy[0].values.forecast.value, "2.7%");
   assert.equal(pceYoy[0].values.forecast.sourceId, "tradingview-calendar");
+});
+
+test("official schedules preserve series-aware titles through weekly Telegram rendering", async () => {
+  const result = await fetchMarketCalendar({
+    from: "2026-08-20T00:00:00.000Z",
+    to: "2026-08-21T00:00:00.000Z",
+    now: "2026-08-20T10:00:00.000Z",
+    fetchImpl: async (url) => {
+      const target = String(url);
+      if (target.includes("tradingview")) return jsonResponse({ result: [
+        { title: "US CPI YoY", country: "US", date: "2026-08-20T12:30:00Z" },
+        { title: "US CPI MoM", country: "US", date: "2026-08-20T12:30:00Z" },
+        { title: "US GDP Annualized QoQ", country: "US", date: "2026-08-20T12:30:00Z" },
+        { title: "US PCE YoY", country: "US", date: "2026-08-20T12:30:00Z" },
+      ] });
+      if (target.includes("nasdaq")) return jsonResponse({ data: { rows: [] } });
+      if (target.includes("federalreserve.gov")) return new Response(EMPTY_FED_CALENDAR);
+      if (target.includes("bls.gov")) return new Response([
+        "BEGIN:VCALENDAR", "BEGIN:VEVENT", "DTSTART:20260820T123000Z",
+        "SUMMARY:Consumer Price Index", "END:VEVENT", "END:VCALENDAR",
+      ].join("\r\n"));
+      if (target.includes("bea.gov")) return new Response(`
+        <table id="release-schedule-table">
+          <thead><tr><th>Year 2026</th><th>Release</th></tr></thead>
+          <tbody>
+            <tr><td class="release-date">August 20 <span class="text-muted">8:30 A.M.</span></td><td class="release-title">Gross Domestic Product, 2nd Quarter 2026</td></tr>
+            <tr><td class="release-date">August 20 <span class="text-muted">8:30 A.M.</span></td><td class="release-title">Personal Income and Outlays, July 2026</td></tr>
+          </tbody>
+        </table>
+      `);
+      throw new Error(`Unexpected URL: ${url}`);
+    },
+  });
+  const titlesBySeries = Object.fromEntries(result.events.map((event) => [event.id.split(":")[0], event.title]));
+  const rendered = renderTelegramMarketDocument(buildWeeklyCalendarDocument({
+    now: new Date("2026-08-20T10:00:00.000Z"),
+    events: result.events,
+  }));
+
+  assert.equal(titlesBySeries["cpi-yoy"], "US CPI YoY");
+  assert.equal(titlesBySeries["cpi-mom"], "US CPI MoM");
+  assert.equal(titlesBySeries["gdp-annualized-qoq"], "US GDP Annualized QoQ");
+  assert.equal(titlesBySeries["pce-yoy"], "US PCE YoY");
+  assert.match(rendered, /US CPI YoY/);
+  assert.match(rendered, /US GDP Annualized QoQ/);
+  assert.match(rendered, /US PCE YoY/);
+});
+
+test("TradingView and Nasdaq date-only TBD rows deduplicate on their structured date", async () => {
+  const result = await fetchMarketCalendar({
+    from: "2026-08-20T00:00:00.000Z",
+    to: "2026-08-21T00:00:00.000Z",
+    now: "2026-08-20T10:00:00.000Z",
+    fetchImpl: async (url) => {
+      const target = String(url);
+      if (target.includes("tradingview")) return jsonResponse({ result: [{
+        title: "US CPI YoY", country: "United States", date: "2026-08-20",
+      }] });
+      if (target.includes("nasdaq")) return jsonResponse({ data: { rows: [{
+        gmt: "TBD", country: "US", eventName: "Consumer Price Index YoY",
+      }] } });
+      if (target.includes("federalreserve.gov")) return new Response(EMPTY_FED_CALENDAR);
+      if (target.includes("bls.gov")) return new Response("BEGIN:VCALENDAR\r\nEND:VCALENDAR");
+      if (target.includes("bea.gov")) return new Response(EMPTY_BEA_SCHEDULE);
+      throw new Error(`Unexpected URL: ${url}`);
+    },
+  });
+
+  assert.equal(result.events.length, 1);
+  assert.equal(result.events[0].id, "cpi-yoy:US:2026-08-20");
+});
+
+test("truly dateless event identities stay stable when source input order changes", async () => {
+  const collectIds = async (rows) => {
+    const result = await fetchMarketCalendar({
+      from: "2026-08-20T00:00:00.000Z",
+      to: "2026-08-21T00:00:00.000Z",
+      now: "2026-08-20T10:00:00.000Z",
+      fetchImpl: async (url) => {
+        const target = String(url);
+        if (target.includes("tradingview")) return jsonResponse({ result: rows });
+        if (target.includes("nasdaq")) return jsonResponse({ data: { rows: [] } });
+        if (target.includes("federalreserve.gov")) return new Response(EMPTY_FED_CALENDAR);
+        if (target.includes("bls.gov")) return new Response("BEGIN:VCALENDAR\r\nEND:VCALENDAR");
+        if (target.includes("bea.gov")) return new Response(EMPTY_BEA_SCHEDULE);
+        throw new Error(`Unexpected URL: ${url}`);
+      },
+    });
+    return Object.fromEntries(result.events.map((event) => [event.title, event.id]));
+  };
+  const first = { title: "Retail Sales", country: "US" };
+  const second = { title: "Existing Home Sales", country: "US" };
+
+  const forward = await collectIds([first, second]);
+  const reverse = await collectIds([second, first]);
+
+  assert.deepEqual(forward, reverse);
+  assert.equal(Object.values(forward).some((id) => /unknown-\d+$/.test(id)), false);
 });
 
 test("Nasdaq TBD events on separate dates keep distinct safe identities", async () => {
