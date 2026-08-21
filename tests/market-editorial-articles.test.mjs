@@ -438,6 +438,134 @@ function reaction() {
   };
 }
 
+function task4ReactionEnvelope({ status = "ok", lastSuccessAt = "2026-08-12T12:45:00.000Z" } = {}) {
+  const prices = {
+    BTC: {
+      symbol: "BTC",
+      beforePrice: 65000,
+      beforePriceAt: "2026-08-12T12:29:00.000Z",
+      price: 64220,
+      changePercent: -1.2,
+      source: "Binance",
+      observedAt: "2026-08-12T12:45:00.000Z",
+    },
+    ETH: {
+      symbol: "ETH",
+      beforePrice: 3000,
+      beforePriceAt: "2026-08-12T12:29:00.000Z",
+      price: 2952,
+      changePercent: -1.6,
+      source: "Binance",
+      observedAt: "2026-08-12T12:45:00.000Z",
+    },
+  };
+  return {
+    data: prices,
+    prices,
+    sources: [{
+      id: "binance",
+      url: "https://api.binance.com",
+      status,
+      checkedAt: "2026-08-12T12:45:00.000Z",
+      lastSuccessAt,
+      freshnessSeconds: lastSuccessAt ? 0 : null,
+    }],
+    warnings: [],
+  };
+}
+
+test("Data Update adopts exact Task4 source-only reaction records through healthy envelope providers", () => {
+  const event = releaseEvent();
+  const marketReaction = task4ReactionEnvelope();
+  const document = buildDataReleaseDocument({ event, reaction: marketReaction });
+  const article = buildDataUpdateArticle({
+    document,
+    event,
+    reaction: marketReaction,
+    tierDecision: { tier: "tier-one", decision: "tier-one", score: 94, reasons: [] },
+    sourceManifest: marketReaction.sources,
+  });
+
+  assert.equal(article.verdict, "Confirmed");
+  assert.deepEqual(article.reactionWindow.providers, ["Binance"]);
+  assert.deepEqual(
+    article.marketConfirmation.observations.map(({ symbol, providerName, sourceUrl }) => ({ symbol, providerName, sourceUrl })),
+    [
+      { symbol: "BTC", providerName: "Binance", sourceUrl: "https://api.binance.com/" },
+      { symbol: "ETH", providerName: "Binance", sourceUrl: "https://api.binance.com/" },
+    ],
+  );
+});
+
+test("Data Update trusts only unambiguous reaction providers with successful Task4 health", () => {
+  const event = releaseEvent();
+  const build = (marketReaction) => {
+    const document = buildDataReleaseDocument({ event, reaction: marketReaction });
+    return buildDataUpdateArticle({
+      document,
+      event,
+      reaction: marketReaction,
+      tierDecision: { tier: "tier-one", decision: "tier-one", score: 94, reasons: [] },
+      sourceManifest: marketReaction.sources,
+    });
+  };
+
+  const degraded = task4ReactionEnvelope({ status: "degraded" });
+  assert.deepEqual(build(degraded).reactionWindow.providers, ["Binance"]);
+
+  const mixedHealth = task4ReactionEnvelope();
+  mixedHealth.prices.ETH.source = "OKX";
+  mixedHealth.prices.ETH.sourceUrl = "https://www.okx.com/api/v5/market/ticker";
+  mixedHealth.sources.push({
+    id: "okx",
+    url: "https://www.okx.com",
+    status: "error",
+    checkedAt: "2026-08-12T12:45:00.000Z",
+    lastSuccessAt: null,
+    freshnessSeconds: null,
+  });
+  const mixedArticle = build(mixedHealth);
+  assert.deepEqual(mixedArticle.marketConfirmation.observations.map(({ symbol }) => symbol), ["BTC"]);
+  assert.equal(mixedArticle.verdict, "Awaiting Confirmation");
+
+  for (const unavailable of [
+    task4ReactionEnvelope({ status: "error", lastSuccessAt: null }),
+    task4ReactionEnvelope({ status: "timeout", lastSuccessAt: null }),
+    task4ReactionEnvelope({ status: "ok", lastSuccessAt: null }),
+  ]) {
+    assert.throws(() => build(unavailable), /bounded end|named market provider|trusted.*provider|provider.*health/i);
+  }
+
+  for (const duplicate of [
+    { ...task4ReactionEnvelope().sources[0] },
+    { ...task4ReactionEnvelope().sources[0], url: "https://data.binance.com" },
+  ]) {
+    const ambiguous = task4ReactionEnvelope();
+    ambiguous.sources.push(duplicate);
+    assert.throws(() => build(ambiguous), /ambiguous|duplicate|conflicting.*provider/i);
+  }
+});
+
+test("Data Update preserves a valid per-record provider URL instead of replacing its path", () => {
+  const event = releaseEvent();
+  const marketReaction = task4ReactionEnvelope();
+  marketReaction.prices.BTC.sourceUrl = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT";
+  marketReaction.prices.ETH.sourceUrl = "https://api.binance.com/api/v3/klines?symbol=ETHUSDT";
+  const document = buildDataReleaseDocument({ event, reaction: marketReaction });
+  const article = buildDataUpdateArticle({
+    document,
+    event,
+    reaction: marketReaction,
+    tierDecision: { tier: "tier-one", decision: "tier-one", score: 94, reasons: [] },
+    sourceManifest: marketReaction.sources,
+  });
+
+  assert.deepEqual(article.marketConfirmation.observations.map(({ sourceUrl }) => sourceUrl), [
+    "https://api.binance.com/api/v3/klines?symbol=BTCUSDT",
+    "https://api.binance.com/api/v3/klines?symbol=ETHUSDT",
+  ]);
+});
+
 test("tier-one Data Update separates facts, observation and labelled inference", () => {
   const event = releaseEvent();
   const marketReaction = reaction();
