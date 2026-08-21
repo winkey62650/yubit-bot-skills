@@ -14,6 +14,7 @@ import {
 } from "../lib/data-release-monitor.mjs";
 import { buildMarketPreviewFacts } from "../lib/distribution-ui.mjs";
 import { JsonDistributionRepository } from "../lib/distribution-repository.mjs";
+import { readJson, writeJson } from "../lib/json-store.js";
 
 const { AUTOMATION_JOBS, automationSlot, automationTopicMatches } = automation;
 
@@ -2206,6 +2207,95 @@ test("weekly durable receipt prevents a completed target repeating before slot s
   assert.equal(first.status, "success");
   assert.equal(restartedWithoutSlot.status, "duplicate");
   assert.equal(sends, sendsAfterFirst);
+});
+
+test("weekly restart safely recovers an unclaimed pending receipt created before its send marker", async () => {
+  const repository = automationRepository();
+  const target = { chatId: "-1001", threadId: 981 };
+  const generatedIdentity = {
+    publication: { product: "weekly-calendar", slug: "2026-W34" },
+    language: "en",
+  };
+  const deduplicationKey = automation.buildMarketDeliveryIdempotencyKey("weekly-calendar", generatedIdentity, target);
+  const targetKey = "telegram:-1001:981";
+  await prepareDataReleaseDelivery({ repository, deduplicationKey, targetKeys: [targetKey], now: "2026-08-19T08:58:00.000Z" });
+  await markDataReleaseTargetPending({ repository, deduplicationKey, targetKey, now: "2026-08-19T08:59:00.000Z" });
+  let sends = 0;
+
+  const recovered = await automation.runAutomationJob("weekly-calendar", verifiedWeeklyDeliveryOptions(repository, {
+    targets: [target],
+    telegramSender: async () => ({ message_id: ++sends }),
+  }));
+
+  assert.equal(recovered.status, "success");
+  assert.ok(sends > 0);
+  assert.equal(recovered.preview.targetResults[0].manualReconciliationRequired, undefined);
+  assert.equal(recovered.preview.deliveryReceipts[0].complete, true);
+});
+
+test("weekly legacy success migrates only its exact destinations and still sends a changed topic", async () => {
+  const repository = automationRepository();
+  const stateKey = `weekly-legacy-migration-${process.pid}`;
+  const legacyTarget = { chatId: "-1001", threadId: 982 };
+  const changedTarget = { chatId: "-1001", threadId: 983 };
+  const storedState = await readJson("automation-state.json", {});
+  await writeJson("automation-state.json", {
+    ...storedState,
+    [stateKey]: {
+      slot: "2026-W34",
+      at: "2026-08-18T00:30:00.000Z",
+      status: "success",
+      targets: [legacyTarget],
+      targetResults: [{ target: legacyTarget, status: "success" }],
+    },
+  });
+  const sentThreads = [];
+
+  const upgraded = await automation.runAutomationJob("weekly-calendar", verifiedWeeklyDeliveryOptions(repository, {
+    force: false,
+    stateKey,
+    targets: [legacyTarget, changedTarget],
+    telegramSender: async (_token, _method, payload) => {
+      sentThreads.push(payload.message_thread_id);
+      return { message_id: sentThreads.length };
+    },
+  }));
+
+  assert.equal(upgraded.status, "success");
+  assert.deepEqual([...new Set(sentThreads)], [983]);
+  assert.equal(upgraded.preview.targetResults.find(({ target }) => target.threadId === 982)?.receiptExisting, true);
+  assert.ok(upgraded.preview.targetResults.some(({ target, status }) => target.threadId === 983 && status === "success"));
+});
+
+test("weekly canonicalizes duplicate Telegram and Discord destinations before planning and sending", async () => {
+  const repository = automationRepository();
+  const telegramCalls = [];
+  const discordCalls = [];
+  const duplicateTelegram = { chatId: "-1001", threadId: 984 };
+  const duplicateDiscord = { platform: "discord", guildId: "g1", channelId: "c984" };
+
+  const result = await automation.runAutomationJob("weekly-calendar", verifiedWeeklyDeliveryOptions(repository, {
+    targets: [
+      duplicateTelegram,
+      { ...duplicateTelegram, platform: "telegram", group: "duplicate config" },
+      duplicateDiscord,
+      { ...duplicateDiscord, group: "duplicate config" },
+    ],
+    telegramSender: async (_token, method, payload) => {
+      telegramCalls.push({ method, payload });
+      return { message_id: telegramCalls.length };
+    },
+    discordSender: async (channelId, payload) => {
+      discordCalls.push({ channelId, payload });
+      return { id: `discord-${discordCalls.length}` };
+    },
+  }));
+
+  assert.equal(result.status, "success");
+  assert.equal(result.preview.deliveryPlans.length, 2);
+  assert.equal(result.preview.targetResults.length, 2);
+  assert.equal(telegramCalls.length, result.preview.deliveryPlans.find(({ target }) => target.chatId)?.steps.length);
+  assert.equal(discordCalls.length, result.preview.deliveryPlans.find(({ target }) => target.channelId)?.steps.length);
 });
 
 test("partial release reaction remains publishable as Awaiting Confirmation and retains provider warnings", async () => {
