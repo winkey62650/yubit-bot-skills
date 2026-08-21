@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
+import { deflateSync } from "node:zlib";
+import { JsonDistributionRepository, PostgresDistributionRepository } from "../lib/distribution-repository.mjs";
 import {
   captureEditorialImage as capturePublicationImage,
   createMarketPublication,
@@ -15,6 +20,8 @@ import {
 const NOW = "2026-08-21T00:00:00.000Z";
 const ORIGIN = "https://academy.yubit.com";
 const ALLOWED = [ORIGIN];
+const PNG_SIGNATURE_FOR_TEST = Buffer.from("89504e470d0a1a0a", "hex");
+const MAX_EDITORIAL_IMAGE_BYTES = 5 * 1024 * 1024;
 
 class MemoryRepository {
   constructor(store = new Map()) { this.store = store; }
@@ -66,12 +73,15 @@ function png(width = 1200, height = 675, payloadBytes = 0) {
   const header = Buffer.alloc(13);
   header.writeUInt32BE(width, 0);
   header.writeUInt32BE(height, 4);
-  header[8] = 8;
-  header[9] = 6;
+  header[8] = 1;
+  header[9] = 0;
+  const rowBytes = Math.ceil(width / 8);
+  const pixels = Buffer.alloc((rowBytes + 1) * height);
   return Buffer.concat([
     Buffer.from("89504e470d0a1a0a", "hex"),
     pngChunk("IHDR", header),
-    pngChunk("IDAT", Buffer.alloc(payloadBytes)),
+    ...(payloadBytes ? [pngChunk("tEXt", Buffer.alloc(payloadBytes, 0x61))] : []),
+    pngChunk("IDAT", deflateSync(pixels)),
     pngChunk("IEND"),
   ]);
 }
@@ -82,8 +92,10 @@ function deferred() {
   return { promise, resolve };
 }
 
-function response(body, { status = 200, contentType = "image/png", url = "" } = {}) {
-  const value = new Response(body, { status, headers: { "content-type": contentType } });
+function response(body, { status = 200, contentType = "image/png", contentLength, url = "" } = {}) {
+  const headers = { "content-type": contentType };
+  if (contentLength !== undefined) headers["content-length"] = String(contentLength);
+  const value = new Response(body, { status, headers });
   if (url) Object.defineProperty(value, "url", { value: url });
   return value;
 }
@@ -156,16 +168,16 @@ test("one versioned bundle persists draft, rendered and verified lifecycle acros
 });
 
 test("capture rejects HTTP failures, wrong MIME, wrong dimensions and oversized images without replacing a trusted asset", async () => {
-  for (const [name, factory, message] of [
-    ["image 500", () => response("error", { status: 500, contentType: "text/plain" }), /status 200/i],
-    ["wrong MIME", () => response(png(), { contentType: "image/jpeg" }), /image\/png/i],
-    ["wrong dimensions", () => response(png(1199, 675)), /1200.*675/i],
-    ["byte cap", () => response(png(1200, 675, 100)), /byte limit|too large/i],
+  for (const [name, factory, message, maxBytes] of [
+    ["image 500", (url) => response("error", { status: 500, contentType: "text/plain", url }), /status 200/i],
+    ["wrong MIME", (url) => response(png(), { contentType: "image/jpeg", url }), /image\/png/i],
+    ["wrong dimensions", (url) => response(png(1199, 675), { url }), /1200.*675/i],
+    ["byte cap", (url) => response(png(1200, 675, 100), { url }), /byte limit|too large/i, 64],
   ]) {
     const repository = new MemoryRepository();
     await createMarketPublication({ repository, ...draftInput(), now: () => NOW });
     await assert.rejects(
-      captureEditorialImage({ repository, product: "weekly-calendar", slug: "2026-W34", publicOrigin: ORIGIN, maxBytes: 64, fetchImpl: async () => factory(), now: () => NOW }),
+      captureEditorialImage({ repository, product: "weekly-calendar", slug: "2026-W34", publicOrigin: ORIGIN, ...(maxBytes ? { maxBytes } : {}), fetchImpl: async (url) => factory(url), now: () => NOW }),
       message,
       name,
     );
@@ -178,9 +190,9 @@ test("capture rejects HTTP failures, wrong MIME, wrong dimensions and oversized 
 
   const repository = new MemoryRepository();
   await createMarketPublication({ repository, ...draftInput(), now: () => NOW });
-  await captureEditorialImage({ repository, product: "weekly-calendar", slug: "2026-W34", publicOrigin: ORIGIN, fetchImpl: async () => response(png()), now: () => NOW });
+  await captureEditorialImage({ repository, product: "weekly-calendar", slug: "2026-W34", publicOrigin: ORIGIN, fetchImpl: async (url) => response(png(), { url }), now: () => NOW });
   const trusted = (await getMarketPublication({ repository, product: "weekly-calendar", slug: "2026-W34" })).imageAsset;
-  await assert.rejects(captureEditorialImage({ repository, product: "weekly-calendar", slug: "2026-W34", publicOrigin: ORIGIN, fetchImpl: async () => response(png(900, 675)), now: () => NOW }), /1200.*675/i);
+  await assert.rejects(captureEditorialImage({ repository, product: "weekly-calendar", slug: "2026-W34", publicOrigin: ORIGIN, fetchImpl: async (url) => response(png(900, 675), { url }), now: () => NOW }), /1200.*675/i);
   assert.deepEqual((await getMarketPublication({ repository, product: "weekly-calendar", slug: "2026-W34" })).imageAsset, trusted);
 });
 
@@ -193,7 +205,7 @@ test("tier-one verification persists page and image failure evidence without adv
   ]) {
     const repository = new MemoryRepository();
     const draft = await createMarketPublication({ repository, ...draftInput(), now: () => NOW });
-    await captureEditorialImage({ repository, product: draft.product, slug: draft.slug, publicOrigin: ORIGIN, fetchImpl: async () => response(png()), now: () => NOW });
+    await captureEditorialImage({ repository, product: draft.product, slug: draft.slug, publicOrigin: ORIGIN, fetchImpl: async (url) => response(png(), { url }), now: () => NOW });
     const wrappedFetch = name === "image 500"
       ? async (url) => fetchImpl(url).then(async (item) => {
         if (url.includes("market-calendar")) return response(`<article data-content-hash="${draft.contentHash}"></article>`, { contentType: "text/html", url });
@@ -210,18 +222,18 @@ test("tier-one verification persists page and image failure evidence without adv
 
 test("verification rejects wrong MIME, image hash mismatch and an absent article hash marker", async () => {
   for (const [kind, imageResponse, pageBody, message] of [
-    ["wrong MIME", () => response(png(), { contentType: "image/jpeg" }), null, /image\/png/i],
-    ["hash mismatch", () => response(png(1200, 675, 1)), null, /hash/i],
-    ["article marker", () => response(png()), "<article>no marker</article>", /content hash/i],
+    ["wrong MIME", (url) => response(png(), { contentType: "image/jpeg", url }), null, /image\/png/i],
+    ["hash mismatch", (url) => response(png(1200, 675, 1), { url }), null, /hash/i],
+    ["article marker", (url) => response(png(), { url }), "<article>no marker</article>", /content hash/i],
   ]) {
     const repository = new MemoryRepository();
     const draft = await createMarketPublication({ repository, ...draftInput(), now: () => NOW });
-    await captureEditorialImage({ repository, product: draft.product, slug: draft.slug, publicOrigin: ORIGIN, fetchImpl: async () => response(png()), now: () => NOW });
+    await captureEditorialImage({ repository, product: draft.product, slug: draft.slug, publicOrigin: ORIGIN, fetchImpl: async (url) => response(png(), { url }), now: () => NOW });
     await assert.rejects(verifyPublicPublication({
       repository, product: draft.product, slug: draft.slug, publicOrigin: ORIGIN, now: () => NOW,
       fetchImpl: async (url) => url.includes("market-calendar")
         ? response(pageBody ?? `<article data-content-hash="${draft.contentHash}"></article>`, { contentType: "text/html", url })
-        : imageResponse(),
+        : imageResponse(url),
     }), message, kind);
     assert.equal((await getMarketPublication({ repository, product: draft.product, slug: draft.slug })).status, "rendered");
   }
@@ -249,7 +261,7 @@ test("production origin rejects localhost, private IPs, credentials, HTTP and re
     slug: "2026-W34",
     publicOrigin: "https://fca.example",
     allowedOrigins: ["https://fca.example"],
-    fetchImpl: async () => response(png()),
+    fetchImpl: async (url) => response(png(), { url }),
     now: () => NOW,
   });
   assert.equal(publicCapture.status, "rendered", "ordinary hostnames beginning with fc are not IPv6 private addresses");
@@ -268,7 +280,7 @@ test("secondary Data Update verifies only its image endpoint", async () => {
     }),
     now: () => NOW,
   });
-  await captureEditorialImage({ repository, product: "data-update", slug: "us-retail-sales/2026-08-21", publicOrigin: ORIGIN, fetchImpl: async () => response(png()), now: () => NOW });
+  await captureEditorialImage({ repository, product: "data-update", slug: "us-retail-sales/2026-08-21", publicOrigin: ORIGIN, fetchImpl: async (url) => response(png(), { url }), now: () => NOW });
   const verified = await verifyPublicPublication({
     repository, product: "data-update", slug: "us-retail-sales/2026-08-21", publicOrigin: ORIGIN, now: () => NOW,
     fetchImpl: async (url) => { calls.push(url); return response(png(), { url }); },
@@ -283,7 +295,7 @@ test("inputs are not mutated and recreating a durable identity cannot regress it
   const input = draftInput();
   const before = structuredClone(input);
   await createMarketPublication({ repository, ...input, now: () => NOW });
-  await captureEditorialImage({ repository, product: input.product, slug: input.slug, publicOrigin: ORIGIN, fetchImpl: async () => response(png()), now: () => NOW });
+  await captureEditorialImage({ repository, product: input.product, slug: input.slug, publicOrigin: ORIGIN, fetchImpl: async (url) => response(png(), { url }), now: () => NOW });
   const replay = await createMarketPublication({ repository, ...input, now: () => NOW });
   assert.equal(replay.status, "rendered");
   assert.deepEqual(input, before);
@@ -312,7 +324,7 @@ test("verification precondition failures are durable and verified captures are i
   assert.equal(failed.status, "draft");
   assert.equal(failed.health.image, "failed");
 
-  await captureEditorialImage({ repository, product: draft.product, slug: draft.slug, publicOrigin: ORIGIN, fetchImpl: async () => response(png()), now: () => NOW });
+  await captureEditorialImage({ repository, product: draft.product, slug: draft.slug, publicOrigin: ORIGIN, fetchImpl: async (url) => response(png(), { url }), now: () => NOW });
   const verified = await verifyPublicPublication({
     repository, product: draft.product, slug: draft.slug, publicOrigin: ORIGIN, now: () => NOW,
     fetchImpl: async (url) => url.includes("market-calendar")
@@ -347,7 +359,7 @@ test("image byte cap stops reading a streaming response as soon as the limit is 
     slug: "2026-W34",
     publicOrigin: ORIGIN,
     maxBytes: 64,
-    fetchImpl: async () => response(body),
+    fetchImpl: async (url) => response(body, { url }),
     now: () => NOW,
   }), /byte limit/i);
   assert.equal(cancelled, true);
@@ -404,7 +416,7 @@ test("publication tier classification rejects every conflicting article and comm
   });
   await captureEditorialImage({
     repository, product: draft.product, slug: draft.slug, publicOrigin: ORIGIN,
-    fetchImpl: async () => response(png()), now: () => NOW,
+    fetchImpl: async (url) => response(png(), { url }), now: () => NOW,
   });
   const calls = [];
   await verifyPublicPublication({
@@ -423,7 +435,7 @@ test("publication tier classification rejects every conflicting article and comm
 test("failed re-verification retracts verified trust while retaining the retryable asset and evidence", async () => {
   const repository = new MemoryRepository();
   const draft = await createMarketPublication({ repository, ...draftInput(), now: () => NOW });
-  await captureEditorialImage({ repository, product: draft.product, slug: draft.slug, publicOrigin: ORIGIN, fetchImpl: async () => response(png()), now: () => NOW });
+  await captureEditorialImage({ repository, product: draft.product, slug: draft.slug, publicOrigin: ORIGIN, fetchImpl: async (url) => response(png(), { url }), now: () => NOW });
   await verifyPublicPublication({
     repository, product: draft.product, slug: draft.slug, publicOrigin: ORIGIN, now: () => NOW,
     fetchImpl: async (url) => url.includes("market-calendar")
@@ -491,7 +503,7 @@ test("restart rejects incomplete bundles and every invalid lifecycle invariant",
     const store = new Map();
     const repo = new MemoryRepository(store);
     await createMarketPublication({ repository: repo, ...draftInput(), now: () => NOW });
-    await captureEditorialImage({ repository: repo, ...identity, publicOrigin: ORIGIN, fetchImpl: async () => response(png()), now: () => NOW });
+    await captureEditorialImage({ repository: repo, ...identity, publicOrigin: ORIGIN, fetchImpl: async (url) => response(png(), { url }), now: () => NOW });
     const stored = await repo.getMeta(key);
     await repo.setMeta(key, corrupt(stored));
     await assert.rejects(getMarketPublication({ repository: new MemoryRepository(store), ...identity }), /malformed|contract|invariant|hash|asset/i);
@@ -507,13 +519,13 @@ test("late capture and verification results cannot overwrite a newer durable pub
   const newImage = png(1200, 675, 2);
   const lateCapture = captureEditorialImage({
     repository, product: draft.product, slug: draft.slug, publicOrigin: ORIGIN,
-    fetchImpl: async () => { enteredCapture.resolve(); await releaseCapture.promise; return response(oldImage); },
+    fetchImpl: async (url) => { enteredCapture.resolve(); await releaseCapture.promise; return response(oldImage, { url }); },
     now: () => "2026-08-21T00:01:00.000Z",
   });
   await enteredCapture.promise;
   await captureEditorialImage({
     repository, product: draft.product, slug: draft.slug, publicOrigin: ORIGIN,
-    fetchImpl: async () => response(newImage), now: () => "2026-08-21T00:02:00.000Z",
+    fetchImpl: async (url) => response(newImage, { url }), now: () => "2026-08-21T00:02:00.000Z",
   });
   await verifyPublicPublication({
     repository, product: draft.product, slug: draft.slug, publicOrigin: ORIGIN,
@@ -530,7 +542,7 @@ test("late capture and verification results cannot overwrite a newer durable pub
 
   const verifyRepository = new MemoryRepository();
   const verifyDraft = await createMarketPublication({ repository: verifyRepository, ...draftInput(), now: () => NOW });
-  await captureEditorialImage({ repository: verifyRepository, product: verifyDraft.product, slug: verifyDraft.slug, publicOrigin: ORIGIN, fetchImpl: async () => response(oldImage), now: () => NOW });
+  await captureEditorialImage({ repository: verifyRepository, product: verifyDraft.product, slug: verifyDraft.slug, publicOrigin: ORIGIN, fetchImpl: async (url) => response(oldImage, { url }), now: () => NOW });
   const enteredVerify = deferred();
   const releaseVerify = deferred();
   const lateVerify = verifyPublicPublication({
@@ -546,7 +558,7 @@ test("late capture and verification results cannot overwrite a newer durable pub
     now: () => "2026-08-21T00:01:00.000Z",
   });
   await enteredVerify.promise;
-  await captureEditorialImage({ repository: verifyRepository, product: verifyDraft.product, slug: verifyDraft.slug, publicOrigin: ORIGIN, fetchImpl: async () => response(newImage), now: () => "2026-08-21T00:02:00.000Z" });
+  await captureEditorialImage({ repository: verifyRepository, product: verifyDraft.product, slug: verifyDraft.slug, publicOrigin: ORIGIN, fetchImpl: async (url) => response(newImage, { url }), now: () => "2026-08-21T00:02:00.000Z" });
   releaseVerify.resolve();
   await assert.rejects(lateVerify, /concurrent|stale/i);
   const afterVerify = await getMarketPublication({ repository: verifyRepository, product: verifyDraft.product, slug: verifyDraft.slug });
@@ -556,7 +568,7 @@ test("late capture and verification results cannot overwrite a newer durable pub
 
   const failureRepository = new MemoryRepository();
   const failureDraft = await createMarketPublication({ repository: failureRepository, ...draftInput(), now: () => NOW });
-  await captureEditorialImage({ repository: failureRepository, product: failureDraft.product, slug: failureDraft.slug, publicOrigin: ORIGIN, fetchImpl: async () => response(oldImage), now: () => NOW });
+  await captureEditorialImage({ repository: failureRepository, product: failureDraft.product, slug: failureDraft.slug, publicOrigin: ORIGIN, fetchImpl: async (url) => response(oldImage, { url }), now: () => NOW });
   const enteredFailure = deferred();
   const releaseFailure = deferred();
   const lateFailure = verifyPublicPublication({
@@ -569,7 +581,7 @@ test("late capture and verification results cannot overwrite a newer durable pub
     now: () => "2026-08-21T00:01:00.000Z",
   });
   await enteredFailure.promise;
-  await captureEditorialImage({ repository: failureRepository, product: failureDraft.product, slug: failureDraft.slug, publicOrigin: ORIGIN, fetchImpl: async () => response(newImage), now: () => "2026-08-21T00:02:00.000Z" });
+  await captureEditorialImage({ repository: failureRepository, product: failureDraft.product, slug: failureDraft.slug, publicOrigin: ORIGIN, fetchImpl: async (url) => response(newImage, { url }), now: () => "2026-08-21T00:02:00.000Z" });
   releaseFailure.resolve();
   await assert.rejects(lateFailure, /concurrent|stale/i);
   const afterFailure = await getMarketPublication({ repository: failureRepository, product: failureDraft.product, slug: failureDraft.slug });
@@ -590,7 +602,7 @@ test("article marker must exist on canonical article markup, never comments scri
   for (const htmlFactory of invalidMarkup("HASH")) {
     const repository = new MemoryRepository();
     const draft = await createMarketPublication({ repository, ...draftInput(), now: () => NOW });
-    await captureEditorialImage({ repository, product: draft.product, slug: draft.slug, publicOrigin: ORIGIN, fetchImpl: async () => response(png()), now: () => NOW });
+    await captureEditorialImage({ repository, product: draft.product, slug: draft.slug, publicOrigin: ORIGIN, fetchImpl: async (url) => response(png(), { url }), now: () => NOW });
     const html = htmlFactory.replace("HASH", draft.contentHash);
     await assert.rejects(verifyPublicPublication({
       repository, product: draft.product, slug: draft.slug, publicOrigin: ORIGIN,
@@ -618,7 +630,7 @@ test("PNG parser rejects bad CRC, truncated IHDR, missing IEND and oversized chu
     await createMarketPublication({ repository, ...draftInput(), now: () => NOW });
     await assert.rejects(captureEditorialImage({
       repository, product: "weekly-calendar", slug: "2026-W34", publicOrigin: ORIGIN,
-      fetchImpl: async () => response(bytes), now: () => NOW,
+      fetchImpl: async (url) => response(bytes, { url }), now: () => NOW,
     }), message);
   }
 });
@@ -646,6 +658,22 @@ test("canonical content hashing includes dangerous own property names without pr
     ...draftInput({ article: { title: "x", values: sparseWithExtra } }),
     now: () => NOW,
   }), /array|own keys|JSON/i);
+
+  const hiddenContent = { title: "x" };
+  Object.defineProperty(hiddenContent, "hidden", { value: "must-not-disappear", enumerable: false });
+  await assert.rejects(createMarketPublication({
+    repository: new MemoryRepository(),
+    ...draftInput({ article: hiddenContent }),
+    now: () => NOW,
+  }), /enumerable|JSON|data|content/i);
+
+  const accessorContent = { title: "x" };
+  Object.defineProperty(accessorContent, "derived", { enumerable: true, get: () => "must-not-be-evaluated" });
+  await assert.rejects(createMarketPublication({
+    repository: new MemoryRepository(),
+    ...draftInput({ article: accessorContent }),
+    now: () => NOW,
+  }), /JSON|data|content/i);
 });
 
 test("secondary draft verification failure persists retryable image-stage evidence", async () => {
@@ -667,7 +695,7 @@ test("secondary draft verification failure persists retryable image-stage eviden
   }), /stored rendered image/i);
   const failed = await getMarketPublication({ repository, product: input.product, slug: input.slug });
   assert.equal(failed.status, "draft");
-  assert.equal(failed.health.page, "pending");
+  assert.equal(failed.health.page, "not-applicable");
   assert.equal(failed.health.image, "failed");
   assert.equal(failed.health.error.stage, "image");
 });
@@ -702,4 +730,291 @@ test("allowed origin set is mandatory, non-empty, canonical HTTPS and enforced b
     fetchImpl: async () => { verifyFetches += 1; return response("never"); }, now: () => NOW,
   }), /allowed|allowlist/i);
   assert.equal(verifyFetches, 0);
+});
+
+test("publication payload contract rejects every non-plain editorial document on create and restart", async () => {
+  const invalidDocuments = [null, "text", [], new Date(NOW)];
+  for (const field of ["article", "communityDocument", "posterModel"]) {
+    for (const value of invalidDocuments) {
+      if (field === "article" && value === null) continue;
+      await assert.rejects(createMarketPublication({
+        repository: new MemoryRepository(),
+        ...draftInput({ [field]: value }),
+        now: () => NOW,
+      }), /plain|object|contract|article|community|poster/i, `${field}: ${String(value)}`);
+    }
+  }
+
+  await assert.rejects(createMarketPublication({
+    repository: new MemoryRepository(),
+    ...draftInput({
+      product: "data-update",
+      slug: "us-cpi/2026-08-21",
+      article: "not-null-secondary-article",
+      communityDocument: { templateId: "data-update-secondary-community", tierDecision: { tier: "secondary" } },
+    }),
+    now: () => NOW,
+  }), /article|secondary|plain|classification/i);
+
+  const repository = new MemoryRepository();
+  const draft = await createMarketPublication({ repository, ...draftInput(), now: () => NOW });
+  const key = marketPublicationKey(draft.product, draft.slug);
+  const stored = await repository.getMeta(key);
+  await repository.setMeta(key, { ...stored, posterModel: [] });
+  await assert.rejects(getMarketPublication({ repository, product: draft.product, slug: draft.slug }), /plain|object|contract|poster/i);
+
+  for (const entry of [null, "source-id", [], new Date(NOW)]) {
+    await assert.rejects(createMarketPublication({
+      repository: new MemoryRepository(),
+      ...draftInput({ sourceManifest: [entry] }),
+      now: () => NOW,
+    }), /source|manifest|plain|object|contract/i);
+  }
+});
+
+test("status health and failure evidence reject every impossible durable lifecycle state", async () => {
+  const secondaryRepository = new MemoryRepository();
+  const secondary = await createMarketPublication({
+    repository: secondaryRepository,
+    ...draftInput({
+      product: "data-update",
+      slug: "us-cpi/2026-08-21",
+      article: null,
+      communityDocument: { templateId: "data-update-secondary-community", tierDecision: { tier: "secondary" } },
+    }),
+    now: () => NOW,
+  });
+  assert.equal(secondary.health.page, "not-applicable");
+
+  const baseRepository = new MemoryRepository();
+  const draft = await createMarketPublication({ repository: baseRepository, ...draftInput(), now: () => NOW });
+  const key = marketPublicationKey(draft.product, draft.slug);
+  const cases = [
+    { health: { page: "not-applicable", image: "pending", checkedAt: null } },
+    { health: { page: "failed", image: "pending", checkedAt: NOW } },
+    { health: { page: "pending", image: "pending", checkedAt: NOW, error: { stage: "page", name: "Error", message: "x", at: NOW } } },
+    { health: { page: "pending", image: "failed", checkedAt: NOW, error: { stage: "page", name: "Error", message: "x", at: NOW } } },
+    { health: { page: "pending", image: "pending", checkedAt: NOW } },
+    { health: { page: "failed", image: "failed", checkedAt: NOW, error: { stage: "image", name: "Error", message: "x", at: NOW } } },
+  ];
+  for (const patch of cases) {
+    const repository = new MemoryRepository();
+    await repository.setMeta(key, { ...draft, ...patch });
+    await assert.rejects(getMarketPublication({ repository, product: draft.product, slug: draft.slug }), /health|status|error|failure|invariant/i);
+  }
+
+  const secondaryKey = marketPublicationKey(secondary.product, secondary.slug);
+  await secondaryRepository.setMeta(secondaryKey, { ...secondary, health: { page: "pending", image: "pending", checkedAt: null } });
+  await assert.rejects(getMarketPublication({ repository: secondaryRepository, product: secondary.product, slug: secondary.slug }), /health|status|invariant/i);
+
+  for (const renderedAt of ["2026-08-20T23:59:59.999Z", "2026-08-21T00:00:00.002Z"]) {
+    const repository = new MemoryRepository();
+    const created = await createMarketPublication({ repository, ...draftInput(), now: () => NOW });
+    await captureEditorialImage({
+      repository, product: created.product, slug: created.slug, publicOrigin: ORIGIN,
+      fetchImpl: async (url) => response(png(), { url }), now: () => NOW,
+    });
+    const rendered = await repository.getMeta(key);
+    await repository.setMeta(key, { ...rendered, imageAsset: { ...rendered.imageAsset, renderedAt } });
+    await assert.rejects(getMarketPublication({ repository, product: created.product, slug: created.slug }), /time|timestamp|asset|lifecycle|invariant/i);
+  }
+
+  const failedRepository = new MemoryRepository();
+  const failedDraft = await createMarketPublication({ repository: failedRepository, ...draftInput(), now: () => NOW });
+  await failedRepository.setMeta(key, {
+    ...failedDraft,
+    health: {
+      page: "pending", image: "failed", checkedAt: "2026-08-20T23:59:59.999Z",
+      error: { stage: "image", name: "Error", message: "x", at: "2026-08-20T23:59:59.999Z" },
+    },
+  });
+  await assert.rejects(getMarketPublication({ repository: failedRepository, product: failedDraft.product, slug: failedDraft.slug }), /time|timestamp|health|lifecycle|invariant/i);
+
+  const verifiedRepository = new MemoryRepository();
+  const verifiedDraft = await createMarketPublication({ repository: verifiedRepository, ...draftInput(), now: () => NOW });
+  const image = png();
+  await captureEditorialImage({
+    repository: verifiedRepository, product: verifiedDraft.product, slug: verifiedDraft.slug,
+    publicOrigin: ORIGIN, fetchImpl: async (url) => response(image, { url }), now: () => NOW,
+  });
+  const verified = await verifyPublicPublication({
+    repository: verifiedRepository, product: verifiedDraft.product, slug: verifiedDraft.slug,
+    publicOrigin: ORIGIN,
+    fetchImpl: async (url) => url.includes("market-calendar")
+      ? response(`<article data-content-hash="${verifiedDraft.contentHash}"></article>`, { contentType: "text/html", url })
+      : response(image, { url }),
+    now: () => "2026-08-21T00:00:01.000Z",
+  });
+  await verifiedRepository.setMeta(key, {
+    ...verified,
+    imageAsset: { ...verified.imageAsset, renderedAt: "2026-08-21T00:00:02.000Z" },
+    updatedAt: "2026-08-21T00:00:03.000Z",
+  });
+  await assert.rejects(getMarketPublication({ repository: verifiedRepository, product: verified.product, slug: verified.slug }), /time|timestamp|health|asset|lifecycle|invariant/i);
+});
+
+test("bounded HTML parsing accepts one real article marker and rejects raw text duplicates and broken tags", async () => {
+  const invalidMarkup = (hash) => [
+    `<textarea><article data-content-hash="${hash}"></article></textarea>`,
+    `<style>.x{content:'<article data-content-hash="${hash}">'}</style>`,
+    `<article data-content-hash="wrong" data-content-hash="${hash}"></article>`,
+    `<article data-content-hash="${hash}" data-content-hash="${hash}"></article>`,
+    `<article data-note='data-content-hash="${hash}"'></article>`,
+    `<article data-content-hash="${hash}"`,
+    `<article data-content-hash="${hash}"></article><article>`,
+    `<article data-content-hash="${hash}"><div></article>`,
+    `<article data-content-hash="${hash}"></article><div>`,
+  ];
+  for (const html of invalidMarkup("HASH")) {
+    const repository = new MemoryRepository();
+    const draft = await createMarketPublication({ repository, ...draftInput(), now: () => NOW });
+    const image = png();
+    await captureEditorialImage({ repository, product: draft.product, slug: draft.slug, publicOrigin: ORIGIN, fetchImpl: async (url) => response(image, { url }), now: () => NOW });
+    await assert.rejects(verifyPublicPublication({
+      repository, product: draft.product, slug: draft.slug, publicOrigin: ORIGIN,
+      fetchImpl: async (url) => url.includes("market-calendar")
+        ? response(html.replaceAll("HASH", draft.contentHash), { contentType: "text/html", url })
+        : response(image, { url }),
+      now: () => NOW,
+    }), /content hash marker|HTML|markup/i);
+  }
+});
+
+test("PNG validation requires a legal decodable pixel stream", async () => {
+  const valid = png();
+  const invalidColor = Buffer.from(valid);
+  invalidColor[25] = 9;
+  invalidColor.writeUInt32BE(crc32(invalidColor.subarray(12, 29)), 29);
+  const header = valid.subarray(16, 29);
+  const corruptions = [
+    invalidColor,
+    Buffer.concat([
+      PNG_SIGNATURE_FOR_TEST, pngChunk("IHDR", header), pngChunk("PLTE", Buffer.from([0, 0, 0])),
+      pngChunk("IDAT", deflateSync(Buffer.alloc((Math.ceil(1200 / 8) + 1) * 675))), pngChunk("IEND"),
+    ]),
+    Buffer.concat([PNG_SIGNATURE_FOR_TEST, pngChunk("IHDR", header), pngChunk("IDAT"), pngChunk("IEND")]),
+    Buffer.concat([PNG_SIGNATURE_FOR_TEST, pngChunk("IHDR", header), pngChunk("IDAT", Buffer.from("garbage")), pngChunk("IEND")]),
+    Buffer.concat([PNG_SIGNATURE_FOR_TEST, pngChunk("IHDR", header), pngChunk("IDAT", deflateSync(Buffer.from([0]))), pngChunk("IEND")]),
+  ];
+  for (const bytes of corruptions) {
+    const repository = new MemoryRepository();
+    await createMarketPublication({ repository, ...draftInput(), now: () => NOW });
+    await assert.rejects(captureEditorialImage({
+      repository, product: "weekly-calendar", slug: "2026-W34", publicOrigin: ORIGIN,
+      fetchImpl: async (url) => response(bytes, { url }), now: () => NOW,
+    }), /PNG|IHDR|color|IDAT|inflate|pixel|scanline|zlib/i);
+  }
+});
+
+test("fetch responses without a canonical final URL fail closed", async () => {
+  const repository = new MemoryRepository();
+  await createMarketPublication({ repository, ...draftInput(), now: () => NOW });
+  await assert.rejects(captureEditorialImage({
+    repository, product: "weekly-calendar", slug: "2026-W34", publicOrigin: ORIGIN,
+    fetchImpl: async () => response(png()), now: () => NOW,
+  }), /response URL|final URL|boundary/i);
+});
+
+test("public origin policy rejects IPv6 site-local and documentation networks before fetch", async () => {
+  for (const origin of ["https://[fec0::1]", "https://[feff::1]", "https://[2001:db8::1]", "https://192.88.99.1"]) {
+    const repository = new MemoryRepository();
+    await createMarketPublication({ repository, ...draftInput(), now: () => NOW });
+    let fetches = 0;
+    await assert.rejects(capturePublicationImage({
+      repository, product: "weekly-calendar", slug: "2026-W34", publicOrigin: origin,
+      allowedOrigins: [origin], fetchImpl: async () => { fetches += 1; return response(png(), { url: origin }); }, now: () => NOW,
+    }), /public|private|origin|IP/i);
+    assert.equal(fetches, 0, `${origin} must fail before fetch`);
+  }
+});
+
+test("content hash covers every durable editorial payload component", async () => {
+  const repositories = [];
+  const hashes = [];
+  for (const override of [
+    {},
+    { communityDocument: { nodes: [{ type: "paragraph", text: "changed" }] } },
+    { posterModel: { canvas: { width: 1200, height: 675 }, changed: true } },
+    { sourceManifest: [{ id: "changed", status: "verified" }] },
+  ]) {
+    const repository = new MemoryRepository();
+    repositories.push(repository);
+    hashes.push((await createMarketPublication({ repository, ...draftInput(override), now: () => NOW })).contentHash);
+  }
+  assert.equal(new Set(hashes).size, hashes.length);
+
+  for (const field of ["communityDocument", "posterModel", "sourceManifest"]) {
+    const repository = new MemoryRepository();
+    const draft = await createMarketPublication({ repository, ...draftInput(), now: () => NOW });
+    const key = marketPublicationKey(draft.product, draft.slug);
+    const stored = await repository.getMeta(key);
+    const replacement = field === "sourceManifest" ? [{ id: "tampered", status: "verified" }] : { tampered: true };
+    await repository.setMeta(key, { ...stored, [field]: replacement });
+    await assert.rejects(getMarketPublication({ repository, product: draft.product, slug: draft.slug }), /content hash|contract/i);
+  }
+});
+
+test("durable image assets and capture limits cannot exceed the absolute hard ceiling", async () => {
+  const repository = new MemoryRepository();
+  const draft = await createMarketPublication({ repository, ...draftInput(), now: () => NOW });
+  let fetches = 0;
+  await assert.rejects(captureEditorialImage({
+    repository, product: draft.product, slug: draft.slug, publicOrigin: ORIGIN,
+    maxBytes: MAX_EDITORIAL_IMAGE_BYTES * 2,
+    fetchImpl: async (url) => {
+      fetches += 1;
+      return response(Buffer.alloc(0), { url, contentLength: MAX_EDITORIAL_IMAGE_BYTES + 1 });
+    },
+    now: () => NOW,
+  }), /byte limit|hard ceiling|too large/i);
+  assert.equal(fetches, 1);
+
+  const image = png();
+  await captureEditorialImage({ repository, product: draft.product, slug: draft.slug, publicOrigin: ORIGIN, fetchImpl: async (url) => response(image, { url }), now: () => NOW });
+  const key = marketPublicationKey(draft.product, draft.slug);
+  const stored = await repository.getMeta(key);
+  await repository.setMeta(key, { ...stored, imageAsset: { ...stored.imageAsset, byteLength: MAX_EDITORIAL_IMAGE_BYTES + 1 } });
+  await assert.rejects(getMarketPublication({ repository, product: draft.product, slug: draft.slug }), /asset|byte|ceiling|contract/i);
+});
+
+test("both durable repository implementations allow only one interleaved metadata compare-and-set", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "market-publication-cas-"));
+  const previousDirectory = process.env.JSON_STORE_DIRECTORY;
+  const previousBackend = process.env.JSON_STORE_BACKEND;
+  process.env.JSON_STORE_DIRECTORY = directory;
+  process.env.JSON_STORE_BACKEND = "local";
+  try {
+    const jsonA = new JsonDistributionRepository();
+    const jsonB = new JsonDistributionRepository();
+    await jsonA.setMeta("publication-cas", { status: "draft", updatedAt: NOW });
+    const jsonResults = await Promise.all([
+      jsonA.compareAndSetMeta("publication-cas", { status: "draft", updatedAt: NOW }, { status: "rendered", updatedAt: "2026-08-21T00:00:01.000Z" }),
+      jsonB.compareAndSetMeta("publication-cas", { status: "draft", updatedAt: NOW }, { status: "verified", updatedAt: "2026-08-21T00:00:02.000Z" }),
+    ]);
+    assert.equal(jsonResults.filter(Boolean).length, 1);
+  } finally {
+    if (previousDirectory === undefined) delete process.env.JSON_STORE_DIRECTORY;
+    else process.env.JSON_STORE_DIRECTORY = previousDirectory;
+    if (previousBackend === undefined) delete process.env.JSON_STORE_BACKEND;
+    else process.env.JSON_STORE_BACKEND = previousBackend;
+    await rm(directory, { recursive: true, force: true });
+  }
+
+  let postgresValue = { status: "draft", updatedAt: NOW };
+  const sql = {
+    async query(statement, parameters) {
+      assert.match(statement, /^UPDATE distribution_meta/);
+      const expected = JSON.parse(parameters[2]);
+      if (Object.entries(expected).some(([field, value]) => postgresValue?.[field] !== value)) return [];
+      postgresValue = JSON.parse(parameters[1]);
+      return [{ value: structuredClone(postgresValue) }];
+    },
+  };
+  const postgresA = Object.assign(Object.create(PostgresDistributionRepository.prototype), { sql });
+  const postgresB = Object.assign(Object.create(PostgresDistributionRepository.prototype), { sql });
+  const postgresResults = await Promise.all([
+    postgresA.compareAndSetMeta("publication-cas", { status: "draft", updatedAt: NOW }, { status: "rendered", updatedAt: "2026-08-21T00:00:01.000Z" }),
+    postgresB.compareAndSetMeta("publication-cas", { status: "draft", updatedAt: NOW }, { status: "verified", updatedAt: "2026-08-21T00:00:02.000Z" }),
+  ]);
+  assert.equal(postgresResults.filter(Boolean).length, 1);
 });
