@@ -633,16 +633,30 @@ test("Data Update resolves provider ids, names and aliases deterministically wit
   };
   marketReaction.prices.ETH = {
     ...marketReaction.prices.ETH,
-    source: "Coinbase",
-    provider: "coinbase-exchange",
+    source: "coinbase-exchange",
+    provider: "Coinbase",
   };
   const before = structuredClone(marketReaction);
   const forward = build(marketReaction);
   const reversed = build({ ...marketReaction, sources: [...marketReaction.sources].reverse() });
+  const recordReversed = build({
+    ...marketReaction,
+    data: { ETH: marketReaction.data.ETH, BTC: marketReaction.data.BTC },
+    prices: { ETH: marketReaction.prices.ETH, BTC: marketReaction.prices.BTC },
+  });
 
   assert.deepEqual(marketReaction, before);
   assert.deepEqual(forward.marketConfirmation, reversed.marketConfirmation);
+  assert.deepEqual(forward.marketConfirmation, recordReversed.marketConfirmation);
   assert.deepEqual(forward.reactionWindow, reversed.reactionWindow);
+  assert.deepEqual(forward.reactionWindow.providers, ["Coinbase Exchange"]);
+  assert.deepEqual(
+    forward.marketConfirmation.observations.map(({ provider, providerName }) => ({ provider, providerName })),
+    [
+      { provider: "coinbase-exchange", providerName: "Coinbase Exchange" },
+      { provider: "coinbase-exchange", providerName: "Coinbase Exchange" },
+    ],
+  );
   assert.equal(forward.marketConfirmation.observations[0].sourceUrl, "https://api.exchange.coinbase.com/products/BTC-USD/candles");
 });
 
