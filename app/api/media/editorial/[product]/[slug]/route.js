@@ -35,28 +35,105 @@ function isPlainObject(value) {
     && [Object.prototype, null].includes(Object.getPrototypeOf(value));
 }
 
+function isString(value) {
+  return typeof value === "string";
+}
+
+function isFiniteNumber(value) {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isNullableString(value) {
+  return value === null || isString(value);
+}
+
+function isStringArray(value) {
+  return Array.isArray(value) && value.every(isString);
+}
+
 function hasEditorialFrame(model) {
   return isPlainObject(model)
+    && isPlainObject(model.canvas)
     && model.canvas?.width === CANVAS.width
     && model.canvas?.height === CANVAS.height
-    && typeof model.masthead === "string"
+    && isString(model.masthead)
     && model.masthead.length > 0
-    && ["paper", "ink", "muted", "red", "green"].every((token) => typeof model.palette?.[token] === "string")
+    && isPlainObject(model.palette)
+    && ["paper", "ink", "muted", "red", "green"].every((token) => isString(model.palette[token]) && model.palette[token].length > 0)
     && isPlainObject(model.footer)
-    && Array.isArray(model.footer.sources)
+    && isStringArray(model.footer.sources)
+    && isString(model.footer.updatedAt)
     && model.footer.timezone === "UTC";
+}
+
+function isWeeklyEvent(event) {
+  return isPlainObject(event)
+    && isString(event.id)
+    && isString(event.eventKey)
+    && isString(event.title)
+    && isString(event.time)
+    && typeof event.isPriority === "boolean"
+    && ["sensitivity", "scenario", "source"].every((field) => isString(event[field]));
+}
+
+function isWeeklyColumn(column) {
+  return isPlainObject(column)
+    && isString(column.date)
+    && isString(column.label)
+    && Array.isArray(column.events)
+    && column.events.every(isWeeklyEvent);
+}
+
+function isWeeklyWeekend(weekend) {
+  return weekend === undefined || weekend === null || (
+    isPlainObject(weekend)
+    && isString(weekend.label)
+    && Array.isArray(weekend.events)
+    && weekend.events.every(isWeeklyEvent)
+  );
+}
+
+function isDataComponent(component) {
+  return isPlainObject(component)
+    && ["title", "indicator", "actual"].every((field) => isString(component[field]))
+    && ["forecast", "previous", "surprise"].every((field) => isNullableString(component[field]));
+}
+
+function isDataReaction(reaction) {
+  return isPlainObject(reaction)
+    && isString(reaction.symbol)
+    && isString(reaction.label)
+    && isFiniteNumber(reaction.value);
+}
+
+function isReactionWindow(window) {
+  return window === null || (
+    isPlainObject(window)
+    && isString(window.label)
+  );
 }
 
 function isRenderablePoster(product, model) {
   if (!hasEditorialFrame(model) || model.kind !== product) return false;
   if (product === "weekly-calendar") {
-    return Array.isArray(model.columns)
+    return isString(model.title)
+      && isString(model.weekStart)
+      && isFiniteNumber(model.highImpactCount)
+      && isString(model.peakDay)
+      && Array.isArray(model.columns)
       && model.columns.length === 5
-      && model.columns.every((column) => isPlainObject(column) && Array.isArray(column.events));
+      && model.columns.every(isWeeklyColumn)
+      && isWeeklyWeekend(model.weekend);
   }
-  return Array.isArray(model.components)
+  return [
+    "title", "indicator", "impact", "actual", "verdictStatus", "verdict", "confirmation", "invalidation",
+  ].every((field) => isString(model[field]))
+    && ["previous", "forecast", "forecastLabel", "surprise"].every((field) => isNullableString(model[field]))
+    && Array.isArray(model.components)
+    && model.components.every(isDataComponent)
     && Array.isArray(model.reactions)
-    && typeof model.verdictStatus === "string";
+    && model.reactions.every(isDataReaction)
+    && isReactionWindow(model.reactionWindow);
 }
 
 function sourceLine(footer) {
@@ -276,7 +353,10 @@ function renderPoster(model) {
 
 function etagMatches(request, etag) {
   const candidates = request.headers.get("if-none-match")?.split(",").map((value) => value.trim()) ?? [];
-  return candidates.includes("*") || candidates.includes(etag);
+  const weakComparison = request.method === "GET" || request.method === "HEAD";
+  const opaqueTag = (value) => value.startsWith("W/") ? value.slice(2) : value;
+  return candidates.some((candidate) => candidate === "*"
+    || (weakComparison ? opaqueTag(candidate) === opaqueTag(etag) : candidate === etag));
 }
 
 export async function GET(request, context = {}) {

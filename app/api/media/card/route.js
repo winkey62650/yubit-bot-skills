@@ -1,5 +1,5 @@
 import React from "react";
-import { ImageResponse } from "next/og";
+import { ImageResponse } from "next/og.js";
 import { getMediaCardTemplate, normalizePosterMetrics } from "../../../../lib/media-card-template.mjs";
 import { loadMediaCardArtwork } from "../../../../lib/media-card-artwork.mjs";
 
@@ -12,7 +12,7 @@ export async function GET(request) {
   const metrics = normalizePosterMetrics([url.searchParams.get("m1"), url.searchParams.get("m2"), url.searchParams.get("m3")]);
   const artworkUrl = await loadMediaCardArtwork(kind);
   const e = React.createElement;
-  const poster = decodePosterData(url.searchParams.get("data"));
+  const poster = normalizeEditorialPreview(kind, decodePosterData(url.searchParams.get("data")));
   if (kind === "crypto-daily") {
     const stories = Array.isArray(poster.stories) ? poster.stories.slice(0, 3) : [];
     return new ImageResponse(
@@ -257,6 +257,78 @@ function decodePosterData(value) {
   } catch {
     return {};
   }
+}
+
+function isPreviewObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function previewText(value, fallback = "") {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (typeof value === "boolean") return String(value);
+  return fallback;
+}
+
+function previewFooter(value) {
+  const footer = isPreviewObject(value) ? value : {};
+  return {
+    sources: (Array.isArray(footer.sources) ? footer.sources : [])
+      .map((source) => previewText(source)).filter(Boolean),
+    updatedAt: previewText(footer.updatedAt),
+  };
+}
+
+function normalizeEditorialPreview(kind, value) {
+  const poster = isPreviewObject(value) ? value : {};
+  if (kind === "weekly-calendar") {
+    const columns = (Array.isArray(poster.columns) ? poster.columns : [])
+      .filter(isPreviewObject).slice(0, 5).map((column) => ({
+        date: previewText(column.date),
+        label: previewText(column.label),
+        events: (Array.isArray(column.events) ? column.events : [])
+          .filter(isPreviewObject).slice(0, 3).map((event, eventIndex) => ({
+            id: previewText(event.id, `event-${eventIndex}`),
+            eventKey: previewText(event.eventKey),
+            title: previewText(event.title, "Verified event"),
+            time: previewText(event.time, "TBD"),
+            source: previewText(event.source, "VERIFIED"),
+            sensitivity: previewText(event.sensitivity),
+            isPriority: event.isPriority === true,
+          })),
+      }));
+    return {
+      columns,
+      footer: previewFooter(poster.footer),
+      highImpactCount: Number.isFinite(poster.highImpactCount) ? poster.highImpactCount : 0,
+      peakDay: previewText(poster.peakDay, "—"),
+      weekStart: previewText(poster.weekStart, "UTC"),
+    };
+  }
+  if (kind === "data-update") {
+    return {
+      actual: previewText(poster.actual, "—"),
+      confirmation: previewText(poster.confirmation),
+      footer: previewFooter(poster.footer),
+      forecast: previewText(poster.forecast, "—"),
+      impact: previewText(poster.impact, "Neutral"),
+      indicator: previewText(poster.indicator, "OFFICIAL RELEASE"),
+      invalidation: previewText(poster.invalidation),
+      previous: previewText(poster.previous, "—"),
+      reactions: (Array.isArray(poster.reactions) ? poster.reactions : [])
+        .filter(isPreviewObject).slice(0, 4).map((reaction) => ({
+          label: previewText(reaction.label, "—"),
+          symbol: previewText(reaction.symbol, "ASSET"),
+          value: Number.isFinite(reaction.value) ? reaction.value : 0,
+        })),
+      source: previewText(poster.source, "OFFICIAL DATA"),
+      surprise: previewText(poster.surprise, "—"),
+      tapeStatus: previewText(poster.tapeStatus, "AWAITING CONFIRMATION"),
+      title: previewText(poster.title, "Data Update"),
+      verdict: previewText(poster.verdict),
+    };
+  }
+  return poster;
 }
 
 function editorialCanvas() {

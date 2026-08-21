@@ -112,6 +112,10 @@ function editorialDraft(product = "weekly-calendar") {
   };
 }
 
+function encodedPoster(value) {
+  return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
+}
+
 test("editorial automation cards use neutral branding", () => {
   for (const kind of ["events", "analysis", "whale"]) {
     const card = getMediaCardTemplate(kind);
@@ -213,6 +217,37 @@ test("weekly and data previews use the warm editorial research system", async ()
   assert.match(dataBranch, /CROSS-ASSET REACTION/);
 });
 
+test("weekly and data preview handlers safely render hostile poster JSON", async () => {
+  const { GET } = await import("../app/api/media/card/route.js");
+  const cases = [
+    ["weekly-calendar", { columns: { length: 5 }, footer: { sources: null } }],
+    ["weekly-calendar", {
+      columns: [null, 7, { date: {}, label: [], events: null }, {
+        date: "2026-08-21",
+        label: "FRI 21",
+        events: [null, 9, { title: {}, source: [], isPriority: "yes" }],
+      }],
+      footer: { sources: [{ label: "hostile" }], updatedAt: {} },
+    }],
+    ["data-update", { title: "CPI", indicator: "CPI", reactions: { map: "not callable" } }],
+    ["data-update", {
+      title: "CPI",
+      indicator: { unsafe: true },
+      reactions: [null, 4, { symbol: {}, label: [], value: { unsafe: true } }],
+      footer: { sources: null, updatedAt: [] },
+    }],
+  ];
+
+  for (const [kind, poster] of cases) {
+    const url = `${EDITORIAL_ORIGIN}/api/media/card?kind=${kind}&data=${encodedPoster(poster)}`;
+    const response = await GET(new Request(url));
+    assert.equal(response.status, 200, kind);
+    const body = Buffer.from(await response.arrayBuffer());
+    assert.ok(body.byteLength > 100, `${kind} must finish streaming a PNG response`);
+    assert.match(response.headers.get("content-type") ?? "", /^image\/png/);
+  }
+});
+
 test("durable editorial media route accepts only canonical weekly and data publication identities", async () => {
   const { GET } = await import("../app/api/media/editorial/[product]/[slug]/route.js");
   const repository = new EditorialMemoryRepository();
@@ -251,6 +286,53 @@ test("durable editorial media route accepts only canonical weekly and data publi
     repository,
   });
   assert.equal(malformedResponse.status, 422);
+});
+
+test("durable editorial media rejects nested render hazards before opening a PNG stream", async () => {
+  const { GET } = await import("../app/api/media/editorial/[product]/[slug]/route.js");
+  const cases = [
+    ["weekly-calendar", (model) => { model.title = { unsafe: true }; }],
+    ["weekly-calendar", (model) => { model.columns[0].events = [null]; }],
+    ["weekly-calendar", (model) => { model.columns[0].events[0].source = ["BLS"]; }],
+    ["data-update", (model) => { model.title = { unsafe: true }; }],
+    ["data-update", (model) => { model.reactions = [null]; }],
+    ["data-update", (model) => {
+      model.reactions = [{ symbol: "BTC", label: "+0.4%", value: "0.4" }];
+    }],
+  ];
+
+  for (const [product, mutate] of cases) {
+    const repository = new EditorialMemoryRepository();
+    const draft = editorialDraft(product);
+    mutate(draft.posterModel);
+    await createMarketPublication({ repository, ...draft, now: () => "2026-08-21T00:00:00.000Z" });
+    const encodedSlug = draft.slug.replace("/", "%2F");
+    const response = await GET(new Request(`${EDITORIAL_ORIGIN}/api/media/editorial/${product}/${encodedSlug}`), {
+      params: Promise.resolve({ product, slug: encodedSlug }),
+      repository,
+    });
+    assert.equal(response.status, 422, `${product} malformed poster must fail before streaming`);
+    assert.match(await response.text(), /cannot be rendered/i);
+  }
+});
+
+test("durable editorial media accepts canonical nullable data leaves", async () => {
+  const { GET } = await import("../app/api/media/editorial/[product]/[slug]/route.js");
+  const repository = new EditorialMemoryRepository();
+  const draft = editorialDraft("data-update");
+  draft.posterModel = buildDataUpdatePosterModel({
+    generatedAt: "2026-08-21T12:45:00.000Z",
+    title: "US CPI Released",
+    values: { actual: "2.7%" },
+    source: { label: "BLS" },
+  });
+  await createMarketPublication({ repository, ...draft, now: () => "2026-08-21T00:00:00.000Z" });
+  const response = await GET(new Request(`${EDITORIAL_ORIGIN}/api/media/editorial/data-update/us-cpi%2F2026-08-21`), {
+    params: Promise.resolve({ product: draft.product, slug: "us-cpi%2F2026-08-21" }),
+    repository,
+  });
+  assert.equal(response.status, 200);
+  assert.ok((await response.arrayBuffer()).byteLength > 100);
 });
 
 test("durable editorial media route renders only drafts and serves persisted PNG bytes immutably", async () => {
@@ -304,4 +386,17 @@ test("durable editorial media route renders only drafts and serves persisted PNG
   });
   assert.equal(notModified.status, 304);
   assert.equal(notModified.headers.get("cache-control"), "public, max-age=31536000, immutable");
+
+  for (const method of ["GET", "HEAD"]) {
+    const weakMatch = await GET(new Request(`${EDITORIAL_ORIGIN}/api/media/editorial/data-update/us-cpi%2F2026-08-21`, {
+      method,
+      headers: { "If-None-Match": `"not-this-one", W/${storedResponse.headers.get("etag")}` },
+    }), {
+      params: Promise.resolve({ product: data.product, slug: "us-cpi%2F2026-08-21" }),
+      repository: dataRepository,
+    });
+    assert.equal(weakMatch.status, 304, `${method} must use weak If-None-Match comparison`);
+    assert.equal(weakMatch.headers.get("etag"), storedResponse.headers.get("etag"));
+    assert.equal(await weakMatch.text(), "");
+  }
 });
