@@ -90,6 +90,17 @@ test("terminal field statuses cannot be laundered into verified fields", () => {
   assert.equal(result.publishable, false);
 });
 
+test("an auxiliary field rejection remains a comparison and cannot veto an official actual", () => {
+  const result = reconcileSourcedField([
+    sourcedField(),
+    sourcedField({ authority: "auxiliary", sourceId: "tradingview-calendar", status: "rejected" }),
+  ]);
+
+  assert.equal(result.status, "verified");
+  assert.equal(result.publishable, true);
+  assert.equal(result.comparisons[0].status, "rejected");
+});
+
 test("infers literal unit suffixes before reconciling equivalent and incompatible units", () => {
   const inferredPercent = normalizeSourcedField(sourceInput({ rawValue: "3.4%" }));
   const inferredThousands = normalizeSourcedField(sourceInput({ rawValue: "3.4K" }));
@@ -128,22 +139,59 @@ test("timezone-ambiguous tier-one events are excluded from the priority three", 
 });
 
 test("weekly schedules allow a bounded stale official cache but data updates reject cached actuals", () => {
+  const staleEvent = reconcileCalendarEvents([{
+    id: "us-cpi", title: "US CPI", scheduledAtSources: [verifiedSchedule({ status: "cached" })],
+  }]).events[0];
   const weekly = validateWeeklyPublication({
-    events: [{ id: "us-cpi", title: "US CPI", schedule: verifiedSchedule() }],
+    events: [staleEvent],
     source: sourceInput({ cached: true, retrievedAt: "2026-08-12T06:30:00.000Z" }),
   }, { now: "2026-08-12T12:30:00.000Z" });
   const tooOld = validateWeeklyPublication({
-    events: [{ id: "us-cpi", title: "US CPI", schedule: verifiedSchedule() }],
+    events: [staleEvent],
     source: sourceInput({ cached: true, retrievedAt: "2026-08-12T06:29:59.000Z" }),
   }, { now: "2026-08-12T12:30:00.000Z" });
   const dataUpdate = validateDataReleasePublication({ actual: sourcedField({ status: "cached" }) });
 
+  assert.equal(staleEvent.schedule.status, "cached");
   assert.deepEqual({ publishable: weekly.publishable, freshness: weekly.freshness, ageSeconds: weekly.ageSeconds }, {
     publishable: true, freshness: "stale", ageSeconds: 21600,
   });
   assert.equal(tooOld.publishable, false);
   assert.equal(dataUpdate.publishable, false);
   assert.equal(dataUpdate.reason, "cached-actual");
+});
+
+test("authoritative schedule blocking statuses survive reconciliation and reject weekly publication", () => {
+  for (const status of ["rejected", "conflicting"]) {
+    const reconciled = reconcileCalendarEvents([{
+      id: "us-cpi", title: "US CPI", scheduledAtSources: [verifiedSchedule({ status })],
+    }]);
+    const event = reconciled.events[0];
+    const weekly = validateWeeklyPublication({
+      events: [event],
+      source: sourceInput({ retrievedAt: "2026-08-12T12:30:00.000Z" }),
+    }, { now: "2026-08-12T12:30:00.000Z" });
+
+    assert.equal(event.schedule.status, status);
+    assert.equal(event.publishable, false);
+    assert.equal(weekly.publishable, false);
+  }
+});
+
+test("weekly publication rejects future retrieval timestamps and blocked sources", () => {
+  const event = { id: "us-cpi", title: "US CPI", schedule: verifiedSchedule() };
+  const future = validateWeeklyPublication({
+    events: [event],
+    source: sourceInput({ retrievedAt: "2026-08-12T12:31:00.000Z" }),
+  }, { now: "2026-08-12T12:30:00.000Z" });
+  const blocked = validateWeeklyPublication({
+    events: [event],
+    source: sourceInput({ retrievedAt: "2026-08-12T12:30:00.000Z", status: "conflicting" }),
+  }, { now: "2026-08-12T12:30:00.000Z" });
+
+  assert.equal(future.publishable, false);
+  assert.equal(future.ageSeconds, -60);
+  assert.equal(blocked.publishable, false);
 });
 
 test("weekly publication rejects empty or raw events without verified schedule provenance", () => {

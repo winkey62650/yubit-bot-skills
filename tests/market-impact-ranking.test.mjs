@@ -96,6 +96,17 @@ test("a token-governance approval is not misread as regulatory policy", () => {
   assert.equal(result.components.policySystemic, 0);
 });
 
+test("an industry publisher mentioning a regulator is not an official policy source", () => {
+  const result = scoreMarketImpact({
+    title: "Industry publisher says the SEC is considering crypto market regulation",
+    summary: "The report mentions a possible regulator policy framework but no official action.",
+    publishedAt: "2026-08-21T06:00:00.000Z",
+    source: { id: "industry-wire", kind: "industry", url: "https://industry.example" },
+  }, now);
+
+  assert.equal(result.components.policySystemic, 0);
+});
+
 test("large ETF flows and broad short liquidations clear the decision threshold", () => {
   const etfFlow = scoreMarketImpact({
     title: "Bitcoin ETFs draw $517M in one-day inflow",
@@ -133,7 +144,8 @@ test("explicit monetary-policy and crypto-regulation actions retain full policy 
 test("CPI, Core CPI, PCE, Core PCE, NFP, unemployment, FOMC, and GDP are tier one", () => {
   const events = [
     "US CPI", "US Core CPI", "US PCE Price Index", "US Core PCE Price Index",
-    "US Nonfarm Payrolls", "US Unemployment Rate", "FOMC Rate Decision", "FOMC Statement", "US GDP",
+    "US Nonfarm Payrolls", "US Unemployment Rate", "FOMC Rate Decision", "FOMC Statement",
+    "FOMC Interest Rate Decision", "fomc-rate-decision", "FOMC Monetary Policy Statement", "US GDP",
   ];
 
   for (const title of events) {
@@ -144,7 +156,7 @@ test("CPI, Core CPI, PCE, Core PCE, NFP, unemployment, FOMC, and GDP are tier on
 });
 
 test("FOMC member speeches, appearances, and previews are not tier-one releases", () => {
-  for (const title of ["FOMC Member Speech", "FOMC Chair Appearance", "FOMC Rate Decision Preview"]) {
+  for (const title of ["FOMC Member Speech", "FOMC Chair Appearance", "FOMC Rate Decision Preview", "fomc-rate-decision-preview"]) {
     assert.equal(classifyDataReleaseTier({ title }, { score: 0, reasons: [] }).tier, "secondary");
   }
 });
