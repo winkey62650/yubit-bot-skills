@@ -1243,8 +1243,8 @@ test("market reaction parses Coinbase BTC-USD and ETH-USD candles after determin
       const product = parsed.pathname.match(/\/products\/([^/]+)\//)?.[1];
       if (parsed.pathname.endsWith("/candles")) {
         return jsonResponse([
-          [target / 1000, 0, 0, 0, 99999, 1],
-          [completedMinute / 1000, 0, 0, 0, prices[product].before, 1],
+          [target / 1000, 1, 1, 1, 99999, 1],
+          [completedMinute / 1000, 1, 1, 1, prices[product].before, "0"],
         ]);
       }
       return jsonResponse({ price: String(prices[product].latest) });
@@ -1366,7 +1366,7 @@ test("Coinbase fallback rejects non-positive candle and ticker prices", async ()
         return jsonResponse({ message: "unavailable" }, 404);
       }
       if (parsed.pathname.endsWith("/candles")) {
-        return jsonResponse([[(target - 60_000) / 1000, 0, 0, 0, invalidField === "candle" ? 0 : 65000, 1]]);
+        return jsonResponse([[(target - 60_000) / 1000, 1, 1, 1, invalidField === "candle" ? 0 : 65000, 1]]);
       }
       return jsonResponse({ price: invalidField === "ticker" ? "0" : "65650" });
     };
@@ -1426,6 +1426,49 @@ test("Coinbase fallback fails closed on tuple shape drift and non-canonical pric
   }
 });
 
+test("Coinbase fallback strictly validates low, high, open, and volume candle fields", async (t) => {
+  const target = Date.parse("2026-08-18T12:00:00.000Z");
+  const validCandle = [(target - 60_000) / 1000, "64000", "66000", "64500", "65000", "12.5"];
+  const invalidCases = [
+    { label: "boolean low", index: 1, value: true },
+    { label: "zero low", index: 1, value: 0 },
+    { label: "object high", index: 2, value: {} },
+    { label: "infinite high", index: 2, value: Number.POSITIVE_INFINITY },
+    { label: "NaN open", index: 3, value: Number.NaN },
+    { label: "non-canonical open", index: 3, value: " 64500 " },
+    { label: "negative open", index: 3, value: -1 },
+    { label: "boolean volume", index: 5, value: false },
+    { label: "object volume", index: 5, value: {} },
+    { label: "NaN volume", index: 5, value: Number.NaN },
+    { label: "infinite volume", index: 5, value: Number.POSITIVE_INFINITY },
+    { label: "non-canonical volume", index: 5, value: " 12.5 " },
+    { label: "negative volume", index: 5, value: -1 },
+  ];
+
+  for (const invalidCase of invalidCases) {
+    await t.test(invalidCase.label, async () => {
+      const candle = [...validCandle];
+      candle[invalidCase.index] = invalidCase.value;
+      const result = await fetchMarketReaction({
+        beforeAt: target,
+        now: target + 15 * 60_000,
+        symbols: ["BTC"],
+        fetchImpl: async (url) => {
+          const parsed = new URL(url);
+          if (parsed.hostname.includes("binance") || parsed.hostname.includes("okx")) {
+            return jsonResponse({ message: "unavailable" }, 404);
+          }
+          const body = parsed.pathname.endsWith("/candles") ? [candle] : { price: "65650" };
+          return { ok: true, status: 200, json: async () => body };
+        },
+      });
+
+      assert.equal(result.data.BTC, undefined);
+      assert.match(result.warnings.join("\n"), /Invalid BTC Coinbase (?:low|high|open|volume)/);
+    });
+  }
+});
+
 test("Coinbase fallback deduplicates identical candles and rejects conflicting duplicates in either order", async () => {
   const target = Date.parse("2026-08-18T12:00:00.000Z");
   const candleTime = (target - 60_000) / 1000;
@@ -1464,8 +1507,8 @@ test("Coinbase fallback rejects a stale candle when the final completed minute h
     }
     if (parsed.pathname.endsWith("/candles")) {
       return jsonResponse([
-        [targetMinute / 1000, 0, 0, 0, 70000, 1],
-        [(targetMinute - 2 * 60_000) / 1000, 0, 0, 0, 65000, 1],
+        [targetMinute / 1000, 1, 1, 1, 70000, 1],
+        [(targetMinute - 2 * 60_000) / 1000, 1, 1, 1, 65000, 1],
       ]);
     }
     return jsonResponse({ price: "65650" });
