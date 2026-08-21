@@ -2267,6 +2267,43 @@ test("weekly legacy success migrates only its exact destinations and still sends
   assert.ok(upgraded.preview.targetResults.some(({ target, status }) => target.threadId === 983 && status === "success"));
 });
 
+test("weekly legacy partial migrates explicitly successful targets and retries failed targets", async () => {
+  const repository = automationRepository();
+  const stateKey = `weekly-legacy-partial-migration-${process.pid}`;
+  const successfulTarget = { chatId: "-1001", threadId: 985 };
+  const failedTarget = { chatId: "-1001", threadId: 986 };
+  const storedState = await readJson("automation-state.json", {});
+  await writeJson("automation-state.json", {
+    ...storedState,
+    [stateKey]: {
+      slot: "2026-W34",
+      at: "2026-08-18T00:30:00.000Z",
+      status: "partial",
+      targets: [successfulTarget, failedTarget],
+      targetResults: [
+        { target: successfulTarget, status: "success" },
+        { target: failedTarget, status: "failed" },
+      ],
+    },
+  });
+  const sentThreads = [];
+
+  const upgraded = await automation.runAutomationJob("weekly-calendar", verifiedWeeklyDeliveryOptions(repository, {
+    force: false,
+    stateKey,
+    targets: [successfulTarget, failedTarget],
+    telegramSender: async (_token, _method, payload) => {
+      sentThreads.push(payload.message_thread_id);
+      return { message_id: sentThreads.length };
+    },
+  }));
+
+  assert.equal(upgraded.status, "success");
+  assert.deepEqual([...new Set(sentThreads)], [986]);
+  assert.equal(upgraded.preview.targetResults.find(({ target }) => target.threadId === 985)?.receiptExisting, true);
+  assert.ok(upgraded.preview.targetResults.some(({ target, status }) => target.threadId === 986 && status === "success"));
+});
+
 test("weekly canonicalizes duplicate Telegram and Discord destinations before planning and sending", async () => {
   const repository = automationRepository();
   const telegramCalls = [];
