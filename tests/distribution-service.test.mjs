@@ -3639,7 +3639,15 @@ test("queued release rolls back every unsent target when the second delivery ins
 test("desktop release completion records its target receipt and globally acknowledges the release", async () => {
   const target = { id: "release-target", chatId: "-1001", threadId: 8, groupName: "DEMO Academy" };
   const targetKey = buildDataReleaseTargetKey(target);
-  const releaseEvent = { id: "us-cpi", sourceId: "us-cpi", scheduledAt: "2026-08-19T12:30:00.000Z", values: { actual: "2.7%" }, actualObservedAt: "2026-08-19T12:30:20.000Z" };
+  const releaseEvent = {
+    id: "us-cpi",
+    sourceId: "us-cpi",
+    indicator: "cpi",
+    country: "US",
+    scheduledAt: "2026-08-19T12:30:00.000Z",
+    values: { actual: "2.7%" },
+    actualObservedAt: "2026-08-19T12:30:20.000Z",
+  };
   const deduplicationKey = buildReleaseDeduplicationKey(releaseEvent);
   const meta = new Map([[RELEASE_STATE_META_KEY, {
     calendarWeek: "2026-08-17", monitoredEvents: [{ eventKey: "us-cpi|2026-08-19T12:30:00.000Z", id: "us-cpi", scheduledAt: releaseEvent.scheduledAt, lastActual: null, observedAt: null }], publishedKeys: [], timedOutKeys: [], updatedAt: "2026-08-19T12:30:00.000Z",
@@ -3663,6 +3671,17 @@ test("desktop release completion records its target receipt and globally acknowl
     repository,
     now: "2026-08-19T12:32:06Z",
     fetchCalendar: async () => ({ events: [releaseEvent], sources: [] }),
+    fetchOfficialActual: async () => ({
+      value: "2.7%",
+      rawValue: "2.7",
+      unit: "%",
+      status: "verified",
+      authority: "official",
+      sourceId: "bls-cpi",
+      sourceUrl: "https://www.bls.gov/news.release/cpi.nr0.htm",
+      publishedAt: releaseEvent.scheduledAt,
+      retrievedAt: releaseEvent.actualObservedAt,
+    }),
   });
   assert.equal(nextPoll.publishable, false);
   assert.equal(nextPoll.skipReason, "duplicate-release");
