@@ -3836,6 +3836,50 @@ test("automatic publishing expands enabled broadcast destinations and records ma
   }]);
 });
 
+test("exact-target automation execution never expands configured targets through broadcast rules", async () => {
+  const sourceTarget = { id: "target-demo-exact", chatId: "-1003710405969", threadId: 8 };
+  const destinationTarget = { id: "target-broadcast-excluded", chatId: "-1003332783916", threadId: 13 };
+  const rule = {
+    id: "rule-exact-market-events",
+    kind: "automation",
+    name: "Exact Market Events Test",
+    contentType: "daily-analysis",
+    targets: [sourceTarget]
+  };
+  const broadcast = {
+    id: "rule-demo-broadcast",
+    kind: "broadcast",
+    enabled: true,
+    source: { chatId: sourceTarget.chatId, threadId: sourceTarget.threadId },
+    targets: [destinationTarget]
+  };
+  const repository = {
+    async getRule(id) { return id === rule.id ? rule : null; },
+    async listRules(kind) { return kind === "broadcast" ? [broadcast] : []; },
+    async createEvent(event) { return { id: "event-exact-market-events", ...event }; },
+    async updateEvent() {},
+    async createDelivery(delivery) { return { id: "delivery-exact-market-events", ...delivery }; },
+    async updateDelivery() {},
+    async saveMapping() { throw new Error("exact target execution must not create broadcast mappings"); }
+  };
+
+  let receivedTargets;
+  await runDistributionAutomationRule(rule.id, {
+    repository,
+    exactTargets: true,
+    now: new Date("2026-08-22T00:00:00.000Z"),
+    runner: async (_jobId, options) => {
+      receivedTargets = options.targets;
+      return {
+        status: "success",
+        preview: { targetResults: [{ target: sourceTarget, status: "success", messageId: 1273 }] }
+      };
+    }
+  });
+
+  assert.deepEqual(receivedTargets, [sourceTarget]);
+});
+
 test("broadcast expansion is one hop, deduplicated, and never auto-publishes review rules", async () => {
   const source = { id: "source", chatId: "-1001", threadId: 10 };
   const destination = { id: "destination", chatId: "-2001", threadId: 17 };

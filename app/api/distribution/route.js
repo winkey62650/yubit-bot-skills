@@ -37,7 +37,14 @@ export async function POST(request) {
     }
     if (body.action === "validate") return NextResponse.json({ ok: true, result: await validateRuleRuntime(String(body.id || "")) });
     if (body.action === "test") return NextResponse.json({ ok: true, result: await sendRuleTest(String(body.id || "")) });
-    if (body.action === "run-now") return NextResponse.json({ ok: true, result: await runDistributionAutomationRule(String(body.id || "")) });
+    if (body.action === "run-now") {
+      return NextResponse.json({
+        ok: true,
+        result: await runDistributionAutomationRule(String(body.id || ""), {
+          exactTargets: body.exactTargets === true
+        })
+      });
+    }
     if (body.action === "migrate") return NextResponse.json({ ok: true, migration: await ensureLegacyDistributionMigration(repository) });
     if (body.action === "configure-webhook") return NextResponse.json({ ok: true, webhook: await configureForwardWebhook() });
     return NextResponse.json({ ok: true, rule: await saveDistributionRule(body.rule ?? body) });
