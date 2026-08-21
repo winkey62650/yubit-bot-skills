@@ -222,9 +222,11 @@ test("selects and parses Advance, Second, and modern combined Third national GDP
       value: "2.1",
     },
     {
-      path: "/news/2026/gdp-third-estimate-industries-corporate-profits-state-gdp-and-state-personal-income-2nd-quarter-2026",
-      heading: "GDP (Third Estimate), Industries, Corporate Profits, State GDP, and State Personal Income, 2nd Quarter 2026",
-      value: "2.4",
+      path: "/news/2026/gdp-third-estimate-industries-corporate-profits-state-gdp-and-state-personal-income-1st",
+      heading: "GDP (Third Estimate), Industries, Corporate Profits, State GDP, and State Personal Income, 1st Quarter 2026",
+      value: "2.1",
+      releasePeriod: "Q1 2026",
+      article: await fixture("bea-gdp-third-combined-release.html"),
     },
   ];
 
@@ -235,13 +237,34 @@ test("selects and parses Advance, Second, and modern combined Third national GDP
     const calls = [];
     const result = await fetchBeaOfficialRelease({
       indicator: "gdp",
-      fetchImpl: offlineFetchSequence([index, beaGdpArticle(item)], calls),
+      fetchImpl: offlineFetchSequence([index, item.article ?? beaGdpArticle(item)], calls),
       now: () => new Date(RETRIEVED_AT),
       timeoutMs: 100,
     });
     assert.deepEqual(calls.map(({ url }) => url), [BEA_RELEASES_URL_FOR_TEST, `https://www.bea.gov${item.path}`]);
     assert.equal(result.records[0].rawValue, item.value);
-    assert.equal(result.records[0].releasePeriod, "Q2 2026");
+    assert.equal(result.records[0].releasePeriod, item.releasePeriod ?? "Q2 2026");
+  }
+});
+
+test("rejects a combined Third GDP article whose heading period disagrees with its official path", async () => {
+  const path = "/news/2026/gdp-third-estimate-industries-corporate-profits-state-gdp-and-state-personal-income-1st";
+  const index = `<a href="${path}">GDP (Third Estimate), Industries, Corporate Profits, State GDP, and State Personal Income, 1st Quarter 2026</a>`;
+  const mismatchedHeadings = [
+    "GDP (Third Estimate), Industries, Corporate Profits, State GDP, and State Personal Income, 2nd Quarter 2026",
+    "GDP (Third Estimate), Industries, Corporate Profits, State GDP, and State Personal Income, 1st Quarter 2025",
+  ];
+
+  for (const heading of mismatchedHeadings) {
+    await assert.rejects(
+      fetchBeaOfficialRelease({
+        indicator: "gdp",
+        fetchImpl: offlineFetchSequence([index, beaGdpArticle({ path, heading })]),
+        now: () => new Date(RETRIEVED_AT),
+        timeoutMs: 100,
+      }),
+      (error) => error?.code === "OFFICIAL_RELEASE_SCHEMA_INVALID",
+    );
   }
 });
 
