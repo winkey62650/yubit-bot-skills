@@ -130,6 +130,25 @@ test("Federal Reserve adapter returns an upcoming meeting from the official sche
   assert.equal(result.sources[0].status, "ok");
 });
 
+test("Federal Reserve accepts live meeting variants without counting minutes release dates", async () => {
+  const html = await textFixture("federal-reserve-fomc-calendar-live-variants.html");
+  const result = await fetchFederalReserveCalendar({
+    from: "2018-01-01T00:00:00.000Z",
+    to: "2027-01-01T00:00:00.000Z",
+    now: "2026-08-21T00:00:00.000Z",
+    fetchImpl: async () => new Response(html),
+  });
+
+  assert.equal(result.sources[0].status, "ok");
+  assert.deepEqual(result.events.map((event) => event.scheduledAt), [
+    "2018-11-01T18:00:00.000Z",
+    "2023-02-01T19:00:00.000Z",
+    "2024-05-01T18:00:00.000Z",
+    "2025-08-22T18:00:00.000Z",
+    "2026-04-29T18:00:00.000Z",
+  ]);
+});
+
 test("BEA schedule parser reads the live table shape and converts Eastern release times across DST", async () => {
   const html = await textFixture("bea-release-schedule.html");
   const fetchRange = (from, to) => fetchMarketCalendar({
@@ -166,6 +185,27 @@ test("BEA schedule parser reads the live table shape and converts Eastern releas
     ],
   );
   assert.equal(summer.sources.find((source) => source.id === "bea-release-schedule").status, "ok");
+});
+
+test("BEA accepts a titled News row whose schedule cell is To Be Announced", async () => {
+  const html = await textFixture("bea-release-schedule-live-tba.html");
+  const result = await fetchMarketCalendar({
+    from: "2026-08-26T00:00:00.000Z",
+    to: "2026-08-27T00:00:00.000Z",
+    now: "2026-08-21T00:00:00.000Z",
+    fetchImpl: async (url) => {
+      const target = String(url);
+      if (target.includes("tradingview")) return jsonResponse({ result: [] });
+      if (target.includes("nasdaq")) return jsonResponse({ data: { rows: [] } });
+      if (target.includes("federalreserve.gov")) return new Response(EMPTY_FED_CALENDAR);
+      if (target.includes("bls.gov")) return new Response("BEGIN:VCALENDAR\r\nEND:VCALENDAR");
+      if (target.includes("bea.gov")) return new Response(html);
+      throw new Error(`Unexpected URL: ${url}`);
+    },
+  });
+
+  assert.equal(result.sources.find((source) => source.id === "bea-release-schedule").status, "ok");
+  assert.deepEqual(result.events.map((event) => event.title), ["US PCE", "US Core PCE"]);
 });
 
 test("official calendar adapters reject generic HTML challenges but accept source-specific empty schedules", async () => {
