@@ -136,6 +136,27 @@ test("Weekly Calendar rejects a multi-sentence core view instead of rewriting ed
   );
 });
 
+test("Weekly Calendar preserves common dotted abbreviations inside a single-sentence core view", () => {
+  const examples = [
+    "U.S. CPI is the central catalyst while confirmation depends on rates.",
+    "U.K. labour data is the central catalyst while confirmation depends on sterling.",
+    "Real yields remain restrictive, e.g. when inflation expectations lag nominal rates.",
+  ];
+
+  for (const coreView of examples) {
+    const { document, events } = weeklyFixture();
+    document.coreView = coreView;
+    const article = buildWeeklyCalendarArticle({
+      document,
+      rankedEvents: events,
+      sourceManifest,
+      marketSetup: { summary: "Liquidity remains selective.", observedAt: "2026-08-19T07:30:00.000Z" },
+    });
+
+    assert.equal(article.coreView, coreView);
+  }
+});
+
 test("Weekly Calendar community document follows the approved English gateway and one HTTPS link", () => {
   const { document, events } = weeklyFixture();
   const article = buildWeeklyCalendarArticle({ document, rankedEvents: events, sourceManifest, marketSetup: { summary: "Liquidity remains selective.", observedAt: "2026-08-19T07:30:00.000Z" } });
