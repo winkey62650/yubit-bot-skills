@@ -216,14 +216,16 @@ test("Weekly Calendar excludes out-of-week events and rejects canonical or seman
     );
   }
 
-  const jurisdictionAliasDuplicate = structuredClone(events[0]);
-  jurisdictionAliasDuplicate.id = "alternate-us-cpi";
-  jurisdictionAliasDuplicate.country = "United States";
-  for (const rankedEvents of [[...events, jurisdictionAliasDuplicate], [jurisdictionAliasDuplicate, ...events]]) {
-    assert.throws(
-      () => buildWeeklyCalendarArticle({ document, rankedEvents, sourceManifest }),
-      /duplicate.*event|event.*duplicate/i,
-    );
+  for (const alias of ["United States", "U.S.", "U.S.A."]) {
+    const jurisdictionAliasDuplicate = structuredClone(events[0]);
+    jurisdictionAliasDuplicate.id = `alternate-${alias}-cpi`;
+    jurisdictionAliasDuplicate.country = alias;
+    for (const rankedEvents of [[...events, jurisdictionAliasDuplicate], [jurisdictionAliasDuplicate, ...events]]) {
+      assert.throws(
+        () => buildWeeklyCalendarArticle({ document, rankedEvents, sourceManifest }),
+        /duplicate.*event|event.*duplicate/i,
+      );
+    }
   }
 });
 
@@ -483,16 +485,18 @@ test("Data Update canonicalizes jurisdiction aliases into collision-safe release
     return buildDataUpdateArticle({ document, event, reaction: marketReaction, tierDecision: { tier: "tier-one" }, sourceManifest });
   };
 
-  for (const jurisdiction of ["US", "United States", "USA"]) {
+  for (const jurisdiction of ["US", "United States", "United_States", "United-States", "UnitedStates", "USA", "U.S.", "U.S.A."]) {
     assert.equal(build(jurisdiction, "us-cpi").slug, "us-cpi/2026-08-12");
     assert.equal(build(jurisdiction).slug, "us-cpi/2026-08-12");
   }
-  for (const jurisdiction of ["UK", "United Kingdom", "GB"]) {
+  for (const jurisdiction of ["UK", "United Kingdom", "United_Kingdom", "United-Kingdom", "UnitedKingdom", "GreatBritain", "GB", "U.K."]) {
     assert.equal(build(jurisdiction, "uk-cpi").slug, "uk-cpi/2026-08-12");
     assert.equal(build(jurisdiction).slug, "uk-cpi/2026-08-12");
   }
   assert.notEqual(build("US").slug, build("UK").slug);
+  assert.equal(build("Euro Area").slug, "euro-area-cpi/2026-08-12");
   assert.throws(() => build("United Kingdom", "us-cpi"), /release slug.*identity|identity.*release slug/i);
+  assert.throws(() => build("U.K.", "us-cpi"), /release slug.*identity|identity.*release slug/i);
 });
 
 test("Data Update excludes anonymous observations from providers and tape confirmation", () => {
