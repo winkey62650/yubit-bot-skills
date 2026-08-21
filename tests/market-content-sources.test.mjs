@@ -31,6 +31,13 @@ function jsonResponse(body, status = 200) {
   });
 }
 
+const EMPTY_FED_CALENDAR = `
+  <html><body><main><div class="panel-heading"><h4><a id="2026">2026 FOMC Meetings</a></h4></div></main></body></html>
+`;
+const EMPTY_BEA_SCHEDULE = `
+  <html><body><main><table id="release-schedule-table"><thead><tr><th>Year 2026</th><th>Release</th></tr></thead><tbody></tbody></table></main></body></html>
+`;
+
 async function settleWithin(promise, timeoutMs, message) {
   let timer;
   try {
@@ -119,6 +126,77 @@ test("Federal Reserve adapter returns an upcoming meeting from the official sche
   assert.equal(result.sources[0].status, "ok");
 });
 
+test("BEA schedule parser reads the live table shape and converts Eastern release times across DST", async () => {
+  const html = await textFixture("bea-release-schedule.html");
+  const fetchRange = (from, to) => fetchMarketCalendar({
+    from,
+    to,
+    now: "2026-08-21T00:00:00.000Z",
+    fetchImpl: async (url) => {
+      const target = String(url);
+      if (target.includes("tradingview")) return jsonResponse({ result: [] });
+      if (target.includes("nasdaq")) return jsonResponse({ data: { rows: [] } });
+      if (target.includes("federalreserve.gov")) return new Response(EMPTY_FED_CALENDAR);
+      if (target.includes("bls.gov")) return new Response("BEGIN:VCALENDAR\r\nEND:VCALENDAR");
+      if (target.includes("bea.gov")) return new Response(html);
+      throw new Error(`Unexpected URL: ${url}`);
+    },
+  });
+
+  const summer = await fetchRange("2026-08-26T00:00:00.000Z", "2026-08-27T00:00:00.000Z");
+  const winter = await fetchRange("2026-12-23T00:00:00.000Z", "2026-12-24T00:00:00.000Z");
+
+  assert.deepEqual(
+    summer.events.map((event) => [event.title, event.scheduledAt]),
+    [
+      ["US GDP", "2026-08-26T12:30:00.000Z"],
+      ["US PCE", "2026-08-26T12:30:00.000Z"],
+      ["US Core PCE", "2026-08-26T12:30:00.000Z"],
+    ],
+  );
+  assert.deepEqual(
+    winter.events.map((event) => [event.title, event.scheduledAt]),
+    [
+      ["US PCE", "2026-12-23T13:30:00.000Z"],
+      ["US Core PCE", "2026-12-23T13:30:00.000Z"],
+    ],
+  );
+  assert.equal(summer.sources.find((source) => source.id === "bea-release-schedule").status, "ok");
+});
+
+test("official calendar adapters reject generic HTML challenges but accept source-specific empty schedules", async () => {
+  const blockedFed = await fetchFederalReserveCalendar({
+    fetchImpl: async () => new Response("<html><body><main>Access denied</main></body></html>"),
+    timeoutMs: 10,
+  });
+  const emptyFed = await fetchFederalReserveCalendar({
+    fetchImpl: async () => new Response(EMPTY_FED_CALENDAR),
+    timeoutMs: 10,
+  });
+  const fetchBeaStatus = async (html) => {
+    const result = await fetchMarketCalendar({
+      from: "2026-08-20T00:00:00.000Z",
+      to: "2026-08-21T00:00:00.000Z",
+      timeoutMs: 10,
+      fetchImpl: async (url) => {
+        const target = String(url);
+        if (target.includes("tradingview")) return jsonResponse({ result: [] });
+        if (target.includes("nasdaq")) return jsonResponse({ data: { rows: [] } });
+        if (target.includes("federalreserve.gov")) return new Response(EMPTY_FED_CALENDAR);
+        if (target.includes("bls.gov")) return new Response("BEGIN:VCALENDAR\r\nEND:VCALENDAR");
+        if (target.includes("bea.gov")) return new Response(html);
+        throw new Error(`Unexpected URL: ${url}`);
+      },
+    });
+    return result.sources.find((source) => source.id === "bea-release-schedule");
+  };
+
+  assert.equal(blockedFed.sources[0].status, "error");
+  assert.equal(emptyFed.sources[0].status, "ok");
+  assert.equal((await fetchBeaStatus("<html><body><main>Access denied</main></body></html>")).status, "error");
+  assert.equal((await fetchBeaStatus(EMPTY_BEA_SCHEDULE)).status, "ok");
+});
+
 test("market calendar deduplicates US country aliases before reconciliation", async () => {
   const result = await fetchMarketCalendar({
     from: "2026-08-20T00:00:00.000Z",
@@ -132,9 +210,9 @@ test("market calendar deduplicates US country aliases before reconciliation", as
       if (target.includes("nasdaq")) return jsonResponse({ data: { rows: [{
         gmt: "12:30", country: "US", eventName: "Consumer Price Index",
       }] } });
-      if (target.includes("federalreserve.gov")) return new Response("<html><body><main>FOMC calendar</main></body></html>");
+      if (target.includes("federalreserve.gov")) return new Response(EMPTY_FED_CALENDAR);
       if (target.includes("bls.gov")) return new Response("BEGIN:VCALENDAR\r\nEND:VCALENDAR");
-      if (target.includes("bea.gov")) return new Response("<html><body><main>Release schedule</main></body></html>");
+      if (target.includes("bea.gov")) return new Response(EMPTY_BEA_SCHEDULE);
       throw new Error(`Unexpected URL: ${url}`);
     },
   });
@@ -165,7 +243,7 @@ test("market calendar fails over from TradingView to Nasdaq without an API key",
       }] } });
       if (String(url).includes("federalreserve.gov")) return new Response(`<a href="/monetarypolicy/files/monetary20260916a1.pdf">PDF</a>`);
       if (String(url).includes("bls.gov")) return new Response("BEGIN:VCALENDAR\r\nEND:VCALENDAR");
-      if (String(url).includes("bea.gov")) return new Response("<html><body><main>Release schedule</main></body></html>");
+      if (String(url).includes("bea.gov")) return new Response(EMPTY_BEA_SCHEDULE);
       throw new Error(`unexpected calendar source: ${url}`);
     },
   });
@@ -192,16 +270,14 @@ test("market calendar collects all healthy routes, deduplicates events, and keep
         id: "tv-cpi", title: "US CPI YoY", country: "US", importance: 3, date: "2026-08-20T12:30:00.000Z",
       }] });
       if (target.includes("nasdaq")) return jsonResponse({ data: { rows: [{
-        gmt: "12:30", country: "United States", eventName: "Consumer Price Index", consensus: "3.0%",
+        gmt: "12:30", country: "United States", eventName: "Consumer Price Index YoY", consensus: "3.0%",
       }] } });
       if (target.includes("federalreserve.gov")) return new Response(`<a href="/monetarypolicy/files/monetary20260820a1.pdf">PDF</a>`);
       if (target.includes("bls.gov")) return new Response([
         "BEGIN:VCALENDAR", "BEGIN:VEVENT", "UID:bls-cpi", "DTSTAMP:20260819T130000Z",
         "DTSTART:20260820T123000Z", "SUMMARY:Consumer Price Index", "END:VEVENT", "END:VCALENDAR",
       ].join("\r\n"));
-      if (target.includes("bea.gov")) return new Response(`
-        <html><body><main><article>Gross Domestic Product <time datetime="2026-08-20T12:30:00Z">8:30 a.m.</time></article></main></body></html>
-      `);
+      if (target.includes("bea.gov")) return new Response(EMPTY_BEA_SCHEDULE);
       throw new Error(`Unexpected URL: ${url}`);
     },
   });
@@ -234,7 +310,7 @@ test("one calendar timeout does not erase two healthy routes", async () => {
       if (target.includes("nasdaq")) return jsonResponse({ data: { rows: [{ gmt: "14:00", country: "US", eventName: "Existing Home Sales" }] } });
       if (target.includes("federalreserve.gov")) return new Promise(() => {});
       if (target.includes("bls.gov")) return new Response("BEGIN:VCALENDAR\r\nEND:VCALENDAR");
-      if (target.includes("bea.gov")) return new Response("<html><body><main>Release schedule</main></body></html>");
+      if (target.includes("bea.gov")) return new Response(EMPTY_BEA_SCHEDULE);
       throw new Error(`Unexpected URL: ${url}`);
     },
   });
@@ -255,7 +331,7 @@ test("official calendar schedule overrides auxiliary time", async () => {
       if (target.includes("nasdaq")) return jsonResponse({ data: { rows: [{ gmt: "13:30", country: "US", eventName: "Consumer Price Index" }] } });
       if (target.includes("federalreserve.gov")) return new Response(`<a href="/monetarypolicy/files/monetary20260916a1.pdf">PDF</a>`);
       if (target.includes("bls.gov")) return new Response("BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nDTSTART:20260820T123000Z\r\nSUMMARY:Consumer Price Index\r\nEND:VEVENT\r\nEND:VCALENDAR");
-      if (target.includes("bea.gov")) return new Response("<html><body><main>Release schedule</main></body></html>");
+      if (target.includes("bea.gov")) return new Response(EMPTY_BEA_SCHEDULE);
       throw new Error(`Unexpected URL: ${url}`);
     },
   });
@@ -277,7 +353,7 @@ test("conflicting auxiliary times stay under verification and out of publication
       if (target.includes("nasdaq")) return jsonResponse({ data: { rows: [{ gmt: "13:30", country: "US", eventName: "Consumer Price Index" }] } });
       if (target.includes("federalreserve.gov")) return new Response(`<a href="/monetarypolicy/files/monetary20260916a1.pdf">PDF</a>`);
       if (target.includes("bls.gov")) return new Response("BEGIN:VCALENDAR\r\nEND:VCALENDAR");
-      if (target.includes("bea.gov")) return new Response("<html><body><main>Release schedule</main></body></html>");
+      if (target.includes("bea.gov")) return new Response(EMPTY_BEA_SCHEDULE);
       throw new Error(`Unexpected URL: ${url}`);
     },
   });
@@ -300,7 +376,7 @@ test("calendar source health distinguishes an empty success from a failed reques
       if (target.includes("nasdaq")) return jsonResponse({ error: "failed" }, 503);
       if (target.includes("federalreserve.gov")) return new Response(`<a href="/monetarypolicy/files/monetary20260916a1.pdf">PDF</a>`);
       if (target.includes("bls.gov")) return new Response("BEGIN:VCALENDAR\r\nEND:VCALENDAR");
-      if (target.includes("bea.gov")) return new Response("<html><body><main>Release schedule</main></body></html>");
+      if (target.includes("bea.gov")) return new Response(EMPTY_BEA_SCHEDULE);
       throw new Error(`Unexpected URL: ${url}`);
     },
   });
@@ -309,6 +385,174 @@ test("calendar source health distinguishes an empty success from a failed reques
   assert.equal(result.sources.find((source) => source.id === "nasdaq-economic-calendar").status, "error");
   assert.equal(result.sources.find((source) => source.id === "bls-release-calendar").status, "ok");
   assert.match(result.warnings.join("\n"), /Nasdaq/);
+});
+
+test("official schedules merge a cross-day auxiliary release and override its disputed time", async () => {
+  const result = await fetchMarketCalendar({
+    from: "2026-08-20T00:00:00.000Z",
+    to: "2026-08-22T00:00:00.000Z",
+    now: "2026-08-20T10:00:00.000Z",
+    fetchImpl: async (url) => {
+      const target = String(url);
+      if (target.includes("tradingview")) return jsonResponse({ result: [{
+        title: "US CPI", country: "US", date: "2026-08-20T23:30:00Z",
+      }] });
+      if (target.includes("nasdaq")) return jsonResponse({ data: { rows: [] } });
+      if (target.includes("federalreserve.gov")) return new Response(EMPTY_FED_CALENDAR);
+      if (target.includes("bls.gov")) return new Response("BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nDTSTART:20260821T123000Z\r\nSUMMARY:Consumer Price Index\r\nEND:VEVENT\r\nEND:VCALENDAR");
+      if (target.includes("bea.gov")) return new Response(EMPTY_BEA_SCHEDULE);
+      throw new Error(`Unexpected URL: ${url}`);
+    },
+  });
+
+  const headline = result.events.filter((event) => event.id.startsWith("cpi:"));
+  assert.equal(headline.length, 1);
+  assert.equal(headline[0].scheduledAt, "2026-08-21T12:30:00.000Z");
+  assert.equal(headline[0].schedule.sourceId, "bls-release-calendar");
+  assert.deepEqual(headline[0].schedule.comparisons.map((candidate) => candidate.sourceId), ["tradingview-calendar"]);
+});
+
+test("official schedules augment a TBD auxiliary release by its statistical period", async () => {
+  const bea = await textFixture("bea-release-schedule.html");
+  const result = await fetchMarketCalendar({
+    from: "2026-08-25T00:00:00.000Z",
+    to: "2026-08-27T00:00:00.000Z",
+    now: "2026-08-21T00:00:00.000Z",
+    fetchImpl: async (url) => {
+      const target = String(url);
+      if (target.includes("tradingview")) return jsonResponse({ result: [{
+        title: "US PCE YoY", country: "US", date: "2026-08-25", referencePeriod: "July 2026", forecast: "2.7%",
+      }] });
+      if (target.includes("nasdaq")) return jsonResponse({ data: { rows: [] } });
+      if (target.includes("federalreserve.gov")) return new Response(EMPTY_FED_CALENDAR);
+      if (target.includes("bls.gov")) return new Response("BEGIN:VCALENDAR\r\nEND:VCALENDAR");
+      if (target.includes("bea.gov")) return new Response(bea);
+      throw new Error(`Unexpected URL: ${url}`);
+    },
+  });
+
+  const pceYoy = result.events.filter((event) => event.id.startsWith("pce-yoy:"));
+  assert.equal(pceYoy.length, 1);
+  assert.equal(pceYoy[0].scheduledAt, "2026-08-26T12:30:00.000Z");
+  assert.equal(pceYoy[0].schedule.sourceId, "bea-release-schedule");
+  assert.equal(pceYoy[0].values.forecast.value, "2.7%");
+  assert.equal(pceYoy[0].values.forecast.sourceId, "tradingview-calendar");
+});
+
+test("Nasdaq TBD events on separate dates keep distinct safe identities", async () => {
+  const result = await fetchMarketCalendar({
+    from: "2026-08-20T00:00:00.000Z",
+    to: "2026-08-22T00:00:00.000Z",
+    now: "2026-08-20T10:00:00.000Z",
+    fetchImpl: async (url) => {
+      const target = String(url);
+      if (target.includes("tradingview")) return jsonResponse({ result: [] });
+      if (target.includes("nasdaq")) return jsonResponse({ data: { rows: [{
+        gmt: "TBD", country: "US", eventName: "US GDP",
+      }] } });
+      if (target.includes("federalreserve.gov")) return new Response(EMPTY_FED_CALENDAR);
+      if (target.includes("bls.gov")) return new Response("BEGIN:VCALENDAR\r\nEND:VCALENDAR");
+      if (target.includes("bea.gov")) return new Response(EMPTY_BEA_SCHEDULE);
+      throw new Error(`Unexpected URL: ${url}`);
+    },
+  });
+
+  const gdp = result.events.filter((event) => event.id.startsWith("gdp:"));
+  assert.equal(gdp.length, 2);
+  assert.equal(new Set(gdp.map((event) => event.id)).size, 2);
+  assert.equal(gdp.every((event) => !event.id.includes("[object")), true);
+  assert.equal(gdp.every((event) => event.timeLabel === "Time under verification"), true);
+});
+
+test("missing countries remain UNKNOWN and cannot donate forecasts to official US releases", async () => {
+  const result = await fetchMarketCalendar({
+    from: "2026-08-20T00:00:00.000Z",
+    to: "2026-08-21T00:00:00.000Z",
+    now: "2026-08-20T10:00:00.000Z",
+    fetchImpl: async (url) => {
+      const target = String(url);
+      if (target.includes("tradingview")) return jsonResponse({ result: [{
+        title: "CPI", date: "2026-08-20T12:30:00Z", forecast: "3.4%",
+      }] });
+      if (target.includes("nasdaq")) return jsonResponse({ data: { rows: [] } });
+      if (target.includes("federalreserve.gov")) return new Response(EMPTY_FED_CALENDAR);
+      if (target.includes("bls.gov")) return new Response("BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nDTSTART:20260820T123000Z\r\nSUMMARY:Consumer Price Index\r\nEND:VEVENT\r\nEND:VCALENDAR");
+      if (target.includes("bea.gov")) return new Response(EMPTY_BEA_SCHEDULE);
+      throw new Error(`Unexpected URL: ${url}`);
+    },
+  });
+
+  const headline = result.events.filter((event) => event.id.startsWith("cpi:"));
+  assert.deepEqual(headline.map((event) => event.country).sort(), ["UNKNOWN", "US"]);
+  assert.equal(headline.find((event) => event.country === "US").values.forecast, null);
+  assert.equal(headline.find((event) => event.country === "UNKNOWN").values.forecast.value, "3.4%");
+});
+
+test("Nasdaq fetches multi-day ranges concurrently and applies the exact offset-aware interval", async () => {
+  let active = 0;
+  let maxActive = 0;
+  const result = await fetchNasdaqCalendar({
+    from: "2026-03-07T23:30:00-05:00",
+    to: "2026-03-09T00:30:00-04:00",
+    now: "2026-03-08T00:00:00.000Z",
+    fetchImpl: async (url) => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setImmediate(resolve));
+      active -= 1;
+      const date = new URL(String(url)).searchParams.get("date");
+      return jsonResponse({ data: { rows: date === "2026-03-08" ? [
+        { gmt: "04:00", country: "US", eventName: "Before range" },
+        { gmt: "05:00", country: "US", eventName: "Inside first day" },
+      ] : [
+        { gmt: "04:29", country: "US", eventName: "Inside last day" },
+        { gmt: "04:30", country: "US", eventName: "At exclusive end" },
+      ] } });
+    },
+  });
+
+  assert.deepEqual(result.events.map((event) => event.title).sort(), ["Inside first day", "Inside last day"]);
+  assert.ok(maxActive >= 2);
+});
+
+test("Nasdaq reports timeout health when every daily request times out", async () => {
+  const result = await settleWithin(fetchNasdaqCalendar({
+    from: "2026-08-20T00:00:00.000Z",
+    to: "2026-08-21T00:00:00.000Z",
+    now: "2026-08-20T10:00:00.000Z",
+    timeoutMs: 3,
+    deadlineMs: 10,
+    fetchImpl: async () => new Promise(() => {}),
+  }), 300, "Nasdaq timeout health did not settle");
+
+  assert.equal(result.sources[0].status, "timeout");
+  assert.match(result.warnings.join("\n"), /timeout/i);
+});
+
+test("calendar reconciliation keeps headline, core, YoY, MoM, and annualized series distinct", async () => {
+  const result = await fetchMarketCalendar({
+    from: "2026-08-20T00:00:00.000Z",
+    to: "2026-08-21T00:00:00.000Z",
+    now: "2026-08-20T10:00:00.000Z",
+    fetchImpl: async (url) => {
+      const target = String(url);
+      if (target.includes("tradingview")) return jsonResponse({ result: [
+        { title: "US CPI YoY", country: "US", date: "2026-08-20T12:30:00Z" },
+        { title: "US CPI MoM", country: "US", date: "2026-08-20T12:30:00Z" },
+        { title: "US Core CPI YoY", country: "US", date: "2026-08-20T12:30:00Z" },
+        { title: "US GDP Annualized QoQ", country: "US", date: "2026-08-20T12:30:00Z" },
+      ] });
+      if (target.includes("nasdaq")) return jsonResponse({ data: { rows: [] } });
+      if (target.includes("federalreserve.gov")) return new Response(EMPTY_FED_CALENDAR);
+      if (target.includes("bls.gov")) return new Response("BEGIN:VCALENDAR\r\nEND:VCALENDAR");
+      if (target.includes("bea.gov")) return new Response(EMPTY_BEA_SCHEDULE);
+      throw new Error(`Unexpected URL: ${url}`);
+    },
+  });
+
+  assert.deepEqual(result.events.map((event) => event.id.split(":")[0]).sort(), [
+    "core-cpi-yoy", "cpi-mom", "cpi-yoy", "gdp-annualized-qoq",
+  ]);
 });
 
 test("default Crypto Daily stack has three official and three industry fallbacks", async () => {
