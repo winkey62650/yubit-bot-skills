@@ -10,7 +10,7 @@ import {
   buildReleaseDeduplicationKey,
   cacheWeeklyCalendar,
   prepareDataReleaseDelivery,
-  pollDataReleaseUpdates,
+  pollDataReleaseUpdates as pollDataReleaseUpdatesImpl,
   releaseWindowStatus,
   selectReleasableEvents,
   withDataReleaseRunLease,
@@ -52,6 +52,51 @@ function calendarResult(events, extras = {}) {
     warnings: [],
     ...extras,
   };
+}
+
+function officialActual(rawValue = "2.7", overrides = {}) {
+  const unit = overrides.unit ?? "%";
+  return {
+    value: `${rawValue}${unit}`,
+    rawValue: String(rawValue),
+    unit,
+    status: "verified",
+    authority: "official",
+    sourceId: "bls-cpi",
+    sourceUrl: "https://www.bls.gov/news.release/cpi.nr0.htm",
+    retrievedAt: "2026-08-19T12:30:20.000Z",
+    publishedAt: scheduledAt,
+    ...overrides,
+  };
+}
+
+async function legacyOfficialActual({ event }) {
+  if (Array.isArray(event?.components) && event.components.length) {
+    const values = event.components.map((component) => component?.rawValues?.actual ?? component?.values?.actual ?? null);
+    if (values.some((value) => value === null || value === undefined || value === "")) return null;
+    return officialActual(values.map(String).join("/"), {
+      value: values.map(String).join("/"),
+      unit: "composite",
+      sourceId: "official-composite-fixture",
+      publishedAt: event.actualObservedAt ?? event.observedAt ?? event.scheduledAt,
+    });
+  }
+  const rawValue = event?.rawValues?.actual ?? event?.values?.actual ?? null;
+  if (rawValue === null || rawValue === undefined || rawValue === "") return null;
+  const unit = event?.rawValues?.unit ?? String(event?.values?.actual ?? "").match(/([%KMB])\s*$/i)?.[1] ?? null;
+  return officialActual(String(rawValue).replace(new RegExp(`${unit ?? ""}$`), ""), {
+    value: event?.values?.actual ?? `${rawValue}${unit ?? ""}`,
+    unit,
+    sourceId: "official-release-fixture",
+    publishedAt: event.actualObservedAt ?? event.observedAt ?? event.scheduledAt,
+  });
+}
+
+function pollDataReleaseUpdates(options = {}) {
+  return pollDataReleaseUpdatesImpl({
+    ...options,
+    fetchOfficialActual: options.fetchOfficialActual ?? legacyOfficialActual,
+  });
 }
 
 test("exports stable repository keys and builds the exact normalized release key", () => {
@@ -468,16 +513,22 @@ test("publishes an independent valid event while preserving a separate source co
     },
   });
   const fetchCalendar = async () => calendarResult([conflictingA, conflictingB, good]);
+  const fetchOfficialActual = async ({ event }) => event.id === conflictingA.id
+    ? [
+      officialActual("2.7"),
+      officialActual("2.8", { sourceId: "bls-cpi-revision" }),
+    ]
+    : officialActual("2.6", { sourceId: "bea-pce" });
 
   const first = await pollDataReleaseUpdates({
-    now: "2026-08-19T12:31:00Z", repository, fetchCalendar, persist: true,
+    now: "2026-08-19T12:31:00Z", repository, fetchCalendar, fetchOfficialActual, persist: true,
   });
   await acknowledgeDataReleasePublished({
     repository, deduplicationKey: first.deduplicationKey, event: first.event,
     now: "2026-08-19T12:31:05Z",
   });
   const second = await pollDataReleaseUpdates({
-    now: "2026-08-19T12:32:00Z", repository, fetchCalendar, persist: true,
+    now: "2026-08-19T12:32:00Z", repository, fetchCalendar, fetchOfficialActual, persist: true,
   });
 
   assert.equal(first.publishable, true);
@@ -506,7 +557,7 @@ test("detects an Actual that appears on a later one-minute poll", async () => {
     now: "2026-08-19T12:31:00Z", repository, fetchCalendar, persist: true,
   });
   assert.equal(waiting.publishable, false);
-  assert.equal(waiting.skipReason, "actual-unavailable");
+  assert.equal(waiting.skipReason, "official-actual-unavailable");
   assert.equal(released.publishable, true);
 });
 
@@ -851,7 +902,12 @@ test("rejects conflicting source Actual values and returns both raw values", asy
   const second = release({ values: { actual: "2.8%", forecast: "2.8%", previous: "2.9%" }, rawValues: { actual: "2.8", unit: "%" }, source: { id: "bls" } });
   const result = await pollDataReleaseUpdates({
     now: "2026-08-19T12:31:00Z", repository,
-    fetchCalendar: async () => calendarResult([first, second]), persist: true,
+    fetchCalendar: async () => calendarResult([first, second]),
+    fetchOfficialActual: async () => [
+      officialActual("2.7"),
+      officialActual("2.8", { sourceId: "bls-cpi-revision" }),
+    ],
+    persist: true,
   });
   assert.equal(result.publishable, false);
   assert.equal(result.skipReason, "source-conflict");
@@ -889,7 +945,7 @@ test("waits for every required composite Actual before publishing", async () => 
 
   assert.equal(buildReleaseDeduplicationKey(partial), null);
   assert.equal(pending.publishable, false);
-  assert.equal(pending.skipReason, "actual-unavailable");
+  assert.equal(pending.skipReason, "official-actual-unavailable");
   assert.deepEqual(pending.sources, calendarResult([]).sources);
   assert.equal(pending.nextMonitoredEvent.id, partial.id);
   assert.equal(published.publishable, true);
@@ -897,7 +953,7 @@ test("waits for every required composite Actual before publishing", async () => 
   assert.equal(published.deduplicationKey, buildReleaseDeduplicationKey(complete));
 });
 
-test("returns the real component raw values for a composite source conflict", async () => {
+test("returns the official component values for a composite source conflict", async () => {
   const composite = (source, headline, core) => release({
     source: { id: source },
     components: [
@@ -923,20 +979,15 @@ test("returns the real component raw values for a composite source conflict", as
       composite("tv", "2.7", "2.8"),
       composite("bls", "2.6", "2.9"),
     ]),
+    fetchOfficialActual: async () => [
+      officialActual("2.7/2.8", { value: "2.7/2.8", unit: "composite", sourceId: "bls-cpi" }),
+      officialActual("2.6/2.9", { value: "2.6/2.9", unit: "composite", sourceId: "bls-cpi-revision" }),
+    ],
     persist: true,
   });
 
   assert.equal(result.skipReason, "source-conflict");
-  assert.deepEqual(result.conflict.rawValues, [
-    [
-      { id: "headline", actual: "2.7" },
-      { id: "core", actual: "2.8" },
-    ],
-    [
-      { id: "headline", actual: "2.6" },
-      { id: "core", actual: "2.9" },
-    ],
-  ]);
+  assert.deepEqual(result.conflict.rawValues, ["2.7/2.8", "2.6/2.9"]);
 });
 
 test("does not report a conflict for equivalent numeric Actual formatting", async () => {
@@ -1005,4 +1056,177 @@ test("records a timeout when the only Actual is a stale pre-release observation"
   assert.deepEqual((await repository.getMeta(RELEASE_STATE_META_KEY)).timedOutKeys, [
     "us-cpi-yoy-2026-08|2026-08-19T12:30:00.000Z",
   ]);
+});
+
+test("official eligibility blocks an auxiliary actual without acknowledging it and permits a later official actual", async () => {
+  const repository = repositoryDouble({
+    [WEEKLY_CALENDAR_META_KEY]: { calendarWeek: "2026-08-17", events: [release()], updatedAt: "2026-08-19T10:00:00Z" },
+  });
+  const auxiliary = release({
+    values: { actual: "2.8%", forecast: "2.8%", previous: "2.9%" },
+    rawValues: { actual: "2.8", forecast: "2.8", previous: "2.9", unit: "%" },
+    source: { id: "tradingview-calendar", authority: "auxiliary", url: "https://www.tradingview.com/economic-calendar/" },
+  });
+  let official = null;
+  const fetchCalendar = async () => calendarResult([auxiliary]);
+  const fetchOfficialActual = async () => official;
+
+  const blocked = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:31:00Z", repository, fetchCalendar, fetchOfficialActual, persist: true,
+  });
+  const blockedState = await repository.getMeta(RELEASE_STATE_META_KEY);
+  official = officialActual("2.7");
+  const released = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:32:00Z", repository, fetchCalendar, fetchOfficialActual, persist: true,
+  });
+
+  assert.equal(blocked.publishable, false);
+  assert.equal(blocked.skipReason, "official-actual-unavailable");
+  assert.equal(blocked.eligibility.publishable, false);
+  assert.deepEqual(blockedState.publishedKeys, []);
+  assert.equal(blockedState.monitoredEvents[0].lastActual, null);
+  assert.equal(released.publishable, true);
+  assert.equal(released.event.values.actual, "2.7%");
+});
+
+test("official eligibility prepares one event when the official actual arrives inside the window", async () => {
+  const repository = repositoryDouble({
+    [WEEKLY_CALENDAR_META_KEY]: { calendarWeek: "2026-08-17", events: [release()], updatedAt: "2026-08-19T10:00:00Z" },
+  });
+  const result = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:31:00Z",
+    repository,
+    fetchCalendar: async () => calendarResult([release()]),
+    fetchOfficialActual: async () => officialActual("2.7"),
+    persist: true,
+  });
+
+  assert.equal(result.publishable, true);
+  assert.equal(result.event.values.actual, "2.7%");
+  assert.equal(result.eligibility.publishable, true);
+  assert.ok(result.sourceManifest.some((source) => source.id === "bls-cpi"));
+});
+
+test("official eligibility rejects an official actual timestamped before its schedule", async () => {
+  const repository = repositoryDouble({
+    [WEEKLY_CALENDAR_META_KEY]: { calendarWeek: "2026-08-17", events: [release()], updatedAt: "2026-08-19T10:00:00Z" },
+  });
+  const result = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:31:00Z",
+    repository,
+    fetchCalendar: async () => calendarResult([release()]),
+    fetchOfficialActual: async () => officialActual("2.7", { publishedAt: "2026-08-19T12:29:59.999Z" }),
+    persist: true,
+  });
+
+  assert.equal(result.publishable, false);
+  assert.equal(result.skipReason, "stale-actual");
+  assert.equal(result.eligibility.publishable, false);
+  assert.equal((await repository.getMeta(RELEASE_STATE_META_KEY)).monitoredEvents[0].lastActual, null);
+});
+
+test("official eligibility selects the official value and retains a disagreeing auxiliary comparison", async () => {
+  const repository = repositoryDouble({
+    [WEEKLY_CALENDAR_META_KEY]: { calendarWeek: "2026-08-17", events: [release()], updatedAt: "2026-08-19T10:00:00Z" },
+  });
+  const auxiliary = release({
+    values: { actual: "2.8%", forecast: "2.8%", previous: "2.9%" },
+    rawValues: { actual: "2.8", forecast: "2.8", previous: "2.9", unit: "%" },
+    source: { id: "tradingview-calendar", authority: "auxiliary", url: "https://www.tradingview.com/economic-calendar/" },
+  });
+  const result = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:31:00Z", repository,
+    fetchCalendar: async () => calendarResult([auxiliary]),
+    fetchOfficialActual: async () => officialActual("2.7"),
+    persist: true,
+  });
+
+  assert.equal(result.publishable, true);
+  assert.equal(result.event.values.actual, "2.7%");
+  assert.ok(result.eligibility.actual.comparisons.some((comparison) => (
+    comparison.sourceId === "tradingview-calendar" && comparison.value === "2.8%"
+  )));
+});
+
+test("official eligibility fails closed when two official actuals conflict", async () => {
+  const repository = repositoryDouble({
+    [WEEKLY_CALENDAR_META_KEY]: { calendarWeek: "2026-08-17", events: [release()], updatedAt: "2026-08-19T10:00:00Z" },
+  });
+  const result = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:31:00Z", repository,
+    fetchCalendar: async () => calendarResult([release()]),
+    fetchOfficialActual: async () => [
+      officialActual("2.7"),
+      officialActual("2.8", { sourceId: "bls-cpi-revision" }),
+    ],
+    persist: true,
+  });
+
+  assert.equal(result.publishable, false);
+  assert.equal(result.skipReason, "source-conflict");
+  assert.equal(result.eligibility.publishable, false);
+  assert.deepEqual((await repository.getMeta(RELEASE_STATE_META_KEY)).publishedKeys, []);
+});
+
+test("official eligibility returns specific unit and timezone ambiguity reasons", async () => {
+  for (const [candidate, official, expected] of [
+    [release({
+      values: { actual: "180K", forecast: "175K", previous: "170K" },
+      rawValues: { actual: "180", forecast: "175", previous: "170", unit: "K" },
+      source: { id: "tradingview-calendar", authority: "auxiliary", url: "https://www.tradingview.com/economic-calendar/" },
+    }), officialActual("180", { unit: "%", value: "180%" }), "unit-conflict"],
+    [release({ schedule: { status: "timezone-conflict" } }), officialActual("2.7"), "timezone-conflict"],
+  ]) {
+    const repository = repositoryDouble({
+      [WEEKLY_CALENDAR_META_KEY]: { calendarWeek: "2026-08-17", events: [release()], updatedAt: "2026-08-19T10:00:00Z" },
+    });
+    const result = await pollDataReleaseUpdates({
+      now: "2026-08-19T12:31:00Z", repository,
+      fetchCalendar: async () => calendarResult([candidate]),
+      fetchOfficialActual: async () => official,
+      persist: true,
+    });
+    assert.equal(result.publishable, false);
+    assert.equal(result.skipReason, expected);
+  }
+});
+
+test("official eligibility preserves sequential idempotent publication for simultaneous releases", async () => {
+  const core = release({ id: "us-core-cpi-yoy-2026-08", sourceId: "us-core-cpi-yoy-2026-08", title: "US Core CPI YoY" });
+  const repository = repositoryDouble({
+    [WEEKLY_CALENDAR_META_KEY]: { calendarWeek: "2026-08-17", events: [release(), core], updatedAt: "2026-08-19T10:00:00Z" },
+  });
+  const fetchCalendar = async () => calendarResult([release(), core]);
+  const fetchOfficialActual = async ({ event }) => (
+    event.id === core.id
+      ? officialActual("3.1", { sourceId: "bls-core-cpi" })
+      : officialActual("2.7")
+  );
+
+  const first = await pollDataReleaseUpdates({ now: "2026-08-19T12:31:00Z", repository, fetchCalendar, fetchOfficialActual, persist: true });
+  await acknowledgeDataReleasePublished({ repository, deduplicationKey: first.deduplicationKey, event: first.event, now: "2026-08-19T12:31:05Z" });
+  const second = await pollDataReleaseUpdates({ now: "2026-08-19T12:32:00Z", repository, fetchCalendar, fetchOfficialActual, persist: true });
+  await acknowledgeDataReleasePublished({ repository, deduplicationKey: second.deduplicationKey, event: second.event, now: "2026-08-19T12:32:05Z" });
+  const duplicate = await pollDataReleaseUpdates({ now: "2026-08-19T12:33:00Z", repository, fetchCalendar, fetchOfficialActual, persist: true });
+
+  assert.equal(first.publishable, true);
+  assert.equal(second.publishable, true);
+  assert.notEqual(first.event.id, second.event.id);
+  assert.equal(duplicate.publishable, false);
+  assert.equal(duplicate.skipReason, "duplicate-release");
+  assert.equal((await repository.getMeta(RELEASE_STATE_META_KEY)).publishedKeys.length, 2);
+});
+
+test("official eligibility only invokes the official adapter for allowlisted events in the monitoring window", async () => {
+  const unsupported = release({ id: "consumer-confidence", sourceId: "consumer-confidence", title: "US Consumer Confidence" });
+  const future = release({ scheduledAt: "2026-08-19T14:00:00Z" });
+  const repository = repositoryDouble();
+  let calls = 0;
+  await pollDataReleaseUpdates({
+    now: "2026-08-19T12:31:00Z", repository,
+    fetchCalendar: async () => calendarResult([unsupported, future]),
+    fetchOfficialActual: async () => { calls += 1; return officialActual(); },
+    persist: true,
+  });
+  assert.equal(calls, 0);
 });
