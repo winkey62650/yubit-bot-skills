@@ -10,6 +10,7 @@ import {
   classifyCryptoStory,
   deduplicateCryptoStories,
   evaluateReleaseImpact,
+  isSupportedReleaseEvent,
   rankCryptoStories,
   renderDiscordMarketDocument,
   renderTelegramMarketDocument,
@@ -625,7 +626,7 @@ test("weekly calendar covers the current UTC Monday through Sunday, groups by da
     now,
     events: [
       { id: "cpi", title: "US CPI YoY", indicator: "cpi", country: "US", importance: 3, scheduledAt: "2026-08-19T12:30:00Z", values: { actual: null, forecast: "2.8%", previous: "2.9%" }, source: { label: "BLS", url: "https://bls.gov/cpi" } },
-      { id: "date-only", title: "Major policy window", kind: "macro", importance: 3, scheduledAt: null, rawScheduledAt: "2026-08-23", values: { forecast: null }, source: { label: "Agency", url: "https://agency.example/calendar" } },
+      { id: "date-only", title: "FOMC Minutes", indicator: "fomc-statement", kind: "macro", importance: 3, scheduledAt: null, rawScheduledAt: "2026-08-23", values: { forecast: null }, source: { label: "Federal Reserve", url: "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm" } },
       { id: "low", title: "Minor survey", importance: 1, scheduledAt: "2026-08-20T10:00:00Z" },
       { id: "outside", title: "US GDP", indicator: "gdp", importance: 3, scheduledAt: "2026-08-24T12:30:00Z" },
     ],
@@ -635,12 +636,148 @@ test("weekly calendar covers the current UTC Monday through Sunday, groups by da
   assert.equal(document.weekEnd, "2026-08-23");
   assert.deepEqual(document.days.map((day) => day.date), ["2026-08-19", "2026-08-23"]);
   const timed = document.days[0].events[0];
+  assert.equal(timed.country, "US");
+  assert.match(timed.title, /^US\b/);
   assert.equal(timed.time, "12:30");
   assert.ok(timed.nodes.some((node) => node.type === "metric" && node.label === "Forecast"));
   assert.ok(timed.nodes.some((node) => node.type === "metric" && node.label === "Previous"));
   assert.ok(!timed.nodes.some((node) => node.type === "metric" && node.label === "Actual"));
   assert.equal(document.days[1].events[0].time, "TBD");
   assert.doesNotMatch(JSON.stringify(document), /null|undefined/);
+});
+
+test("weekly calendar localizes non-US market transmission instead of applying a Fed-only explanation", () => {
+  const document = buildWeeklyCalendarDocument({
+    now,
+    events: [{
+      id: "jp-cpi",
+      title: "Core CPI YoY",
+      country: "JP",
+      importance: 3,
+      scheduledAt: "2026-08-20T23:30:00Z",
+      values: { forecast: "2.7%", previous: "2.8%" },
+      source: { label: "Statistics Bureau", url: "https://www.stat.go.jp/english/" },
+    }],
+  });
+
+  const event = document.days[0].events[0];
+  assert.equal(event.country, "JP");
+  assert.equal(event.title, "JP · Core CPI YoY");
+  assert.match(event.marketSensitivity, /JP rates · JP FX/);
+  assert.match(event.whyItMatters, /JP rates and FX/);
+  assert.doesNotMatch(event.whyItMatters, /Fed path/);
+  assert.match(event.scenarioMap, /U\.S\. yields\/DXY and BTC breadth confirm/);
+});
+
+test("weekly calendar uses indicator-specific direction for non-US labour releases", () => {
+  const document = buildWeeklyCalendarDocument({
+    now,
+    events: [{
+      id: "uk-unemployment",
+      title: "Unemployment Rate",
+      country: "UK",
+      importance: 3,
+      scheduledAt: "2026-08-19T06:00:00Z",
+      values: { forecast: "4.7%", previous: "4.6%" },
+      source: { label: "ONS", url: "https://www.ons.gov.uk/employmentandlabourmarket" },
+    }],
+  });
+
+  const event = document.days[0].events[0];
+  assert.match(event.scenarioMap, /Higher unemployment can raise UK easing odds/);
+  assert.match(event.scenarioMap, /lower unemployment can support UK yields\/FX/);
+  assert.doesNotMatch(event.scenarioMap, /Above consensus can lift UK yields\/FX/);
+});
+
+test("release monitor allowlist rejects generic and component-noise events before polling", () => {
+  assert.equal(isSupportedReleaseEvent({ title: "US CPI YoY" }), true);
+  assert.equal(isSupportedReleaseEvent({ title: "Electronic Card Retail Sales", country: "NZ" }), false);
+  assert.equal(isSupportedReleaseEvent({ title: "Japan GDP Capital Expenditure QoQ", country: "JP" }), false);
+  assert.equal(isSupportedReleaseEvent({ title: "Consumer Confidence", country: "US" }), false);
+});
+
+test("weekly calendar excludes generic importance-only events and collapses indicator component families", () => {
+  const document = buildWeeklyCalendarDocument({
+    now,
+    events: [
+      { id: "cards", title: "Electronic Card Retail Sales", country: "NZ", importance: 3, scheduledAt: "2026-08-20T02:00:00Z", source: { label: "Calendar", url: "https://calendar.example/cards" } },
+      { id: "gdp-main", title: "Japan GDP Growth Rate QoQ", country: "JP", importance: 3, scheduledAt: "2026-08-20T23:50:00Z", source: { label: "Cabinet Office", url: "https://www.esri.cao.go.jp/en/sna/menu.html" } },
+      { id: "gdp-capex", title: "Japan GDP Capital Expenditure QoQ", country: "JP", importance: 3, scheduledAt: "2026-08-20T23:50:00Z", source: { label: "Cabinet Office", url: "https://www.esri.cao.go.jp/en/sna/menu.html" } },
+      { id: "gdp-deflator", title: "Japan GDP Price Index YoY", country: "JP", importance: 3, scheduledAt: "2026-08-20T23:50:00Z", source: { label: "Cabinet Office", url: "https://www.esri.cao.go.jp/en/sna/menu.html" } },
+    ],
+  });
+
+  assert.deepEqual(document.days.flatMap((day) => day.events.map((event) => event.title)), ["Japan GDP Growth Rate QoQ"]);
+  assert.equal(document.days[0].events[0].indicator, "gdp");
+});
+
+test("weekly calendar selects exactly three events for the community brief", () => {
+  const events = Array.from({ length: 8 }, (_, index) => ({
+    id: `cpi-${index}`,
+    title: `US CPI YoY region ${index}`,
+    indicator: "cpi",
+    country: `R${index}`,
+    importance: 3,
+    scheduledAt: `2026-08-${String(17 + Math.floor(index / 2)).padStart(2, "0")}T${String(8 + index).padStart(2, "0")}:00:00Z`,
+    source: { label: "Official statistics", url: `https://official.example/release/${index}` },
+  }));
+  const document = buildWeeklyCalendarDocument({ now, events });
+
+  assert.equal(document.days.flatMap((day) => day.events).length, 3);
+  assert.ok(renderTelegramMarketDocument(document).length < 4096);
+});
+
+test("weekly calendar renders one decision card for simultaneous headline and core inflation components", () => {
+  const document = buildWeeklyCalendarDocument({
+    now,
+    events: [
+      { id: "jp-cpi", title: "Japan CPI, n.s.a", indicator: "cpi", country: "Japan", importance: 3, scheduledAt: "2026-08-21T19:30:00Z", source: { label: "Statistics Bureau", url: "https://official.example/jp-cpi" } },
+      { id: "jp-core-cpi", title: "Japan National Core CPI YoY", indicator: "core-cpi", country: "Japan", importance: 3, scheduledAt: "2026-08-21T19:30:00Z", source: { label: "Statistics Bureau", url: "https://official.example/jp-core-cpi" } },
+    ],
+  });
+
+  const selected = document.days.flatMap((day) => day.events);
+  assert.equal(selected.length, 1);
+  assert.equal(selected[0].id, "jp-core-cpi");
+});
+
+test("weekly calendar prioritizes the nearest tradable events when impact scores tie", () => {
+  const events = Array.from({ length: 8 }, (_, index) => ({
+    id: `cpi-${index}`,
+    title: `Core CPI YoY region ${index}`,
+    indicator: "core-cpi",
+    country: `R${index}`,
+    importance: 3,
+    scheduledAt: `2026-08-${String(17 + index).padStart(2, "0")}T12:00:00Z`,
+    source: { label: "Official statistics", url: `https://official.example/release/${index}` },
+  }));
+  const document = buildWeeklyCalendarDocument({ now: new Date("2026-08-20T11:00:00.000Z"), events });
+  const selectedIds = document.days.flatMap((day) => day.events.map((event) => event.id));
+
+  assert.ok(selectedIds.includes("cpi-3"), "today's imminent CPI must not be displaced by stale events");
+  assert.ok(selectedIds.includes("cpi-4"), "the next scheduled CPI must be retained");
+  assert.ok(!selectedIds.includes("cpi-0"), "the oldest completed event should lose the tie-break");
+});
+
+test("weekly calendar ranks global transmission above a source's generic high-impact badge", () => {
+  const events = [
+    ["ru-ppi", "PPI", "ppi", "Russia", "2026-08-20T12:00:00Z"],
+    ["hk-cpi", "CPI", "cpi", "Hong Kong", "2026-08-20T13:00:00Z"],
+    ["hk-jobs", "Unemployment Rate", "unemployment-rate", "Hong Kong", "2026-08-20T14:00:00Z"],
+    ["de-ppi", "PPI", "ppi", "Germany", "2026-08-20T15:00:00Z"],
+    ["au-jobs", "Unemployment Rate", "unemployment-rate", "Australia", "2026-08-20T16:00:00Z"],
+    ["kr-ppi", "PPI", "ppi", "South Korea", "2026-08-20T17:00:00Z"],
+    ["us-claims", "Initial Jobless Claims", "initial-jobless-claims", "US", "2026-08-21T08:30:00Z"],
+  ].map(([id, title, indicator, country, scheduledAt]) => ({
+    id, title, indicator, country, scheduledAt, importance: 3,
+    source: { label: "Official statistics", url: `https://official.example/${id}` },
+  }));
+  const document = buildWeeklyCalendarDocument({ now: new Date("2026-08-20T11:00:00.000Z"), events });
+  const selectedIds = document.days.flatMap((day) => day.events.map((event) => event.id));
+
+  assert.ok(selectedIds.includes("us-claims"), "a direct US rates catalyst must survive the three-event cap");
+  assert.equal(selectedIds.length, 3);
+  assert.equal(selectedIds.filter((id) => ["ru-ppi", "kr-ppi"].includes(id)).length, 0);
 });
 
 test("weekly calendar keeps only official crypto events with a source-provided time", () => {
@@ -660,7 +797,7 @@ test("weekly calendar treats a date-only scheduledAt as TBD while retaining its 
   const document = buildWeeklyCalendarDocument({
     now,
     events: [
-      { id: "date-only-scheduled", title: "Policy consultation closes", kind: "macro", importance: 3, scheduledAt: "2026-08-20", source: { label: "Agency", url: "https://agency.example/calendar" } },
+      { id: "date-only-scheduled", title: "FOMC Minutes", indicator: "fomc-statement", kind: "macro", importance: 3, scheduledAt: "2026-08-20", source: { label: "Federal Reserve", url: "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm" } },
     ],
   });
 
@@ -801,6 +938,54 @@ test("data release documents enforce the allowlist and omit absent values and re
   assert.ok(!document.nodes.some((node) => node.type === "metric" && node.label === "Previous"));
   assert.deepEqual(document.nodes.filter((node) => node.type === "metric" && ["BTC", "ETH", "DXY"].includes(node.label)).map((node) => node.label), ["BTC", "DXY"]);
   assert.throws(() => buildDataReleaseDocument({ event: { indicator: "bitcoin-dominance" } }), /allowlist/i);
+});
+
+test("matched releases separate a neutral surprise from correlated market moves and round reactions", () => {
+  const document = buildDataReleaseDocument({
+    event: {
+      indicator: "cpi",
+      title: "Euro Area CPI",
+      values: { actual: "2.9%", forecast: "2.9%", previous: "2.8%" },
+      source: { label: "Eurostat", url: "https://ec.europa.eu/eurostat/" },
+    },
+    reaction: {
+      BTC: { changePercent: 3.6535 },
+      ETH: { changePercent: 1.5874 },
+      DXY: { changePercent: -0.1972 },
+    },
+  });
+
+  assert.equal(document.impact, "Neutral");
+  assert.match(document.verdict, /matched the forecast/i);
+  assert.match(document.verdict, /not proof of causality/i);
+  assert.deepEqual(
+    document.nodes
+      .filter((node) => node.type === "metric" && ["BTC", "ETH", "DXY"].includes(node.label))
+      .map((node) => node.value),
+    ["+3.65%", "+1.59%", "-0.20%"],
+  );
+});
+
+test("data releases state when the observed tape contradicts the initial macro signal", () => {
+  const document = buildDataReleaseDocument({
+    event: {
+      indicator: "cpi",
+      title: "Euro Area CPI",
+      values: { actual: "3.0%", forecast: "2.9%", previous: "2.8%" },
+      source: { label: "Eurostat", url: "https://ec.europa.eu/eurostat/" },
+    },
+    reaction: {
+      BTC: { changePercent: 11.7 },
+      ETH: { changePercent: 19.18 },
+      DXY: { changePercent: -0.78 },
+    },
+  });
+
+  assert.equal(document.impact, "Bearish");
+  assert.equal(document.tapeStatus, "Divergent");
+  assert.match(document.verdict, /does not confirm the bearish data signal/i);
+  assert.match(document.verdict, /concurrent catalysts/i);
+  assert.ok(document.nodes.some((node) => node.type === "metric" && node.label === "Tape Verdict" && node.value === "Divergent"));
 });
 
 test("data release documents evaluate unknown raw components but do not render them", () => {
