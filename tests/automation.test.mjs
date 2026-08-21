@@ -2013,6 +2013,201 @@ test("weekly publication health failure is skipped before every external send", 
   assert.equal(sends, 0);
 });
 
+function verifiedWeeklyDeliveryOptions(repository, overrides = {}) {
+  return {
+    now: "2026-08-19T09:00:00.000Z",
+    force: true,
+    dryRun: false,
+    repository,
+    fetchCalendar: async () => verifiedWeeklyCalendarFixture(),
+    publicationFetchImpl: verifiedPublicationFetch(repository),
+    publicBaseUrl: "https://academy.example",
+    allowedPublicOrigins: ["https://academy.example"],
+    ...overrides,
+  };
+}
+
+test("weekly durable identity sends a changed Telegram topic and Discord channel in the same slot", async () => {
+  const repository = automationRepository();
+  const telegramCalls = [];
+  const discordCalls = [];
+  const base = verifiedWeeklyDeliveryOptions(repository, {
+    force: false,
+    stateKey: `weekly-target-change-${process.pid}`,
+    telegramSender: async (_token, method, payload) => {
+      telegramCalls.push({ method, threadId: payload.message_thread_id });
+      return { message_id: telegramCalls.length };
+    },
+    discordSender: async (channelId) => {
+      discordCalls.push(channelId);
+      return { id: `discord-${discordCalls.length}` };
+    },
+  });
+
+  const first = await automation.runAutomationJob("weekly-calendar", {
+    ...base,
+    targets: [
+      { chatId: "-1001", threadId: 91 },
+      { platform: "discord", guildId: "g1", channelId: "c91" },
+    ],
+  });
+  const changed = await automation.runAutomationJob("weekly-calendar", {
+    ...base,
+    targets: [
+      { chatId: "-1001", threadId: 92 },
+      { platform: "discord", guildId: "g1", channelId: "c92" },
+    ],
+  });
+
+  assert.equal(first.status, "success");
+  assert.equal(changed.status, "success");
+  assert.ok(telegramCalls.some(({ threadId }) => threadId === 91));
+  assert.ok(telegramCalls.some(({ threadId }) => threadId === 92));
+  assert.ok(discordCalls.includes("c91"));
+  assert.ok(discordCalls.includes("c92"));
+});
+
+test("weekly durable identity marks the same tuple and target duplicate even when forced", async () => {
+  const repository = automationRepository();
+  let sends = 0;
+  const options = verifiedWeeklyDeliveryOptions(repository, {
+    targets: [{ chatId: "-1001", threadId: 93 }],
+    telegramSender: async () => ({ message_id: ++sends }),
+  });
+
+  const first = await automation.runAutomationJob("weekly-calendar", options);
+  const sendsAfterFirst = sends;
+  const duplicate = await automation.runAutomationJob("weekly-calendar", options);
+
+  assert.equal(first.status, "success");
+  assert.equal(duplicate.status, "duplicate");
+  assert.equal(duplicate.preview.deliveryPlans.length, 0);
+  assert.equal(sends, sendsAfterFirst);
+  const durableStore = await repository.getMeta("market-content:release-delivery:v1");
+  const expectedIdentity = JSON.stringify([
+    "market-delivery-v1",
+    "weekly-calendar",
+    "2026-W34",
+    "en",
+    "telegram",
+    "-1001",
+    "93",
+  ]);
+  assert.ok(durableStore.entries.some((entry) => (
+    entry.deduplicationKey === expectedIdentity
+      && entry.expectedTargetKeys.includes("telegram:-1001:93")
+      && entry.targets["telegram:-1001:93"]?.status === "success"
+  )));
+});
+
+test("concurrent weekly runs for one complete tuple perform one external delivery", async () => {
+  const repository = automationRepository();
+  let sends = 0;
+  const options = verifiedWeeklyDeliveryOptions(repository, {
+    targets: [{ chatId: "-1001", threadId: 94 }],
+    telegramSender: async () => {
+      sends += 1;
+      await new Promise((resolve) => setImmediate(resolve));
+      return { message_id: sends };
+    },
+  });
+
+  const results = await Promise.all([
+    automation.runAutomationJob("weekly-calendar", options),
+    automation.runAutomationJob("weekly-calendar", options),
+  ]);
+  const delivered = results.find(({ status }) => status === "success");
+
+  assert.deepEqual(results.map(({ status }) => status).sort(), ["duplicate", "success"]);
+  assert.equal(sends, delivered.preview.deliveryPlans[0].steps.length);
+});
+
+test("weekly partial restart skips a completed target and continues one never started", async () => {
+  const baseRepository = automationRepository();
+  let rejectSecondPreparation = true;
+  const repository = {
+    ...baseRepository,
+    async setMeta(key, value) {
+      const isSecondPreparation = key === "market-content:release-sent:v1"
+        && value?.entries?.some((entry) => entry.targetKey.includes("telegram:-1001:96") && entry.status === "sending");
+      if (isSecondPreparation && rejectSecondPreparation) {
+        rejectSecondPreparation = false;
+        throw new Error("durable marker temporarily unavailable");
+      }
+      return baseRepository.setMeta(key, value);
+    },
+  };
+  const calls = new Map();
+  const options = verifiedWeeklyDeliveryOptions(repository, {
+    targets: [
+      { chatId: "-1001", threadId: 95 },
+      { chatId: "-1001", threadId: 96 },
+    ],
+    telegramSender: async (_token, _method, payload) => {
+      const threadId = payload.message_thread_id;
+      calls.set(threadId, (calls.get(threadId) ?? 0) + 1);
+      return { message_id: [...calls.values()].reduce((sum, count) => sum + count, 0) };
+    },
+  });
+
+  const first = await automation.runAutomationJob("weekly-calendar", options);
+  const completedCalls = calls.get(95);
+  assert.equal(first.status, "partial");
+  assert.ok(completedCalls > 0);
+  assert.equal(calls.get(96) ?? 0, 0);
+
+  const restarted = await automation.runAutomationJob("weekly-calendar", options);
+  assert.equal(restarted.status, "success");
+  assert.equal(calls.get(95), completedCalls);
+  assert.ok((calls.get(96) ?? 0) > 0);
+});
+
+test("weekly started delivery with an unknown result requires manual reconciliation without resend", async () => {
+  const repository = automationRepository();
+  let attempts = 0;
+  const options = verifiedWeeklyDeliveryOptions(repository, {
+    targets: [{ chatId: "-1001", threadId: 97 }],
+    telegramSender: async () => {
+      attempts += 1;
+      throw new Error("connection closed after request write");
+    },
+  });
+
+  const first = await automation.runAutomationJob("weekly-calendar", options);
+  const attemptsAfterFirst = attempts;
+  const restarted = await automation.runAutomationJob("weekly-calendar", options);
+
+  assert.equal(first.status, "manual-reconciliation");
+  assert.equal(first.preview.targetResults[0].manualReconciliationRequired, true);
+  assert.equal(restarted.status, "manual-reconciliation");
+  assert.equal(restarted.preview.deliveryPlans.length, 0);
+  assert.equal(attempts, attemptsAfterFirst);
+});
+
+test("weekly durable receipt prevents a completed target repeating before slot state is available", async () => {
+  const repository = automationRepository();
+  let sends = 0;
+  const base = verifiedWeeklyDeliveryOptions(repository, {
+    force: false,
+    targets: [{ chatId: "-1001", threadId: 98 }],
+    telegramSender: async () => ({ message_id: ++sends }),
+  });
+
+  const first = await automation.runAutomationJob("weekly-calendar", {
+    ...base,
+    stateKey: `weekly-before-slot-a-${process.pid}`,
+  });
+  const sendsAfterFirst = sends;
+  const restartedWithoutSlot = await automation.runAutomationJob("weekly-calendar", {
+    ...base,
+    stateKey: `weekly-before-slot-b-${process.pid}`,
+  });
+
+  assert.equal(first.status, "success");
+  assert.equal(restartedWithoutSlot.status, "duplicate");
+  assert.equal(sends, sendsAfterFirst);
+});
+
 test("partial release reaction remains publishable as Awaiting Confirmation and retains provider warnings", async () => {
   const scheduledAt = "2026-08-19T12:30:00.000Z";
   const checkedAt = "2026-08-19T12:31:00.000Z";
