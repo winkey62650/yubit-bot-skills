@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   DEFAULT_SOURCE_TIMEOUT_MS,
   fetchCryptoDailyCandidates,
+  fetchFederalReserveCalendar,
   fetchMarketCalendar,
   fetchMarketReaction,
   fetchNasdaqCalendar,
@@ -88,18 +89,65 @@ test("Nasdaq economic-events adapter drops HTML and non-breaking-space placehold
   assert.deepEqual(result.events[0].values, { actual: null, forecast: null, previous: null });
 });
 
-test("Federal Reserve calendar parser turns official statement dates into high-impact events", () => {
-  const events = parseFederalReserveCalendar(`
-    <h4><a id="42828">2026 FOMC Meetings</a></h4>
-    <a href="/monetarypolicy/files/monetary20260916a1.pdf">PDF</a>
-  `);
+test("Federal Reserve calendar parser includes upcoming meetings before a statement exists", async () => {
+  const html = await textFixture("federal-reserve-fomc-calendar.html");
+  const events = parseFederalReserveCalendar(html);
 
   assert.deepEqual(events.map(({ title, importance, scheduledAt }) => ({ title, importance, scheduledAt })), [{
     title: "FOMC Rate Decision & Statement",
     importance: 3,
+    scheduledAt: "2026-07-29T18:00:00.000Z",
+  }, {
+    title: "FOMC Rate Decision & Statement",
+    importance: 3,
     scheduledAt: "2026-09-16T18:00:00.000Z",
   }]);
-  assert.equal(events[0].source.label, "Federal Reserve");
+  assert.match(events[0].source.url, /monetary20260729a1\.pdf$/);
+  assert.equal(events[1].source.url, "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm");
+});
+
+test("Federal Reserve adapter returns an upcoming meeting from the official schedule", async () => {
+  const html = await textFixture("federal-reserve-fomc-calendar.html");
+  const result = await fetchFederalReserveCalendar({
+    from: "2026-09-01T00:00:00.000Z",
+    to: "2026-10-01T00:00:00.000Z",
+    now: "2026-08-21T00:00:00.000Z",
+    fetchImpl: async () => new Response(html),
+  });
+
+  assert.deepEqual(result.events.map((event) => event.scheduledAt), ["2026-09-16T18:00:00.000Z"]);
+  assert.equal(result.sources[0].status, "ok");
+});
+
+test("market calendar deduplicates US country aliases before reconciliation", async () => {
+  const result = await fetchMarketCalendar({
+    from: "2026-08-20T00:00:00.000Z",
+    to: "2026-08-21T00:00:00.000Z",
+    now: "2026-08-20T10:00:00.000Z",
+    fetchImpl: async (url) => {
+      const target = String(url);
+      if (target.includes("tradingview")) return jsonResponse({ result: [{
+        title: "US CPI", country: "United States", date: "2026-08-20T12:30:00Z",
+      }] });
+      if (target.includes("nasdaq")) return jsonResponse({ data: { rows: [{
+        gmt: "12:30", country: "US", eventName: "Consumer Price Index",
+      }] } });
+      if (target.includes("federalreserve.gov")) return new Response("<html><body><main>FOMC calendar</main></body></html>");
+      if (target.includes("bls.gov")) return new Response("BEGIN:VCALENDAR\r\nEND:VCALENDAR");
+      if (target.includes("bea.gov")) return new Response("<html><body><main>Release schedule</main></body></html>");
+      throw new Error(`Unexpected URL: ${url}`);
+    },
+  });
+
+  assert.equal(result.events.length, 1);
+  assert.equal(result.events[0].id, "cpi:US:2026-08-20");
+  assert.deepEqual([
+    result.events[0].schedule.sourceId,
+    ...result.events[0].schedule.comparisons.map((source) => source.sourceId),
+  ].sort(), [
+    "nasdaq-economic-calendar",
+    "tradingview-calendar",
+  ]);
 });
 
 test("market calendar fails over from TradingView to Nasdaq without an API key", async () => {
