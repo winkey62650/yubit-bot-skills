@@ -42,40 +42,76 @@ export async function GET(request) {
     const columns = Array.isArray(poster.columns) ? poster.columns.slice(0, 5) : [];
     return new ImageResponse(
       e("div", { style: editorialCanvas() },
-        e("div", { style: { position: "absolute", left: 30, top: 100, display: "flex", color: "#ded9cc", fontSize: 310, lineHeight: .75, fontWeight: 900, letterSpacing: -28 } }, "W"),
-        editorialHeader(e, "02 / WEEK", poster.weekStart || "UTC CALENDAR"),
-        e("div", { style: { position: "absolute", left: 56, top: 118, display: "flex", fontSize: 57, lineHeight: .9, fontWeight: 900, letterSpacing: -3 } }, "MARKET\nCALENDAR"),
-        e("div", { style: { position: "absolute", left: 56, right: 56, top: 270, bottom: 70, display: "flex", borderTop: "2px solid #171714" } },
-          ...columns.map((column, columnIndex) => e("div", { key: columnIndex, style: { flex: 1, display: "flex", flexDirection: "column", borderLeft: columnIndex ? "1px solid #b9b5aa" : "none", padding: "18px 14px" } },
-            e("div", { style: { display: "flex", fontSize: 14, fontWeight: 900, letterSpacing: 2 } }, column.label || `DAY ${columnIndex + 1}`),
-            ...(column.events || []).map((event) => e("div", { key: event.id, style: { display: "flex", flexDirection: "column", marginTop: 18, padding: "10px 9px", borderLeft: `5px solid ${event.accent === "amber" ? "#efb62f" : "#171714"}`, background: "#ebe6da" } },
-              e("span", { style: { display: "flex", color: "#77746c", fontSize: 11, fontWeight: 800 } }, event.time),
-              e("span", { style: { display: "flex", marginTop: 4, fontSize: 14, lineHeight: 1.2, fontWeight: 800 } }, cleanPosterText(event.title, "Verified event", 44))
+        e("div", { style: { position: "absolute", right: -115, top: -155, width: 430, height: 430, display: "flex", border: "46px solid rgba(163,72,63,.10)", borderRadius: "50%" } }),
+        editorialResearchHeader(e, "WEEKLY CALENDAR", poster.weekStart || "UTC", "MACRO CATALYSTS / MARKET RISK"),
+        e("div", { style: { position: "absolute", left: 56, right: 56, top: 89, display: "flex", alignItems: "flex-end", justifyContent: "space-between" } },
+          e("div", { style: { display: "flex", flexDirection: "column" } },
+            e("span", { style: { display: "flex", color: "#171717", fontFamily: "Georgia", fontSize: 48, lineHeight: .92, fontWeight: 700, letterSpacing: -2 } }, "The Week Ahead"),
+            e("span", { style: { display: "flex", marginTop: 10, color: "#6D6A63", fontSize: 11, fontWeight: 800, letterSpacing: 2.2 } }, "FIVE-DAY CATALYST MAP · PRIORITY EVENTS IN RED")
+          ),
+          e("div", { style: { display: "flex", gap: 10 } },
+            editorialStat(e, "HIGH IMPACT", String(poster.highImpactCount ?? 0), "#A3483F"),
+            editorialStat(e, "PEAK RISK", cleanPosterText(poster.peakDay, "—", 18), "#171717")
+          )
+        ),
+        e("div", { style: { position: "absolute", left: 56, right: 56, top: 188, bottom: 69, display: "flex", borderTop: "2px solid #171717", borderBottom: "1px solid #B8B2A7" } },
+          ...columns.map((column, columnIndex) => e("div", { key: column.date || columnIndex, style: { flex: 1, display: "flex", flexDirection: "column", padding: "16px 12px 12px", borderLeft: columnIndex ? "1px solid #C9C3B8" : "none" } },
+            e("div", { style: { display: "flex", alignItems: "baseline", justifyContent: "space-between", paddingBottom: 12, borderBottom: "1px solid #C9C3B8" } },
+              e("span", { style: { display: "flex", color: column.label === poster.peakDay ? "#A3483F" : "#171717", fontSize: 14, fontWeight: 900, letterSpacing: 1.4 } }, cleanPosterText(column.label, `DAY ${columnIndex + 1}`, 16)),
+              e("span", { style: { display: "flex", color: "#8B877F", fontSize: 9, fontWeight: 800 } }, cleanPosterText(column.date, "", 10))
+            ),
+            ...(column.events || []).slice(0, 3).map((event) => e("div", { key: event.eventKey || event.id, style: { display: "flex", flexDirection: "column", marginTop: 12, padding: "10px 10px 9px", borderLeft: `4px solid ${event.isPriority ? "#A3483F" : "#171717"}`, background: event.isPriority ? "#F2E4DF" : "#F6F2EA" } },
+              e("div", { style: { display: "flex", justifyContent: "space-between", color: event.isPriority ? "#A3483F" : "#6D6A63", fontSize: 9, fontWeight: 900, letterSpacing: 1.1 } },
+                e("span", null, `${cleanPosterText(event.time, "TBD", 10)} UTC`),
+                e("span", null, event.isPriority ? "PRIORITY" : cleanPosterText(event.source, "VERIFIED", 14))
+              ),
+              e("span", { style: { display: "flex", marginTop: 6, color: "#171717", fontSize: 13, lineHeight: 1.18, fontWeight: 900 } }, cleanPosterText(event.title, "Verified event", 46)),
+              event.sensitivity ? e("span", { style: { display: "flex", marginTop: 7, color: "#6D6A63", fontSize: 9, lineHeight: 1.28, fontWeight: 650 } }, cleanPosterText(event.sensitivity, "", 54)) : null
             ))
           ))
         ),
-        editorialFooter(e, "TOP 8 · HIGH-IMPACT EVENTS FIRST")
+        editorialResearchFooter(e, poster.footer?.sources, poster.footer?.updatedAt, "UTC · OFFICIAL SOURCES · EDITORIAL PRIORITIZATION")
       ), { width: 1200, height: 675 }
     );
   }
   if (kind === "data-update") {
-    const impactColor = poster.impact === "Bullish" ? "#17845c" : poster.impact === "Bearish" ? "#b64232" : "#ef9e00";
+    const impactColor = String(poster.impact || "").toUpperCase() === "BULLISH"
+      ? "#3F6D57"
+      : String(poster.impact || "").toUpperCase() === "BEARISH"
+        ? "#A3483F"
+        : "#6D6A63";
+    const tapeStatus = cleanPosterText(poster.tapeStatus, "AWAITING CONFIRMATION", 28);
+    const tapeStatusColor = tapeStatus === "CONFIRMED" ? "#3F6D57" : tapeStatus === "DIVERGENT" ? "#A3483F" : "#6D6A63";
     return new ImageResponse(
       e("div", { style: editorialCanvas() },
-        e("div", { style: { position: "absolute", right: 72, top: 90, width: 425, height: 425, display: "flex", border: "54px solid #171714", borderRadius: "50%" } }),
-        e("div", { style: { position: "absolute", right: 170, bottom: 50, width: 215, height: 82, display: "flex", background: "#efb62f", borderRadius: "50%" } }),
-        editorialHeader(e, "03 / RELEASE", poster.source || "OFFICIAL DATA"),
-        e("div", { style: { position: "absolute", left: 56, top: 118, width: 650, display: "flex", flexDirection: "column" } },
-          e("div", { style: { display: "flex", color: "#77746c", fontSize: 16, fontWeight: 800, letterSpacing: 4 } }, poster.indicator || "DATA UPDATE"),
-          e("div", { style: { display: "flex", marginTop: 10, fontSize: 112, lineHeight: .86, fontWeight: 900, letterSpacing: -7 } }, poster.actual || "—"),
-          e("div", { style: { display: "flex", marginTop: 26, gap: 12 } },
-            dataPill(e, "PREVIOUS", poster.previous || "—"),
-            poster.forecast ? dataPill(e, "AUX FORECAST", poster.forecast) : null,
-            dataPill(e, "IMPACT", poster.impact || "Neutral", impactColor)
+        e("div", { style: { position: "absolute", right: -80, bottom: -235, width: 520, height: 520, display: "flex", border: "54px solid rgba(63,109,87,.09)", borderRadius: "50%" } }),
+        editorialResearchHeader(e, "DATA UPDATE", poster.source || "OFFICIAL DATA", "ACTUAL / CONSENSUS / REACTION"),
+        e("div", { style: { position: "absolute", left: 56, right: 56, top: 91, display: "flex", justifyContent: "space-between" } },
+          e("div", { style: { width: 615, display: "flex", flexDirection: "column" } },
+            e("span", { style: { display: "flex", color: "#A3483F", fontSize: 11, fontWeight: 900, letterSpacing: 2.7 } }, poster.indicator || "OFFICIAL RELEASE"),
+            e("span", { style: { display: "flex", marginTop: 8, color: "#171717", fontFamily: "Georgia", fontSize: 43, lineHeight: 1.02, fontWeight: 700, letterSpacing: -1.5 } }, cleanPosterText(poster.title, "Data Update", 72)),
+            e("div", { style: { display: "flex", marginTop: 23, gap: 9 } },
+              editorialValue(e, "ACTUAL", poster.actual || "—", "#171717"),
+              editorialValue(e, "CONSENSUS", poster.forecast || "—", "#6D6A63"),
+              editorialValue(e, "SURPRISE", poster.surprise || "—", impactColor),
+              editorialValue(e, "PREVIOUS", poster.previous || "—", "#6D6A63")
+            ),
+            e("div", { style: { display: "flex", minHeight: 74, marginTop: 20, padding: "13px 15px", borderLeft: `4px solid ${impactColor}`, background: "#F6F2EA", color: "#3B3935", fontSize: 12, lineHeight: 1.34, fontWeight: 650 } }, cleanPosterText(poster.verdict, `${poster.impact || "Neutral"} initial read; await cross-asset confirmation.`, 132)),
+            editorialSignal(e, "CONFIRMATION", cleanPosterText(poster.confirmation, "Cross-asset move holds", 126), "#3F6D57"),
+            editorialSignal(e, "INVALIDATION", cleanPosterText(poster.invalidation, "Move reverses through pre-release levels", 126), "#A3483F")
           ),
-          e("div", { style: { display: "flex", marginTop: 38, maxWidth: 620, fontSize: 25, lineHeight: 1.15, fontWeight: 900 } }, cleanPosterText(poster.title, "DATA UPDATE", 70))
+          e("div", { style: { width: 445, minHeight: 460, display: "flex", flexDirection: "column", padding: "19px 20px", borderTop: "3px solid #171717", borderBottom: "1px solid #B8B2A7", background: "rgba(246,242,234,.88)" } },
+            e("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "baseline", paddingBottom: 14, borderBottom: "1px solid #C9C3B8" } },
+              e("span", { style: { display: "flex", color: "#171717", fontFamily: "Georgia", fontSize: 21, fontWeight: 700 } }, "CROSS-ASSET REACTION"),
+              e("span", { style: { display: "flex", color: tapeStatusColor, fontSize: 13, fontWeight: 900, letterSpacing: 1.4 } }, tapeStatus)
+            ),
+            e("div", { style: { display: "flex", flexDirection: "column", marginTop: 19, gap: 17 } },
+              ...(poster.reactions || []).map((reaction) => editorialReaction(e, reaction))
+            ),
+            e("div", { style: { display: "flex", marginTop: "auto", paddingTop: 17, borderTop: "1px solid #C9C3B8", color: "#6D6A63", fontSize: 9, lineHeight: 1.4, fontWeight: 800, letterSpacing: 1.2 } }, "OBSERVED FROM THE PRE-RELEASE BENCHMARK · NOT A PRICE FORECAST")
+          )
         ),
-        editorialFooter(e, "ACTUAL FIRST · FORECAST IS AUXILIARY")
+        editorialResearchFooter(e, poster.footer?.sources, poster.footer?.updatedAt, "OFFICIAL PRINT FIRST · INITIAL READ SUBJECT TO CONFIRMATION")
       ), { width: 1200, height: 675 }
     );
   }
@@ -245,4 +281,58 @@ function dataPill(e, label, value, color = "#171714") {
     e("span", { style: { display: "flex", color: "#77746c", fontSize: 10, fontWeight: 900, letterSpacing: 1.8 } }, label),
     e("span", { style: { display: "flex", marginTop: 5, color, fontSize: 25, fontWeight: 900 } }, value)
   );
+}
+
+function editorialResearchHeader(e, section, meta, descriptor) {
+  return e("div", { style: {
+    position: "absolute", left: 56, right: 56, top: 31, display: "flex", justifyContent: "space-between",
+    alignItems: "center", paddingBottom: 12, borderBottom: "1px solid #B8B2A7", color: "#6D6A63",
+    fontSize: 10, fontWeight: 900, letterSpacing: 2,
+  } },
+  e("span", { style: { display: "flex", color: "#A3483F" } }, `YUBIT ACADEMY / EDITORIAL RESEARCH / ${section}`),
+  e("span", { style: { display: "flex" } }, cleanPosterText(descriptor, "VERIFIED RESEARCH", 52)),
+  e("span", { style: { display: "flex", color: "#171717" } }, cleanPosterText(meta, "UTC", 36)));
+}
+
+function editorialResearchFooter(e, sources, updatedAt, label) {
+  const sourceLabel = (Array.isArray(sources) ? sources : [])
+    .map((source) => cleanPosterText(source, "", 24)).filter(Boolean).join(" · ") || "VERIFIED PUBLIC SOURCES";
+  const updatedLabel = cleanPosterText(String(updatedAt || "").replace("T", " ").replace(/\.000Z$/, " UTC"), "UTC", 32);
+  return e("div", { style: {
+    position: "absolute", left: 56, right: 56, bottom: 24, display: "flex", justifyContent: "space-between",
+    color: "#6D6A63", fontSize: 9, fontWeight: 900, letterSpacing: 1.35,
+  } },
+  e("span", { style: { display: "flex", maxWidth: 445 } }, cleanPosterText(sourceLabel, "VERIFIED PUBLIC SOURCES", 72)),
+  e("span", { style: { display: "flex", color: "#171717" } }, label),
+  e("span", { style: { display: "flex" } }, updatedLabel));
+}
+
+function editorialStat(e, label, value, color) {
+  return e("div", { style: { minWidth: 112, display: "flex", flexDirection: "column", padding: "8px 11px", borderTop: `3px solid ${color}`, background: "#F6F2EA" } },
+    e("span", { style: { display: "flex", color: "#6D6A63", fontSize: 8, fontWeight: 900, letterSpacing: 1.2 } }, label),
+    e("span", { style: { display: "flex", marginTop: 4, color, fontSize: 17, fontWeight: 900 } }, value));
+}
+
+function editorialValue(e, label, value, color) {
+  return e("div", { style: { width: 138, display: "flex", flexDirection: "column", padding: "12px", borderTop: `3px solid ${color}`, background: "#F6F2EA" } },
+    e("span", { style: { display: "flex", color: "#6D6A63", fontSize: 8, fontWeight: 900, letterSpacing: 1.25 } }, label),
+    e("span", { style: { display: "flex", marginTop: 5, color, fontSize: 23, fontWeight: 900 } }, cleanPosterText(value, "—", 18)));
+}
+
+function editorialSignal(e, label, value, color) {
+  return e("div", { style: { display: "flex", marginTop: 12, alignItems: "flex-start" } },
+    e("span", { style: { width: 93, display: "flex", flexShrink: 0, color, fontSize: 9, fontWeight: 900, letterSpacing: 1.15 } }, label),
+    e("span", { style: { display: "flex", color: "#4B4944", fontSize: 10, lineHeight: 1.3, fontWeight: 650 } }, value));
+}
+
+function editorialReaction(e, reaction) {
+  const numeric = Number(reaction?.value) || 0;
+  const color = numeric >= 0 ? "#3F6D57" : "#A3483F";
+  const width = Math.min(100, Math.max(8, Math.abs(numeric) * 30));
+  return e("div", { style: { display: "flex", flexDirection: "column" } },
+    e("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+      e("span", { style: { display: "flex", color: "#3B3935", fontSize: 12, fontWeight: 900, letterSpacing: 1.4 } }, cleanPosterText(reaction?.symbol, "ASSET", 12)),
+      e("span", { style: { display: "flex", color, fontSize: 16, fontWeight: 900 } }, cleanPosterText(reaction?.label, "—", 18))),
+    e("div", { style: { width: "100%", height: 7, marginTop: 8, display: "flex", background: "#D7D1C6" } },
+      e("div", { style: { width: `${width}%`, height: "100%", display: "flex", background: color } })));
 }
