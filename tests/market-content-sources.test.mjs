@@ -242,6 +242,36 @@ test("official calendar adapters reject nonempty schedule rows when every candid
   assert.match(result.warnings.join("\n"), /BEA.*schema/i);
 });
 
+test("official calendar adapters reject nonempty schedules when source classes drift", async () => {
+  const [fedHtml, beaHtml] = await Promise.all([
+    textFixture("federal-reserve-fomc-calendar-class-drift.html"),
+    textFixture("bea-release-schedule-class-drift.html"),
+  ]);
+  const fed = await fetchFederalReserveCalendar({
+    fetchImpl: async () => new Response(fedHtml),
+    timeoutMs: 10,
+  });
+  const result = await fetchMarketCalendar({
+    from: "2026-08-20T00:00:00.000Z",
+    to: "2026-08-21T00:00:00.000Z",
+    timeoutMs: 10,
+    fetchImpl: async (url) => {
+      const target = String(url);
+      if (target.includes("tradingview")) return jsonResponse({ result: [] });
+      if (target.includes("nasdaq")) return jsonResponse({ data: { rows: [] } });
+      if (target.includes("federalreserve.gov")) return new Response(EMPTY_FED_CALENDAR);
+      if (target.includes("bls.gov")) return new Response("BEGIN:VCALENDAR\r\nEND:VCALENDAR");
+      if (target.includes("bea.gov")) return new Response(beaHtml);
+      throw new Error(`Unexpected URL: ${url}`);
+    },
+  });
+  const bea = result.sources.find((source) => source.id === "bea-release-schedule");
+
+  assert.deepEqual([fed.sources[0].status, bea.status], ["error", "error"]);
+  assert.match(fed.warnings.join("\n"), /schema/i);
+  assert.match(result.warnings.join("\n"), /BEA.*schema/i);
+});
+
 test("market calendar deduplicates US country aliases before reconciliation", async () => {
   const result = await fetchMarketCalendar({
     from: "2026-08-20T00:00:00.000Z",
