@@ -10,6 +10,19 @@ import {
 
 const FIXTURE_DIR = new URL("./fixtures/market-content/", import.meta.url);
 const RETRIEVED_AT = "2026-08-26T12:30:05.000Z";
+const BEA_PCE_INDEX = `
+  <table><tr class="release-row">
+    <td headers="view-title-table-column"><a href="/news/2026/personal-income-and-outlays-june-2026" hreflang="en">Personal Income and Outlays, June 2026</a></td>
+  </tr></table>`;
+const BEA_GDP_INDEX = `
+  <table>
+    <tr class="release-row"><td headers="view-title-table-column"><a href="/news/2026/gross-domestic-product-county-and-personal-income-county-2024">Gross Domestic Product by County and Personal Income by County, 2024</a></td></tr>
+    <tr class="release-row"><td headers="view-title-table-column"><a href="/news/2026/gdp-advance-estimate-2nd-quarter-2026">GDP (Advance Estimate), 2nd Quarter 2026</a></td></tr>
+  </table>`;
+const FED_RELEASES_INDEX = '<a href="/newsevents/pressreleases/2026-press-fomc.htm">2026 FOMC</a>';
+const FED_FOMC_INDEX = `
+  <div class="eventlist__event"><p><a href="/newsevents/pressreleases/monetary20260729b.htm"><em>Federal Reserve Board and FOMC release economic projections</em></a></p></div>
+  <div class="eventlist__event"><p><a href="/newsevents/pressreleases/monetary20260729a.htm"><em>Federal Reserve issues FOMC statement</em></a></p></div>`;
 
 async function fixture(name) {
   return readFile(new URL(name, FIXTURE_DIR), "utf8");
@@ -60,19 +73,19 @@ test("parses BLS CPI headline and core month-over-month and year-over-year actua
   assert.equal(result.releasePeriod, "July 2026");
   assert.deepEqual(result.records.map(({ indicator }) => indicator), ["cpi-mom", "cpi", "core-cpi-mom", "core-cpi"]);
   assertOfficialRecord(result.records[0], {
-    indicator: "cpi-mom", rawValue: "0.2", normalizedValue: 0.2, unit: "%", releasePeriod: "July 2026",
+    indicator: "cpi-mom", rawValue: "0.1", normalizedValue: 0.1, unit: "%", releasePeriod: "July 2026",
     sourceUrl: "https://www.bls.gov/news.release/cpi.nr0.htm",
   });
   assertOfficialRecord(result.records[1], {
-    indicator: "cpi", rawValue: "2.7", normalizedValue: 2.7, unit: "%", releasePeriod: "July 2026",
+    indicator: "cpi", rawValue: "3.4", normalizedValue: 3.4, unit: "%", releasePeriod: "July 2026",
     sourceUrl: "https://www.bls.gov/news.release/cpi.nr0.htm",
   });
   assertOfficialRecord(result.records[2], {
-    indicator: "core-cpi-mom", rawValue: "0.3", normalizedValue: 0.3, unit: "%", releasePeriod: "July 2026",
+    indicator: "core-cpi-mom", rawValue: "0.2", normalizedValue: 0.2, unit: "%", releasePeriod: "July 2026",
     sourceUrl: "https://www.bls.gov/news.release/cpi.nr0.htm",
   });
   assertOfficialRecord(result.records[3], {
-    indicator: "core-cpi", rawValue: "3.1", normalizedValue: 3.1, unit: "%", releasePeriod: "July 2026",
+    indicator: "core-cpi", rawValue: "2.5", normalizedValue: 2.5, unit: "%", releasePeriod: "July 2026",
     sourceUrl: "https://www.bls.gov/news.release/cpi.nr0.htm",
   });
 });
@@ -85,11 +98,11 @@ test("parses BLS payroll change and unemployment rate", async () => {
 
   assert.deepEqual(result.records.map(({ indicator }) => indicator), ["nonfarm-payrolls", "unemployment-rate"]);
   assertOfficialRecord(result.records[0], {
-    indicator: "nonfarm-payrolls", rawValue: "73", normalizedValue: 73_000, unit: "K", releasePeriod: "July 2026",
+    indicator: "nonfarm-payrolls", rawValue: "-23", normalizedValue: -23_000, unit: "K", releasePeriod: "July 2026",
     sourceUrl: "https://www.bls.gov/news.release/empsit.nr0.htm",
   });
   assertOfficialRecord(result.records[1], {
-    indicator: "unemployment-rate", rawValue: "4.2", normalizedValue: 4.2, unit: "%", releasePeriod: "July 2026",
+    indicator: "unemployment-rate", rawValue: "4.1", normalizedValue: 4.1, unit: "%", releasePeriod: "July 2026",
     sourceUrl: "https://www.bls.gov/news.release/empsit.nr0.htm",
   });
 });
@@ -99,7 +112,7 @@ test("parses BEA headline and core PCE month-over-month and year-over-year value
   const result = await fetchBeaOfficialRelease({
     indicator: "pce",
     fetchImpl: offlineFetchSequence([
-      '<a href="/news/2026/personal-income-and-outlays-july-2026">Personal Income and Outlays, July 2026</a>',
+      BEA_PCE_INDEX,
       await fixture("bea-pce-release.html"),
     ], calls),
     now: () => new Date(RETRIEVED_AT), timeoutMs: 100,
@@ -107,17 +120,17 @@ test("parses BEA headline and core PCE month-over-month and year-over-year value
 
   assert.deepEqual(calls.map(({ url }) => url), [
     "https://www.bea.gov/news/current-releases",
-    "https://www.bea.gov/news/2026/personal-income-and-outlays-july-2026",
+    "https://www.bea.gov/news/2026/personal-income-and-outlays-june-2026",
   ]);
   assert.equal(calls.every(({ options }) => options.headers.authorization === undefined), true);
   assert.deepEqual(result.records.map(({ indicator }) => indicator), ["pce-mom", "pce", "core-pce-mom", "core-pce"]);
   assertOfficialRecord(result.records[0], {
-    indicator: "pce-mom", rawValue: "0.2", normalizedValue: 0.2, unit: "%", releasePeriod: "July 2026",
-    sourceUrl: "https://www.bea.gov/news/2026/personal-income-and-outlays-july-2026",
+    indicator: "pce-mom", rawValue: "-0.1", normalizedValue: -0.1, unit: "%", releasePeriod: "June 2026",
+    sourceUrl: "https://www.bea.gov/news/2026/personal-income-and-outlays-june-2026",
   });
   assertOfficialRecord(result.records[3], {
-    indicator: "core-pce", rawValue: "2.9", normalizedValue: 2.9, unit: "%", releasePeriod: "July 2026",
-    sourceUrl: "https://www.bea.gov/news/2026/personal-income-and-outlays-july-2026",
+    indicator: "core-pce", rawValue: "3.3", normalizedValue: 3.3, unit: "%", releasePeriod: "June 2026",
+    sourceUrl: "https://www.bea.gov/news/2026/personal-income-and-outlays-june-2026",
   });
 });
 
@@ -126,7 +139,7 @@ test("parses BEA headline real GDP annualized change", async () => {
   const result = await fetchBeaOfficialRelease({
     indicator: "gdp",
     fetchImpl: offlineFetchSequence([
-      '<a href="/news/2026/gross-domestic-product-second-quarter-2026-advance-estimate">Gross Domestic Product, Second Quarter 2026</a>',
+      BEA_GDP_INDEX,
       await fixture("bea-gdp-release.html"),
     ], calls),
     now: () => new Date(RETRIEVED_AT), timeoutMs: 100,
@@ -134,12 +147,12 @@ test("parses BEA headline real GDP annualized change", async () => {
 
   assert.deepEqual(calls.map(({ url }) => url), [
     "https://www.bea.gov/news/current-releases",
-    "https://www.bea.gov/news/2026/gross-domestic-product-second-quarter-2026-advance-estimate",
+    "https://www.bea.gov/news/2026/gdp-advance-estimate-2nd-quarter-2026",
   ]);
   assert.equal(result.records.length, 1);
   assertOfficialRecord(result.records[0], {
     indicator: "gdp", rawValue: "1.5", normalizedValue: 1.5, unit: "% annualized", releasePeriod: "Q2 2026",
-    sourceUrl: "https://www.bea.gov/news/2026/gross-domestic-product-second-quarter-2026-advance-estimate",
+    sourceUrl: "https://www.bea.gov/news/2026/gdp-advance-estimate-2nd-quarter-2026",
   });
 });
 
@@ -147,14 +160,16 @@ test("parses the FOMC target range and canonical statement and implementation-no
   const calls = [];
   const result = await fetchFomcOfficialRelease({
     fetchImpl: offlineFetchSequence([
-      '<a href="/newsevents/pressreleases/monetary20260729a.htm">FOMC statement, July 29, 2026</a>',
+      FED_RELEASES_INDEX,
+      FED_FOMC_INDEX,
       await fixture("fomc-statement-release.html"),
     ], calls),
     now: () => new Date(RETRIEVED_AT), timeoutMs: 100,
   });
 
   assert.deepEqual(calls.map(({ url }) => url), [
-    "https://www.federalreserve.gov/newsevents/pressreleases/monetary.htm",
+    "https://www.federalreserve.gov/newsevents/pressreleases.htm",
+    "https://www.federalreserve.gov/newsevents/pressreleases/2026-press-fomc.htm",
     "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260729a.htm",
   ]);
   assert.equal(result.statementUrl, "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260729a.htm");
@@ -174,7 +189,7 @@ test("fetchOfficialActual routes supported events and selects the requested rele
   });
 
   assert.equal(record.indicator, "core-cpi");
-  assert.equal(record.value, "3.1%");
+  assert.equal(record.value, "2.5%");
   assert.equal(record.source.type, "official");
 });
 
@@ -189,17 +204,29 @@ test("BLS API data is not requested or substituted during immediate release inge
 });
 
 test("changed official page shapes fail closed instead of returning partial guessed values", async () => {
+  const calls = [];
   const cases = [
     () => fetchBlsOfficialRelease({ indicator: "cpi", fetchImpl: offlineFetch("<h1>Consumer Price Index - July 2026</h1><p>All items increased 2.7 percent.</p>"), now: () => new Date(RETRIEVED_AT), timeoutMs: 100 }),
     () => fetchBlsOfficialRelease({ indicator: "nonfarm-payrolls", fetchImpl: offlineFetch("<h1>The Employment Situation - July 2026</h1><p>Payrolls increased.</p>"), now: () => new Date(RETRIEVED_AT), timeoutMs: 100 }),
-    () => fetchBeaOfficialRelease({ indicator: "pce", fetchImpl: offlineFetch("<h1>Personal Income and Outlays, July 2026</h1><p>PCE changed.</p>"), now: () => new Date(RETRIEVED_AT), timeoutMs: 100 }),
-    () => fetchBeaOfficialRelease({ indicator: "gdp", fetchImpl: offlineFetch("<h1>Gross Domestic Product, Second Quarter 2026</h1><p>GDP changed.</p>"), now: () => new Date(RETRIEVED_AT), timeoutMs: 100 }),
-    () => fetchFomcOfficialRelease({ fetchImpl: offlineFetch("<h3>Federal Reserve issues FOMC statement</h3><p>The target range was maintained.</p>"), now: () => new Date(RETRIEVED_AT), timeoutMs: 100 }),
+    () => fetchBeaOfficialRelease({ indicator: "pce", fetchImpl: offlineFetchSequence([BEA_PCE_INDEX, "<article><h1>Personal Income and Outlays, June 2026</h1><p>PCE changed.</p></article>"], calls), now: () => new Date(RETRIEVED_AT), timeoutMs: 100 }),
+    () => fetchBeaOfficialRelease({ indicator: "gdp", fetchImpl: offlineFetchSequence([BEA_GDP_INDEX, "<article><h1>GDP (Advance Estimate), 2nd Quarter 2026</h1><p>GDP changed.</p></article>"], calls), now: () => new Date(RETRIEVED_AT), timeoutMs: 100 }),
+    () => fetchFomcOfficialRelease({ fetchImpl: offlineFetchSequence([FED_RELEASES_INDEX, FED_FOMC_INDEX, "<div id=\"article\"><h3 class=\"title\">Federal Reserve issues FOMC statement</h3><p>The target range was maintained.</p></div>"], calls), now: () => new Date(RETRIEVED_AT), timeoutMs: 100 }),
   ];
 
   for (const action of cases) {
     await assert.rejects(action, (error) => error?.code === "OFFICIAL_RELEASE_SCHEMA_INVALID");
   }
+  assert.equal(calls.length, 7, "BEA and FOMC malformed cases must reach their release parsers");
+});
+
+test("BEA GDP lookup rejects county and state releases when no national quarterly release exists", async () => {
+  const countyOnly = '<a href="/news/2026/gross-domestic-product-county-and-personal-income-county-2024">Gross Domestic Product by County and Personal Income by County, 2024</a>';
+  const calls = [];
+  await assert.rejects(
+    fetchBeaOfficialRelease({ indicator: "gdp", fetchImpl: offlineFetch(countyOnly, calls), now: () => new Date(RETRIEVED_AT), timeoutMs: 100 }),
+    (error) => error?.code === "OFFICIAL_RELEASE_SCHEMA_INVALID",
+  );
+  assert.equal(calls.length, 1, "a county-only index must be rejected before any release request");
 });
 
 test("fetch settings are injected: retries are bounded, offline, and abort signals are supplied", async () => {
@@ -212,7 +239,7 @@ test("fetch settings are injected: retries are bounded, offline, and abort signa
       signals.push(options.signal);
       if (attempts < 2) return new Response("unavailable", { status: 503 });
       if (attempts === 2) {
-        return new Response('<a href="/news/2026/gross-domestic-product-second-quarter-2026-advance-estimate">GDP release</a>', { status: 200 });
+        return new Response(BEA_GDP_INDEX, { status: 200 });
       }
       return new Response(await fixture("bea-gdp-release.html"), { status: 200 });
     },
