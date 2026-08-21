@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { deflateSync } from "node:zlib";
 import * as automation from "../lib/automation-jobs.mjs";
 import {
   WEEKLY_CALENDAR_META_KEY,
@@ -629,6 +630,10 @@ function fixtureFetch(body) {
   });
 }
 
+function commercialReaction() {
+  return verifiedReleaseReaction();
+}
+
 const marketEnvelopeKeys = ["templateId", "document", "sources", "warnings", "deduplicationKey", "publishable", "generatedAt"];
 
 test("fixture-backed market jobs return the common automation envelope", async () => {
@@ -691,12 +696,13 @@ test("real market job previews preserve structured diagnostics for the distribut
     dryRun: true,
     repository: automationRepository(),
     fetchImpl: fixtureFetch(unavailableCalendar),
+    fetchOfficialActual: async () => null,
     targets: []
   });
   const unavailableFacts = buildMarketPreviewFacts(unavailable.preview);
 
   assert.equal(unavailable.status, "skipped");
-  assert.equal(unavailable.preview.skipReason, "actual-unavailable");
+  assert.equal(unavailable.preview.skipReason, "official-actual-unavailable");
   assert.equal(unavailableFacts.candidateCount, 1);
   assert.equal(unavailableFacts.selectedCount, 0);
   assert.equal(unavailableFacts.missingCount, 1);
@@ -725,14 +731,13 @@ test("real market job previews preserve structured diagnostics for the distribut
   });
   const conflictFacts = buildMarketPreviewFacts(conflict.preview);
 
-  assert.equal(conflict.preview.skipReason, "source-conflict");
-  assert.equal(conflictFacts.conflictCount, 1);
-  assert.deepEqual(conflict.preview.diagnostics.conflicts[0].rawValues, ["2.7", "2.8"]);
+  assert.equal(conflict.preview.skipReason, "official-actual-unavailable");
+  assert.equal(conflictFacts.conflictCount, 0);
   assert.equal(conflictFacts.sources[0].id, "tradingview-calendar");
 
   const releasedCalendar = { result: [
     {
-      id: "us-cpi-released",
+      id: "us-cpi",
       title: "US CPI YoY",
       country: "US",
       importance: 3,
@@ -758,8 +763,16 @@ test("real market job previews preserve structured diagnostics for the distribut
     force: true,
     dryRun: true,
     repository: automationRepository(),
-    fetchImpl: fixtureFetch(releasedCalendar),
-    fetchReaction: async () => ({ prices: {}, sources: [], warnings: [] }),
+    fetchCalendar: async () => ({
+      events: [
+        verifiedReleaseEvent(),
+        verifiedReleaseEvent({ id: "us-gdp-next", indicator: "gdp", title: "US GDP", scheduledAt: "2026-08-19T14:00:00.000Z" }),
+      ],
+      sources: [{ id: "bls-calendar", status: "ok" }],
+      warnings: [],
+    }),
+    fetchOfficialActual: async () => officialEvidence("2.7%"),
+    fetchReaction: async () => commercialReaction(),
     targets: []
   });
   const releasedFacts = buildMarketPreviewFacts(released.preview);
@@ -811,8 +824,9 @@ test("weekly diagnostics select the deduplicated sorted document events while re
     targets: []
   });
 
-  assert.equal(result.status, "success");
-  assert.equal(result.preview.diagnostics.candidates.length, 4);
+  assert.equal(result.status, "skipped");
+  assert.equal(result.preview.skipReason, "official-schedule-unavailable");
+  assert.equal(result.preview.diagnostics.candidates.length, 3);
   assert.deepEqual(result.preview.diagnostics.selected.map((event) => event.title), ["US CPI YoY", "US GDP"]);
   assert.equal(result.preview.diagnostics.nextMonitoredEvent.title, "US CPI YoY");
   assert.equal(result.preview.diagnostics.nextMonitoredEvent.scheduledAt, "2026-08-19T12:30:00.000Z");
@@ -842,23 +856,28 @@ test("weekly diagnostics choose the earliest exact event at or after now", async
   assert.equal(result.preview.diagnostics.nextMonitoredEvent.scheduledAt, "2026-08-19T12:30:00.000Z");
 });
 
-test("weekly diagnostics return no next event when exact events are past and remaining dates are TBD", async () => {
+test("weekly publication blocks offsetless events before persistence or delivery", async () => {
   const calendar = { result: [
     { id: "past", title: "US CPI YoY", country: "US", importance: 3, date: "2026-08-19T12:30:00Z" },
-    { id: "date-only", title: "FOMC Minutes", country: "US", importance: 3, date: "2026-08-20" }
+    { id: "offsetless", title: "FOMC Minutes", country: "US", importance: 3, date: "2026-08-20T18:00:00" }
   ] };
 
+  let sends = 0;
+  const repository = automationRepository();
   const result = await automation.runAutomationJob("weekly-calendar", {
     now: "2026-08-19T15:00:00Z",
     force: true,
-    dryRun: true,
-    repository: automationRepository(),
+    dryRun: false,
+    repository,
     fetchImpl: fixtureFetch(calendar),
-    targets: []
+    targets: [{ platform: "discord", guildId: "g1", channelId: "c1" }],
+    discordSender: async () => { sends += 1; return { id: "unexpected" }; },
   });
 
-  assert.ok(result.preview.diagnostics.selected.some((event) => event.time === "TBD"));
-  assert.equal(result.preview.diagnostics.nextMonitoredEvent, null);
+  assert.equal(result.status, "skipped");
+  assert.equal(result.preview.skipReason, "official-schedule-unavailable");
+  assert.equal(sends, 0);
+  assert.equal(repository.writes.some(([key]) => String(key).startsWith("market-editorial-v1:")), false);
 });
 
 test("daily and weekly jobs fail closed without sending when every source is unavailable", async () => {
@@ -1015,6 +1034,28 @@ test("non-publishable data releases are skipped before any sender is called", as
   assert.equal(sends, 0);
 });
 
+test("data release polling excludes non-allowlist events before selecting a publishable release", async () => {
+  const repository = automationRepository();
+  const result = await automation.buildContent("data-release-updates", new Date("2026-08-19T12:31:00Z"), {
+    repository,
+    persist: false,
+    fetchCalendar: async () => ({
+      events: [
+        { id: "a-confidence", title: "Consumer Confidence", country: "US", scheduledAt: "2026-08-19T12:30:00Z", values: { actual: "98", forecast: "96", previous: "95" }, source: { label: "Calendar", url: "https://calendar.example/confidence" } },
+        verifiedReleaseEvent({ id: "z-cpi" }),
+      ],
+      sources: [{ id: "calendar", status: "ok" }],
+      warnings: [],
+    }),
+    fetchReaction: async () => commercialReaction(),
+    fetchOfficialActual: async () => officialEvidence("2.7%"),
+  });
+
+  assert.equal(result.publishable, true);
+  assert.equal(result.event.id, "z-cpi");
+  assert.equal(result.document.indicator, "cpi");
+});
+
 test("data release preserves successful receipts but never retries an uncertain failed send", async () => {
   const actualCalendar = { result: [{
     id: "us-cpi-retry",
@@ -1043,8 +1084,9 @@ test("data release preserves successful receipts but never retries an uncertain 
     force: true,
     dryRun: false,
     repository,
+    ...verifiedDataReleaseOptions(repository),
     fetchImpl: fixtureFetch(actualCalendar),
-    fetchReaction: async () => ({ prices: {}, sources: [], warnings: [] }),
+    fetchReaction: async () => commercialReaction(),
     targets,
     discordSender
   });
@@ -1077,8 +1119,9 @@ test("queued data release keeps its target claim and does not create another pla
     dryRun: false,
     deferDelivery: true,
     repository,
+    ...verifiedDataReleaseOptions(repository),
     fetchImpl: fixtureFetch(calendar),
-    fetchReaction: async () => ({ prices: {}, sources: [], warnings: [] }),
+    fetchReaction: async () => commercialReaction(),
     targets: [{ id: "queued-release", chatId: "-1001", threadId: 8 }],
   };
 
@@ -1110,8 +1153,8 @@ test("data release retries only global acknowledgement when release-state persis
   };
   let sends = 0;
   const options = {
-    force: true, dryRun: false, repository, fetchImpl: fixtureFetch(calendar),
-    fetchReaction: async () => ({ prices: {}, sources: [], warnings: [] }),
+    force: true, dryRun: false, repository, ...verifiedDataReleaseOptions(repository), fetchImpl: fixtureFetch(calendar),
+    fetchReaction: async () => commercialReaction(),
     targets: [{ platform: "discord", guildId: "g1", channelId: "c1" }],
     discordSender: async () => ({ id: `message-${++sends}` }),
   };
@@ -1120,7 +1163,7 @@ test("data release retries only global acknowledgement when release-state persis
   const retried = await automation.runAutomationJob("data-release-updates", { ...options, now: "2026-08-19T12:32:00Z" });
   assert.equal(retried.status, "success");
   assert.equal(sends, 1);
-  assert.equal((await repository.getMeta("market-content:release-state:v1")).monitoredEvents[0].observedAt, "2026-08-19T12:31:00.000Z");
+  assert.equal((await repository.getMeta("market-content:release-state:v1")).monitoredEvents[0].observedAt, "2026-08-19T12:30:00.000Z");
 });
 
 test("data release does not resend after an external send when target receipt persistence fails once", async () => {
@@ -1140,8 +1183,8 @@ test("data release does not resend after an external send when target receipt pe
   };
   let sends = 0;
   const options = {
-    force: true, dryRun: false, repository, fetchImpl: fixtureFetch(calendar),
-    fetchReaction: async () => ({ prices: {}, sources: [], warnings: [] }),
+    force: true, dryRun: false, repository, ...verifiedDataReleaseOptions(repository), fetchImpl: fixtureFetch(calendar),
+    fetchReaction: async () => commercialReaction(),
     targets: [{ platform: "discord", guildId: "g1", channelId: "c1" }],
     discordSender: async () => ({ id: `message-${++sends}` }),
   };
@@ -1169,8 +1212,8 @@ test("Telegram release remains fail-closed without resending while its success r
   };
   let sends = 0;
   const options = {
-    force: true, dryRun: false, repository, fetchImpl: fixtureFetch(calendar),
-    fetchReaction: async () => ({ prices: {}, sources: [], warnings: [] }),
+    force: true, dryRun: false, repository, ...verifiedDataReleaseOptions(repository), fetchImpl: fixtureFetch(calendar),
+    fetchReaction: async () => commercialReaction(),
     targets: [{ chatId: "-1001", threadId: 8 }],
     telegramSender: async () => ({ message_id: ++sends }),
   };
@@ -1195,7 +1238,7 @@ test("a sending marker from a crash before the first send requires manual reconc
   const calendar = { result: [{ id: "us-cpi-before-send-crash", title: "US CPI YoY", country: "US", importance: 3, date: "2026-08-19T12:30:00Z", actual: "2.7", forecast: "2.8", previous: "2.9", unit: "%" }] };
   const repository = automationRepository();
   const target = { platform: "discord", guildId: "g1", channelId: "c1" };
-  const common = { force: true, repository, fetchImpl: fixtureFetch(calendar), fetchReaction: async () => ({ prices: {}, sources: [], warnings: [] }), targets: [target] };
+  const common = { force: true, repository, ...verifiedDataReleaseOptions(repository), fetchImpl: fixtureFetch(calendar), fetchReaction: async () => commercialReaction(), targets: [target] };
   const dryRun = await automation.runAutomationJob("data-release-updates", { ...common, dryRun: true, now: "2026-08-19T12:31:00Z" });
   const deduplicationKey = dryRun.preview.deduplicationKey;
   const event = dryRun.preview.event;
@@ -1222,7 +1265,7 @@ test("a multi-step crash remains uncertain and never falsely acknowledges or res
   const repository = automationRepository();
   let sends = 0;
   const target = { platform: "discord", guildId: "g1", channelId: "c1" };
-  const common = { force: true, repository, fetchImpl: fixtureFetch(calendar), fetchReaction: async () => ({ prices: {}, sources: [], warnings: [] }), targets: [target] };
+  const common = { force: true, repository, ...verifiedDataReleaseOptions(repository), fetchImpl: fixtureFetch(calendar), fetchReaction: async () => commercialReaction(), targets: [target] };
   const dryRun = await automation.runAutomationJob("data-release-updates", { ...common, dryRun: true, now: "2026-08-19T12:31:00Z" });
   const deduplicationKey = dryRun.preview.deduplicationKey;
   const event = dryRun.preview.event;
@@ -1258,8 +1301,9 @@ for (const platform of ["Telegram", "Discord"]) {
       force: true,
       dryRun: false,
       repository,
+      ...verifiedDataReleaseOptions(repository),
       fetchImpl: fixtureFetch(calendar),
-      fetchReaction: async () => ({ prices: {}, sources: [], warnings: [] }),
+      fetchReaction: async () => commercialReaction(),
       targets: [target],
       ...(platform === "Telegram" ? { telegramSender: sender } : { discordSender: sender }),
     };
@@ -1281,8 +1325,9 @@ test("data-release run lease renews across its TTL and releases after an excepti
   const calendar = { result: [{ id: "us-cpi-lease-heartbeat", title: "US CPI YoY", country: "US", importance: 3, date: "2026-08-19T12:30:00Z", actual: "2.7", forecast: "2.8", previous: "2.9", unit: "%" }] };
   const meta = new Map();
   const repository = () => ({
+    writes: [],
     async getMeta(key) { return structuredClone(meta.get(key) ?? null); },
-    async setMeta(key, value) { meta.set(key, structuredClone(value)); return value; },
+    async setMeta(key, value) { this.writes.push([key, structuredClone(value)]); meta.set(key, structuredClone(value)); return value; },
     async acquireMetaLease(key, lease, now) {
       const current = meta.get(key);
       if (current?.leaseUntil && Date.parse(current.leaseUntil) > new Date(now).getTime()) return null;
@@ -1305,24 +1350,28 @@ test("data-release run lease renews across its TTL and releases after an excepti
   let sends = 0;
   let releaseFirstSend;
   const firstSendStarted = new Promise((resolve) => { releaseFirstSend = resolve; });
+  const firstRepository = repository();
   const first = automation.runAutomationJob("data-release-updates", {
-    now: "2026-08-19T12:31:00Z", force: true, dryRun: false, repository: repository(),
-    releaseLeaseTtlMs: 20, releaseLeaseHeartbeatMs: 5,
-    fetchImpl: fixtureFetch(calendar), fetchReaction: async () => ({ prices: {}, sources: [], warnings: [] }),
+    now: "2026-08-19T12:31:00Z", force: true, dryRun: false, repository: firstRepository,
+    ...verifiedDataReleaseOptions(firstRepository),
+    releaseLeaseTtlMs: 100, releaseLeaseHeartbeatMs: 10,
+    fetchImpl: fixtureFetch(calendar), fetchReaction: async () => commercialReaction(),
     targets: [{ platform: "discord", guildId: "g1", channelId: "c1" }],
     discordSender: async () => {
       sends += 1;
       releaseFirstSend();
-      await new Promise((resolve) => setTimeout(resolve, 45));
+      await new Promise((resolve) => setTimeout(resolve, 200));
       return { id: "message-1" };
     },
   });
   await firstSendStarted;
-  await new Promise((resolve) => setTimeout(resolve, 30));
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  const secondRepository = repository();
   const second = automation.runAutomationJob("data-release-updates", {
-    now: "2026-08-19T12:31:00Z", force: true, dryRun: false, repository: repository(),
-    releaseLeaseTtlMs: 20, releaseLeaseHeartbeatMs: 5,
-    fetchImpl: fixtureFetch(calendar), fetchReaction: async () => ({ prices: {}, sources: [], warnings: [] }),
+    now: "2026-08-19T12:31:00Z", force: true, dryRun: false, repository: secondRepository,
+    ...verifiedDataReleaseOptions(secondRepository),
+    releaseLeaseTtlMs: 100, releaseLeaseHeartbeatMs: 10,
+    fetchImpl: fixtureFetch(calendar), fetchReaction: async () => commercialReaction(),
     targets: [{ platform: "discord", guildId: "g1", channelId: "c1" }],
     discordSender: async () => ({ id: `unexpected-${++sends}` }),
   });
@@ -1351,8 +1400,9 @@ test("concurrent data-release runs send once and acknowledge before the queued r
     force: true,
     dryRun: false,
     repository,
+    ...verifiedDataReleaseOptions(repository),
     fetchImpl: fixtureFetch(actualCalendar),
-    fetchReaction: async () => ({ prices: {}, sources: [], warnings: [] }),
+    fetchReaction: async () => commercialReaction(),
     targets: [{ platform: "discord", guildId: "g1", channelId: "c1" }],
     discordSender: async () => {
       await Promise.resolve();
@@ -1378,8 +1428,9 @@ test("data-release run lease serializes two repository instances on one backend"
   const calendar = { result: [{ id: "us-cpi-shared-workers", title: "US CPI YoY", country: "US", importance: 3, date: "2026-08-19T12:30:00Z", actual: "2.7", forecast: "2.8", previous: "2.9", unit: "%" }] };
   const meta = new Map();
   const repository = () => ({
+    writes: [],
     async getMeta(key) { return structuredClone(meta.get(key) ?? null); },
-    async setMeta(key, value) { meta.set(key, structuredClone(value)); return structuredClone(value); },
+    async setMeta(key, value) { this.writes.push([key, structuredClone(value)]); meta.set(key, structuredClone(value)); return structuredClone(value); },
     async acquireMetaLease(key, lease, now) {
       const current = meta.get(key);
       if (current?.leaseUntil && Date.parse(current.leaseUntil) > new Date(now).getTime()) return null;
@@ -1393,17 +1444,19 @@ test("data-release run lease serializes two repository instances on one backend"
     },
   });
   let sends = 0;
+  const repositoryOne = repository();
+  const repositoryTwo = repository();
   const baseOptions = {
     now: "2026-08-19T12:31:00Z", force: true, dryRun: false,
     fetchImpl: fixtureFetch(calendar),
-    fetchReaction: async () => ({ prices: {}, sources: [], warnings: [] }),
+    fetchReaction: async () => commercialReaction(),
     targets: [{ platform: "discord", guildId: "g1", channelId: "c1" }],
     discordSender: async () => ({ id: `message-${++sends}` }),
   };
 
   const results = await Promise.all([
-    automation.runAutomationJob("data-release-updates", { ...baseOptions, repository: repository() }),
-    automation.runAutomationJob("data-release-updates", { ...baseOptions, repository: repository() }),
+    automation.runAutomationJob("data-release-updates", { ...baseOptions, repository: repositoryOne, ...verifiedDataReleaseOptions(repositoryOne) }),
+    automation.runAutomationJob("data-release-updates", { ...baseOptions, repository: repositoryTwo, ...verifiedDataReleaseOptions(repositoryTwo) }),
   ]);
 
   assert.deepEqual(results.map(({ status }) => status).sort(), ["skipped", "success"]);
@@ -1626,4 +1679,526 @@ test("oversized CTA fails safely instead of splitting or producing an over-limit
   assert.throws(() => automation.buildAutomationDiscordPlans("crypto-daily", {
     document: marketDocumentWithParagraphs([20])
   }, [{ platform: "discord", guildId: "g1", channelId: "c1", ctaEnabled: true, ctaContent: "d".repeat(2001) }]), /CTA block exceeds the 2000 character platform limit/);
+});
+
+test("verified market jobs deliver the community gateway document", () => {
+  for (const jobId of ["weekly-calendar", "data-release-updates"]) {
+    const generated = {
+      document: { templateId: jobId, version: "market-content-v1", nodes: [{ type: "paragraph", text: "FULL ARTICLE" }] },
+      communityDocument: { templateId: `${jobId}-community`, version: "market-editorial-v1", nodes: [{ type: "paragraph", text: "COMMUNITY GATEWAY" }] },
+    };
+    const [telegram] = automation.buildAutomationTelegramPlans(jobId, generated, [
+      { platform: "telegram", chatId: "-1001", threadId: 7 },
+    ]);
+    const [discord] = automation.buildAutomationDiscordPlans(jobId, generated, [
+      { platform: "discord", guildId: "g1", channelId: "c1" },
+    ]);
+    assert.match(telegram.steps[0].payload.text, /COMMUNITY GATEWAY/);
+    assert.doesNotMatch(telegram.steps[0].payload.text, /FULL ARTICLE/);
+    assert.match(discord.steps[0].payload.content, /COMMUNITY GATEWAY/);
+    assert.doesNotMatch(discord.steps[0].payload.content, /FULL ARTICLE/);
+  }
+});
+
+test("market delivery idempotency includes publication language platform and exact destination", () => {
+  const key = automation.buildMarketDeliveryIdempotencyKey("weekly-calendar", {
+    publication: { product: "weekly-calendar", slug: "2026-W34" }, language: "en",
+  }, { platform: "telegram", chatId: "-1001", threadId: 77 });
+  assert.equal(key, JSON.stringify(["market-delivery-v1", "weekly-calendar", "2026-W34", "en", "telegram", "-1001", "77"]));
+});
+
+function officialEvidence(value, {
+  sourceId = "bls-cpi",
+  sourceUrl = "https://www.bls.gov/news.release/cpi.nr0.htm",
+  retrievedAt = "2026-08-19T12:31:00.000Z",
+  publishedAt = "2026-08-19T12:30:00.000Z",
+  authority = "official",
+} = {}) {
+  return {
+    value,
+    rawValue: String(value).replace("%", ""),
+    unit: String(value).includes("%") ? "%" : null,
+    status: "verified",
+    authority,
+    sourceId,
+    sourceUrl,
+    retrievedAt,
+    publishedAt,
+    comparisons: [],
+  };
+}
+
+function verifiedWeeklyCalendarFixture() {
+  const retrievedAt = "2026-08-19T08:00:00.000Z";
+  const schedule = (value) => officialEvidence(value, {
+    sourceId: "bls-calendar",
+    sourceUrl: "https://www.bls.gov/schedule/news_release/cpi.htm",
+    retrievedAt,
+    publishedAt: "2026-08-19T07:00:00.000Z",
+  });
+  const event = (id, title, indicator, scheduledAt, impactScore) => ({
+    id,
+    title,
+    indicator,
+    country: "US",
+    importance: 3,
+    impactScore,
+    scheduledAt,
+    schedule: schedule(scheduledAt),
+    values: {
+      forecast: officialEvidence("2.8%", {
+        sourceId: "consensus",
+        sourceUrl: "https://consensus.example/calendar",
+        retrievedAt,
+        authority: "auxiliary",
+      }),
+      previous: officialEvidence("2.9%", { retrievedAt }),
+    },
+    source: {
+      id: "bls-calendar",
+      label: "BLS",
+      kind: "official",
+      url: "https://www.bls.gov/schedule/news_release/cpi.htm",
+    },
+    publishable: true,
+  });
+  const events = [
+    event("cpi", "US CPI YoY", "cpi", "2026-08-19T12:30:00.000Z", 92),
+    event("gdp", "US GDP", "gdp", "2026-08-20T12:30:00.000Z", 88),
+    event("fomc", "FOMC Rate Decision", "fomc", "2026-08-21T18:00:00.000Z", 99),
+  ];
+  return {
+    calendar: { source: schedule("official-calendar"), events },
+    eligibility: { publishable: true, reason: null },
+    events,
+    sources: [{ id: "bls-calendar", status: "ok" }],
+    sourceManifest: [
+      { id: "bls-calendar", label: "BLS", type: "official", url: "https://www.bls.gov/schedule/news_release/cpi.htm", retrievedAt, status: "verified" },
+      { id: "consensus", label: "Consensus", type: "auxiliary", url: "https://consensus.example/calendar", retrievedAt, status: "verified" },
+    ],
+    warnings: [],
+  };
+}
+
+function crc32ForPublication(bytes) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function publicationPngChunk(type, data = Buffer.alloc(0)) {
+  const typeBytes = Buffer.from(type, "ascii");
+  const chunk = Buffer.alloc(12 + data.byteLength);
+  chunk.writeUInt32BE(data.byteLength, 0);
+  typeBytes.copy(chunk, 4);
+  data.copy(chunk, 8);
+  chunk.writeUInt32BE(crc32ForPublication(Buffer.concat([typeBytes, data])), 8 + data.byteLength);
+  return chunk;
+}
+
+function verifiedEditorialPng() {
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(1200, 0);
+  header.writeUInt32BE(675, 4);
+  header[8] = 1;
+  header[9] = 0;
+  const pixels = Buffer.alloc((Math.ceil(1200 / 8) + 1) * 675);
+  return Buffer.concat([
+    Buffer.from("89504e470d0a1a0a", "hex"),
+    publicationPngChunk("IHDR", header),
+    publicationPngChunk("IDAT", deflateSync(pixels)),
+    publicationPngChunk("IEND"),
+  ]);
+}
+
+function publicationResponse(body, { status = 200, contentType = "image/png", url = "" } = {}) {
+  const response = new Response(body, { status, headers: { "content-type": contentType } });
+  if (url) Object.defineProperty(response, "url", { value: url });
+  return response;
+}
+
+function verifiedPublicationFetch(repository, calls = []) {
+  const image = verifiedEditorialPng();
+  return async (url) => {
+    calls.push(url);
+    if (url.includes("/api/media/editorial/")) return publicationResponse(image, { url });
+    const publication = [...repository.writes].reverse()
+      .find(([key]) => String(key).startsWith("market-editorial-v1:"))?.[1];
+    return publicationResponse(`<article data-content-hash="${publication.contentHash}">verified</article>`, {
+      contentType: "text/html; charset=utf-8",
+      url,
+    });
+  };
+}
+
+function verifiedDataReleaseOptions(repository, actual = "2.7%") {
+  return {
+    fetchCalendar: async () => verifiedReleaseCalendar(),
+    fetchOfficialActual: async () => officialEvidence(actual),
+    publicationFetchImpl: verifiedPublicationFetch(repository),
+    publicBaseUrl: "https://academy.example",
+    allowedPublicOrigins: ["https://academy.example"],
+  };
+}
+
+function verifiedReleaseEvent({
+  id = "us-cpi-release",
+  indicator = "cpi",
+  title = "US CPI YoY",
+  scheduledAt = "2026-08-19T12:30:00.000Z",
+  ranking,
+} = {}) {
+  return {
+    id,
+    sourceId: id,
+    title,
+    indicator,
+    jurisdiction: "US",
+    country: "US",
+    importance: 3,
+    scheduledAt,
+    scheduleSources: [officialEvidence(scheduledAt, {
+      sourceId: "bls-calendar",
+      sourceUrl: "https://www.bls.gov/schedule/news_release/",
+      retrievedAt: "2026-08-19T12:00:00.000Z",
+      publishedAt: "2026-08-19T11:00:00.000Z",
+    })],
+    forecastSources: [officialEvidence("2.8%", {
+      sourceId: "consensus",
+      sourceUrl: "https://consensus.example/calendar",
+      authority: "auxiliary",
+    })],
+    previousSources: [officialEvidence("2.9%")],
+    source: { id: "bls-calendar", label: "BLS", kind: "official", url: "https://www.bls.gov/schedule/news_release/" },
+    ...(ranking ? { ranking } : {}),
+  };
+}
+
+function verifiedReleaseCalendar(event = verifiedReleaseEvent()) {
+  return {
+    events: [event],
+    sources: [{ id: "bls-calendar", status: "ok", url: "https://www.bls.gov/schedule/news_release/", checkedAt: "2026-08-19T12:31:00.000Z", lastSuccessAt: "2026-08-19T12:31:00.000Z" }],
+    warnings: [],
+  };
+}
+
+function verifiedReleaseReaction(warnings = []) {
+  return {
+    window: { start: "2026-08-19T12:29:00.000Z", end: "2026-08-19T12:45:00.000Z" },
+    prices: {
+      BTC: {
+        symbol: "BTC",
+        beforePrice: 60000,
+        beforePriceAt: "2026-08-19T12:29:00.000Z",
+        price: 60300,
+        changePercent: 0.5,
+        source: "Binance",
+        sourceUrl: "https://api.binance.com/api/v3/klines",
+        observedAt: "2026-08-19T12:45:00.000Z",
+      },
+    },
+    sources: [{ id: "binance", label: "Binance", url: "https://api.binance.com/api/v3/klines", status: "ok", checkedAt: "2026-08-19T12:45:00.000Z", lastSuccessAt: "2026-08-19T12:45:00.000Z", freshnessSeconds: 0 }],
+    warnings,
+  };
+}
+
+test("weekly dry-run exposes a complete draft publication without persistence or delivery", async () => {
+  const repository = automationRepository();
+  let sends = 0;
+  const result = await automation.runAutomationJob("weekly-calendar", {
+    now: "2026-08-19T08:00:00.000Z",
+    force: true,
+    dryRun: true,
+    repository,
+    fetchCalendar: async () => verifiedWeeklyCalendarFixture(),
+    publicBaseUrl: "https://academy.example",
+    targets: [{ chatId: "-1001", threadId: 7 }],
+    telegramSender: async () => { sends += 1; return { message_id: sends }; },
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.preview.publication.status, "draft");
+  assert.equal(result.preview.publication.product, "weekly-calendar");
+  assert.equal(result.preview.articlePath, "/market-calendar/2026-W34");
+  assert.equal(result.preview.imagePath, "/api/media/editorial/weekly-calendar/2026-W34");
+  assert.equal(result.preview.articleUrl, "https://academy.example/market-calendar/2026-W34");
+  assert.equal(result.preview.imageUrl, "https://academy.example/api/media/editorial/weekly-calendar/2026-W34");
+  assert.equal(result.preview.article.priorityEvents.length, 3);
+  assert.ok(result.preview.communityDocument.nodes.length > 0);
+  assert.ok(result.preview.sourceManifest.length >= 2);
+  assert.match(result.preview.contentHash, /^[a-f0-9]{64}$/);
+  assert.equal(repository.writes.length, 0);
+  assert.equal(sends, 0);
+});
+
+test("weekly live delivery verifies the canonical page and editorial image before sending", async () => {
+  const repository = automationRepository();
+  const healthCalls = [];
+  const payloads = [];
+  const result = await automation.runAutomationJob("weekly-calendar", {
+    now: "2026-08-19T08:00:00.000Z",
+    force: true,
+    dryRun: false,
+    repository,
+    fetchCalendar: async () => verifiedWeeklyCalendarFixture(),
+    publicationFetchImpl: verifiedPublicationFetch(repository, healthCalls),
+    publicBaseUrl: "https://academy.example",
+    allowedPublicOrigins: ["https://academy.example"],
+    targets: [{ chatId: "-1001", threadId: 7 }],
+    telegramSender: async (_token, method, payload) => {
+      payloads.push({ method, payload });
+      return { message_id: payloads.length };
+    },
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.preview.publication.status, "verified");
+  assert.deepEqual(result.preview.publication.health, { page: "ok", image: "ok", checkedAt: "2026-08-19T08:00:00.000Z" });
+  assert.ok(repository.writes.some(([, value]) => value?.status === "draft"));
+  assert.ok(repository.writes.some(([, value]) => value?.status === "rendered"));
+  assert.ok(repository.writes.some(([, value]) => value?.status === "verified"));
+  assert.ok(healthCalls.some((url) => url.endsWith(result.preview.articlePath)));
+  assert.ok(healthCalls.some((url) => url.endsWith(result.preview.imagePath)));
+  assert.equal(payloads[0].method, "sendPhoto");
+  assert.equal(new URL(payloads[0].payload.photo).pathname, result.preview.imagePath);
+  assert.equal(new URL(payloads[0].payload.photo).search, "");
+});
+
+test("weekly rerun in the same slot and destination is deduplicated after one verified delivery", async () => {
+  const repository = automationRepository();
+  let sends = 0;
+  const options = {
+    now: "2026-08-19T09:00:00.000Z",
+    force: false,
+    dryRun: false,
+    stateKey: `task11-weekly-verified-dedup-${process.pid}`,
+    repository,
+    fetchCalendar: async () => verifiedWeeklyCalendarFixture(),
+    publicationFetchImpl: verifiedPublicationFetch(repository),
+    publicBaseUrl: "https://academy.example",
+    allowedPublicOrigins: ["https://academy.example"],
+    targets: [{ chatId: "-1001", threadId: 7711 }],
+    telegramSender: async () => ({ message_id: ++sends }),
+  };
+
+  const first = await automation.runAutomationJob("weekly-calendar", options);
+  const second = await automation.runAutomationJob("weekly-calendar", options);
+  assert.equal(first.status, "success");
+  assert.equal(second.status, "duplicate");
+  assert.ok(sends > 0);
+  assert.equal(sends, first.preview.deliveryPlans[0].steps.length);
+});
+
+test("weekly publication health failure is skipped before every external send", async () => {
+  const repository = automationRepository();
+  let sends = 0;
+  const result = await automation.runAutomationJob("weekly-calendar", {
+    now: "2026-08-19T08:00:00.000Z",
+    force: true,
+    dryRun: false,
+    repository,
+    fetchCalendar: async () => verifiedWeeklyCalendarFixture(),
+    publicationFetchImpl: async () => new Response("unhealthy", { status: 503 }),
+    publicBaseUrl: "https://academy.example",
+    allowedPublicOrigins: ["https://academy.example"],
+    targets: [{ platform: "discord", guildId: "g1", channelId: "c1" }],
+    discordSender: async () => { sends += 1; return { id: "unexpected" }; },
+  });
+
+  assert.equal(result.status, "skipped");
+  assert.match(result.preview.publicationError, /capture|HTTP 503|publication/i);
+  assert.equal(sends, 0);
+});
+
+test("partial release reaction remains publishable as Awaiting Confirmation and retains provider warnings", async () => {
+  const scheduledAt = "2026-08-19T12:30:00.000Z";
+  const checkedAt = "2026-08-19T12:31:00.000Z";
+  const event = {
+    id: "us-cpi-partial",
+    sourceId: "us-cpi-partial",
+    title: "US CPI YoY",
+    indicator: "cpi",
+    jurisdiction: "US",
+    country: "US",
+    importance: 3,
+    scheduledAt,
+    values: { actual: null, forecast: "2.8%", previous: "2.9%" },
+    rawValues: { actual: null, forecast: "2.8", previous: "2.9", unit: "%" },
+    source: { id: "tradingview-calendar", label: "TradingView", kind: "auxiliary", url: "https://www.tradingview.com/economic-calendar/" },
+  };
+  const providerWarning = "ETH and DXY providers unavailable";
+  const result = await automation.buildContent("data-release-updates", new Date(checkedAt), {
+    repository: automationRepository(),
+    persist: false,
+    fetchCalendar: async () => ({
+      events: [event],
+      sources: [{ id: "tradingview-calendar", status: "ok", url: "https://www.tradingview.com/economic-calendar/", checkedAt, lastSuccessAt: checkedAt }],
+      warnings: [],
+    }),
+    fetchOfficialActual: async () => officialEvidence("2.7%"),
+    fetchReaction: async () => ({
+      window: { start: "2026-08-19T12:29:00.000Z", end: "2026-08-19T12:45:00.000Z" },
+      prices: {
+        BTC: {
+          symbol: "BTC",
+          beforePrice: 60000,
+          beforePriceAt: "2026-08-19T12:29:00.000Z",
+          price: 59880,
+          changePercent: -0.2,
+          source: "Binance",
+          sourceUrl: "https://api.binance.com/api/v3/ticker/24hr",
+          observedAt: "2026-08-19T12:45:00.000Z",
+        },
+      },
+      sources: [{ id: "binance", url: "https://api.binance.com", status: "ok", checkedAt: "2026-08-19T12:45:00.000Z", lastSuccessAt: "2026-08-19T12:45:00.000Z", freshnessSeconds: 0 }],
+      warnings: [providerWarning],
+    }),
+  });
+
+  assert.equal(result.publishable, true);
+  assert.equal(result.article.verdict, "Awaiting Confirmation");
+  assert.ok(result.warnings.includes(providerWarning));
+  assert.equal(result.eligibility.actual.authority, "official");
+});
+
+test("tier-one data release persists and verifies its article and asset before Telegram planning", async () => {
+  const repository = automationRepository();
+  const healthCalls = [];
+  const payloads = [];
+  const result = await automation.runAutomationJob("data-release-updates", {
+    now: "2026-08-19T12:31:00.000Z",
+    force: true,
+    dryRun: false,
+    repository,
+    fetchCalendar: async () => verifiedReleaseCalendar(),
+    fetchOfficialActual: async () => officialEvidence("2.7%"),
+    fetchReaction: async () => verifiedReleaseReaction(),
+    publicationFetchImpl: verifiedPublicationFetch(repository, healthCalls),
+    publicBaseUrl: "https://academy.example",
+    allowedPublicOrigins: ["https://academy.example"],
+    targets: [{ chatId: "-1001", threadId: 81 }],
+    telegramSender: async (_token, method, payload) => {
+      payloads.push({ method, payload });
+      return { message_id: payloads.length };
+    },
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.preview.publication.status, "verified");
+  assert.equal(result.preview.publication.product, "data-update");
+  assert.ok(result.preview.article);
+  assert.match(result.preview.articlePath, /^\/data-updates\/us-cpi\/2026-08-19$/);
+  assert.ok(healthCalls.some((url) => new URL(url).pathname === result.preview.articlePath));
+  assert.ok(healthCalls.some((url) => new URL(url).pathname === result.preview.imagePath));
+  assert.equal(payloads[0].method, "sendPhoto");
+  assert.equal(new URL(payloads[0].payload.photo).pathname, result.preview.imagePath);
+  assert.ok(result.preview.deliveryPlans[0].idempotencyKey.includes('"data-update"'));
+  assert.deepEqual((await repository.getMeta("market-content:release-state:v1")).publishedKeys, [result.preview.deduplicationKey]);
+});
+
+test("secondary data release verifies only its card and emits no article link", async () => {
+  const repository = automationRepository();
+  const healthCalls = [];
+  const payloads = [];
+  const secondary = verifiedReleaseEvent({
+    id: "us-cpi-secondary-release",
+    indicator: "cpi",
+    title: "US CPI YoY",
+    ranking: { decision: "demoted", score: 48, reasons: ["Lower market-significance setup"] },
+  });
+  const result = await automation.runAutomationJob("data-release-updates", {
+    now: "2026-08-19T12:31:00.000Z",
+    force: true,
+    dryRun: false,
+    repository,
+    fetchCalendar: async () => verifiedReleaseCalendar(secondary),
+    fetchOfficialActual: async () => officialEvidence("2.7%"),
+    fetchReaction: async () => verifiedReleaseReaction(),
+    publicationFetchImpl: verifiedPublicationFetch(repository, healthCalls),
+    publicBaseUrl: "https://academy.example",
+    allowedPublicOrigins: ["https://academy.example"],
+    targets: [{ chatId: "-1001", threadId: 82 }],
+    telegramSender: async (_token, method, payload) => {
+      payloads.push({ method, payload });
+      return { message_id: payloads.length };
+    },
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.preview.event.tierDecision.tier, "secondary");
+  assert.equal(result.preview.article, undefined);
+  assert.equal(result.preview.articlePath, null);
+  assert.equal(result.preview.articleUrl, null);
+  assert.equal(result.preview.publication.status, "verified");
+  assert.equal(result.preview.publication.article, null);
+  assert.ok(healthCalls.every((url) => !new URL(url).pathname.startsWith("/data-updates/")));
+  assert.equal(payloads[0].method, "sendPhoto");
+  const communityText = payloads.filter(({ method }) => method === "sendMessage").map(({ payload }) => payload.text).join("\n");
+  assert.doesNotMatch(communityText, /https?:\/\/|read (?:the )?full/i);
+});
+
+test("missing official actual blocks data publication persistence and every sender", async () => {
+  const repository = automationRepository();
+  let sends = 0;
+  const result = await automation.runAutomationJob("data-release-updates", {
+    now: "2026-08-19T12:31:00.000Z",
+    force: true,
+    dryRun: false,
+    repository,
+    fetchCalendar: async () => verifiedReleaseCalendar(),
+    fetchOfficialActual: async () => null,
+    fetchReaction: async () => verifiedReleaseReaction(),
+    publicBaseUrl: "https://academy.example",
+    targets: [{ chatId: "-1001", threadId: 83 }],
+    telegramSender: async () => { sends += 1; return { message_id: sends }; },
+  });
+
+  assert.equal(result.status, "skipped");
+  assert.equal(result.preview.eligibility.reason, "official-actual-unavailable");
+  assert.equal(repository.writes.some(([key]) => String(key).startsWith("market-editorial-v1:")), false);
+  assert.equal(sends, 0);
+});
+
+test("data release restart finalizes a durable successful send without sending it twice", async () => {
+  const base = automationRepository();
+  let rejectTargetReceipt = true;
+  const repository = {
+    ...base,
+    async setMeta(key, value) {
+      const receipt = value?.entries?.[0]?.targets?.["telegram:-1001:84"];
+      if (key === "market-content:release-delivery:v1" && receipt?.status === "success" && rejectTargetReceipt) {
+        throw new Error("target receipt temporarily unavailable");
+      }
+      return base.setMeta(key, value);
+    },
+  };
+  let sends = 0;
+  const options = {
+    force: true,
+    dryRun: false,
+    repository,
+    fetchCalendar: async () => verifiedReleaseCalendar(),
+    fetchOfficialActual: async () => officialEvidence("2.7%"),
+    fetchReaction: async () => verifiedReleaseReaction(),
+    publicationFetchImpl: verifiedPublicationFetch(repository),
+    publicBaseUrl: "https://academy.example",
+    allowedPublicOrigins: ["https://academy.example"],
+    targets: [{ chatId: "-1001", threadId: 84 }],
+    telegramSender: async () => ({ message_id: ++sends }),
+  };
+
+  const first = await automation.runAutomationJob("data-release-updates", { ...options, now: "2026-08-19T12:31:00.000Z" });
+  const sendsAfterFirst = sends;
+  rejectTargetReceipt = false;
+  const restarted = await automation.runAutomationJob("data-release-updates", { ...options, now: "2026-08-19T12:32:00.000Z" });
+
+  assert.equal(first.status, "queued");
+  assert.equal(first.preview.targetResults[0].receiptFinalizationPending, true);
+  assert.equal(restarted.status, "success");
+  assert.equal(restarted.preview.deliveryPlans.length, 0);
+  assert.equal(sends, sendsAfterFirst);
+  assert.deepEqual((await repository.getMeta("market-content:release-state:v1")).publishedKeys, [restarted.preview.deduplicationKey]);
 });
