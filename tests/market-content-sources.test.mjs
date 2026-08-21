@@ -1225,6 +1225,171 @@ test("market reaction falls back from Binance to OKX and treats DXY as optional"
   assert.match(result.warnings.join("\n"), /DXY/);
 });
 
+test("market reaction parses Coinbase BTC-USD and ETH-USD candles after deterministic fallbacks", async () => {
+  const target = Date.parse("2026-08-18T12:00:30.000Z");
+  const completedMinute = Date.parse("2026-08-18T11:59:00.000Z");
+  const requested = [];
+  const prices = {
+    "BTC-USD": { before: 65000, latest: 65650 },
+    "ETH-USD": { before: 3000, latest: 2970 },
+  };
+  const fetchImpl = async (url) => {
+    const parsed = new URL(url);
+    requested.push(parsed);
+    if (parsed.hostname.includes("binance") || parsed.hostname.includes("okx")) {
+      return jsonResponse({ message: "unavailable" }, 404);
+    }
+    if (parsed.hostname.includes("coinbase.com")) {
+      const product = parsed.pathname.match(/\/products\/([^/]+)\//)?.[1];
+      if (parsed.pathname.endsWith("/candles")) {
+        return jsonResponse([
+          [target / 1000, 0, 0, 0, 99999, 1],
+          [completedMinute / 1000, 0, 0, 0, prices[product].before, 1],
+        ]);
+      }
+      return jsonResponse({ price: String(prices[product].latest) });
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+
+  const result = await fetchMarketReaction({
+    beforeAt: target,
+    now: target + 15 * 60_000,
+    fetchImpl,
+    symbols: ["BTC", "ETH", "DXY"],
+  });
+
+  assert.equal(result.data.BTC.source, "Coinbase");
+  assert.equal(result.data.BTC.beforePrice, 65000);
+  assert.equal(result.data.BTC.beforePriceAt, new Date(completedMinute).toISOString());
+  assert.equal(result.data.BTC.price, 65650);
+  assert.equal(result.data.BTC.changePercent, 1);
+  assert.equal(result.data.ETH.source, "Coinbase");
+  assert.equal(result.data.ETH.changePercent, -1);
+  assert.equal(result.data.DXY, undefined);
+  assert.match(result.warnings.join("\n"), /DXY optional data unavailable/);
+
+  const coinbaseUrls = requested.filter((url) => url.hostname.includes("coinbase.com"));
+  assert.deepEqual(
+    [...new Set(coinbaseUrls.map((url) => url.pathname.match(/\/products\/([^/]+)\//)?.[1]))].sort(),
+    ["BTC-USD", "ETH-USD"],
+  );
+  assert.ok(coinbaseUrls.filter((url) => url.pathname.endsWith("/candles")).every((url) => url.searchParams.get("granularity") === "60"));
+  for (const symbol of ["BTC", "ETH"]) {
+    const sequence = requested
+      .filter((url) => url.searchParams.get("symbol")?.startsWith(symbol)
+        || url.searchParams.get("instId")?.startsWith(symbol)
+        || url.pathname.includes(`/products/${symbol}-USD/`))
+      .map((url) => url.hostname.includes("binance") ? "binance" : url.hostname.includes("okx") ? "okx" : "coinbase");
+    assert.deepEqual([...new Set(sequence)], ["binance", "okx", "coinbase"]);
+  }
+  assert.deepEqual(result.sources.map((source) => source.id), ["binance", "okx", "coinbase-exchange", "dxy-yahoo-finance"]);
+  assert.equal(result.sources.find((source) => source.id === "coinbase-exchange").fallbackFrom, "okx");
+});
+
+test("market reaction reports all three attempted crypto providers when every route fails", async () => {
+  const result = await fetchMarketReaction({
+    beforeAt: "2026-08-18T12:00:00.000Z",
+    now: "2026-08-18T12:15:00.000Z",
+    fetchImpl: async () => jsonResponse({ message: "unavailable" }, 404),
+    symbols: ["BTC"],
+  });
+
+  assert.deepEqual(result.data, {});
+  assert.deepEqual(result.sources.map((source) => [source.id, source.status, source.fallbackFrom ?? null]), [
+    ["binance", "error", null],
+    ["okx", "error", "binance"],
+    ["coinbase-exchange", "error", "okx"],
+  ]);
+  assert.match(result.warnings.join("\n"), /BTC.*Binance.*OKX.*Coinbase/i);
+});
+
+test("market reaction keeps one Coinbase symbol when another symbol exhausts all fallbacks", async () => {
+  const target = Date.parse("2026-08-18T12:00:00.000Z");
+  const completedMinute = target - 60_000;
+  const fetchImpl = async (url) => {
+    const parsed = new URL(url);
+    if (parsed.hostname.includes("binance") || parsed.hostname.includes("okx")) {
+      return jsonResponse({ message: "unavailable" }, 404);
+    }
+    if (parsed.pathname.includes("/products/ETH-USD/")) {
+      return jsonResponse({ message: "unavailable" }, 404);
+    }
+    if (parsed.pathname.endsWith("/candles")) {
+      return jsonResponse([[completedMinute / 1000, 64000, 66000, 64500, 65000, 12]]);
+    }
+    return jsonResponse({ price: "65650" });
+  };
+
+  const result = await fetchMarketReaction({
+    beforeAt: target,
+    now: target + 15 * 60_000,
+    fetchImpl,
+    symbols: ["BTC", "ETH"],
+  });
+
+  assert.equal(result.data.BTC.source, "Coinbase");
+  assert.equal(result.data.ETH, undefined);
+  assert.equal(result.sources.find((source) => source.id === "coinbase-exchange").status, "degraded");
+  assert.equal(result.warnings.length, 1);
+  assert.match(result.warnings[0], /ETH.*Coinbase/i);
+});
+
+test("Coinbase fallback rejects non-positive candle and ticker prices", async () => {
+  const target = Date.parse("2026-08-18T12:00:00.000Z");
+  for (const invalidField of ["candle", "ticker"]) {
+    const fetchImpl = async (url) => {
+      const parsed = new URL(url);
+      if (parsed.hostname.includes("binance") || parsed.hostname.includes("okx")) {
+        return jsonResponse({ message: "unavailable" }, 404);
+      }
+      if (parsed.pathname.endsWith("/candles")) {
+        return jsonResponse([[(target - 60_000) / 1000, 0, 0, 0, invalidField === "candle" ? 0 : 65000, 1]]);
+      }
+      return jsonResponse({ price: invalidField === "ticker" ? "0" : "65650" });
+    };
+
+    const result = await fetchMarketReaction({
+      beforeAt: target,
+      now: target + 15 * 60_000,
+      fetchImpl,
+      symbols: ["BTC"],
+    });
+
+    assert.equal(result.data.BTC, undefined);
+    assert.match(result.warnings.join("\n"), /Invalid BTC Coinbase (?:before|latest) price/);
+  }
+});
+
+test("Coinbase fallback rejects a stale candle when the final completed minute has a gap", async () => {
+  const target = Date.parse("2026-08-18T12:00:30.000Z");
+  const targetMinute = Date.parse("2026-08-18T12:00:00.000Z");
+  const fetchImpl = async (url) => {
+    const parsed = new URL(url);
+    if (parsed.hostname.includes("binance") || parsed.hostname.includes("okx")) {
+      return jsonResponse({ message: "unavailable" }, 404);
+    }
+    if (parsed.pathname.endsWith("/candles")) {
+      return jsonResponse([
+        [targetMinute / 1000, 0, 0, 0, 70000, 1],
+        [(targetMinute - 2 * 60_000) / 1000, 0, 0, 0, 65000, 1],
+      ]);
+    }
+    return jsonResponse({ price: "65650" });
+  };
+
+  const result = await fetchMarketReaction({
+    beforeAt: target,
+    now: target + 15 * 60_000,
+    fetchImpl,
+    symbols: ["BTC"],
+  });
+
+  assert.equal(result.data.BTC, undefined);
+  assert.equal(result.sources.find((source) => source.id === "coinbase-exchange").status, "error");
+  assert.match(result.warnings.join("\n"), /Coinbase.*gap|gap.*Coinbase/i);
+});
+
 test("DXY skips the target-minute bar when it closes after a mid-minute event", async () => {
   const target = Date.parse("2026-08-18T12:00:30.000Z");
   const targetMinute = Date.parse("2026-08-18T12:00:00.000Z");
