@@ -546,6 +546,106 @@ test("Data Update trusts only unambiguous reaction providers with successful Tas
   }
 });
 
+test("Data Update cannot bypass a present reaction provider manifest with conflicting or unlisted identities", () => {
+  const event = releaseEvent();
+  const build = (marketReaction) => {
+    const document = buildDataReleaseDocument({ event, reaction: marketReaction });
+    return buildDataUpdateArticle({
+      document,
+      event,
+      reaction: marketReaction,
+      tierDecision: { tier: "tier-one", decision: "tier-one", score: 94, reasons: [] },
+      sourceManifest: marketReaction.sources,
+    });
+  };
+
+  const conflicting = task4ReactionEnvelope();
+  conflicting.sources.push({
+    id: "okx",
+    name: "OKX",
+    url: "https://www.okx.com",
+    status: "ok",
+    checkedAt: "2026-08-12T12:45:00.000Z",
+    lastSuccessAt: "2026-08-12T12:45:00.000Z",
+    freshnessSeconds: 0,
+  });
+  conflicting.prices.BTC = {
+    ...conflicting.prices.BTC,
+    provider: "okx",
+    source: "Binance",
+    sourceUrl: "https://evil.example/forged-btc",
+  };
+  assert.deepEqual(build(conflicting).marketConfirmation.observations.map(({ symbol }) => symbol), ["ETH"]);
+
+  const crossOrigin = task4ReactionEnvelope();
+  crossOrigin.prices.BTC.sourceUrl = "https://evil.example/forged-btc";
+  assert.deepEqual(build(crossOrigin).marketConfirmation.observations.map(({ symbol }) => symbol), ["ETH"]);
+
+  const insecureDirectUrl = task4ReactionEnvelope();
+  insecureDirectUrl.prices.BTC.sourceUrl = "http://api.binance.com/api/v3/klines?symbol=BTCUSDT";
+  assert.deepEqual(build(insecureDirectUrl).marketConfirmation.observations.map(({ symbol }) => symbol), ["ETH"]);
+
+  const unlisted = task4ReactionEnvelope();
+  for (const symbol of ["BTC", "ETH"]) {
+    unlisted.prices[symbol] = {
+      ...unlisted.prices[symbol],
+      provider: "private-feed",
+      source: "Private Feed",
+      sourceUrl: `https://private.example/${symbol.toLowerCase()}`,
+    };
+  }
+  assert.throws(() => build(unlisted), /bounded end|named market provider|trusted.*provider|manifest/i);
+});
+
+test("Data Update resolves provider ids, names and aliases deterministically without mutating inputs", () => {
+  const event = releaseEvent();
+  const build = (marketReaction) => {
+    const document = buildDataReleaseDocument({ event, reaction: marketReaction });
+    return buildDataUpdateArticle({
+      document,
+      event,
+      reaction: marketReaction,
+      tierDecision: { tier: "tier-one", decision: "tier-one", score: 94, reasons: [] },
+      sourceManifest: marketReaction.sources,
+    });
+  };
+  const marketReaction = task4ReactionEnvelope();
+  marketReaction.sources[0] = {
+    ...marketReaction.sources[0],
+    id: "coinbase-exchange",
+    name: "Coinbase Exchange",
+    url: "https://api.exchange.coinbase.com",
+  };
+  marketReaction.sources.push({
+    id: "okx",
+    name: "OKX",
+    url: "https://www.okx.com",
+    status: "ok",
+    checkedAt: "2026-08-12T12:45:00.000Z",
+    lastSuccessAt: "2026-08-12T12:45:00.000Z",
+    freshnessSeconds: 0,
+  });
+  marketReaction.prices.BTC = {
+    ...marketReaction.prices.BTC,
+    provider: "coinbase-exchange",
+    source: "Coinbase",
+    sourceUrl: "https://api.exchange.coinbase.com:443/products/BTC-USD/candles",
+  };
+  marketReaction.prices.ETH = {
+    ...marketReaction.prices.ETH,
+    source: "Coinbase",
+    provider: "coinbase-exchange",
+  };
+  const before = structuredClone(marketReaction);
+  const forward = build(marketReaction);
+  const reversed = build({ ...marketReaction, sources: [...marketReaction.sources].reverse() });
+
+  assert.deepEqual(marketReaction, before);
+  assert.deepEqual(forward.marketConfirmation, reversed.marketConfirmation);
+  assert.deepEqual(forward.reactionWindow, reversed.reactionWindow);
+  assert.equal(forward.marketConfirmation.observations[0].sourceUrl, "https://api.exchange.coinbase.com/products/BTC-USD/candles");
+});
+
 test("Data Update preserves a valid per-record provider URL instead of replacing its path", () => {
   const event = releaseEvent();
   const marketReaction = task4ReactionEnvelope();
@@ -971,6 +1071,25 @@ test("Data Update community routes tier-one to one HTTPS article and secondary t
     () => buildSecondaryDataUpdateCommunityDocument({ document, event, reaction: marketReaction }),
     /secondary/i,
   );
+});
+
+test("secondary Data Update consumes an exact Task4 reaction envelope without an article link", () => {
+  const event = releaseEvent();
+  const marketReaction = task4ReactionEnvelope();
+  const document = buildDataReleaseDocument({ event, reaction: marketReaction });
+  const community = buildSecondaryDataUpdateCommunityDocument({
+    document,
+    event,
+    reaction: marketReaction,
+    tierDecision: { tier: "secondary", decision: "not-promoted", score: 48, reasons: [] },
+  });
+  const rendered = renderTelegramMarketDocument(community);
+
+  assert.match(rendered, /BTC -1\.20%/);
+  assert.match(rendered, /ETH -1\.60%/);
+  assert.equal(community.articleUrl, undefined);
+  assert.equal(community.nodes.some((node) => node.type === "link"), false);
+  assert.doesNotMatch(rendered, /https?:\/\//i);
 });
 
 test("Task5 community builders fit Telegram's 4096-character limit without losing the link or disclaimer", () => {
