@@ -157,6 +157,10 @@ test("Weekly Calendar preserves common dotted abbreviations inside a single-sent
     "U.S. CPI is the central catalyst while confirmation depends on rates.",
     "U.K. labour data is the central catalyst while confirmation depends on sterling.",
     "Real yields remain restrictive, e.g. when inflation expectations lag nominal rates.",
+    "U.S. Treasury yields remain the central confirmation signal.",
+    "U.S. 10-year yields remain the central confirmation signal.",
+    "The U.S. Treasury curve remains the central confirmation signal.",
+    "U.S. dollar liquidity remains the central confirmation signal.",
   ];
 
   for (const coreView of examples) {
