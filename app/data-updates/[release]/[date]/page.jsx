@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
 import { getDistributionRepository } from "../../../../lib/distribution-repository.mjs";
-import { dataUpdatePublicationKey } from "../../../../lib/market-editorial-articles.mjs";
-import { dataUpdateArticlePath } from "../../../../lib/market-publication.mjs";
+import { dataUpdateArticlePath, getMarketPublication } from "../../../../lib/market-publication.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +34,69 @@ function signedPercent(value) {
   return Number.isFinite(number) ? `${number >= 0 ? "+" : ""}${number.toFixed(2)}%` : valueOrDash(value);
 }
 
+function isRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isText(value) {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+function isTextArray(value) {
+  return Array.isArray(value) && value.length > 0 && value.every(isText);
+}
+
+function isScenario(value) {
+  return isRecord(value) && [value.id, value.label, value.condition, value.implication].every(isText);
+}
+
+function isDataUpdateArticle(article, slug) {
+  return isRecord(article)
+    && article.id === `data-update:${slug}`
+    && article.type === "data-update-analysis"
+    && article.version === "market-editorial-v1"
+    && article.slug === slug
+    && [article.publishedAt, article.kicker, article.title, article.verdict, article.invalidation, article.disclaimer].every(isText)
+    && isRecord(article.tierDecision)
+    && article.tierDecision.tier === "tier-one"
+    && isRecord(article.facts)
+    && [article.facts.title, article.facts.jurisdiction, article.facts.releasedAt].every(isText)
+    && article.facts.actual !== undefined && article.facts.actual !== null && String(article.facts.actual).trim() !== ""
+    && isRecord(article.dataSignal)
+    && [article.dataSignal.label, article.dataSignal.summary, article.dataSignal.impact].every(isText)
+    && isRecord(article.marketConfirmation)
+    && [article.marketConfirmation.label, article.marketConfirmation.summary].every(isText)
+    && Array.isArray(article.marketConfirmation.observations)
+    && article.marketConfirmation.observations.length > 0
+    && article.marketConfirmation.observations.every((observation) => isRecord(observation)
+      && [observation.symbol, observation.providerName, observation.sourceUrl].every(isText)
+      && Number.isFinite(observation.changePercent))
+    && isRecord(article.reactionWindow)
+    && [article.reactionWindow.start, article.reactionWindow.end].every(isText)
+    && isTextArray(article.reactionWindow.providers)
+    && Array.isArray(article.scenarioAnalysis)
+    && article.scenarioAnalysis.length > 0
+    && article.scenarioAnalysis.every(isScenario)
+    && isTextArray(article.watchNext);
+}
+
+function safeExternalUrl(value) {
+  if (!isText(value)) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function ExternalReference({ href, children, className }) {
+  const safeHref = safeExternalUrl(href);
+  return safeHref
+    ? <a className={className} href={safeHref} target="_blank" rel="noreferrer">{children}</a>
+    : <span className={className}>{children}</span>;
+}
+
 function VerdictBadge({ value }) {
   const tone = value === "Confirmed"
     ? "bg-[#dff1e8] text-[#176144]"
@@ -44,28 +106,25 @@ function VerdictBadge({ value }) {
   return <span className={`rounded-full px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] ${tone}`}>{value}</span>;
 }
 
-export default async function DataUpdatePage({ params }) {
+export default async function DataUpdatePage({ params, repository: suppliedRepository }) {
   const resolvedParams = await params;
   const release = resolvedParams?.release;
   const date = resolvedParams?.date;
-  let key;
   try {
     dataUpdateArticlePath(release, date);
-    key = dataUpdatePublicationKey(release, date);
   } catch {
     notFound();
   }
 
-  let bundle;
-  try {
-    const repository = await getDistributionRepository();
-    bundle = await repository.getMeta(key);
-  } catch {
-    notFound();
-  }
-  if (!bundle?.article) notFound();
+  const slug = `${release}/${date}`;
+  const repository = suppliedRepository ?? await getDistributionRepository();
+  const bundle = await getMarketPublication({ repository, product: "data-update", slug });
+  if (!bundle || bundle.status === "draft" || !isDataUpdateArticle(bundle.article, slug)) notFound();
   const article = bundle.article;
-  if (article.tierDecision?.tier !== "tier-one") notFound();
+  const sources = Array.isArray(article.sources)
+    ? article.sources.filter((source) => isRecord(source) && isText(source.label))
+    : [];
+  const limitations = Array.isArray(article.limitations) ? article.limitations.filter(isText) : [];
 
   const facts = article.facts;
   const factRows = [
@@ -168,7 +227,7 @@ export default async function DataUpdatePage({ params }) {
                     <td className="px-5 py-5 text-sm">{valueOrDash(observation.price)}</td>
                     <td className={`px-5 py-5 font-mono text-sm font-semibold ${Number(observation.changePercent) < 0 ? "text-[#9b4d3a]" : "text-[#176144]"}`}>{signedPercent(observation.changePercent)}</td>
                     <td className="py-5 pl-5 text-sm">
-                      <a className="underline decoration-black/30 underline-offset-4 hover:decoration-black" href={observation.sourceUrl} target="_blank" rel="noreferrer">{observation.providerName}</a>
+                      <ExternalReference className="underline decoration-black/30 underline-offset-4 hover:decoration-black" href={observation.sourceUrl}>{observation.providerName}</ExternalReference>
                     </td>
                   </tr>
                 ))}
@@ -213,9 +272,9 @@ export default async function DataUpdatePage({ params }) {
           <div>
             <SectionLabel>Primary sources</SectionLabel>
             <ol className="space-y-3">
-              {article.sources.map((source, index) => (
+              {sources.map((source, index) => (
                 <li key={`${source.url}-${index}`} className="text-sm leading-6">
-                  <a className="underline decoration-black/30 underline-offset-4 hover:decoration-black" href={source.url} target="_blank" rel="noreferrer">{index + 1}. {source.label}</a>
+                  <ExternalReference className="underline decoration-black/30 underline-offset-4 hover:decoration-black" href={source.url}>{index + 1}. {source.label}</ExternalReference>
                 </li>
               ))}
             </ol>
@@ -223,7 +282,7 @@ export default async function DataUpdatePage({ params }) {
           <div>
             <SectionLabel>Limitations</SectionLabel>
             <ul className="space-y-3 text-sm leading-6 text-[#68736d]">
-              {article.limitations.map((limitation) => <li key={limitation}>— {limitation}</li>)}
+              {limitations.map((limitation) => <li key={limitation}>— {limitation}</li>)}
             </ul>
             <p className="mt-7 border-t border-black/10 pt-5 text-xs leading-5 text-[#68736d]">{article.disclaimer}</p>
           </div>

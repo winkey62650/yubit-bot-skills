@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
 import { getDistributionRepository } from "../../../lib/distribution-repository.mjs";
-import { weeklyCalendarPublicationKey } from "../../../lib/market-editorial-articles.mjs";
-import { weeklyCalendarArticlePath } from "../../../lib/market-publication.mjs";
+import { getMarketPublication, weeklyCalendarArticlePath } from "../../../lib/market-publication.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -30,26 +29,93 @@ function valueOrDash(value) {
   return value === undefined || value === null || String(value).trim() === "" ? "—" : String(value);
 }
 
-export default async function WeeklyCalendarPage({ params }) {
+function isRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isText(value) {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+function isTextArray(value) {
+  return Array.isArray(value) && value.length > 0 && value.every(isText);
+}
+
+function isScenario(value) {
+  return isRecord(value) && [value.id, value.label, value.condition, value.implication].every(isText);
+}
+
+function isWeeklyEvent(value) {
+  return isRecord(value)
+    && [value.id, value.title, value.utcTime, value.jurisdiction, value.whyItMatters, value.transmissionPath, value.scenarioMap].every(isText)
+    && Number.isInteger(value.rank)
+    && value.rank > 0
+    && Number.isFinite(Number(value.impactScore))
+    && isTextArray(value.affectedAssets);
+}
+
+function isWeeklyArticle(article, week) {
+  return isRecord(article)
+    && article.id === `weekly-calendar:${week}`
+    && article.type === "weekly-calendar-analysis"
+    && article.version === "market-editorial-v1"
+    && article.slug === week
+    && [article.publishedAt, article.weekStart, article.weekEnd, article.kicker, article.title, article.coreView, article.disclaimer].every(isText)
+    && isRecord(article.marketSetup)
+    && [article.marketSetup.label, article.marketSetup.summary, article.marketSetup.observedAt].every(isText)
+    && Array.isArray(article.priorityEvents)
+    && article.priorityEvents.length > 0
+    && article.priorityEvents.every(isWeeklyEvent)
+    && Array.isArray(article.impactRankedEvents)
+    && article.impactRankedEvents.length > 0
+    && article.impactRankedEvents.every(isWeeklyEvent)
+    && Array.isArray(article.tierOneAnalysis)
+    && article.tierOneAnalysis.length > 0
+    && article.tierOneAnalysis.every((event) => isRecord(event)
+      && [event.id, event.headline, event.whyItMatters, event.transmissionPath, event.scenarioMap].every(isText)
+      && isTextArray(event.affectedAssets))
+    && Array.isArray(article.scenarios)
+    && article.scenarios.length > 0
+    && article.scenarios.every(isScenario)
+    && Array.isArray(article.dailyWatchlist)
+    && article.dailyWatchlist.length > 0
+    && article.dailyWatchlist.every((day) => isRecord(day) && isText(day.date) && isTextArray(day.items));
+}
+
+function safeExternalUrl(value) {
+  if (!isText(value)) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function ExternalReference({ href, children, className }) {
+  const safeHref = safeExternalUrl(href);
+  return safeHref
+    ? <a className={className} href={safeHref} target="_blank" rel="noreferrer">{children}</a>
+    : <span className={className}>{children}</span>;
+}
+
+export default async function WeeklyCalendarPage({ params, repository: suppliedRepository }) {
   const resolvedParams = await params;
   const week = resolvedParams?.week;
-  let key;
   try {
     weeklyCalendarArticlePath(week);
-    key = weeklyCalendarPublicationKey(week);
   } catch {
     notFound();
   }
 
-  let bundle;
-  try {
-    const repository = await getDistributionRepository();
-    bundle = await repository.getMeta(key);
-  } catch {
-    notFound();
-  }
-  if (!bundle?.article) notFound();
+  const repository = suppliedRepository ?? await getDistributionRepository();
+  const bundle = await getMarketPublication({ repository, product: "weekly-calendar", slug: week });
+  if (!bundle || bundle.status === "draft" || !isWeeklyArticle(bundle.article, week)) notFound();
   const article = bundle.article;
+  const sources = Array.isArray(article.sources)
+    ? article.sources.filter((source) => isRecord(source) && isText(source.label))
+    : [];
+  const limitations = Array.isArray(article.limitations) ? article.limitations.filter(isText) : [];
 
   return (
     <main className="min-h-screen bg-[#f1f0eb] text-[#142019]">
@@ -193,9 +259,9 @@ export default async function WeeklyCalendarPage({ params }) {
           <div>
             <SectionLabel>Primary sources</SectionLabel>
             <ol className="space-y-3">
-              {article.sources.map((source, index) => (
+              {sources.map((source, index) => (
                 <li key={`${source.url}-${index}`} className="text-sm leading-6">
-                  <a className="underline decoration-black/30 underline-offset-4 hover:decoration-black" href={source.url} target="_blank" rel="noreferrer">{index + 1}. {source.label}</a>
+                  <ExternalReference className="underline decoration-black/30 underline-offset-4 hover:decoration-black" href={source.url}>{index + 1}. {source.label}</ExternalReference>
                 </li>
               ))}
             </ol>
@@ -203,7 +269,7 @@ export default async function WeeklyCalendarPage({ params }) {
           <div>
             <SectionLabel>Limitations</SectionLabel>
             <ul className="space-y-3 text-sm leading-6 text-[#68736d]">
-              {article.limitations.map((limitation) => <li key={limitation}>— {limitation}</li>)}
+              {limitations.map((limitation) => <li key={limitation}>— {limitation}</li>)}
             </ul>
             <p className="mt-7 border-t border-black/10 pt-5 text-xs leading-5 text-[#68736d]">{article.disclaimer}</p>
           </div>
