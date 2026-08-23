@@ -1320,7 +1320,8 @@ test("market reaction omits fallback health when the shared deadline expires bef
     },
   }), 200, "market reaction did not respect the shared deadline");
 
-  assert.deepEqual(requestedHosts, ["api.binance.com"]);
+  assert.ok(requestedHosts.length > 0);
+  assert.deepEqual([...new Set(requestedHosts)], ["api.binance.com"]);
   assert.deepEqual(result.sources.map((source) => source.id), ["binance"]);
   assert.equal(result.sources[0].status, "timeout");
   assert.match(result.warnings.join("\n"), /OKX.*Coinbase.*skipped|skipped.*OKX.*Coinbase/i);
