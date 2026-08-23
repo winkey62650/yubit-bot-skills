@@ -10,6 +10,7 @@ on:
         required: true
         type: choice
         options:
+          - academy-demo
           - agents
           - distribution
           - trading
@@ -19,6 +20,107 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  academy_demo:
+    if: inputs.job == 'academy-demo'
+    runs-on: ubuntu-latest
+    environment: Production
+    env:
+      TEST_CONTENT_TYPE: crypto-daily
+      TEST_EXPECTED_CHAT_ID: "-1003710405969"
+      TEST_EXPECTED_THREAD_ID: "8"
+      TEST_BASE_URL: https://152-32-161-174.sslip.io
+    steps:
+      - name: Install SSH password helper
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq sshpass
+
+      - name: Send one governed content set to Academy DEMO Topic 8
+        env:
+          SSHPASS: ${{ secrets.YUBIT_SERVER_PASSWORD }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -Eeuo pipefail
+          if [ -z "$SSHPASS" ]; then
+            echo "YUBIT_SERVER_PASSWORD is not configured." >&2
+            exit 1
+          fi
+          report_path="$RUNNER_TEMP/academy-demo-acceptance.json"
+          sshpass -e ssh \
+            -o ConnectTimeout=20 \
+            -o ServerAliveInterval=10 \
+            -o StrictHostKeyChecking=accept-new \
+            ubuntu@152.32.161.174 \
+            "EXPECTED_SHA='$EXPECTED_SHA' TEST_CONTENT_TYPE='$TEST_CONTENT_TYPE' TEST_EXPECTED_CHAT_ID='$TEST_EXPECTED_CHAT_ID' TEST_EXPECTED_THREAD_ID='$TEST_EXPECTED_THREAD_ID' TEST_BASE_URL='$TEST_BASE_URL' bash -s" \
+            >"$report_path" <<'REMOTE'
+          set -Eeuo pipefail
+          env_file=/etc/yubit-academy/production.env
+          expected_targets='-1003710405969:8,-1003710405969:10,-1003710405969:16'
+          report_file="$(sudo --user=ubuntu mktemp)"
+          cleanup() { rm -f "$report_file"; }
+          trap cleanup EXIT
+
+          release="$(readlink -f /opt/yubit-academy/current)"
+          case "$release" in
+            /opt/yubit-academy/releases/*) ;;
+            *) echo "Current release path is invalid." >&2; exit 1 ;;
+          esac
+          current_sha="$(tr -d '[:space:]' <"$release/.release-commit")"
+          if [ "$current_sha" != "$EXPECTED_SHA" ]; then
+            echo "The requested workflow SHA is not the deployed release." >&2
+            exit 1
+          fi
+
+          read_env() {
+            sudo awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "$env_file"
+          }
+          auth_username="$(read_env AUTH_USERNAME)"
+          auth_password="$(read_env AUTH_PASSWORD)"
+          if [ -z "$auth_username" ] || [ -z "$auth_password" ]; then
+            echo "Production application credentials are unavailable." >&2
+            exit 1
+          fi
+          if [ "$(read_env TELEGRAM_DEMO_ONLY)" != "true" ] \
+            || [ "$(read_env TELEGRAM_DISTRIBUTION_APPROVED_TARGETS)" != "$expected_targets" ] \
+            || [ "$(read_env ALLOW_LIVE_TELEGRAM)" != "false" ]; then
+            echo "Production Telegram safety policy is not locked." >&2
+            exit 1
+          fi
+          publisher_config_before="$(sudo grep -E '^(TELEGRAM_[^=]*|DISCORD_[^=]*|TRADING_DEMO_ONLY|ALLOW_LIVE_TELEGRAM)=' "$env_file" | sha256sum | awk '{print $1}')"
+
+          sudo --user=ubuntu env \
+            RELEASE_STAGE=production \
+            ALLOW_LIVE_TELEGRAM=true \
+            TEST_BASE_URL="$TEST_BASE_URL" \
+            TEST_USERNAME="$auth_username" \
+            TEST_PASSWORD="$auth_password" \
+            TEST_CONTENT_TYPE="$TEST_CONTENT_TYPE" \
+            TEST_EXPECTED_CHAT_ID="$TEST_EXPECTED_CHAT_ID" \
+            TEST_EXPECTED_THREAD_ID="$TEST_EXPECTED_THREAD_ID" \
+            TEST_REPORT_PATH="$report_file" \
+            ACCEPTANCE_QUIET=true \
+            /opt/yubit-node/bin/node "$release/scripts/accept-academy-demo-content.cjs"
+
+          publisher_config_after="$(sudo grep -E '^(TELEGRAM_[^=]*|DISCORD_[^=]*|TRADING_DEMO_ONLY|ALLOW_LIVE_TELEGRAM)=' "$env_file" | sha256sum | awk '{print $1}')"
+          if [ "$publisher_config_after" != "$publisher_config_before" ] \
+            || [ "$(read_env ALLOW_LIVE_TELEGRAM)" != "false" ]; then
+            echo "DEMO acceptance changed persistent publisher safety configuration." >&2
+            exit 1
+          fi
+          cat "$report_file"
+          REMOTE
+          jq -e '.ok == true and .contentType == "crypto-daily" and .target.chatId == "-1003710405969" and .target.threadId == 8 and (.receipt.messageIds | length > 0)' "$report_path" >/dev/null
+          echo "### Academy DEMO content acceptance" >>"$GITHUB_STEP_SUMMARY"
+          jq -r '"- Release: `\(.release.commitSha)`\n- Target: `\(.target.chatId):\(.target.threadId)`\n- Telegram message IDs: `\(.receipt.messageIds | join(","))`\n- Delivery receipt: `\(.receipt.deliveryId)`"' "$report_path" >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Academy DEMO acceptance evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: academy-demo-acceptance-${{ github.sha }}
+          path: ${{ runner.temp }}/academy-demo-acceptance.json
+          if-no-files-found: error
+          retention-days: 30
+
   distribution:
     if: inputs.job == 'distribution'
     runs-on: ubuntu-latest

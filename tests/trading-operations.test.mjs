@@ -164,7 +164,7 @@ test("market preview release gates require at least one reliable source", async 
   }
 });
 
-test("run-now exists only in the explicitly authorized live automation test", async () => {
+test("run-now exists only in explicitly authorized live acceptance scripts", async () => {
   const scriptsDirectory = new URL("scripts/", root);
   const entries = await readdir(scriptsDirectory, { withFileTypes: true });
   const offenders = [];
@@ -173,8 +173,12 @@ test("run-now exists only in the explicitly authorized live automation test", as
     const source = await readFile(new URL(entry.name, scriptsDirectory), "utf8");
     if (/run-now/.test(source)) offenders.push({ file: entry.name, source });
   }
-  assert.deepEqual(offenders.map((item) => item.file), ["test-production-automation-delivery.cjs"]);
-  assert.match(offenders[0].source, /authorizeLiveTelegramOperation/);
+  assert.deepEqual(offenders.map((item) => item.file), [
+    "accept-academy-demo-content.cjs",
+    "test-production-automation-delivery.cjs",
+  ]);
+  for (const offender of offenders) assert.match(offender.source, /authorizeLiveTelegramOperation/);
+  assert.match(offenders.find((item) => item.file === "accept-academy-demo-content.cjs").source, /exactTargets:\s*true/);
 });
 
 test("production distribution gates cover all six automations and seven broadcasts", async () => {

@@ -47,6 +47,23 @@ test("production workflow defaults formal-server acceptance to no-send", () => {
   assert.doesNotMatch(workflow, /TELEGRAM_BOT_TOKEN|DISCORD_BOT_TOKEN|DISCORD_APP_ID|DISCORD_PUBLIC_KEY/);
   assert.match(workflow, /publisher_config_before/);
   assert.match(workflow, /publisher_config_after/);
+  assert.match(workflow, /TELEGRAM_\[\^=\]\*\|DISCORD_\[\^=\]\*/);
+});
+
+test("operator-triggered Academy DEMO acceptance is fenced to one Crypto Daily send on Topic 8", () => {
+  const workflow = read(".github/workflows/telegram-automations.yml");
+
+  assert.match(workflow, /academy-demo/);
+  assert.match(workflow, /accept-academy-demo-content\.cjs/);
+  assert.match(workflow, /TEST_EXPECTED_CHAT_ID:\s*["']-1003710405969["']/);
+  assert.match(workflow, /TEST_EXPECTED_THREAD_ID:\s*["']8["']/);
+  assert.match(workflow, /TEST_CONTENT_TYPE:\s*crypto-daily/);
+  assert.match(workflow, /ALLOW_LIVE_TELEGRAM=true/);
+  assert.match(workflow, /publisher_config_before/);
+  assert.match(workflow, /publisher_config_after/);
+  assert.match(workflow, /report_file=.*sudo --user=ubuntu mktemp/);
+  assert.match(workflow, /ALLOW_LIVE_TELEGRAM.*false/s);
+  assert.doesNotMatch(workflow, /set_env_value\s+ALLOW_LIVE_TELEGRAM\s+true/);
 });
 
 test("authorized DEMO-only policy reconciliation is exact and rolls back on deployment failure", () => {

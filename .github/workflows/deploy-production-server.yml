@@ -143,7 +143,7 @@ jobs:
             exit 1
           fi
 
-          publisher_config_before="$(sudo grep -E '^(TELEGRAM_|TRADING_DEMO_ONLY|ALLOW_LIVE_TELEGRAM|DISCORD_)=' "$env_file" | sha256sum | awk '{print $1}')"
+          publisher_config_before="$(sudo grep -E '^(TELEGRAM_[^=]*|DISCORD_[^=]*|TRADING_DEMO_ONLY|ALLOW_LIVE_TELEGRAM)=' "$env_file" | sha256sum | awk '{print $1}')"
           bootstrap_dir="$(mktemp -d)"
           tar -xzf "$REMOTE_ARCHIVE" -C "$bootstrap_dir"
           rm -f "$REMOTE_ARCHIVE"
@@ -157,7 +157,7 @@ jobs:
             EXPECTED_COMMIT="$DEPLOY_SHA" \
             bash "$bootstrap_dir/deploy/server/deploy.sh"
 
-          publisher_config_after="$(sudo grep -E '^(TELEGRAM_|TRADING_DEMO_ONLY|ALLOW_LIVE_TELEGRAM|DISCORD_)=' "$env_file" | sha256sum | awk '{print $1}')"
+          publisher_config_after="$(sudo grep -E '^(TELEGRAM_[^=]*|DISCORD_[^=]*|TRADING_DEMO_ONLY|ALLOW_LIVE_TELEGRAM)=' "$env_file" | sha256sum | awk '{print $1}')"
           if [ "$publisher_config_after" != "$publisher_config_before" ]; then
             echo "No-send deployment changed Telegram or Discord configuration." >&2
             exit 1
