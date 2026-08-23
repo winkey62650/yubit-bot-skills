@@ -48,6 +48,8 @@ test("market preview posts each production job id through the dry-run API", () =
   assert.match(automationTestRouteSource, /runAutomationJob\(String\(body\.jobId \|\| ""\)/);
   assert.match(automationTestRouteSource, /dryRun: true/);
   assert.match(automationTestRouteSource, /force: true/);
+  assert.match(automationTestRouteSource, /result\?\.preview\?\.publishable === true/);
+  assert.match(automationTestRouteSource, /deliveryPlans: \[\]/);
 });
 
 test("CTA guidance stays scoped to a Telegram group and Discord server", () => {

@@ -34,7 +34,7 @@ export async function POST(request) {
       publicBaseUrl: resolveAutomationPreviewBaseUrl(request.url)
     });
     const jobId = String(body.jobId || "");
-    if (result?.preview && MARKET_PREVIEW_JOBS.has(jobId) && hydratedTargets.length) {
+    if (result?.preview?.publishable === true && MARKET_PREVIEW_JOBS.has(jobId) && hydratedTargets.length) {
       const deliveryPlans = [
         ...buildAutomationTelegramPlans(jobId, result.preview, hydratedTargets, result.preview.imageUrl),
         ...buildAutomationDiscordPlans(jobId, result.preview, hydratedTargets, result.preview.imageUrl)
@@ -49,6 +49,8 @@ export async function POST(request) {
           })
           : deliveryPlans
       };
+    } else if (result?.preview && MARKET_PREVIEW_JOBS.has(jobId)) {
+      result.preview = { ...result.preview, targets: hydratedTargets, deliveryPlans: [] };
     }
     return NextResponse.json({ ok: true, result });
   } catch (error) {
