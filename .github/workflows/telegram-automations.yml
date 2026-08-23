@@ -55,54 +55,63 @@ jobs:
           export AUTH_USERNAME="$(read_env AUTH_USERNAME)"
           export AUTH_PASSWORD="$(read_env AUTH_PASSWORD)"
           export RELEASE_SHA="$(tr -d '[:space:]' <"$release/.release-commit")"
-          node --input-type=module <<'NODE'
-          const demoRule = /^academy-demo-showcase-(daily|weekly|release)-temporary$/;
+          python3 <<'PYTHON'
+          import datetime
+          import http.cookiejar
+          import json
+          import os
+          import re
+          import ssl
+          import urllib.request
 
-          async function readJson(response, label) {
-            const body = await response.json();
-            if (!response.ok) throw new Error(`${label} failed with HTTP ${response.status}`);
-            return body;
+          base_url = os.environ["TEST_BASE_URL"]
+          cookie_jar = http.cookiejar.CookieJar()
+          opener = urllib.request.build_opener(
+              urllib.request.HTTPCookieProcessor(cookie_jar),
+              urllib.request.HTTPSHandler(context=ssl._create_unverified_context()),
+          )
+
+          def read_json(request):
+              with opener.open(request, timeout=30) as response:
+                  return json.load(response)
+
+          login_request = urllib.request.Request(
+              f"{base_url}/api/auth/login",
+              data=json.dumps({
+                  "username": os.environ["AUTH_USERNAME"],
+                  "password": os.environ["AUTH_PASSWORD"],
+              }).encode(),
+              headers={"content-type": "application/json"},
+              method="POST",
+          )
+          login = read_json(login_request)
+          if login.get("ok") is not True:
+              raise RuntimeError("login was not accepted")
+          deliveries = read_json(f"{base_url}/api/distribution/logs?limit=500")
+          overview = read_json(f"{base_url}/api/distribution")
+          demo_rule = re.compile(r"^academy-demo-showcase-(daily|weekly|release)-temporary$")
+          receipt_fields = [
+              "id", "ruleId", "status", "target", "targetMessageId", "targetMessageIds",
+              "deliveredAt", "createdAt", "updatedAt", "error",
+          ]
+          report = {
+              "ok": True,
+              "readOnly": True,
+              "releaseSha": os.environ["RELEASE_SHA"],
+              "auditedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              "deliveries": [
+                  {field: item.get(field) for field in receipt_fields}
+                  for item in deliveries.get("items", [])
+                  if demo_rule.match(item.get("ruleId", ""))
+              ],
+              "temporaryRules": [
+                  {field: rule.get(field) for field in ("id", "enabled", "status")}
+                  for rule in overview.get("rules", [])
+                  if demo_rule.match(rule.get("id", ""))
+              ],
           }
-
-          const login = await fetch(`${process.env.TEST_BASE_URL}/api/auth/login`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              username: process.env.AUTH_USERNAME,
-              password: process.env.AUTH_PASSWORD,
-            }),
-          });
-          const loginBody = await readJson(login, "login");
-          if (loginBody.ok !== true) throw new Error("login was not accepted");
-          const cookie = login.headers.get("set-cookie")?.split(";", 1)[0];
-          if (!cookie) throw new Error("login did not return a session cookie");
-          const headers = { cookie };
-          const deliveries = await readJson(
-            await fetch(`${process.env.TEST_BASE_URL}/api/distribution/logs?limit=500`, { headers }),
-            "delivery receipt read",
-          );
-          const overview = await readJson(
-            await fetch(`${process.env.TEST_BASE_URL}/api/distribution`, { headers }),
-            "distribution overview read",
-          );
-          const receiptFields = [
-            "id", "ruleId", "status", "target", "targetMessageId", "targetMessageIds",
-            "deliveredAt", "createdAt", "updatedAt", "error",
-          ];
-          const report = {
-            ok: true,
-            readOnly: true,
-            releaseSha: process.env.RELEASE_SHA,
-            auditedAt: new Date().toISOString(),
-            deliveries: (deliveries.items ?? [])
-              .filter((item) => demoRule.test(item.ruleId ?? ""))
-              .map((item) => Object.fromEntries(receiptFields.map((field) => [field, item[field]]))),
-            temporaryRules: (overview.rules ?? [])
-              .filter((rule) => demoRule.test(rule.id ?? ""))
-              .map(({ id, enabled, status }) => ({ id, enabled, status })),
-          };
-          process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
-          NODE
+          print(json.dumps(report, ensure_ascii=False, indent=2))
+          PYTHON
           REMOTE
           jq -e '.ok == true and .readOnly == true' "$report_path" >/dev/null
 
