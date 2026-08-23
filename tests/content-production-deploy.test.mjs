@@ -47,6 +47,21 @@ test("production workflow defaults formal-server acceptance to no-send", () => {
   assert.match(workflow, /publisher_config_after/);
 });
 
+test("authorized DEMO-only policy reconciliation is exact and rolls back on deployment failure", () => {
+  const workflow = read(".github/workflows/deploy-production-server.yml");
+
+  assert.match(workflow, /env_backup="\$\(mktemp\)"/);
+  assert.match(workflow, /sudo cp -p "\$env_file" "\$env_backup"/);
+  assert.match(workflow, /set_env_value TELEGRAM_DEMO_ONLY true/);
+  assert.match(workflow, /set_env_value TRADING_DEMO_ONLY true/);
+  assert.match(workflow, /set_env_value TELEGRAM_DISTRIBUTION_APPROVED_TARGETS "\$expected_targets"/);
+  assert.match(workflow, /set_env_value ALLOW_LIVE_TELEGRAM false/);
+  assert.match(workflow, /\[ -n "\$env_backup" \] && \[ "\$deployment_committed" != "1" \]/);
+  assert.match(workflow, /sudo cp -p "\$env_backup" "\$env_file"/);
+  assert.match(workflow, /sudo systemctl restart yubit-academy\.service/);
+  assert.match(workflow, /deployment_committed=1/);
+});
+
 test("activation has an error trap that restores both release pointer and release environment", () => {
   const deploy = read("deploy/server/deploy.sh");
 

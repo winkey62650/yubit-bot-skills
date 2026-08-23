@@ -74,15 +74,55 @@ jobs:
             ubuntu@152.32.161.174 \
             "DEPLOY_SHA='$DEPLOY_SHA' DEPLOY_NO_SEND='$DEPLOY_NO_SEND' REMOTE_ARCHIVE='$remote_archive' bash -s" <<'REMOTE'
           set -Eeuo pipefail
+          env_file=/etc/yubit-academy/production.env
           bootstrap_dir=""
+          env_backup=""
+          env_rewrite=""
+          deployment_committed=0
           cleanup_remote() {
+            if [ -n "$env_backup" ] && [ "$deployment_committed" != "1" ]; then
+              sudo cp -p "$env_backup" "$env_file" || true
+              sudo systemctl restart yubit-academy.service || true
+              echo "Restored the pre-deployment production policy."
+            fi
+            if [ -n "$env_rewrite" ]; then sudo rm -f "$env_rewrite" || true; fi
+            if [ -n "$env_backup" ]; then sudo rm -f "$env_backup" || true; fi
             if [ -n "$bootstrap_dir" ]; then rm -rf "$bootstrap_dir"; fi
             rm -f "$REMOTE_ARCHIVE"
           }
           trap cleanup_remote EXIT
 
-          env_file=/etc/yubit-academy/production.env
           expected_targets='-1003710405969:8,-1003710405969:10,-1003710405969:16'
+          if [ ! -f "$env_file" ]; then
+            echo "Production environment file is missing." >&2
+            exit 1
+          fi
+          env_backup="$(mktemp)"
+          sudo cp -p "$env_file" "$env_backup"
+          set_env_value() {
+            local key="$1"
+            local value="$2"
+            env_rewrite="$(sudo mktemp /etc/yubit-academy/production.env.next.XXXXXX)"
+            sudo awk -v key="$key" -v value="$value" '
+              BEGIN { found = 0 }
+              index($0, key "=") == 1 {
+                if (!found) print key "=" value
+                found = 1
+                next
+              }
+              { print }
+              END { if (!found) print key "=" value }
+            ' "$env_file" | sudo tee "$env_rewrite" >/dev/null
+            sudo chown --reference="$env_file" "$env_rewrite"
+            sudo chmod --reference="$env_file" "$env_rewrite"
+            sudo mv -f "$env_rewrite" "$env_file"
+            env_rewrite=""
+          }
+          set_env_value TELEGRAM_DEMO_ONLY true
+          set_env_value TRADING_DEMO_ONLY true
+          set_env_value TELEGRAM_DISTRIBUTION_APPROVED_TARGETS "$expected_targets"
+          set_env_value ALLOW_LIVE_TELEGRAM false
+
           read_env() {
             sudo awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "$env_file"
           }
@@ -122,4 +162,6 @@ jobs:
             echo "No-send deployment changed Telegram or Discord configuration." >&2
             exit 1
           fi
+          deployment_committed=1
+          echo "Authorized DEMO-only production policy is active."
           REMOTE
