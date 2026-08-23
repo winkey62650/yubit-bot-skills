@@ -121,6 +121,26 @@ test("daily content maps each ranked story into decision fields and article-leve
   assert.equal(daily.sources.some((source) => source.url === "https://failed.example/feed"), false);
 });
 
+test("daily community cards keep the evidence section to the top three ranked stories", () => {
+  const stories = Array.from({ length: 4 }, (_, index) => ({
+    id: `story-${index + 1}`,
+    title: `Ranked story ${index + 1}`,
+    summary: `Verified summary ${index + 1}.`,
+    url: `https://news.example/story-${index + 1}`,
+    publishedAt: NOW,
+    source: { id: `source-${index + 1}`, kind: "secondary" },
+    marketImpact: { score: 80 - index },
+    impact: "Neutral",
+  }));
+  const [daily] = buildContentProductInputs("crypto-daily", generated("crypto-daily", {
+    document: { title: "Daily brief", selectedStories: stories },
+  }), { now: NOW, publicBaseUrl: "https://academy.example" });
+
+  assert.equal(daily.intelligence.catalysts.length, 3);
+  assert.equal(daily.facts.length, 3);
+  assert.deepEqual(daily.intelligence.catalysts.map(({ headline }) => headline), stories.slice(0, 3).map(({ title }) => title));
+});
+
 test("the Academy demo showcase is an explicit historical replay that yields all four governed products", () => {
   const jobs = ["crypto-daily", "weekly-calendar", "data-release-updates"];
   const products = jobs.flatMap((jobId) => buildContentProductInputs(
@@ -137,7 +157,9 @@ test("the Academy demo showcase is an explicit historical replay that yields all
   ]);
   assert.equal(products.every(({ title }) => /DEMO REPLAY/i.test(title)), true);
   assert.equal(products.every(({ sources }) => sources.every(({ url }) => url.startsWith("https://"))), true);
-  assert.equal(products.find(({ product }) => product === "data-flash")?.event.actual, "2.7% YoY");
+  const dataFlash = products.find(({ product }) => product === "data-flash");
+  assert.equal(dataFlash?.event.actual, "2.7% YoY");
+  assert.equal(dataFlash?.intelligence.release.surprise, "No comparable consensus");
   assert.match(products.find(({ product }) => product === "market-follow-up")?.correlationStatement || "", /correlation, not causation/i);
 });
 

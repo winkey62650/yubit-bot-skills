@@ -193,7 +193,10 @@ test("market follow-up requires an originating flash, bounded observation window
 
 test("Telegram and Discord plans preserve canonical facts and respect channel limits", async () => {
   const longFact = `Observed value: ${"<&*_~|".repeat(900)} 2.7%.`;
-  const system = createContentProductSystem({ store: storeDouble() });
+  const system = createContentProductSystem({
+    store: storeDouble(),
+    now: () => new Date("2026-08-23T13:01:00.000Z"),
+  });
   const prepared = await system.prepare(input("data-flash", {
     facts: [{ text: longFact, sourceRefs: ["bls-cpi-2026-08"], actual: true }],
   }));
@@ -209,6 +212,24 @@ test("Telegram and Discord plans preserve canonical facts and respect channel li
   assert.ok(rendered.discord.chunks.join("").includes("\\*"));
 });
 
+test("editorial wrappers keep long titles and risk boundaries within channel limits", async () => {
+  const system = createContentProductSystem({
+    store: storeDouble(),
+    now: () => new Date("2026-08-23T13:01:00.000Z"),
+  });
+  const prepared = await system.prepare(input("daily-market-brief", {
+    title: `Long title ${"<&*".repeat(1_000)}`,
+    risk: `Risk boundary ${"market conditions can change; ".repeat(180)}`,
+    invalidation: `Invalidate when ${"the benchmark reverses; ".repeat(180)}`,
+  }));
+  const rendered = system.renderChannels(prepared);
+
+  assert.ok(rendered.telegram.chunks.every((chunk) => chunk.length <= 4096));
+  assert.ok(rendered.discord.chunks.every((chunk) => chunk.length <= 2000));
+  assert.match(rendered.telegram.chunks.join(""), /RISK BOUNDARY/);
+  assert.match(rendered.discord.chunks.join(""), /RISK BOUNDARY/);
+});
+
 test("all four Telegram products render a structured text-only editorial layout", async () => {
   const expectedKickers = new Map([
     ["daily-market-brief", "DAILY MARKET BRIEF"],
@@ -219,8 +240,8 @@ test("all four Telegram products render a structured text-only editorial layout"
   const expectedAnalysisBlocks = new Map([
     ["daily-market-brief", /<b>WHY IT MATTERS<\/b>/],
     ["weekly-catalyst-calendar", /<b>WHY IT MATTERS<\/b>/],
-    ["data-flash", /<b>DESK VIEW<\/b>/],
-    ["market-follow-up", /<b>INTERPRETATION<\/b>/],
+    ["data-flash", /<b>03  ·  WHAT TO WATCH<\/b>/],
+    ["market-follow-up", /<b>02  ·  CORRELATION CHECK<\/b>/],
   ]);
 
   for (const product of CONTENT_PRODUCT_TYPES) {
@@ -232,15 +253,19 @@ test("all four Telegram products render a structured text-only editorial layout"
     const telegram = rendered.telegram.chunks.join("\n\n");
 
     assert.equal(rendered.telegram.parseMode, "HTML");
-    assert.match(telegram, new RegExp(`<b>YUBIT ACADEMY · ${expectedKickers.get(product)}</b>`));
-    assert.match(telegram, /<b>BIAS<\/b>  BTC · Neutral/);
-    assert.match(telegram, /<b>HORIZON<\/b>/);
-    assert.match(telegram, /<b>CONFIDENCE<\/b>  Medium/);
+    assert.match(telegram, new RegExp(`<b>YUBIT ACADEMY  ·  .+ ${expectedKickers.get(product)}</b>`));
+    assert.match(telegram, /<b>Layout &lt;check&gt; &amp;[^<]+<\/b>\n<i>Updated 23 Aug 2026 · 12:45 UTC<\/i>/);
+    assert.match(telegram, /<blockquote><b>THE READ<\/b>\n[^<]+<\/blockquote>/);
+    assert.match(telegram, /<b>BTC · NEUTRAL<\/b>  \|  (?:0–4H|1–7D)  \|  MEDIUM CONF\.  \|  ●●●●●/);
+    assert.doesNotMatch(telegram, /<b>BIAS<\/b>[\s\S]*<b>HORIZON<\/b>[\s\S]*<b>CONFIDENCE<\/b>/);
     assert.match(telegram, expectedAnalysisBlocks.get(product));
-    assert.match(telegram, /<b>WHAT TO WATCH<\/b>/);
-    assert.match(telegram, /<b>SOURCES<\/b>/);
-    assert.match(rendered.discord.chunks.join(""), /YUBIT ACADEMY/);
-    assert.match(rendered.discord.chunks.join(""), /WHAT HAPPENED|PREV \/ CONS \/ ACTUAL|ACTUAL|MEASURED MOVE/);
+    assert.match(telegram, product === "data-flash" ? /<b>03  ·  WHAT TO WATCH<\/b>/ : /<b>👀  WATCH NEXT<\/b>/);
+    assert.match(telegram, /<b>⚠️  RISK BOUNDARY<\/b>/);
+    assert.match(telegram, /<b>🔗  SOURCES<\/b>/);
+    assert.match(rendered.discord.chunks.join("\n\n"), /\*\*YUBIT ACADEMY  ·/);
+    assert.match(rendered.discord.chunks.join("\n\n"), /> \*\*THE READ\*\*/);
+    assert.match(rendered.discord.chunks.join("\n\n"), /\*\*BTC · NEUTRAL\*\*  \\|  (?:0–4H|1–7D)  \\|  MEDIUM CONF\./);
+    assert.match(rendered.discord.chunks.join("\n\n"), /WHAT HAPPENED|PREV \/ CONS \/ ACTUAL|01  ·  RELEASE|01  ·  MEASURED MOVE/);
     assert.match(telegram, /Layout &lt;check&gt; &amp;/);
     assert.doesNotMatch(telegram, /<img|sendPhoto|photo=/i);
   }
