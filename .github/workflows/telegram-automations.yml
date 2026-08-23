@@ -54,9 +54,11 @@ jobs:
           release="$(readlink -f /opt/yubit-academy/current)"
           export AUTH_USERNAME="$(read_env AUTH_USERNAME)"
           export AUTH_PASSWORD="$(read_env AUTH_PASSWORD)"
+          export OBSIDIAN_VAULT_PATH="$(read_env OBSIDIAN_VAULT_PATH)"
           export RELEASE_SHA="$(tr -d '[:space:]' <"$release/.release-commit")"
           python3 <<'PYTHON'
           import datetime
+          import glob
           import http.cookiejar
           import json
           import os
@@ -94,6 +96,24 @@ jobs:
               "id", "ruleId", "status", "target", "targetMessageId", "targetMessageIds",
               "deliveredAt", "createdAt", "updatedAt", "error",
           ]
+
+          def canonical_payload(path):
+              with open(path, encoding="utf-8") as note:
+                  markdown = note.read()
+              marker = "<!-- yubit-canonical-payload:v1 -->\n\n```json\n"
+              start = markdown.rfind(marker)
+              if start < 0 or not markdown.endswith("\n```\n"):
+                  return None
+              return json.loads(markdown[start + len(marker):-5])
+
+          receipt_payloads = []
+          distribution_dir = os.path.join(os.environ["OBSIDIAN_VAULT_PATH"], "40 Distribution")
+          for path in glob.glob(os.path.join(distribution_dir, "*.md")):
+              if os.path.basename(path) == "INDEX.md":
+                  continue
+              payload = canonical_payload(path)
+              if payload and demo_rule.match(payload.get("ruleId", "")):
+                  receipt_payloads.append(payload)
           report = {
               "ok": True,
               "readOnly": True,
@@ -104,6 +124,7 @@ jobs:
                   for item in deliveries.get("items", [])
                   if demo_rule.match(item.get("ruleId", ""))
               ],
+              "obsidianReceipts": sorted(receipt_payloads, key=lambda item: item.get("occurredAt", "")),
               "temporaryRules": [
                   {field: rule.get(field) for field in ("id", "enabled", "status")}
                   for rule in overview.get("rules", [])
