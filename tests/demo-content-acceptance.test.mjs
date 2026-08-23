@@ -35,7 +35,13 @@ test("DEMO acceptance selects exactly one enabled Crypto Daily rule with only To
   ]).id, "crypto-daily-demo");
   assert.throws(
     () => selectDemoAcceptanceRule([acceptanceRule(), acceptanceRule({ id: "duplicate" })]),
-    /exactly one enabled crypto-daily rule/i,
+    (error) => {
+      assert.match(error.message, /exactly one enabled crypto-daily rule/i);
+      assert.match(error.message, /crypto-daily-demo/);
+      assert.match(error.message, /duplicate/);
+      assert.doesNotMatch(error.message, /token|password|secret/i);
+      return true;
+    },
   );
   assert.throws(
     () => selectDemoAcceptanceRule([acceptanceRule({ targets: [expectedTarget, { ...expectedTarget, threadId: 10 }] })]),
