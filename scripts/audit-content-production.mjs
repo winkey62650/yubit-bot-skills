@@ -2,6 +2,7 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { CONTENT_PRODUCT_TYPES } from "../lib/content-product-system.mjs";
+import { isApprovedDistributionTarget } from "../lib/distribution-service.mjs";
 import { createObsidianContentStore, OBSIDIAN_PRODUCT_DIRECTORIES } from "../lib/obsidian-content-store.mjs";
 import { createPostgresClient } from "../lib/postgres-client.mjs";
 
@@ -95,18 +96,26 @@ export async function auditContentProduction({
        ORDER BY platform, chat_id, thread_id, guild_id, channel_id`,
   );
   const enabledTargetsByPlatform = {};
+  const effectiveTargetsByPlatform = {};
+  const dormantTargetsByPlatform = {};
+  const runtimePolicyEnv = {
+    NODE_ENV: "production",
+    TELEGRAM_DEMO_ONLY: telegramDemoOnly,
+    TELEGRAM_DISTRIBUTION_APPROVED_TARGETS: approvedTelegramTargets,
+  };
   for (const row of targetRows ?? []) {
     const platform = String(row?.platform ?? "").trim().toLowerCase();
     if (!platform) throw new Error("Invalid enabled distribution target returned by PostgreSQL");
     enabledTargetsByPlatform[platform] = (enabledTargetsByPlatform[platform] ?? 0) + 1;
     if (!DISTRIBUTION_PLATFORMS.has(platform)) {
       pushFailure("UNSUPPORTED_DISTRIBUTION_PLATFORM", `Enabled distribution platform is not approved: ${platform}`);
-    } else if (platform === "telegram") {
-      const targetKey = `${String(row?.chatId ?? "")}:${String(row?.threadId ?? "")}`;
-      if (!REQUIRED_TELEGRAM_TARGETS.has(targetKey)) {
-        pushFailure("UNAPPROVED_TELEGRAM_TARGET", `Enabled Telegram target is outside the DEMO allowlist: ${targetKey}`);
-      }
+      continue;
     }
+    const target = { ...row, platform };
+    const bucket = isApprovedDistributionTarget(target, runtimePolicyEnv)
+      ? effectiveTargetsByPlatform
+      : dormantTargetsByPlatform;
+    bucket[platform] = (bucket[platform] ?? 0) + 1;
   }
   if (ruleCount < 1) {
     pushFailure("DISTRIBUTION_RULES_MISSING", "PostgreSQL contains no distribution rules");
@@ -127,6 +136,8 @@ export async function auditContentProduction({
       deliveryCountBefore: parsedDeliveryCountBefore,
       deliveryDelta: Number.isSafeInteger(parsedDeliveryCountBefore) ? deliveryCount - parsedDeliveryCountBefore : null,
       enabledTargetsByPlatform,
+      effectiveTargetsByPlatform,
+      dormantTargetsByPlatform,
     },
     runtime: { workerStateBefore, workerStateAfter, discordStateBefore, discordStateAfter },
     failures,

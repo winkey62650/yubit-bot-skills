@@ -295,7 +295,7 @@ test("production backfill previews and publishes only to the approved Demo group
   );
 });
 
-test("production distribution allowlist opens only the approved CryptoGuy topics", async () => {
+test("an explicit production distribution allowlist supersedes the implicit Demo group", async () => {
   const demo = { id: "demo", chatId: "-1003710405969", threadId: 10 };
   const cryptoAnalysis = { id: "crypto-analysis", chatId: "-1004378187866", threadId: 11 };
   const cryptoSmartMoney = { id: "crypto-smart-money", chatId: "-1004378187866", threadId: 19 };
@@ -319,7 +319,8 @@ test("production distribution allowlist opens only the approved CryptoGuy topics
 
   const preview = await backfillRule(rule.id, "492", { preview: true, repository, env });
 
-  assert.deepEqual(preview.targets, [demo, cryptoAnalysis, cryptoSmartMoney]);
+  assert.deepEqual(preview.targets, [cryptoAnalysis, cryptoSmartMoney]);
+  assert.equal(preview.targets.some((target) => target.id === "demo"), false);
   assert.equal(preview.targets.some((target) => target.id === "crypto-trader"), false);
   assert.equal(preview.targets.some((target) => target.id === "fight-analysis"), false);
 });

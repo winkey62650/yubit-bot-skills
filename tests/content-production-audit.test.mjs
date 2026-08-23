@@ -69,6 +69,8 @@ test("read-only production audit validates exact SHA, vault, database, and recei
   assert.equal(report.database.deliveryCount, 17);
   assert.equal(report.database.deliveryDelta, 0);
   assert.deepEqual(report.database.enabledTargetsByPlatform, { discord: 2, telegram: 3 });
+  assert.deepEqual(report.database.effectiveTargetsByPlatform, { discord: 2, telegram: 3 });
+  assert.deepEqual(report.database.dormantTargetsByPlatform, {});
   assert.deepEqual(report.products, [
     "daily-market-brief",
     "weekly-catalyst-calendar",
@@ -139,7 +141,7 @@ test("audit rejects traversal-like vault paths and unsupported enabled platforms
   ]);
 });
 
-test("audit fails closed when deployment creates receipts, changes publishers, or exposes a broad Telegram target", async () => {
+test("audit detects deployment mutations while reporting blocked legacy Telegram routes as dormant", async () => {
   const report = await auditContentProduction(healthyOptions({
     deliveryCountBefore: "16",
     discordStateAfter: "ActiveState=inactive\nSubState=dead\nMainPID=0",
@@ -154,6 +156,7 @@ test("audit fails closed when deployment creates receipts, changes publishers, o
   assert.deepEqual(report.failures.map((entry) => entry.code), [
     "PUBLISHER_RUNTIME_STATE_CHANGED",
     "DELIVERIES_CREATED_DURING_DEPLOY",
-    "UNAPPROVED_TELEGRAM_TARGET",
   ]);
+  assert.deepEqual(report.database.effectiveTargetsByPlatform, {});
+  assert.deepEqual(report.database.dormantTargetsByPlatform, { telegram: 1 });
 });
