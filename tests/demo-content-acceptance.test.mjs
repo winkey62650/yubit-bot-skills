@@ -29,7 +29,10 @@ function acceptanceRule(overrides = {}) {
 }
 
 test("DEMO acceptance selects exactly one enabled Crypto Daily rule with only Topic 8", () => {
-  assert.equal(selectDemoAcceptanceRule([acceptanceRule()]).id, "crypto-daily-demo");
+  assert.equal(selectDemoAcceptanceRule([
+    acceptanceRule(),
+    acceptanceRule({ id: "historical-preview", runOnce: true }),
+  ]).id, "crypto-daily-demo");
   assert.throws(
     () => selectDemoAcceptanceRule([acceptanceRule(), acceptanceRule({ id: "duplicate" })]),
     /exactly one enabled crypto-daily rule/i,
