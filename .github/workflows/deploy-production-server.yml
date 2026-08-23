@@ -50,28 +50,28 @@ jobs:
           remote_archive="/tmp/yubit-academy-$DEPLOY_SHA.tar.gz"
           cleanup_local() {
             rm -f "$archive_path"
-            sshpass -e ssh \\
-              -o ConnectTimeout=20 \\
-              -o ServerAliveInterval=10 \\
-              -o StrictHostKeyChecking=accept-new \\
-              ubuntu@152.32.161.174 \\
+            sshpass -e ssh \
+              -o ConnectTimeout=20 \
+              -o ServerAliveInterval=10 \
+              -o StrictHostKeyChecking=accept-new \
+              ubuntu@152.32.161.174 \
               "rm -f -- '$remote_archive'" >/dev/null 2>&1 || true
           }
           trap cleanup_local EXIT
 
           tar --exclude=".git" -czf "$archive_path" .
-          sshpass -e scp \\
-            -o ConnectTimeout=20 \\
-            -o ServerAliveInterval=10 \\
-            -o StrictHostKeyChecking=accept-new \\
-            "$archive_path" \\
+          sshpass -e scp \
+            -o ConnectTimeout=20 \
+            -o ServerAliveInterval=10 \
+            -o StrictHostKeyChecking=accept-new \
+            "$archive_path" \
             "ubuntu@152.32.161.174:$remote_archive"
 
-          sshpass -e ssh \\
-            -o ConnectTimeout=20 \\
-            -o ServerAliveInterval=10 \\
-            -o StrictHostKeyChecking=accept-new \\
-            ubuntu@152.32.161.174 \\
+          sshpass -e ssh \
+            -o ConnectTimeout=20 \
+            -o ServerAliveInterval=10 \
+            -o StrictHostKeyChecking=accept-new \
+            ubuntu@152.32.161.174 \
             "DEPLOY_SHA='$DEPLOY_SHA' DEPLOY_NO_SEND='$DEPLOY_NO_SEND' REMOTE_ARCHIVE='$remote_archive' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           bootstrap_dir=""
@@ -86,9 +86,9 @@ jobs:
           read_env() {
             sudo awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "$env_file"
           }
-          if [ "$(read_env TELEGRAM_DEMO_ONLY)" != "true" ] \\
-            || [ "$(read_env TRADING_DEMO_ONLY)" != "true" ] \\
-            || [ "$(read_env TELEGRAM_DISTRIBUTION_APPROVED_TARGETS)" != "$expected_targets" ] \\
+          if [ "$(read_env TELEGRAM_DEMO_ONLY)" != "true" ] \
+            || [ "$(read_env TRADING_DEMO_ONLY)" != "true" ] \
+            || [ "$(read_env TELEGRAM_DISTRIBUTION_APPROVED_TARGETS)" != "$expected_targets" ] \
             || [ "$(read_env ALLOW_LIVE_TELEGRAM)" = "true" ]; then
             echo "Production Telegram safety policy is not the exact DEMO group Topic 8/10/16 allowlist." >&2
             exit 1
@@ -103,9 +103,9 @@ jobs:
             exit 1
           fi
 
-          DEPLOY_NO_SEND="$DEPLOY_NO_SEND" \\
-            SOURCE_DIR="$bootstrap_dir" \\
-            EXPECTED_COMMIT="$DEPLOY_SHA" \\
+          DEPLOY_NO_SEND="$DEPLOY_NO_SEND" \
+            SOURCE_DIR="$bootstrap_dir" \
+            EXPECTED_COMMIT="$DEPLOY_SHA" \
             bash "$bootstrap_dir/deploy/server/deploy.sh"
 
           publisher_config_after="$(sudo grep -E '^(TELEGRAM_|TRADING_DEMO_ONLY|ALLOW_LIVE_TELEGRAM|DISCORD_)=' "$env_file" | sha256sum | awk '{print $1}')"
