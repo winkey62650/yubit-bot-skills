@@ -1462,7 +1462,10 @@ test("data-release run lease serializes two repository instances on one backend"
     fetchImpl: fixtureFetch(calendar),
     fetchReaction: async () => commercialReaction(),
     targets: [{ platform: "discord", guildId: "g1", channelId: "c1" }],
-    discordSender: async () => ({ id: `message-${++sends}` }),
+    discordSender: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      return { id: `message-${++sends}` };
+    },
   };
 
   const results = await Promise.all([
