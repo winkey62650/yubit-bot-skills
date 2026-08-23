@@ -16,6 +16,7 @@ const { baseUrl } = authorizeLiveTelegramOperation(process.env, {
 const username = process.env.TEST_USERNAME;
 const password = process.env.TEST_PASSWORD;
 const reportPath = path.resolve(process.env.TEST_REPORT_PATH || "artifacts/academy-demo-showcase/report.json");
+const validationTag = "validation-20260824-v3";
 
 if (!username || !password) throw new Error("TEST_USERNAME and TEST_PASSWORD are required");
 
@@ -41,6 +42,8 @@ function writeReport(report) {
     operation: "academy-demo-four-product-text-showcase",
     historicalReplay: true,
     mediaIncluded: false,
+    visualContract: "telegram-editorial-card-v3",
+    previewLabel: "DEMO PREVIEW · FORMAT TEST",
     exactTargets: true,
     targets: DEMO_SHOWCASE_CASES.map((item) => ({ chatId: DEMO_CHAT_ID, threadId: item.threadId })),
     products: [],
@@ -57,7 +60,9 @@ function writeReport(report) {
 
     const rules = [];
     for (const showcaseCase of DEMO_SHOWCASE_CASES) {
-      const temporaryRule = buildDemoShowcaseTemporaryRule(showcaseCase);
+      const temporaryRule = buildDemoShowcaseTemporaryRule(showcaseCase, {
+        ruleId: `academy-demo-showcase-${showcaseCase.key}-${validationTag}-temporary`,
+      });
       const created = await readJson(await api.post("/api/distribution", {
         data: { rule: temporaryRule },
         timeout: 30_000,

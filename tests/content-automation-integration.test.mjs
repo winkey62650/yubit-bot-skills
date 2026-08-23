@@ -155,7 +155,8 @@ test("the Academy demo showcase is an explicit historical replay that yields all
     "data-flash",
     "market-follow-up",
   ]);
-  assert.equal(products.every(({ title }) => /DEMO REPLAY/i.test(title)), true);
+  assert.equal(products.every(({ title }) => /HISTORICAL REPLAY/i.test(title)), true);
+  assert.equal(products.every(({ intelligence }) => intelligence.previewLabel === "DEMO PREVIEW · FORMAT TEST"), true);
   assert.equal(products.every(({ sources }) => sources.every(({ url }) => url.startsWith("https://"))), true);
   const dataFlash = products.find(({ product }) => product === "data-flash");
   assert.equal(dataFlash?.event.actual, "2.7% YoY");

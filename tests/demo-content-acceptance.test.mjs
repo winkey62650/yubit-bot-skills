@@ -269,3 +269,15 @@ test("release recovery can use a new approved rule identity without inheriting s
     ruleId: "academy-demo-showcase-daily-recovery-20260823-v2-temporary",
   }), /rule identity/i);
 });
+
+test("format validation can use a new approved rule identity without inheriting stale execution state", () => {
+  const showcaseCase = DEMO_SHOWCASE_CASES.find((item) => item.key === "daily");
+  const rule = buildDemoShowcaseTemporaryRule(showcaseCase, {
+    ruleId: "academy-demo-showcase-daily-validation-20260824-v3-temporary",
+  });
+
+  assert.equal(rule.id, "academy-demo-showcase-daily-validation-20260824-v3-temporary");
+  assert.throws(() => buildDemoShowcaseTemporaryRule(showcaseCase, {
+    ruleId: "academy-demo-showcase-release-validation-20260824-v3-temporary",
+  }), /rule identity/i);
+});

@@ -187,9 +187,11 @@ test("run-now exists only in explicitly authorized live acceptance scripts", asy
   assert.match(recovery, /buildDemoShowcaseTemporaryRule\(releaseCase,\s*\{\s*ruleId:\s*RECOVERY_RULE_ID\s*\}\)/s);
 });
 
-test("Academy DEMO read-only audit includes release recovery rule identities", async () => {
+test("Academy DEMO read-only audit includes recovery and validation rule identities", async () => {
   const workflow = await readFile(new URL(".github/workflows/telegram-automations.yml", root), "utf8");
-  assert.ok(workflow.includes("(daily|weekly|release)(?:-recovery-[a-z0-9-]+)?-temporary"));
+  const acceptance = await readFile(new URL("scripts/accept-academy-demo-content.cjs", root), "utf8");
+  assert.ok(workflow.includes("(daily|weekly|release)(?:-(?:recovery|validation)-[a-z0-9-]+)?-temporary"));
+  assert.match(acceptance, /academy-demo-showcase-\$\{showcaseCase\.key\}-\$\{validationTag\}-temporary/);
   assert.match(workflow, /\.cleanup\s*==\s*\[\{"id":\s*"academy-demo-showcase-release-recovery-20260823-v2-temporary"/s);
 });
 

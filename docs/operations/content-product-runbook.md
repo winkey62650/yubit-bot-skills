@@ -26,6 +26,16 @@ The automation adapter writes source notes, a normalized event, and the product 
 
 No other knowledge system or delivery channel may be added without a product decision and a migration plan.
 
+## Telegram visual contract
+
+Telegram text products use `Community Editorial Card v3`: black-and-white text hierarchy, short paragraphs, deliberate whitespace, one pull quote, and `01 / 02 / 03` evidence blocks. Each message may use only its fixed product marker and one bias dot:
+
+- Market Brief: `📊`; Weekly Catalysts: `🗓`; Data Flash: `🚨`; Market Follow-up: no product emoji.
+- Bias: `🟢 Positive`, `🟡 Neutral`, or `🔴 Negative`.
+- `WATCH NEXT`, `RISK / INVALIDATION`, and `SOURCES` are plain bold labels. Decorative emoji are forbidden.
+
+Historical format validation must show `DEMO PREVIEW · FORMAT TEST` near the top and retain `HISTORICAL REPLAY` in the title. It must never resemble a current trading signal. Discord retains safe Markdown, while facts, figures, bias, timestamps, sources, and risk language remain identical across both channels.
+
 ## Safe deployment and acceptance
 
 Formal installation defaults to `DEPLOY_NO_SEND=1`. In this mode the deployment may build, initialize and back up the vault, switch the Web release, and run read-only checks. It must not stop, restart, enable, or otherwise change the worker or Discord gateway; it must not call run-now or create a test receipt.

@@ -226,16 +226,22 @@ test("editorial wrappers keep long titles and risk boundaries within channel lim
 
   assert.ok(rendered.telegram.chunks.every((chunk) => chunk.length <= 4096));
   assert.ok(rendered.discord.chunks.every((chunk) => chunk.length <= 2000));
-  assert.match(rendered.telegram.chunks.join(""), /RISK BOUNDARY/);
+  assert.match(rendered.telegram.chunks.join(""), /RISK \/ INVALIDATION/);
   assert.match(rendered.discord.chunks.join(""), /RISK BOUNDARY/);
 });
 
 test("all four Telegram products render a structured text-only editorial layout", async () => {
   const expectedKickers = new Map([
-    ["daily-market-brief", "DAILY MARKET BRIEF"],
-    ["weekly-catalyst-calendar", "WEEKLY CATALYSTS"],
-    ["data-flash", "DATA FLASH"],
+    ["daily-market-brief", "📊 MARKET BRIEF"],
+    ["weekly-catalyst-calendar", "🗓 WEEKLY CATALYSTS"],
+    ["data-flash", "🚨 DATA FLASH"],
     ["market-follow-up", "MARKET FOLLOW-UP"],
+  ]);
+  const expectedEmojiCounts = new Map([
+    ["daily-market-brief", 2],
+    ["weekly-catalyst-calendar", 2],
+    ["data-flash", 2],
+    ["market-follow-up", 1],
   ]);
   const expectedAnalysisBlocks = new Map([
     ["daily-market-brief", /<b>WHY IT MATTERS<\/b>/],
@@ -253,15 +259,17 @@ test("all four Telegram products render a structured text-only editorial layout"
     const telegram = rendered.telegram.chunks.join("\n\n");
 
     assert.equal(rendered.telegram.parseMode, "HTML");
-    assert.match(telegram, new RegExp(`<b>YUBIT ACADEMY  ·  .+ ${expectedKickers.get(product)}</b>`));
+    assert.match(telegram, new RegExp(`<b>YUBIT ACADEMY  ·  ${expectedKickers.get(product)}</b>`));
     assert.match(telegram, /<b>Layout &lt;check&gt; &amp;[^<]+<\/b>\n<i>Updated 23 Aug 2026 · 12:45 UTC<\/i>/);
     assert.match(telegram, /<blockquote><b>THE READ<\/b>\n[^<]+<\/blockquote>/);
-    assert.match(telegram, /<b>BTC · NEUTRAL<\/b>  \|  (?:0–4H|1–7D)  \|  MEDIUM CONF\.  \|  ●●●●●/);
+    assert.match(telegram, /<b>🟡 Neutral · BTC<\/b>  \|  (?:0–4H|1–7D)  \|  Medium confidence  \|  Importance 5\/5/);
     assert.doesNotMatch(telegram, /<b>BIAS<\/b>[\s\S]*<b>HORIZON<\/b>[\s\S]*<b>CONFIDENCE<\/b>/);
     assert.match(telegram, expectedAnalysisBlocks.get(product));
-    assert.match(telegram, product === "data-flash" ? /<b>03  ·  WHAT TO WATCH<\/b>/ : /<b>👀  WATCH NEXT<\/b>/);
-    assert.match(telegram, /<b>⚠️  RISK BOUNDARY<\/b>/);
-    assert.match(telegram, /<b>🔗  SOURCES<\/b>/);
+    assert.match(telegram, product === "data-flash" ? /<b>03  ·  WHAT TO WATCH<\/b>/ : /<b>WATCH NEXT<\/b>/);
+    assert.match(telegram, /<b>RISK \/ INVALIDATION<\/b>/);
+    assert.match(telegram, /<b>SOURCES<\/b>/);
+    assert.doesNotMatch(telegram, /👀|⚠️|🔗|✓|🧭|📅|⚡|🔎/u);
+    assert.equal((telegram.match(/\p{Extended_Pictographic}/gu) ?? []).length, expectedEmojiCounts.get(product));
     assert.match(rendered.discord.chunks.join("\n\n"), /\*\*YUBIT ACADEMY  ·/);
     assert.match(rendered.discord.chunks.join("\n\n"), /> \*\*THE READ\*\*/);
     assert.match(rendered.discord.chunks.join("\n\n"), /\*\*BTC · NEUTRAL\*\*  \\|  (?:0–4H|1–7D)  \\|  MEDIUM CONF\./);
