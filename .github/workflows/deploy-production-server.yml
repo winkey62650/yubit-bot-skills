@@ -86,11 +86,20 @@ jobs:
           read_env() {
             sudo awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "$env_file"
           }
-          if [ "$(read_env TELEGRAM_DEMO_ONLY)" != "true" ] \
-            || [ "$(read_env TRADING_DEMO_ONLY)" != "true" ] \
-            || [ "$(read_env TELEGRAM_DISTRIBUTION_APPROVED_TARGETS)" != "$expected_targets" ] \
-            || [ "$(read_env ALLOW_LIVE_TELEGRAM)" = "true" ]; then
-            echo "Production Telegram safety policy is not the exact DEMO group Topic 8/10/16 allowlist." >&2
+          if [ "$(read_env TELEGRAM_DEMO_ONLY)" != "true" ]; then
+            echo "Production safety gate failed: TELEGRAM_DEMO_ONLY must be true." >&2
+            exit 1
+          fi
+          if [ "$(read_env TRADING_DEMO_ONLY)" != "true" ]; then
+            echo "Production safety gate failed: TRADING_DEMO_ONLY must be true." >&2
+            exit 1
+          fi
+          if [ "$(read_env TELEGRAM_DISTRIBUTION_APPROVED_TARGETS)" != "$expected_targets" ]; then
+            echo "Production safety gate failed: approved targets must be exactly the DEMO group Topic 8/10/16 allowlist." >&2
+            exit 1
+          fi
+          if [ "$(read_env ALLOW_LIVE_TELEGRAM)" = "true" ]; then
+            echo "Production safety gate failed: ALLOW_LIVE_TELEGRAM must not be true." >&2
             exit 1
           fi
 
