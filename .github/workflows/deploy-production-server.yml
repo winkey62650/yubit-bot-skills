@@ -26,152 +26,75 @@ jobs:
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq sshpass
 
-      - name: Deploy the latest code/academy release
+      - name: Install and audit the content product without sending
         env:
           SSHPASS: ${{ secrets.YUBIT_SERVER_PASSWORD }}
-          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
-          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
-          DESKTOP_PUBLISHER_SECRET: ${{ secrets.DESKTOP_PUBLISHER_SECRET }}
-          CTA_PREVIEW_EVIDENCE_SECRET: ${{ secrets.CTA_PREVIEW_EVIDENCE_SECRET }}
-          APPROVED_DISTRIBUTION_TARGETS: ${{ vars.TELEGRAM_DISTRIBUTION_APPROVED_TARGETS }}
           DEPLOY_SHA: ${{ github.sha }}
+          DEPLOY_NO_SEND: "1"
         run: |
+          set -Eeuo pipefail
           if [ -z "$SSHPASS" ]; then
             echo "YUBIT_SERVER_PASSWORD is not configured." >&2
-            exit 1
-          fi
-          if [ -z "$TELEGRAM_API_ID" ] || [ -z "$TELEGRAM_API_HASH" ]; then
-            echo "TELEGRAM_API_ID or TELEGRAM_API_HASH is not configured." >&2
-            exit 1
-          fi
-          if [ -z "$DESKTOP_PUBLISHER_SECRET" ]; then
-            echo "DESKTOP_PUBLISHER_SECRET is not configured." >&2
-            exit 1
-          fi
-          if [ -z "$CTA_PREVIEW_EVIDENCE_SECRET" ]; then
-            echo "CTA_PREVIEW_EVIDENCE_SECRET is not configured." >&2
-            exit 1
-          fi
-          if ! [[ "$TELEGRAM_API_HASH" =~ ^[0-9a-f]{32}$ ]]; then
-            echo "TELEGRAM_API_HASH must be exactly 32 lowercase hexadecimal characters." >&2
-            exit 1
-          fi
-          if [[ "$DESKTOP_PUBLISHER_SECRET" == *$'\n'* || "$DESKTOP_PUBLISHER_SECRET" == *$'\r'* ]]; then
-            echo "DESKTOP_PUBLISHER_SECRET contains an invalid line break." >&2
-            exit 1
-          fi
-          CTA_PREVIEW_EVIDENCE_SECRET="$CTA_PREVIEW_EVIDENCE_SECRET" node <<'NODE'
-          try {
-            const { assertStrongCtaPreviewEvidenceSecret } = require("./lib/cta-preview-evidence.cjs");
-            assertStrongCtaPreviewEvidenceSecret(process.env.CTA_PREVIEW_EVIDENCE_SECRET);
-          } catch {
-            console.error("CTA_PREVIEW_EVIDENCE_SECRET is missing or too weak.");
-            process.exit(1);
-          }
-          NODE
-          if ! [[ "$APPROVED_DISTRIBUTION_TARGETS" =~ ^-?[0-9]+:([1-9][0-9]*|channel)(,-?[0-9]+:([1-9][0-9]*|channel))*$ ]]; then
-            echo "Production distribution target allowlist is missing or invalid." >&2
             exit 1
           fi
           if ! [[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]; then
             echo "GitHub target commit is invalid." >&2
             exit 1
           fi
-          deployment_secrets_file="$(mktemp)"
-          remote_secrets_file=""
+          if [ "$DEPLOY_NO_SEND" != "1" ]; then
+            echo "This workflow only permits no-send deployments." >&2
+            exit 1
+          fi
+
           archive_path="$RUNNER_TEMP/yubit-academy-$DEPLOY_SHA.tar.gz"
           remote_archive="/tmp/yubit-academy-$DEPLOY_SHA.tar.gz"
           cleanup_local() {
-            rm -f "$deployment_secrets_file" "$archive_path"
-            if [ -n "$remote_secrets_file" ]; then
-              sshpass -e ssh \
-                -o ConnectTimeout=20 \
-                -o ServerAliveInterval=10 \
-                -o StrictHostKeyChecking=accept-new \
-                ubuntu@152.32.161.174 \
-                "rm -f -- '$remote_secrets_file'" >/dev/null 2>&1 || true
-            fi
+            rm -f "$archive_path"
+            sshpass -e ssh \\
+              -o ConnectTimeout=20 \\
+              -o ServerAliveInterval=10 \\
+              -o StrictHostKeyChecking=accept-new \\
+              ubuntu@152.32.161.174 \\
+              "rm -f -- '$remote_archive'" >/dev/null 2>&1 || true
           }
           trap cleanup_local EXIT
-          chmod 600 "$deployment_secrets_file"
-          {
-            printf '%s\n' "$TELEGRAM_API_HASH"
-            printf '%s\n' "$DESKTOP_PUBLISHER_SECRET"
-            printf '%s\n' "$CTA_PREVIEW_EVIDENCE_SECRET"
-          } >"$deployment_secrets_file"
-          unset TELEGRAM_API_HASH DESKTOP_PUBLISHER_SECRET CTA_PREVIEW_EVIDENCE_SECRET
+
           tar --exclude=".git" -czf "$archive_path" .
-          remote_secrets_file="$(
-            sshpass -e ssh \
-              -o ConnectTimeout=20 \
-              -o ServerAliveInterval=10 \
-              -o StrictHostKeyChecking=accept-new \
-              ubuntu@152.32.161.174 \
-              'set -eu; umask 077; remote_secrets_file="$(mktemp /tmp/yubit-deploy-secrets.XXXXXX)"; cat >"$remote_secrets_file"; chmod 600 "$remote_secrets_file"; printf "%s" "$remote_secrets_file"' \
-              <"$deployment_secrets_file"
-          )"
-          if ! [[ "$remote_secrets_file" =~ ^/tmp/yubit-deploy-secrets\.[A-Za-z0-9]+$ ]]; then
-            echo "Remote deployment secret staging failed." >&2
-            exit 1
-          fi
-          sshpass -e scp \
-            -o ConnectTimeout=20 \
-            -o ServerAliveInterval=10 \
-            -o StrictHostKeyChecking=accept-new \
-            "$archive_path" \
+          sshpass -e scp \\
+            -o ConnectTimeout=20 \\
+            -o ServerAliveInterval=10 \\
+            -o StrictHostKeyChecking=accept-new \\
+            "$archive_path" \\
             "ubuntu@152.32.161.174:$remote_archive"
-          policy_b64="$(printf '%s' "$APPROVED_DISTRIBUTION_TARGETS" | base64 -w0)"
-          telegram_api_id_b64="$(printf '%s' "$TELEGRAM_API_ID" | base64 -w0)"
-          sshpass -e ssh \
-            -o ConnectTimeout=20 \
-            -o ServerAliveInterval=10 \
-            -o StrictHostKeyChecking=accept-new \
-            ubuntu@152.32.161.174 \
-            "POLICY_B64='$policy_b64' TELEGRAM_API_ID_B64='$telegram_api_id_b64' DEPLOY_SECRETS_FILE='$remote_secrets_file' DEPLOY_SHA='$DEPLOY_SHA' REMOTE_ARCHIVE='$remote_archive' bash -s" <<'REMOTE'
+
+          sshpass -e ssh \\
+            -o ConnectTimeout=20 \\
+            -o ServerAliveInterval=10 \\
+            -o StrictHostKeyChecking=accept-new \\
+            ubuntu@152.32.161.174 \\
+            "DEPLOY_SHA='$DEPLOY_SHA' DEPLOY_NO_SEND='$DEPLOY_NO_SEND' REMOTE_ARCHIVE='$remote_archive' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           bootstrap_dir=""
-          env_tmp=""
-          env_pending=""
           cleanup_remote() {
             if [ -n "$bootstrap_dir" ]; then rm -rf "$bootstrap_dir"; fi
-            if [ -n "$env_tmp" ]; then rm -f "$env_tmp"; fi
-            if [ -n "$env_pending" ]; then sudo rm -f "$env_pending"; fi
             rm -f "$REMOTE_ARCHIVE"
-            if [ -n "${DEPLOY_SECRETS_FILE:-}" ]; then rm -f "$DEPLOY_SECRETS_FILE"; fi
           }
           trap cleanup_remote EXIT
+
           env_file=/etc/yubit-academy/production.env
-          if ! [[ "${DEPLOY_SECRETS_FILE:-}" =~ ^/tmp/yubit-deploy-secrets\.[A-Za-z0-9]+$ ]] \
-            || [ ! -f "$DEPLOY_SECRETS_FILE" ] \
-            || [ "$(stat -c '%a' "$DEPLOY_SECRETS_FILE")" != "600" ]; then
-            echo "Deployment secret staging is invalid." >&2
+          expected_targets='-1003710405969:8,-1003710405969:10,-1003710405969:16'
+          read_env() {
+            sudo awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "$env_file"
+          }
+          if [ "$(read_env TELEGRAM_DEMO_ONLY)" != "true" ] \\
+            || [ "$(read_env TRADING_DEMO_ONLY)" != "true" ] \\
+            || [ "$(read_env TELEGRAM_DISTRIBUTION_APPROVED_TARGETS)" != "$expected_targets" ] \\
+            || [ "$(read_env ALLOW_LIVE_TELEGRAM)" = "true" ]; then
+            echo "Production Telegram safety policy is not the exact DEMO group Topic 8/10/16 allowlist." >&2
             exit 1
           fi
-          {
-            IFS= read -r telegram_api_hash
-            IFS= read -r desktop_publisher_secret
-            IFS= read -r cta_preview_evidence_secret
-            if IFS= read -r unexpected_secret_record; then
-              echo "Deployment secret staging contains unexpected records." >&2
-              exit 1
-            fi
-          } <"$DEPLOY_SECRETS_FILE"
-          rm -f "$DEPLOY_SECRETS_FILE"
-          DEPLOY_SECRETS_FILE=""
-          if ! [[ "$telegram_api_hash" =~ ^[0-9a-f]{32}$ ]]; then
-            echo "Telegram API hash staging is invalid." >&2
-            exit 1
-          fi
-          if [ -z "$desktop_publisher_secret" ]; then
-            echo "Desktop publisher secret staging is invalid." >&2
-            exit 1
-          fi
-          if [ -z "$cta_preview_evidence_secret" ]; then
-            echo "CTA preview evidence secret staging is invalid." >&2
-            exit 1
-          fi
-          approved_targets="$(printf '%s' "$POLICY_B64" | base64 -d)"
-          telegram_api_id="$(printf '%s' "$TELEGRAM_API_ID_B64" | base64 -d)"
+
+          publisher_config_before="$(sudo grep -E '^(TELEGRAM_|TRADING_DEMO_ONLY|ALLOW_LIVE_TELEGRAM|DISCORD_)=' "$env_file" | sha256sum | awk '{print $1}')"
           bootstrap_dir="$(mktemp -d)"
           tar -xzf "$REMOTE_ARCHIVE" -C "$bootstrap_dir"
           rm -f "$REMOTE_ARCHIVE"
@@ -179,42 +102,15 @@ jobs:
             echo "Uploaded release does not contain the deployment script." >&2
             exit 1
           fi
-          CTA_PREVIEW_EVIDENCE_SECRET="$cta_preview_evidence_secret" /opt/yubit-node/bin/node <<NODE
-          try {
-            const { assertStrongCtaPreviewEvidenceSecret } = require("$bootstrap_dir/lib/cta-preview-evidence.cjs");
-            assertStrongCtaPreviewEvidenceSecret(process.env.CTA_PREVIEW_EVIDENCE_SECRET);
-          } catch {
-            console.error("CTA_PREVIEW_EVIDENCE_SECRET is missing or invalid.");
-            process.exit(1);
-          }
-          NODE
-          session_key="$(sudo awk -F= '$1 == "TELEGRAM_USER_SESSION_ENCRYPTION_KEY" { sub(/^[^=]*=/, ""); print; exit }' "$env_file")"
-          if [ -z "$session_key" ]; then
-            session_key="$(openssl rand -hex 32)"
+
+          DEPLOY_NO_SEND="$DEPLOY_NO_SEND" \\
+            SOURCE_DIR="$bootstrap_dir" \\
+            EXPECTED_COMMIT="$DEPLOY_SHA" \\
+            bash "$bootstrap_dir/deploy/server/deploy.sh"
+
+          publisher_config_after="$(sudo grep -E '^(TELEGRAM_|TRADING_DEMO_ONLY|ALLOW_LIVE_TELEGRAM|DISCORD_)=' "$env_file" | sha256sum | awk '{print $1}')"
+          if [ "$publisher_config_after" != "$publisher_config_before" ]; then
+            echo "No-send deployment changed Telegram or Discord configuration." >&2
+            exit 1
           fi
-          env_tmp="$(mktemp)"
-          sudo awk '!/^(TELEGRAM_API_ID|TELEGRAM_API_HASH|TELEGRAM_DEMO_ONLY|TELEGRAM_DISTRIBUTION_APPROVED_TARGETS|TRADING_DEMO_ONLY|TELEGRAM_PUBLISHER_MODE|TELEGRAM_BOT_PUBLISHER_USERNAME|TELEGRAM_USER_PUBLISHER_REQUIRED|TELEGRAM_USER_PUBLISHER_TARGETS|TELEGRAM_USER_PUBLISHER_USERNAME|TELEGRAM_USER_SESSION_ENCRYPTION_KEY|TELEGRAM_DESKTOP_PUBLISHER_REQUIRED|DESKTOP_PUBLISHER_SECRET|CTA_PREVIEW_EVIDENCE_SECRET|DISCORD_APP_ID|DISCORD_PUBLIC_KEY|DISCORD_BOT_TOKEN|DISCORD_GATEWAY_ENABLED)=/' "$env_file" >"$env_tmp"
-          {
-            printf 'TELEGRAM_API_ID=%s\n' "$telegram_api_id"
-            printf 'TELEGRAM_API_HASH=%s\n' "$telegram_api_hash"
-            printf 'TELEGRAM_DEMO_ONLY=false\n'
-            printf 'TELEGRAM_DISTRIBUTION_APPROVED_TARGETS=%s\n' "$approved_targets"
-            printf 'TRADING_DEMO_ONLY=false\n'
-            printf 'TELEGRAM_PUBLISHER_MODE=bot\n'
-            printf 'TELEGRAM_USER_PUBLISHER_REQUIRED=false\n'
-            printf 'TELEGRAM_USER_PUBLISHER_TARGETS=-1003710405969,-1004378187866,-1003332783916\n'
-            printf 'TELEGRAM_USER_PUBLISHER_USERNAME=Serenity_Crypto\n'
-            printf 'TELEGRAM_USER_SESSION_ENCRYPTION_KEY=%s\n' "$session_key"
-            printf 'TELEGRAM_DESKTOP_PUBLISHER_REQUIRED=false\n'
-            printf 'DESKTOP_PUBLISHER_SECRET=%s\n' "$desktop_publisher_secret"
-            printf 'CTA_PREVIEW_EVIDENCE_SECRET=%s\n' "$cta_preview_evidence_secret"
-          } >>"$env_tmp"
-          env_pending="${env_file}.pending-${DEPLOY_SHA}"
-          sudo install -m 0600 -o root -g root "$env_tmp" "$env_pending"
-          sudo mv -f "$env_pending" "$env_file"
-          env_pending=""
-          rm -f "$env_tmp"
-          env_tmp=""
-          unset cta_preview_evidence_secret
-          SOURCE_DIR="$bootstrap_dir" EXPECTED_COMMIT="$DEPLOY_SHA" bash "$bootstrap_dir/deploy/server/deploy.sh"
           REMOTE

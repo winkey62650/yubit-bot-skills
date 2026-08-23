@@ -6,11 +6,14 @@ BRANCH="${BRANCH:-code/academy}"
 SOURCE_DIR="${SOURCE_DIR:-}"
 APP_ROOT="${APP_ROOT:-/opt/yubit-academy}"
 STATE_ROOT="${STATE_ROOT:-/var/lib/yubit-academy/runtime}"
+OBSIDIAN_VAULT_PATH="${OBSIDIAN_VAULT_PATH:-/var/lib/yubit-academy/obsidian-vault}"
+OBSIDIAN_BACKUP_ROOT="${OBSIDIAN_BACKUP_ROOT:-/var/backups/yubit-academy/obsidian-vault}"
 NODE_HOME="${NODE_HOME:-/opt/yubit-node}"
 SERVER_NAME="${SERVER_NAME:-152-32-161-174.sslip.io}"
 SERVER_IP="${SERVER_IP:-152.32.161.174}"
 ENV_FILE="${ENV_FILE:-/etc/yubit-academy/production.env}"
 ENABLE_HTTPS="${ENABLE_HTTPS:-1}"
+DEPLOY_NO_SEND="${DEPLOY_NO_SEND:-1}"
 PATH="$NODE_HOME/bin:$PATH"
 LOCAL_DATABASE_NAME="${LOCAL_DATABASE_NAME:-yubit_academy}"
 LOCAL_DATABASE_USER="${LOCAL_DATABASE_USER:-yubit_academy}"
@@ -18,6 +21,68 @@ if [[ ! "$LOCAL_DATABASE_NAME" =~ ^[a-z_][a-z0-9_]*$ || ! "$LOCAL_DATABASE_USER"
   echo "Local PostgreSQL database and user names are invalid." >&2
   exit 1
 fi
+if [[ "$DEPLOY_NO_SEND" != "1" ]]; then
+  echo "This deployment entry point only permits DEPLOY_NO_SEND=1; activation requires a separately approved procedure." >&2
+  exit 1
+fi
+
+provision_obsidian_vault() {
+  local content_state_root="/var/lib/yubit-academy"
+  local normalized_vault_path
+  local relative_path
+  local current_path
+  local component
+  local content_state_root_real
+  local vault_path_real
+  local -a vault_components
+
+  if [[ "$OBSIDIAN_VAULT_PATH" != /* ]]; then
+    echo "Obsidian vault path must be absolute: $OBSIDIAN_VAULT_PATH" >&2
+    return 1
+  fi
+  normalized_vault_path="$(realpath -m -- "$OBSIDIAN_VAULT_PATH")"
+  if [[ "$normalized_vault_path" != "$content_state_root/"* ]]; then
+    echo "Vault path must remain under /var/lib/yubit-academy: $normalized_vault_path" >&2
+    return 1
+  fi
+  OBSIDIAN_VAULT_PATH="$normalized_vault_path"
+
+  if sudo test -L "$content_state_root"; then
+    echo "Refusing symlinked Obsidian vault path component: $content_state_root" >&2
+    return 1
+  fi
+  sudo install -d -m 0755 -o ubuntu -g ubuntu "$content_state_root"
+  content_state_root_real="$(sudo realpath -e -- "$content_state_root")"
+  relative_path="${OBSIDIAN_VAULT_PATH#"$content_state_root"/}"
+  current_path="$content_state_root"
+  IFS='/' read -r -a vault_components <<<"$relative_path"
+  for component in "${vault_components[@]}"; do
+    [[ -n "$component" ]] || continue
+    current_path="$current_path/$component"
+    if sudo test -L "$current_path"; then
+      echo "Refusing symlinked Obsidian vault path component: $current_path" >&2
+      return 1
+    fi
+    if sudo test -e "$current_path" && ! sudo test -d "$current_path"; then
+      echo "Obsidian vault path component is not a directory: $current_path" >&2
+      return 1
+    fi
+    if ! sudo test -d "$current_path"; then
+      sudo install -d -m 0750 -o ubuntu -g ubuntu "$current_path"
+    fi
+  done
+
+  vault_path_real="$(sudo realpath -e -- "$OBSIDIAN_VAULT_PATH")"
+  if [[ "$vault_path_real" != "$content_state_root_real/"* ]]; then
+    echo "Vault path must remain under /var/lib/yubit-academy after resolution: $vault_path_real" >&2
+    return 1
+  fi
+  if sudo test -L "$OBSIDIAN_VAULT_PATH"; then
+    echo "Refusing symlinked Obsidian vault path: $OBSIDIAN_VAULT_PATH" >&2
+    return 1
+  fi
+  sudo install -d -m 0750 -o ubuntu -g ubuntu "$OBSIDIAN_VAULT_PATH"
+}
 
 wait_for_service_active() {
   local service="$1"
@@ -42,6 +107,63 @@ if [[ ! -s "$ENV_FILE" ]]; then
   echo "Missing production environment file: $ENV_FILE" >&2
   exit 1
 fi
+read_production_env() {
+  sudo awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "$ENV_FILE"
+}
+expected_distribution_targets='-1003710405969:8,-1003710405969:10,-1003710405969:16'
+if [[ "$(read_production_env TELEGRAM_DEMO_ONLY)" != "true" \
+  || "$(read_production_env TRADING_DEMO_ONLY)" != "true" \
+  || "$(read_production_env TELEGRAM_DISTRIBUTION_APPROVED_TARGETS)" != "$expected_distribution_targets" \
+  || "$(read_production_env ALLOW_LIVE_TELEGRAM)" == "true" ]]; then
+  echo "Production Telegram safety policy must remain locked to DEMO group Topics 8/10/16." >&2
+  exit 1
+fi
+publisher_config_before="$(sudo grep -E '^(TELEGRAM_|TRADING_DEMO_ONLY|ALLOW_LIVE_TELEGRAM|DISCORD_)=' "$ENV_FILE" | sha256sum | awk '{print $1}')"
+deployment_backup_dir="$(mktemp -d)"
+sudo cp -a "$ENV_FILE" "$deployment_backup_dir/production.env"
+release_env_existed=false
+if sudo test -f /etc/yubit-academy/release.env; then
+  sudo cp -a /etc/yubit-academy/release.env "$deployment_backup_dir/release.env"
+  release_env_existed=true
+fi
+previous_release=""
+if [[ -L "$APP_ROOT/current" ]]; then
+  previous_release="$(readlink -f "$APP_ROOT/current" || true)"
+fi
+configuration_updated=false
+activation_started=false
+rollback_activation() {
+  local exit_code=$?
+  trap - EXIT
+  rm -f "${primary_env:-}"
+  if [[ -n "${env_pending:-}" ]]; then sudo rm -f "$env_pending" || true; fi
+  if [[ "$exit_code" == "0" ]]; then
+    rm -rf "$deployment_backup_dir"
+    return 0
+  fi
+  echo "Deployment failed; restoring the previous release and environment." >&2
+  if [[ "$configuration_updated" == "true" ]]; then
+    sudo cp -a "$deployment_backup_dir/production.env" "$ENV_FILE" || true
+  fi
+  if [[ "$activation_started" == "true" ]]; then
+    if [[ -n "$previous_release" && -d "$previous_release" ]]; then
+      sudo ln -sfn "$previous_release" "$APP_ROOT/current" || true
+      sudo chown -h ubuntu:ubuntu "$APP_ROOT/current" || true
+    else
+      sudo rm -f "$APP_ROOT/current" || true
+    fi
+    if [[ "$release_env_existed" == "true" ]]; then
+      sudo cp -a "$deployment_backup_dir/release.env" /etc/yubit-academy/release.env || true
+    else
+      sudo rm -f /etc/yubit-academy/release.env || true
+    fi
+    sudo systemctl daemon-reload || true
+    sudo systemctl restart yubit-academy-web.service || true
+  fi
+  rm -rf "$deployment_backup_dir"
+  exit "$exit_code"
+}
+trap rollback_activation EXIT
 if [[ ! -x "$NODE_HOME/bin/node" ]]; then
   echo "Node runtime not found at $NODE_HOME/bin/node" >&2
   exit 1
@@ -78,11 +200,7 @@ fi
 
 sudo install -d -m 0755 -o ubuntu -g ubuntu "$APP_ROOT/releases"
 sudo install -d -m 0750 -o ubuntu -g ubuntu "$STATE_ROOT"
-discord_credentials_key="$(sudo awk -F= '$1 == "DISCORD_CREDENTIALS_ENCRYPTION_KEY" { sub(/^[^=]*=/, ""); print; exit }' "$ENV_FILE")"
-if [[ -z "$discord_credentials_key" ]]; then
-  discord_credentials_key="$(openssl rand -hex 32)"
-fi
-
+provision_obsidian_vault
 if [[ -n "$SOURCE_DIR" ]]; then
   if [[ ! "${EXPECTED_COMMIT:-}" =~ ^[0-9a-f]{40}$ ]]; then
     echo "Uploaded releases require a valid EXPECTED_COMMIT." >&2
@@ -151,16 +269,11 @@ unset cta_preview_evidence_secret_count
 
 primary_env="$(mktemp)"
 env_pending="${ENV_FILE}.pending-$$"
-cleanup_env_update() {
-  rm -f "$primary_env"
-  sudo rm -f "$env_pending"
-}
-trap cleanup_env_update EXIT
-sudo awk '!/^(JSON_STORE_BACKEND|JSON_STORE_DIRECTORY|DISCORD_APP_ID|DISCORD_PUBLIC_KEY|DISCORD_BOT_TOKEN|DISCORD_GATEWAY_ENABLED|DISCORD_CREDENTIALS_ENCRYPTION_KEY|DATABASE_URL|POSTGRES_URL|DATABASE_DRIVER|DATABASE_POOL_MAX|LOCAL_DATABASE_PASSWORD|NEON_ARCHIVE_DATABASE_URL)=/' "$ENV_FILE" >"$primary_env"
+sudo awk '!/^(JSON_STORE_BACKEND|JSON_STORE_DIRECTORY|OBSIDIAN_VAULT_PATH|DATABASE_URL|POSTGRES_URL|DATABASE_DRIVER|DATABASE_POOL_MAX|LOCAL_DATABASE_PASSWORD|NEON_ARCHIVE_DATABASE_URL)=/' "$ENV_FILE" >"$primary_env"
 {
   printf 'JSON_STORE_BACKEND=local\n'
   printf 'JSON_STORE_DIRECTORY=%s\n' "$STATE_ROOT"
-  printf 'DISCORD_CREDENTIALS_ENCRYPTION_KEY=%s\n' "$discord_credentials_key"
+  printf 'OBSIDIAN_VAULT_PATH=%s\n' "$OBSIDIAN_VAULT_PATH"
   printf 'DATABASE_URL=%s\n' "$local_database_url"
   printf 'POSTGRES_URL=%s\n' "$local_database_url"
   printf 'DATABASE_DRIVER=pg\n'
@@ -172,11 +285,17 @@ sudo awk '!/^(JSON_STORE_BACKEND|JSON_STORE_DIRECTORY|DISCORD_APP_ID|DISCORD_PUB
 } >>"$primary_env"
 sudo install -m 0600 -o root -g root "$primary_env" "$env_pending"
 sudo mv -f "$env_pending" "$ENV_FILE"
+configuration_updated=true
 rm -f "$primary_env"
 env_pending=""
-trap - EXIT
-unset discord_credentials_key
 npm ci --no-audit --no-fund
+sudo --user=ubuntu env \
+  OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" \
+  "$NODE_HOME/bin/node" scripts/initialize-content-vault.mjs
+sudo install -d -m 0750 -o ubuntu -g ubuntu "$OBSIDIAN_BACKUP_ROOT"
+vault_backup="$OBSIDIAN_BACKUP_ROOT/obsidian-vault-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
+sudo --user=ubuntu tar --create --gzip --file "$vault_backup" --directory "$OBSIDIAN_VAULT_PATH" .
+sudo --user=ubuntu find "$OBSIDIAN_BACKUP_ROOT" -maxdepth 1 -type f -name 'obsidian-vault-*.tar.gz' -mtime +14 -delete
 sudo ENV_FILE="$ENV_FILE" "$NODE_HOME/bin/node" scripts/check-production-database.mjs
 distribution_table="$(PGPASSWORD="$local_database_password" psql "$local_database_dsn" -tAc "SELECT to_regclass('public.distribution_rules')")"
 rule_count="0"
@@ -207,6 +326,7 @@ cp -a "$release/.next/static" "$release/.next/standalone/.next/static"
 if [[ -d "$APP_ROOT/current/.runtime" && ! -L "$APP_ROOT/current/.runtime" ]]; then
   sudo cp -an "$APP_ROOT/current/.runtime/." "$STATE_ROOT/"
 fi
+
 if [[ -L "$release/.runtime" ]]; then
   if [[ "$(readlink "$release/.runtime")" != "$STATE_ROOT" ]]; then
     echo "Release runtime points to an unexpected directory: $release/.runtime" >&2
@@ -219,9 +339,16 @@ else
   ln -s "$STATE_ROOT" "$release/.runtime"
 fi
 
+worker_state_before="$(sudo systemctl show yubit-academy-worker.service --property=ActiveState,SubState,MainPID --no-pager 2>/dev/null || true)"
+discord_state_before="$(sudo systemctl show yubit-academy-discord.service --property=ActiveState,SubState,MainPID --no-pager 2>/dev/null || true)"
+delivery_count_before="$(PGPASSWORD="$local_database_password" psql "$local_database_dsn" -tAc "SELECT count(*) FROM distribution_deliveries")"
+delivery_count_before="${delivery_count_before//[[:space:]]/}"
+if [[ ! "$delivery_count_before" =~ ^[0-9]+$ ]]; then
+  echo "Could not establish the pre-activation delivery receipt baseline." >&2
+  exit 1
+fi
+
 sudo install -m 0644 deploy/systemd/yubit-academy-web.service /etc/systemd/system/yubit-academy-web.service
-sudo install -m 0644 deploy/systemd/yubit-academy-worker.service /etc/systemd/system/yubit-academy-worker.service
-sudo install -m 0644 deploy/systemd/yubit-academy-discord.service /etc/systemd/system/yubit-academy-discord.service
 sudo install -m 0644 deploy/systemd/yubit-academy-postgres-backup.service /etc/systemd/system/yubit-academy-postgres-backup.service
 sudo install -m 0644 deploy/systemd/yubit-academy-postgres-backup.timer /etc/systemd/system/yubit-academy-postgres-backup.timer
 sudo install -d -m 0750 -o ubuntu -g ubuntu /var/backups/yubit-academy/postgres
@@ -233,7 +360,9 @@ release_env="$(mktemp)"
   printf 'APP_DEPLOYMENT_URL=https://%s\n' "$SERVER_NAME"
   printf 'JSON_STORE_BACKEND=local\n'
   printf 'JSON_STORE_DIRECTORY=%s\n' "$STATE_ROOT"
+  printf 'OBSIDIAN_VAULT_PATH=%s\n' "$OBSIDIAN_VAULT_PATH"
 } >"$release_env"
+activation_started=true
 sudo install -m 0644 "$release_env" /etc/yubit-academy/release.env
 rm -f "$release_env"
 sudo ln -sfn "$release" "$APP_ROOT/current"
@@ -249,8 +378,6 @@ sudo nginx -t
 
 sudo systemctl daemon-reload
 sudo systemctl enable --now yubit-academy-postgres-backup.timer
-sudo systemctl disable --now yubit-bot-skills.service yubit-news-console.service 2>/dev/null || true
-sudo systemctl stop yubit-academy-worker.service 2>/dev/null || true
 sudo systemctl enable yubit-academy-web.service
 sudo systemctl restart yubit-academy-web.service
 
@@ -265,13 +392,22 @@ for attempt in {1..30}; do
   sleep 2
 done
 
-sudo systemctl enable yubit-academy-worker.service
-sudo systemctl restart yubit-academy-worker.service
-sudo systemctl enable yubit-academy-discord.service
-sudo systemctl restart yubit-academy-discord.service
+worker_state_after="$(sudo systemctl show yubit-academy-worker.service --property=ActiveState,SubState,MainPID --no-pager 2>/dev/null || true)"
+discord_state_after="$(sudo systemctl show yubit-academy-discord.service --property=ActiveState,SubState,MainPID --no-pager 2>/dev/null || true)"
+delivery_count_after="$(PGPASSWORD="$local_database_password" psql "$local_database_dsn" -tAc "SELECT count(*) FROM distribution_deliveries")"
+delivery_count_after="${delivery_count_after//[[:space:]]/}"
+if [[ "$worker_state_after" != "$worker_state_before" || "$discord_state_after" != "$discord_state_before" ]]; then
+  echo "No-send deployment did not preserve the worker and Discord runtime state." >&2
+  exit 1
+fi
+if [[ "$delivery_count_after" != "$delivery_count_before" ]]; then
+  echo "No-send deployment changed delivery receipt count: $delivery_count_before -> $delivery_count_after" >&2
+  exit 1
+fi
+echo "Deployment mode: no-send"
+echo "Runtime services touched by deployment: false"
+echo "Delivery receipts created by deployment: 0"
 wait_for_service_active yubit-academy-web.service
-wait_for_service_active yubit-academy-worker.service
-wait_for_service_active yubit-academy-discord.service
 sudo systemctl reload nginx
 
 if [[ "$ENABLE_HTTPS" == "1" ]]; then
@@ -296,8 +432,6 @@ if [[ "$ip_location" != "https://$SERVER_NAME/" ]]; then
   exit 1
 fi
 wait_for_service_active yubit-academy-web.service 5
-wait_for_service_active yubit-academy-worker.service 5
-wait_for_service_active yubit-academy-discord.service 5
 sudo systemctl start yubit-academy-postgres-backup.service
 PGPASSWORD="$local_database_password" pg_isready --dbname="$local_database_dsn"
 final_rule_count="$(PGPASSWORD="$local_database_password" psql "$local_database_dsn" -tAc "SELECT count(*) FROM distribution_rules")"
@@ -305,23 +439,54 @@ if [[ "${final_rule_count//[[:space:]]/}" == "0" ]]; then
   echo "Local PostgreSQL primary contains no distribution rules after restore." >&2
   exit 1
 fi
+worker_state_after="$(sudo systemctl show yubit-academy-worker.service --property=ActiveState,SubState,MainPID --no-pager 2>/dev/null || true)"
+discord_state_after="$(sudo systemctl show yubit-academy-discord.service --property=ActiveState,SubState,MainPID --no-pager 2>/dev/null || true)"
+delivery_count_after="$(PGPASSWORD="$local_database_password" psql "$local_database_dsn" -tAc "SELECT count(*) FROM distribution_deliveries")"
+delivery_count_after="${delivery_count_after//[[:space:]]/}"
+publisher_config_after="$(sudo grep -E '^(TELEGRAM_|TRADING_DEMO_ONLY|ALLOW_LIVE_TELEGRAM|DISCORD_)=' "$ENV_FILE" | sha256sum | awk '{print $1}')"
+if [[ "$publisher_config_after" != "$publisher_config_before" ]]; then
+  echo "No-send deployment changed Telegram or Discord configuration." >&2
+  exit 1
+fi
+sudo --user=ubuntu env \
+  DEPLOY_NO_SEND="$DEPLOY_NO_SEND" \
+  EXPECTED_COMMIT="$commit" \
+  APP_RELEASE_SHA="$commit" \
+  OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" \
+  DATABASE_URL="$local_database_url" \
+  DATABASE_DRIVER=pg \
+  TELEGRAM_DEMO_ONLY="$(read_production_env TELEGRAM_DEMO_ONLY)" \
+  TRADING_DEMO_ONLY="$(read_production_env TRADING_DEMO_ONLY)" \
+  TELEGRAM_DISTRIBUTION_APPROVED_TARGETS="$(read_production_env TELEGRAM_DISTRIBUTION_APPROVED_TARGETS)" \
+  ALLOW_LIVE_TELEGRAM="$(read_production_env ALLOW_LIVE_TELEGRAM)" \
+  DELIVERY_COUNT_BEFORE="$delivery_count_before" \
+  WORKER_STATE_BEFORE="$worker_state_before" \
+  WORKER_STATE_AFTER="$worker_state_after" \
+  DISCORD_STATE_BEFORE="$discord_state_before" \
+  DISCORD_STATE_AFTER="$discord_state_after" \
+  "$NODE_HOME/bin/node" scripts/audit-content-production.mjs
 sudo systemctl is-active --quiet yubit-academy-postgres-backup.timer
 if ! find /var/backups/yubit-academy/postgres -maxdepth 1 -type f -name 'yubit-academy-*.dump' -print -quit | grep -q .; then
   echo "No local PostgreSQL backup was created." >&2
   exit 1
 fi
-if sudo grep -Eq '^(DISCORD_APP_ID|DISCORD_PUBLIC_KEY|DISCORD_BOT_TOKEN|DISCORD_GATEWAY_ENABLED)=' "$ENV_FILE"; then
-  echo "Legacy Discord environment credentials remain configured." >&2
-  exit 1
-fi
-echo "Discord legacy environment credentials: absent"
-echo "Discord gateway service: active"
+echo "Telegram and Discord configuration: preserved byte-for-byte"
+echo "Discord gateway service: preserved without lifecycle commands"
+echo "Worker service: preserved without lifecycle commands"
 echo "Local PostgreSQL primary: active"
 echo "Local PostgreSQL distribution rules: ${final_rule_count//[[:space:]]/}"
 echo "Local PostgreSQL daily backup timer: active"
 
-find "$APP_ROOT/releases" -mindepth 1 -maxdepth 1 -type d ! -path "$release" -printf '%T@ %p\n' \
+release_prune_find=("$APP_ROOT/releases" -mindepth 1 -maxdepth 1 -type d ! -path "$release")
+if [[ -n "$previous_release" && "$previous_release" == "$APP_ROOT/releases/"* ]]; then
+  release_prune_find+=(! -path "$previous_release")
+fi
+find "${release_prune_find[@]}" -printf '%T@ %p\n' \
   | sort -nr | awk 'NR > 2 {sub(/^[^ ]+ /, ""); print}' \
   | xargs -r sudo rm -rf
 
+activation_started=false
+configuration_updated=false
+trap - EXIT
+rm -rf "$deployment_backup_dir"
 echo "Deployed $commit to https://$SERVER_NAME"

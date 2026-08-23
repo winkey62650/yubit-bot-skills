@@ -1,4 +1,4 @@
-import test from "node:test";
+import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -14,9 +14,19 @@ import {
 } from "../lib/data-release-monitor.mjs";
 import { buildMarketPreviewFacts } from "../lib/distribution-ui.mjs";
 import { JsonDistributionRepository } from "../lib/distribution-repository.mjs";
+import { createObsidianContentStore } from "../lib/obsidian-content-store.mjs";
 import { readJson, writeJson } from "../lib/json-store.js";
 
 const { AUTOMATION_JOBS, automationSlot, automationTopicMatches } = automation;
+const priorVaultPath = process.env.OBSIDIAN_VAULT_PATH;
+const automationVaultPath = await mkdtemp(join(tmpdir(), "yubit-automation-vault-"));
+await createObsidianContentStore({ vaultPath: automationVaultPath }).initialize();
+process.env.OBSIDIAN_VAULT_PATH = automationVaultPath;
+after(async () => {
+  if (priorVaultPath === undefined) delete process.env.OBSIDIAN_VAULT_PATH;
+  else process.env.OBSIDIAN_VAULT_PATH = priorVaultPath;
+  await rm(automationVaultPath, { recursive: true, force: true });
+});
 
 test("all requested automation schedules are registered", () => {
   assert.deepEqual(AUTOMATION_JOBS.map((job) => job.id), ["crypto-daily", "weekly-calendar", "data-release-updates", "daily-analysis", "whale-hourly", "agent-sync-4h"]);
@@ -2459,7 +2469,8 @@ test("secondary data release verifies only its card and emits no article link", 
   assert.ok(healthCalls.every((url) => !new URL(url).pathname.startsWith("/data-updates/")));
   assert.equal(payloads[0].method, "sendPhoto");
   const communityText = payloads.filter(({ method }) => method === "sendMessage").map(({ payload }) => payload.text).join("\n");
-  assert.doesNotMatch(communityText, /https?:\/\/|read (?:the )?full/i);
+  assert.doesNotMatch(communityText, /\/data-updates\/|read (?:the )?full/i);
+  assert.match(communityText, /https:\/\/academy\.example\/academy/);
 });
 
 test("missing official actual blocks data publication persistence and every sender", async () => {
@@ -2523,4 +2534,38 @@ test("data release restart finalizes a durable successful send without sending i
   assert.equal(restarted.preview.deliveryPlans.length, 0);
   assert.equal(sends, sendsAfterFirst);
   assert.deepEqual((await repository.getMeta("market-content:release-state:v1")).publishedKeys, [restarted.preview.deduplicationKey]);
+});
+
+test("data release filtering narrows publication candidates without erasing the weekly calendar cache", async () => {
+  const repository = automationRepository();
+  const unsupported = verifiedReleaseEvent({
+    id: "aaa-unsupported-release",
+    indicator: "cpi",
+    title: "AAA unsupported release",
+  });
+  const supported = verifiedReleaseEvent({
+    id: "supported-release",
+    indicator: "cpi",
+    title: "Supported CPI release",
+  });
+
+  const result = await pollDataReleaseUpdates({
+    now: "2026-08-19T12:31:00.000Z",
+    repository,
+    persist: true,
+    eventFilter: (event) => event.id === "supported-release",
+    fetchCalendar: async () => ({
+      events: [unsupported, supported],
+      sources: [{ id: "bls-calendar", status: "ok" }],
+      warnings: [],
+    }),
+    fetchOfficialActual: async () => officialEvidence("2.7%"),
+  });
+
+  assert.equal(result.publishable, true);
+  assert.equal(result.event.id, "supported-release");
+  assert.deepEqual(
+    (await repository.getMeta(WEEKLY_CALENDAR_META_KEY)).events.map(({ id }) => id),
+    ["aaa-unsupported-release", "supported-release"],
+  );
 });

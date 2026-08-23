@@ -73,32 +73,35 @@ test("worker process stays alive between scheduled runs", async () => {
   }
 });
 
-test("server deployment restarts both services after changing the current release", async () => {
+test("server deployment restarts only the web service and preserves publisher lifecycle", async () => {
   const deployScript = await readFile(
     fileURLToPath(new URL("../deploy/server/deploy.sh", import.meta.url)),
     "utf8",
   );
 
   assert.match(deployScript, /systemctl restart yubit-academy-web\.service/);
-  assert.match(deployScript, /systemctl restart yubit-academy-worker\.service/);
+  assert.doesNotMatch(deployScript, /systemctl (?:stop|restart) yubit-academy-worker\.service/);
+  assert.doesNotMatch(deployScript, /systemctl (?:stop|restart) yubit-academy-discord\.service/);
   assert.doesNotMatch(deployScript, /enable --now yubit-academy-(?:web|worker)\.service/);
 });
 
-test("server deployment keeps the worker stopped until the web service is ready", async () => {
+test("server deployment verifies publisher lifecycle remains unchanged after web readiness", async () => {
   const deployScript = await readFile(
     fileURLToPath(new URL("../deploy/server/deploy.sh", import.meta.url)),
     "utf8",
   );
 
-  const stopWorker = deployScript.indexOf("systemctl stop yubit-academy-worker.service");
-  const restartWeb = deployScript.indexOf("systemctl restart yubit-academy-web.service");
+  const restartWeb = deployScript.lastIndexOf("systemctl restart yubit-academy-web.service");
   const readinessProbe = deployScript.indexOf("http://127.0.0.1:4174/login");
-  const restartWorker = deployScript.indexOf("systemctl restart yubit-academy-worker.service");
+  const workerBefore = deployScript.indexOf("worker_state_before=");
+  const workerAfter = deployScript.indexOf("worker_state_after=");
+  const unchangedCheck = deployScript.indexOf('"$worker_state_after" != "$worker_state_before"');
 
-  assert.ok(stopWorker >= 0, "deployment must stop the worker before replacing the web process");
-  assert.ok(stopWorker < restartWeb, "worker must stop before the web service restarts");
+  assert.ok(workerBefore >= 0, "deployment must capture the worker state before activation");
+  assert.ok(workerBefore < restartWeb, "worker state must be captured before the web service restarts");
   assert.ok(restartWeb < readinessProbe, "web restart must happen before its readiness probe");
-  assert.ok(readinessProbe < restartWorker, "worker must restart only after the web service is ready");
+  assert.ok(readinessProbe < workerAfter, "worker state must be captured again after web readiness");
+  assert.ok(workerAfter < unchangedCheck, "deployment must fail if the worker lifecycle changed");
 });
 
 test("production web service runs the standalone bundle with its static assets", async () => {

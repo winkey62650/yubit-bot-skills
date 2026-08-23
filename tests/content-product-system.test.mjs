@@ -1,0 +1,181 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  CONTENT_PRODUCT_TYPES,
+  createContentProductSystem,
+} from "../lib/content-product-system.mjs";
+
+function storeDouble() {
+  const writes = [];
+  const products = new Map();
+  return {
+    writes,
+    async writeSource(value) { writes.push(["source", structuredClone(value)]); },
+    async writeEvent(value) { writes.push(["event", structuredClone(value)]); },
+    async writeProduct(value) {
+      writes.push(["product", structuredClone(value)]);
+      products.set(`${value.product}:${value.id}`, structuredClone(value));
+    },
+    async readProduct({ product, id }) { return structuredClone(products.get(`${product}:${id}`)); },
+  };
+}
+
+function input(product, overrides = {}) {
+  const eventId = product === "weekly-catalyst-calendar" ? "2026-W34" : "us-cpi-2026-08";
+  return {
+    product,
+    event: {
+      id: eventId,
+      title: "US CPI release",
+      occurredAt: "2026-08-23T12:30:00.000Z",
+      actual: product === "data-flash" || product === "market-follow-up" ? "2.7%" : null,
+    },
+    title: `${product} title`,
+    language: "en",
+    sources: [{
+      id: "bls-cpi-2026-08",
+      title: "BLS CPI release",
+      url: "https://www.bls.gov/news.release/cpi.htm",
+      tier: "official",
+      observedAt: "2026-08-23T12:31:00.000Z",
+    }],
+    facts: [{ text: "Headline CPI was 2.7% year over year.", sourceRefs: ["bls-cpi-2026-08"], actual: true }],
+    inferences: [{ text: "The print may reduce near-term rate anxiety." }],
+    risk: "A later official revision can change the reading.",
+    invalidation: "Invalidate if the official release is revised.",
+    cta: { label: "Discuss in the community", url: "https://academy.example/discuss" },
+    ...(product === "market-follow-up" ? {
+      originatingDataFlashId: "data-flash-us-cpi-2026-08",
+      observationWindow: {
+        start: "2026-08-23T12:30:00.000Z",
+        end: "2026-08-23T13:00:00.000Z",
+      },
+      correlationStatement: "BTC rose during the observation window; this is correlation, not causation.",
+    } : {}),
+    ...overrides,
+  };
+}
+
+test("registers exactly the four approved content products", () => {
+  assert.deepEqual([...CONTENT_PRODUCT_TYPES], [
+    "daily-market-brief",
+    "weekly-catalyst-calendar",
+    "data-flash",
+    "market-follow-up",
+  ]);
+});
+
+test("all four products reach distribution-ready only after governed Obsidian writes", async () => {
+  for (const product of CONTENT_PRODUCT_TYPES) {
+    const store = storeDouble();
+    const system = createContentProductSystem({ store, now: () => new Date("2026-08-23T13:01:00.000Z") });
+    const prepared = await system.prepare(input(product));
+
+    assert.equal(prepared.status, "distribution-ready");
+    assert.equal(prepared.gate.approved, true);
+    assert.deepEqual(prepared.lifecycle.map(({ status }) => status), [
+      "draft", "evidence-verified", "quality-approved", "distribution-ready",
+    ]);
+    assert.deepEqual(store.writes.map(([kind]) => kind), ["source", "event", "product"]);
+    assert.equal(store.writes.at(-1)[1].status, "distribution-ready");
+    assert.equal(store.writes.at(-1)[1].contentHash, prepared.contentHash);
+  }
+});
+
+test("identity and content hash are deterministic across clocks and input key order", async () => {
+  const first = await createContentProductSystem({ store: storeDouble(), now: () => new Date("2026-08-23T13:01:00Z") })
+    .prepare(input("daily-market-brief"));
+  const reordered = { ...input("daily-market-brief") };
+  const second = await createContentProductSystem({ store: storeDouble(), now: () => new Date("2026-08-24T00:00:00Z") })
+    .prepare(reordered);
+  assert.equal(first.id, second.id);
+  assert.equal(first.contentHash, second.contentHash);
+});
+
+test("missing, unknown, or secondary-only evidence blocks distribution fail-closed", async () => {
+  for (const candidate of [
+    input("data-flash", { sources: [] }),
+    input("data-flash", { facts: [{ text: "Actual was 2.7%.", sourceRefs: ["unknown"], actual: true }] }),
+    input("data-flash", { sources: [{ ...input("data-flash").sources[0], tier: "secondary" }] }),
+    input("data-flash", {
+      sources: [{ ...input("data-flash").sources[0], tier: "secondary" }],
+      facts: [{ text: "Actual was 2.7%.", sourceRefs: ["bls-cpi-2026-08"] }],
+    }),
+    input("data-flash", { event: { ...input("data-flash").event, actual: null } }),
+    input("data-flash", { event: { ...input("data-flash").event, actualValues: ["2.7%", "2.8%"] } }),
+  ]) {
+    const store = storeDouble();
+    const prepared = await createContentProductSystem({ store }).prepare(candidate);
+    assert.equal(prepared.status, "blocked");
+    assert.equal(prepared.gate.approved, false);
+    assert.ok(prepared.gate.reasons.length > 0);
+    assert.equal(store.writes.some(([kind]) => kind === "product" && store.writes.at(-1)[1].status === "distribution-ready"), false);
+  }
+});
+
+test("facts and inferences, timestamps, risk, invalidation, CTA, and language are mandatory", async () => {
+  const invalidInputs = [
+    input("daily-market-brief", { facts: [] }),
+    input("daily-market-brief", { inferences: [] }),
+    input("daily-market-brief", { risk: "" }),
+    input("daily-market-brief", { invalidation: "" }),
+    input("daily-market-brief", { language: "xx" }),
+    input("daily-market-brief", { cta: { label: "Guaranteed profit", url: "http://unsafe.example" } }),
+    input("daily-market-brief", { event: { ...input("daily-market-brief").event, occurredAt: "not-a-time" } }),
+  ];
+  for (const candidate of invalidInputs) {
+    const result = await createContentProductSystem({ store: storeDouble() }).prepare(candidate);
+    assert.equal(result.status, "blocked");
+  }
+});
+
+test("market follow-up requires an originating flash, bounded observation window, and non-causal wording", async () => {
+  const candidates = [
+    input("market-follow-up", { originatingDataFlashId: "" }),
+    input("market-follow-up", { observationWindow: { start: "2026-08-23T13:00:00Z", end: "2026-08-23T12:00:00Z" } }),
+    input("market-follow-up", { correlationStatement: "The CPI print caused BTC to rally." }),
+  ];
+  for (const candidate of candidates) {
+    const result = await createContentProductSystem({ store: storeDouble() }).prepare(candidate);
+    assert.equal(result.status, "blocked");
+    assert.ok(result.gate.reasons.some((reason) => /follow-up|causal|observation/i.test(reason)));
+  }
+});
+
+test("Telegram and Discord plans preserve canonical facts and respect channel limits", async () => {
+  const longFact = `Observed value: ${"<&*_~|".repeat(900)} 2.7%.`;
+  const system = createContentProductSystem({ store: storeDouble() });
+  const prepared = await system.prepare(input("data-flash", {
+    facts: [{ text: longFact, sourceRefs: ["bls-cpi-2026-08"], actual: true }],
+  }));
+  const rendered = system.renderChannels(prepared);
+
+  assert.ok(rendered.telegram.chunks.length > 1);
+  assert.ok(rendered.discord.chunks.length > 1);
+  assert.ok(rendered.telegram.chunks.every((chunk) => chunk.length <= 4096));
+  assert.ok(rendered.discord.chunks.every((chunk) => chunk.length <= 2000));
+  assert.equal(rendered.canonicalText, prepared.canonicalText);
+  assert.ok(rendered.canonicalText.includes(longFact));
+  assert.ok(rendered.telegram.chunks.join("").includes("&lt;&amp;"));
+  assert.ok(rendered.discord.chunks.join("").includes("\\*"));
+});
+
+test("lifecycle is monotonic and published/blocked states are terminal", async () => {
+  const store = storeDouble();
+  const system = createContentProductSystem({ store });
+  const ready = await system.prepare(input("daily-market-brief"));
+  const published = await system.publish(ready, { targetCount: 2 });
+  assert.equal(published.status, "published");
+  assert.equal(store.writes.at(-1)[1].status, "published");
+  assert.throws(() => system.transition(published, "distribution-ready", "rollback"), /transition/i);
+  assert.throws(() => system.transition(ready, "evidence-verified", "rollback"), /transition/i);
+});
+
+test("distribution approval is denied when Obsidian readback differs from the exact canonical payload", async () => {
+  const store = storeDouble();
+  store.readProduct = async ({ product, id }) => ({ ...store.writes.at(-1)[1], product, id, canonicalText: "tampered" });
+  const result = await createContentProductSystem({ store }).prepare(input("daily-market-brief"));
+  assert.equal(result.status, "blocked");
+  assert.match(result.gate.reasons.join(" "), /readback|canonical/i);
+});

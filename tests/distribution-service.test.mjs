@@ -3949,30 +3949,23 @@ test("GitHub Actions keeps distribution as a manual server recovery path", async
   assert.match(distributionJob, /if \[ "\$claimed" = "0" \]/);
 });
 
-test("production deployment defaults to Bot while retaining the optional authorized user publisher", async () => {
+test("production no-send deployment preserves the existing Telegram and Discord publisher configuration", async () => {
   const workflow = await readFile(new URL("../.github/workflows/deploy-production-server.yml", import.meta.url), "utf8");
   const desktopRoute = await readFile(new URL("../app/api/cron/desktop-publisher/route.js", import.meta.url), "utf8");
 
-  assert.match(workflow, /vars\.TELEGRAM_DISTRIBUTION_APPROVED_TARGETS/);
-  assert.match(workflow, /\(\[1-9\]\[0-9\]\*\|channel\)/);
-  assert.match(workflow, /TELEGRAM_DEMO_ONLY=false/);
-  assert.match(workflow, /TELEGRAM_DISTRIBUTION_APPROVED_TARGETS=%s/);
-  assert.match(workflow, /TRADING_DEMO_ONLY=false/);
-  assert.match(workflow, /TELEGRAM_PUBLISHER_MODE=bot/);
-  assert.match(workflow, /TELEGRAM_USER_PUBLISHER_USERNAME=Serenity_Crypto/);
-  assert.match(workflow, /TELEGRAM_USER_PUBLISHER_REQUIRED=false/);
-  assert.match(workflow, /TELEGRAM_USER_PUBLISHER_TARGETS=-1003710405969,-1004378187866/);
-  assert.match(workflow, /TELEGRAM_USER_SESSION_ENCRYPTION_KEY=%s/);
-  assert.match(workflow, /TELEGRAM_DESKTOP_PUBLISHER_REQUIRED=false/);
-  assert.match(workflow, /secrets\.DESKTOP_PUBLISHER_SECRET/);
-  assert.match(workflow, /DESKTOP_PUBLISHER_SECRET=%s/);
+  assert.match(workflow, /expected_targets='-1003710405969:8,-1003710405969:10,-1003710405969:16'/);
+  assert.match(workflow, /read_env TELEGRAM_DEMO_ONLY.*!= "true"/);
+  assert.match(workflow, /read_env TRADING_DEMO_ONLY.*!= "true"/);
+  assert.match(workflow, /read_env ALLOW_LIVE_TELEGRAM.*= "true"/);
+  assert.match(workflow, /publisher_config_before=.*TELEGRAM_.*DISCORD_/);
+  assert.match(workflow, /publisher_config_after=.*TELEGRAM_.*DISCORD_/);
+  assert.match(workflow, /DEPLOY_NO_SEND: "1"/);
+  assert.doesNotMatch(workflow, /TELEGRAM_PUBLISHER_MODE=|TELEGRAM_USER_PUBLISHER_|DESKTOP_PUBLISHER_SECRET=/);
   assert.match(desktopRoute, /process\.env\.DESKTOP_PUBLISHER_SECRET/);
   assert.match(desktopRoute, /leaseId: body\.leaseId/);
   assert.match(desktopRoute, /stepId: body\.stepId/);
   assert.match(desktopRoute, /targetMessageId: body\.targetMessageId/);
   assert.doesNotMatch(desktopRoute, /cronSecretConfig/);
-  assert.doesNotMatch(workflow, /TELEGRAM_USER_PUBLISHER_TARGETS=-1003862539988/);
-  assert.match(workflow, /sudo install -m 0600/);
 });
 
 test("preview can explicitly use durable Blob-backed JSON while production still requires Postgres", async () => {
