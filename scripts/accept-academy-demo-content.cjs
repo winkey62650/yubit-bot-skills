@@ -7,6 +7,7 @@ const {
   DEMO_THREAD_ID,
   assertDemoAcceptanceExecution,
   assertDemoAcceptancePreview,
+  buildDemoAcceptanceTemporaryRule,
   selectDemoAcceptanceRule,
 } = require("../lib/demo-content-acceptance.cjs");
 const { authorizeLiveTelegramOperation } = require("../lib/release-gate.cjs");
@@ -37,6 +38,7 @@ async function readJson(response, label) {
 
 (async () => {
   const api = await request.newContext({ baseURL: baseUrl });
+  let temporaryRuleId = null;
   const report = {
     ok: false,
     operation: "academy-demo-content-acceptance",
@@ -53,13 +55,40 @@ async function readJson(response, label) {
 
     const release = await readJson(await api.get("/api/release-info", { timeout: 30_000 }), "release info");
     const overview = await readJson(await api.get("/api/distribution", { timeout: 30_000 }), "distribution overview");
-    const rule = selectDemoAcceptanceRule(overview.rules || [], {
+    const recurringRules = (overview.rules || []).filter((item) => item?.kind === "automation"
+      && item?.contentType === contentType
+      && item?.runOnce !== true);
+    let rule;
+    if (recurringRules.length === 0) {
+      const created = await readJson(await api.post("/api/distribution", {
+        data: { rule: buildDemoAcceptanceTemporaryRule({ chatId: expectedChatId, threadId: expectedThreadId }) },
+        timeout: 30_000,
+      }), "temporary rule creation");
+      rule = selectDemoAcceptanceRule([created.rule], {
+        contentType,
+        chatId: expectedChatId,
+        threadId: expectedThreadId,
+      });
+    } else {
+      rule = selectDemoAcceptanceRule(recurringRules, {
+        contentType,
+        chatId: expectedChatId,
+        threadId: expectedThreadId,
+      });
+    }
+    if (rule.id === "academy-demo-acceptance-temporary") temporaryRuleId = rule.id;
+    rule = selectDemoAcceptanceRule([rule], {
       contentType,
       chatId: expectedChatId,
       threadId: expectedThreadId,
     });
     report.release = release;
-    report.rule = { id: rule.id, name: rule.name || null, enabled: rule.enabled === true };
+    report.rule = {
+      id: rule.id,
+      name: rule.name || null,
+      enabled: rule.enabled === true,
+      temporary: Boolean(temporaryRuleId),
+    };
 
     const previewPayload = await readJson(await api.post("/api/automation-test", {
       data: { jobId: contentType },
@@ -100,12 +129,26 @@ async function readJson(response, label) {
       chatId: expectedChatId,
       threadId: expectedThreadId,
     });
+    if (temporaryRuleId) {
+      await readJson(await api.post("/api/distribution", {
+        data: { action: "delete", id: temporaryRuleId },
+        timeout: 30_000,
+      }), "temporary rule cleanup");
+      report.cleanup = { temporaryRuleDeleted: true };
+      temporaryRuleId = null;
+    }
     report.finishedAt = new Date().toISOString();
     report.ok = true;
     fs.mkdirSync(path.dirname(reportPath), { recursive: true });
     fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
     if (process.env.ACCEPTANCE_QUIET !== "true") process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
   } finally {
+    if (temporaryRuleId) {
+      await api.post("/api/distribution", {
+        data: { action: "delete", id: temporaryRuleId },
+        timeout: 30_000,
+      }).catch(() => null);
+    }
     await api.dispose();
   }
 })().catch((error) => {

@@ -6,6 +6,7 @@ const require = createRequire(import.meta.url);
 const {
   assertDemoAcceptanceExecution,
   assertDemoAcceptancePreview,
+  buildDemoAcceptanceTemporaryRule,
   selectDemoAcceptanceRule,
 } = require("../lib/demo-content-acceptance.cjs");
 
@@ -51,6 +52,16 @@ test("DEMO acceptance selects exactly one recurring Crypto Daily rule with only 
     () => selectDemoAcceptanceRule([acceptanceRule({ targets: [{ ...expectedTarget, threadId: 10 }] })]),
     /approved DEMO Topic 8/i,
   );
+});
+
+test("DEMO acceptance can provision one paused temporary rule for Topic 8", () => {
+  const rule = buildDemoAcceptanceTemporaryRule();
+  assert.equal(rule.id, "academy-demo-acceptance-temporary");
+  assert.equal(rule.contentType, "crypto-daily");
+  assert.equal(rule.schedulePreset, "daily-0800-utc");
+  assert.equal(rule.enabled, false);
+  assert.equal(rule.runOnce, false);
+  assert.deepEqual(rule.targets, [expectedTarget]);
 });
 
 test("DEMO acceptance blocks non-publishable or source-unhealthy previews", () => {
