@@ -245,7 +245,27 @@ test("release-only recovery requires exactly one prior daily and weekly receipt 
     rules: [],
   }), /no prior release receipt/i);
   assert.throws(() => assertDemoShowcaseRecoveryState({
+    receipts: [...receipts, { ...receipts[1], ruleId: "academy-demo-showcase-release-recovery-20260823-v2-temporary" }],
+    rules: [],
+  }), /no prior release receipt/i);
+  assert.throws(() => assertDemoShowcaseRecoveryState({
     receipts,
     rules: [{ id: "academy-demo-showcase-release-temporary" }],
   }), /no temporary showcase rules/i);
+  assert.throws(() => assertDemoShowcaseRecoveryState({
+    receipts,
+    rules: [{ id: "academy-demo-showcase-release-recovery-20260823-v2-temporary" }],
+  }), /no temporary showcase rules/i);
+});
+
+test("release recovery can use a new approved rule identity without inheriting stale execution state", () => {
+  const showcaseCase = DEMO_SHOWCASE_CASES.find((item) => item.key === "release");
+  const rule = buildDemoShowcaseTemporaryRule(showcaseCase, {
+    ruleId: "academy-demo-showcase-release-recovery-20260823-v2-temporary",
+  });
+
+  assert.equal(rule.id, "academy-demo-showcase-release-recovery-20260823-v2-temporary");
+  assert.throws(() => buildDemoShowcaseTemporaryRule(showcaseCase, {
+    ruleId: "academy-demo-showcase-daily-recovery-20260823-v2-temporary",
+  }), /rule identity/i);
 });

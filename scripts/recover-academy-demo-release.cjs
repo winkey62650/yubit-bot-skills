@@ -20,7 +20,8 @@ const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
 const reportPath = path.resolve(process.env.TEST_REPORT_PATH || "artifacts/academy-demo-showcase/recovery.json");
 const releaseCase = DEMO_SHOWCASE_CASES.find((item) => item.key === "release");
 const expectedPrior = Object.freeze({ daily: 1290, weekly: 1291 });
-const temporaryRulePattern = /^academy-demo-showcase-(daily|weekly|release)-temporary$/;
+const RECOVERY_RULE_ID = "academy-demo-showcase-release-recovery-20260823-v2-temporary";
+const temporaryRulePattern = /^academy-demo-showcase-(daily|weekly|release)(?:-recovery-[a-z0-9-]+)?-temporary$/;
 
 if (!username || !password) throw new Error("TEST_USERNAME and TEST_PASSWORD are required");
 if (!vaultPath) throw new Error("OBSIDIAN_VAULT_PATH is required");
@@ -102,7 +103,7 @@ function writeReport(report) {
     });
     assertKnownPriorMessages(report.priorExecutions);
 
-    const temporaryRule = buildDemoShowcaseTemporaryRule(releaseCase);
+    const temporaryRule = buildDemoShowcaseTemporaryRule(releaseCase, { ruleId: RECOVERY_RULE_ID });
     const created = await readJson(await api.post("/api/distribution", {
       data: { rule: temporaryRule },
       timeout: 30_000,

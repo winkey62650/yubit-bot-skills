@@ -92,7 +92,7 @@ jobs:
               raise RuntimeError("login was not accepted")
           deliveries = read_json(f"{base_url}/api/distribution/logs?limit=500")
           overview = read_json(f"{base_url}/api/distribution")
-          demo_rule = re.compile(r"^academy-demo-showcase-(daily|weekly|release)-temporary$")
+          demo_rule = re.compile(r"^academy-demo-showcase-(daily|weekly|release)(?:-recovery-[a-z0-9-]+)?-temporary$")
           receipt_fields = [
               "id", "ruleId", "status", "target", "targetMessageId", "targetMessageIds",
               "deliveredAt", "createdAt", "updatedAt", "error",
@@ -339,7 +339,7 @@ jobs:
             and (.recoveryExecution.messageIds | length == 2)
             and (.recoveryExecution.target.chatId == "-1003710405969" and .recoveryExecution.target.threadId == 8)
             and (.products | map(.product) == ["daily-market-brief", "weekly-catalyst-calendar", "data-flash", "market-follow-up"])
-            and (.cleanup == [{"id":"academy-demo-showcase-release-temporary","deleted":true}])
+            and (.cleanup == [{"id":"academy-demo-showcase-release-recovery-20260823-v2-temporary","deleted":true}])
           ' "$report_path" >/dev/null
           echo "### Academy DEMO four-product text acceptance completed" >>"$GITHUB_STEP_SUMMARY"
           jq -r '"- Prior messages: `\(.priorExecutions | map(.messageIds | join(",")) | join(" · "))`\n- Recovered messages: `\(.recoveryExecution.messageIds | join(","))`\n- Products: `\(.products | map(.product) | join(", "))`\n- Media included: `\(.mediaIncluded)`"' "$report_path" >>"$GITHUB_STEP_SUMMARY"

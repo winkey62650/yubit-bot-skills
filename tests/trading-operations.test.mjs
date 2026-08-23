@@ -180,7 +180,16 @@ test("run-now exists only in explicitly authorized live acceptance scripts", asy
   ]);
   for (const offender of offenders) assert.match(offender.source, /authorizeLiveTelegramOperation/);
   assert.match(offenders.find((item) => item.file === "accept-academy-demo-content.cjs").source, /exactTargets:\s*true/);
-  assert.match(offenders.find((item) => item.file === "recover-academy-demo-release.cjs").source, /exactTargets:\s*true/);
+  const recovery = offenders.find((item) => item.file === "recover-academy-demo-release.cjs").source;
+  assert.match(recovery, /exactTargets:\s*true/);
+  assert.match(recovery, /academy-demo-showcase-release-recovery-20260823-v2-temporary/);
+  assert.match(recovery, /buildDemoShowcaseTemporaryRule\(releaseCase,\s*\{\s*ruleId:\s*RECOVERY_RULE_ID\s*\}\)/s);
+});
+
+test("Academy DEMO read-only audit includes release recovery rule identities", async () => {
+  const workflow = await readFile(new URL(".github/workflows/telegram-automations.yml", root), "utf8");
+  assert.ok(workflow.includes("(daily|weekly|release)(?:-recovery-[a-z0-9-]+)?-temporary"));
+  assert.match(workflow, /\.cleanup\s*==\s*\[\{"id":\s*"academy-demo-showcase-release-recovery-20260823-v2-temporary"/s);
 });
 
 test("production distribution gates cover all six automations and seven broadcasts", async () => {
