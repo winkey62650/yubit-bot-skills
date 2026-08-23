@@ -281,3 +281,15 @@ test("format validation can use a new approved rule identity without inheriting 
     ruleId: "academy-demo-showcase-release-validation-20260824-v3-temporary",
   }), /rule identity/i);
 });
+
+test("v3 residual recovery identities are scoped to the missing content cases", () => {
+  const weekly = DEMO_SHOWCASE_CASES.find((item) => item.key === "weekly");
+  const release = DEMO_SHOWCASE_CASES.find((item) => item.key === "release");
+
+  assert.equal(buildDemoShowcaseTemporaryRule(weekly, {
+    ruleId: "academy-demo-showcase-weekly-recovery-20260824-v3-temporary",
+  }).id, "academy-demo-showcase-weekly-recovery-20260824-v3-temporary");
+  assert.equal(buildDemoShowcaseTemporaryRule(release, {
+    ruleId: "academy-demo-showcase-release-recovery-20260824-v3-temporary",
+  }).id, "academy-demo-showcase-release-recovery-20260824-v3-temporary");
+});

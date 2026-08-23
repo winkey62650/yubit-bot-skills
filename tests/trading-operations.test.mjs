@@ -175,16 +175,18 @@ test("run-now exists only in explicitly authorized live acceptance scripts", asy
   }
   assert.deepEqual(offenders.map((item) => item.file), [
     "accept-academy-demo-content.cjs",
-    "recover-academy-demo-release.cjs",
+    "recover-academy-demo-format-v3.cjs",
     "send-academy-realtime-demo.cjs",
     "test-production-automation-delivery.cjs",
   ]);
   for (const offender of offenders) assert.match(offender.source, /authorizeLiveTelegramOperation/);
   assert.match(offenders.find((item) => item.file === "accept-academy-demo-content.cjs").source, /exactTargets:\s*true/);
-  const recovery = offenders.find((item) => item.file === "recover-academy-demo-release.cjs").source;
+  const recovery = offenders.find((item) => item.file === "recover-academy-demo-format-v3.cjs").source;
   assert.match(recovery, /exactTargets:\s*true/);
-  assert.match(recovery, /academy-demo-showcase-release-recovery-20260823-v2-temporary/);
-  assert.match(recovery, /buildDemoShowcaseTemporaryRule\(releaseCase,\s*\{\s*ruleId:\s*RECOVERY_RULE_ID\s*\}\)/s);
+  assert.match(recovery, /academy-demo-showcase-weekly-recovery-20260824-v3-temporary/);
+  assert.match(recovery, /academy-demo-showcase-release-recovery-20260824-v3-temporary/);
+  assert.match(recovery, /Preview and validate every residual product before the first live send/);
+  assert.match(recovery, /buildDemoShowcaseTemporaryRule\(showcaseCase,\s*\{\s*ruleId:\s*recoveryRuleIds\[showcaseCase\.key\]\s*\}\)/s);
 });
 
 test("Academy DEMO read-only audit includes recovery and validation rule identities", async () => {
@@ -192,7 +194,9 @@ test("Academy DEMO read-only audit includes recovery and validation rule identit
   const acceptance = await readFile(new URL("scripts/accept-academy-demo-content.cjs", root), "utf8");
   assert.ok(workflow.includes("(daily|weekly|release)(?:-(?:recovery|validation)-[a-z0-9-]+)?-temporary"));
   assert.match(acceptance, /academy-demo-showcase-\$\{showcaseCase\.key\}-\$\{validationTag\}-temporary/);
-  assert.match(workflow, /\.cleanup\s*==\s*\[\{"id":\s*"academy-demo-showcase-release-recovery-20260823-v2-temporary"/s);
+  assert.match(workflow, /academy-demo-showcase-weekly-recovery-20260824-v3-temporary/);
+  assert.match(workflow, /academy-demo-showcase-release-recovery-20260824-v3-temporary/);
+  assert.match(workflow, /academy-format-v3-recovery/);
 });
 
 test("production distribution gates cover all six automations and seven broadcasts", async () => {

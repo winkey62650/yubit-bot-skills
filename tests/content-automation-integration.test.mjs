@@ -168,6 +168,16 @@ test("the Academy data replay uses the canonical release identity required by du
   const release = buildAcademyDemoShowcaseContent("data-release-updates", { now: NOW });
 
   assert.ok(release.event.scheduledAt);
+  assert.equal(release.event.id, "demo-replay-us-cpi-june-2025-format-v3");
+  assert.equal(release.deduplicationKey, buildReleaseDeduplicationKey(release.event));
+});
+
+test("the Academy v3 visual replay has fresh durable identities without disabling deduplication", () => {
+  const weekly = buildAcademyDemoShowcaseContent("weekly-calendar", { now: NOW });
+  const release = buildAcademyDemoShowcaseContent("data-release-updates", { now: NOW });
+
+  assert.equal(weekly.deduplicationKey, "academy-demo-replay-week-2025-07-14-format-v3");
+  assert.match(release.deduplicationKey, /demo-replay-us-cpi-june-2025-format-v3/);
   assert.equal(release.deduplicationKey, buildReleaseDeduplicationKey(release.event));
 });
 
