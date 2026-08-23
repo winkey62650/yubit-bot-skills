@@ -52,7 +52,7 @@ function rssFetch() {
 test("maps the three automation jobs to exactly four governed content products", () => {
   const daily = buildContentProductInputs("crypto-daily", generated("crypto-daily"), { now: NOW, publicBaseUrl: "https://academy.example" });
   const weekly = buildContentProductInputs("weekly-calendar", generated("weekly-calendar", {
-    document: { title: "Weekly catalysts", weekStart: "2026-08-17", days: [{ date: "2026-08-19", events: [{ id: "cpi", title: "US CPI", whyItMatters: "Rates may reprice.", scenarioMap: "Watch yields and DXY." }] }] },
+    document: { title: "Weekly catalysts", weekStart: "2026-08-17", days: [{ date: "2026-08-19", events: [{ id: "cpi", title: "US CPI", scheduledAt: "2026-08-19T12:30:00.000Z", values: { actual: { value: "2.7%" }, forecast: { rawValue: "2.8", unit: "%" }, previous: { value: "2.9%" } }, whyItMatters: "Rates may reprice.", scenarioMap: "Watch yields and DXY." }] }] },
   }), { now: NOW, publicBaseUrl: "https://academy.example" });
   const release = buildContentProductInputs("data-release-updates", generated("data-release-updates", {
     event: {
@@ -72,6 +72,10 @@ test("maps the three automation jobs to exactly four governed content products",
 
   assert.deepEqual(daily.map(({ product }) => product), ["daily-market-brief"]);
   assert.deepEqual(weekly.map(({ product }) => product), ["weekly-catalyst-calendar"]);
+  assert.equal(weekly[0].intelligence.events[0].timeUtc, "2026-08-19 12:30 UTC");
+  assert.equal(weekly[0].intelligence.events[0].actual, "2.7%");
+  assert.equal(weekly[0].intelligence.events[0].forecast, "2.8%");
+  assert.equal(weekly[0].intelligence.events[0].previous, "2.9%");
   assert.deepEqual(release.map(({ product }) => product), ["data-flash", "market-follow-up"]);
   assert.equal(release[0].event.actual, "2.7%");
   assert.equal(release[0].facts.some((fact) => fact.actual === true), true);
@@ -80,6 +84,41 @@ test("maps the three automation jobs to exactly four governed content products",
   assert.ok(binanceSource);
   assert.deepEqual(release[1].facts[0].sourceRefs, [binanceSource.id]);
   assert.match(release[1].correlationStatement, /correlation, not causation/i);
+});
+
+test("daily content maps each ranked story into decision fields and article-level evidence", () => {
+  const [daily] = buildContentProductInputs("crypto-daily", generated("crypto-daily", {
+    sourceManifest: [
+      OFFICIAL,
+      { id: "failed-feed", title: "Failed feed", url: "https://failed.example/feed", status: "error" },
+    ],
+    document: {
+      title: "Daily brief",
+      selectedStories: [{
+        id: "stablecoin-cards",
+        title: "Stablecoin card volume expands",
+        summary: "Tracked payment volume passed $1 billion.",
+        url: "https://news.example/stablecoin-cards",
+        publishedAt: NOW,
+        source: { id: "news-example", label: "News Example", kind: "secondary" },
+        marketImpact: { score: 30 },
+        impact: "Neutral",
+        rationale: "Adoption is growing, while price direction remains unconfirmed.",
+        affectedAssets: ["Stablecoins", "ETH"],
+        horizon: "1–7D",
+        confidence: "Medium",
+        whatToWatch: "Watch settlement volume and merchant retention.",
+      }],
+    },
+  }), { now: NOW, publicBaseUrl: "https://academy.example" });
+
+  assert.equal(daily.intelligence.catalysts[0].happened, "Tracked payment volume passed $1 billion.");
+  assert.equal(daily.intelligence.whyItMatters, "Adoption is growing, while price direction remains unconfirmed.");
+  assert.deepEqual(daily.intelligence.affectedAssets, ["Stablecoins", "ETH"]);
+  const articleSource = daily.sources.find((source) => source.url === "https://news.example/stablecoin-cards");
+  assert.ok(articleSource);
+  assert.deepEqual(daily.facts[0].sourceRefs, [articleSource.id]);
+  assert.equal(daily.sources.some((source) => source.url === "https://failed.example/feed"), false);
 });
 
 test("the Academy demo showcase is an explicit historical replay that yields all four governed products", () => {

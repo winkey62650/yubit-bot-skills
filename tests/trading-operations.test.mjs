@@ -271,7 +271,7 @@ test("DEMO CTA acceptance requires enabled non-empty CTA hydrated into the final
   const telegramCta = "<b>LATEST TG CTA</b>\n<a href=\"https://example.com/tg\">Join TG</a>";
   const marketDocument = (body = "Market update") => ({
     templateId: "crypto-daily",
-    version: "market-content-v1",
+    version: "market-content-v2",
     nodes: [{ type: "paragraph", text: body }],
   });
   const telegramPreview = withEvidence({
@@ -361,7 +361,7 @@ test("DEMO CTA acceptance requires enabled non-empty CTA hydrated into the final
     deliveryPlans: automation.buildAutomationTelegramPlans("crypto-daily", {
       document: {
         templateId: "crypto-daily",
-        version: "market-content-v1",
+        version: "market-content-v2",
         nodes: [{ type: "paragraph", text: "Market summary\nBTC" }],
       },
     }, [realPlannerTarget]),

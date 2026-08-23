@@ -45,6 +45,51 @@ function input(product, overrides = {}) {
     risk: "A later official revision can change the reading.",
     invalidation: "Invalidate if the official release is revised.",
     cta: { label: "Discuss in the community", url: "https://academy.example/discuss" },
+    intelligence: {
+      updatedAt: "2026-08-23T12:45:00.000Z",
+      importance: 5,
+      horizon: product === "weekly-catalyst-calendar" ? "1–7D" : "0–4H",
+      confidence: "Medium",
+      bias: { asset: "BTC", direction: "Neutral" },
+      affectedAssets: ["BTC", "ETH", "DXY", "US2Y"],
+      whyItMatters: "The release can reprice the expected policy path and crypto liquidity conditions.",
+      whatToWatch: ["DXY direction", "US2Y confirmation", "BTC hold versus the pre-release level"],
+      catalysts: [{
+        headline: "US CPI release",
+        happened: "Headline CPI was 2.7% year over year.",
+        importance: 5,
+        horizon: "0–4H",
+        confidence: "Medium",
+        affectedAssets: ["BTC", "ETH", "DXY", "US2Y"],
+        whyItMatters: "The print can reprice the expected policy path.",
+        whatToWatch: "Watch DXY and US2Y confirmation.",
+      }],
+      events: [{
+        timeUtc: "2026-08-23 12:30 UTC",
+        title: "US CPI release",
+        importance: 5,
+        actual: "2.7%",
+        forecast: "2.8%",
+        previous: "2.9%",
+        markets: ["BTC", "Nasdaq", "DXY", "US2Y"],
+        whyItMatters: "The print can reprice the expected policy path.",
+        scenarioMap: "Below consensus: risk-on; near consensus: neutral; above consensus: risk-off.",
+      }],
+      release: {
+        actual: "2.7%",
+        forecast: "2.8%",
+        previous: "2.9%",
+        surprise: "Below consensus",
+        initialReaction: ["BTC +0.50%", "DXY -0.12%", "US2Y -4bp"],
+        deskView: "The initial reaction is supportive but still needs cross-asset confirmation.",
+      },
+      followUp: {
+        marketMoves: ["BTC +0.50%", "DXY -0.12%", "US2Y -4bp"],
+        interpretation: "The cross-asset tape tentatively confirms the initial read.",
+        confirmation: "BTC holds above its pre-release level while DXY and US2Y stay lower.",
+        invalidation: "BTC reverses while DXY or US2Y erase the move.",
+      },
+    },
     ...(product === "market-follow-up" ? {
       originatingDataFlashId: "data-flash-us-cpi-2026-08",
       observationWindow: {
@@ -123,6 +168,9 @@ test("facts and inferences, timestamps, risk, invalidation, CTA, and language ar
     input("daily-market-brief", { language: "xx" }),
     input("daily-market-brief", { cta: { label: "Guaranteed profit", url: "http://unsafe.example" } }),
     input("daily-market-brief", { event: { ...input("daily-market-brief").event, occurredAt: "not-a-time" } }),
+    input("daily-market-brief", { intelligence: { ...input("daily-market-brief").intelligence, horizon: "" } }),
+    input("daily-market-brief", { intelligence: { ...input("daily-market-brief").intelligence, confidence: "Certain" } }),
+    input("daily-market-brief", { intelligence: { ...input("daily-market-brief").intelligence, whatToWatch: [] } }),
   ];
   for (const candidate of invalidInputs) {
     const result = await createContentProductSystem({ store: storeDouble() }).prepare(candidate);
@@ -168,9 +216,15 @@ test("all four Telegram products render a structured text-only editorial layout"
     ["data-flash", "DATA FLASH"],
     ["market-follow-up", "MARKET FOLLOW-UP"],
   ]);
+  const expectedAnalysisBlocks = new Map([
+    ["daily-market-brief", /<b>WHY IT MATTERS<\/b>/],
+    ["weekly-catalyst-calendar", /<b>WHY IT MATTERS<\/b>/],
+    ["data-flash", /<b>DESK VIEW<\/b>/],
+    ["market-follow-up", /<b>INTERPRETATION<\/b>/],
+  ]);
 
   for (const product of CONTENT_PRODUCT_TYPES) {
-    const system = createContentProductSystem({ store: storeDouble() });
+    const system = createContentProductSystem({ store: storeDouble(), now: () => new Date("2026-08-23T13:01:00.000Z") });
     const prepared = await system.prepare(input(product, {
       title: `Layout <check> & ${product}`,
     }));
@@ -179,13 +233,34 @@ test("all four Telegram products render a structured text-only editorial layout"
 
     assert.equal(rendered.telegram.parseMode, "HTML");
     assert.match(telegram, new RegExp(`<b>YUBIT ACADEMY · ${expectedKickers.get(product)}</b>`));
-    assert.match(telegram, /<b>01 · VERIFIED FACTS<\/b>/);
-    assert.match(telegram, /<b>02 · MARKET READ<\/b>/);
-    assert.match(telegram, /<b>03 · RISK BOUNDARY<\/b>/);
-    assert.match(telegram, /<b>04 · NEXT STEP<\/b>/);
+    assert.match(telegram, /<b>BIAS<\/b>  BTC · Neutral/);
+    assert.match(telegram, /<b>HORIZON<\/b>/);
+    assert.match(telegram, /<b>CONFIDENCE<\/b>  Medium/);
+    assert.match(telegram, expectedAnalysisBlocks.get(product));
+    assert.match(telegram, /<b>WHAT TO WATCH<\/b>/);
+    assert.match(telegram, /<b>SOURCES<\/b>/);
+    assert.match(rendered.discord.chunks.join(""), /YUBIT ACADEMY/);
+    assert.match(rendered.discord.chunks.join(""), /WHAT HAPPENED|PREV \/ CONS \/ ACTUAL|ACTUAL|MEASURED MOVE/);
     assert.match(telegram, /Layout &lt;check&gt; &amp;/);
     assert.doesNotMatch(telegram, /<img|sendPhoto|photo=/i);
   }
+});
+
+test("stale real-time intelligence is blocked while explicit historical replay remains labeled", async () => {
+  const stale = input("daily-market-brief", {
+    intelligence: { ...input("daily-market-brief").intelligence, updatedAt: "2026-08-20T12:45:00.000Z" },
+  });
+  const blocked = await createContentProductSystem({ store: storeDouble(), now: () => new Date("2026-08-23T13:01:00.000Z") }).prepare(stale);
+  assert.equal(blocked.status, "blocked");
+  assert.match(blocked.gate.reasons.join(" "), /stale/i);
+
+  const replay = await createContentProductSystem({ store: storeDouble(), now: () => new Date("2026-08-23T13:01:00.000Z") }).prepare({
+    ...stale,
+    intelligence: { ...stale.intelligence, mode: "historical-replay" },
+    title: "HISTORICAL REPLAY — US CPI",
+  });
+  assert.equal(replay.status, "distribution-ready");
+  assert.match(replay.canonicalText, /HISTORICAL REPLAY/);
 });
 
 test("lifecycle is monotonic and published/blocked states are terminal", async () => {

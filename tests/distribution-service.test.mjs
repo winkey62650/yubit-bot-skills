@@ -678,7 +678,7 @@ test("market automation jobs receive the repository and persist non-publishable 
     };
     const preview = {
       templateId: scenario.contentType,
-      templateVersion: "market-content-v1",
+      templateVersion: "market-content-v2",
       sources: [{ name: "official-source", url: "https://example.test/source" }],
       warnings: ["sample warning"],
       deduplicationKey: `${scenario.contentType}:2026-08-19`,
@@ -705,7 +705,7 @@ test("market automation jobs receive the repository and persist non-publishable 
       trigger: "manual",
       generation: events[0].payload.generation,
       templateId: scenario.contentType,
-      templateVersion: "market-content-v1",
+      templateVersion: "market-content-v2",
       sources: preview.sources,
       warnings: preview.warnings,
       deduplicationKey: preview.deduplicationKey,
@@ -2546,7 +2546,7 @@ test("scheduled release checks are rescheduled at the next whole minute after a 
         status: "skipped",
         preview: {
           templateId: "data-release-updates",
-          templateVersion: "market-content-v1",
+          templateVersion: "market-content-v2",
           sources: [],
           warnings: [],
           deduplicationKey: null,

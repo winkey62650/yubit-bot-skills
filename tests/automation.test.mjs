@@ -570,15 +570,15 @@ test("automation preview card URL stays on the immutable deployment origin", () 
 
 test("live automation previews expose the fixed editorial contract", () => {
   assert.deepEqual(automation.automationTemplateMetadata("crypto-daily"), {
-    templateVersion: "market-content-v1",
+    templateVersion: "market-content-v2",
     contentPolicy: "fixed-template"
   });
   assert.deepEqual(automation.automationTemplateMetadata("weekly-calendar"), {
-    templateVersion: "market-content-v1",
+    templateVersion: "market-content-v2",
     contentPolicy: "fixed-template"
   });
   assert.deepEqual(automation.automationTemplateMetadata("data-release-updates"), {
-    templateVersion: "market-content-v1",
+    templateVersion: "market-content-v2",
     contentPolicy: "fixed-template"
   });
   assert.deepEqual(automation.automationTemplateMetadata("daily-analysis"), {
@@ -1529,7 +1529,7 @@ test("Telegram bot API delivery honors pre-abort and in-flight abort", async () 
 test("market plans use platform renderers, strict paragraph chunks, and one final CTA", () => {
   const document = {
     templateId: "crypto-daily",
-    version: "market-content-v1",
+    version: "market-content-v2",
     nodes: [{ type: "heading", text: "Crypto Daily" }],
     sections: [
       { nodes: [{ type: "paragraph", text: `A-${"x".repeat(1800)}` }] },
@@ -1579,7 +1579,7 @@ test("market planners mark only the CTA they append, not an identical non-final 
   const [plan] = automation.buildAutomationTelegramPlans("crypto-daily", {
     document: {
       templateId: "crypto-daily",
-      version: "market-content-v1",
+      version: "market-content-v2",
       nodes: [
         { type: "paragraph", text: `Opening ${"x".repeat(2050)}` },
         { type: "heading", text: "BTC" },
@@ -1599,7 +1599,7 @@ for (const jobId of ["crypto-daily", "weekly-calendar", "data-release-updates"])
   test(`${jobId} plans preserve platform formatting and append one CTA to each destination final chunk`, () => {
     const document = {
       templateId: jobId,
-      version: "market-content-v1",
+      version: "market-content-v2",
       nodes: [{ type: "heading", text: "Market <Update>" }],
       sections: [
         { nodes: [{ type: "paragraph", text: `A-${"x".repeat(1600)}` }] },
@@ -1640,7 +1640,7 @@ for (const jobId of ["crypto-daily", "weekly-calendar", "data-release-updates"])
   test(`${jobId} plans add no CTA divider when destination CTA is empty`, () => {
     const document = {
       templateId: jobId,
-      version: "market-content-v1",
+      version: "market-content-v2",
       nodes: [{ type: "paragraph", text: "Verified update" }],
     };
     const [telegram] = automation.buildAutomationTelegramPlans(jobId, { document }, [
@@ -1660,7 +1660,7 @@ for (const jobId of ["crypto-daily", "weekly-calendar", "data-release-updates"])
 function marketDocumentWithParagraphs(lengths) {
   return {
     templateId: "crypto-daily",
-    version: "market-content-v1",
+    version: "market-content-v2",
     nodes: [],
     sections: [{ nodes: lengths.map((length, index) => ({
       type: "paragraph",
@@ -1701,7 +1701,7 @@ test("oversized CTA fails safely instead of splitting or producing an over-limit
 test("verified market jobs deliver the community gateway document", () => {
   for (const jobId of ["weekly-calendar", "data-release-updates"]) {
     const generated = {
-      document: { templateId: jobId, version: "market-content-v1", nodes: [{ type: "paragraph", text: "FULL ARTICLE" }] },
+      document: { templateId: jobId, version: "market-content-v2", nodes: [{ type: "paragraph", text: "FULL ARTICLE" }] },
       communityDocument: { templateId: `${jobId}-community`, version: "market-editorial-v1", nodes: [{ type: "paragraph", text: "COMMUNITY GATEWAY" }] },
     };
     const [telegram] = automation.buildAutomationTelegramPlans(jobId, generated, [

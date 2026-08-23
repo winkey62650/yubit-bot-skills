@@ -885,10 +885,10 @@ test("whale preview exposes the approved poster and operating copy before publis
   assert.doesNotMatch(`${preview.headline}\n${preview.caption}`, /每小时|hourly|固定\s*\d+\s*条/i);
 });
 
-test("public editorial previews omit quotas, clock times and publishing frequency", () => {
+test("public editorial previews omit quotas, unresolved time placeholders and publishing frequency", () => {
   for (const contentType of ["crypto-daily", "weekly-calendar", "data-release-updates", "daily-analysis", "whale-signals"]) {
     const preview = getContentTemplate(contentType).preview;
     const publicCopy = `${preview.headline}\n${preview.caption}`;
-    assert.doesNotMatch(publicCopy, /\b11\s+(?:stories|items|events)\b|\{\{TIME_UTC\}\}|\d{1,2}:\d{2}\s*UTC|updates hourly|\bhourly\b/i);
+    assert.doesNotMatch(publicCopy, /\b11\s+(?:stories|items|events)\b|\{\{TIME_UTC\}\}|updates hourly|\bhourly\b/i);
   }
 });

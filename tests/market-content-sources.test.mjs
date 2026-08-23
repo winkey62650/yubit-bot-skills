@@ -1554,6 +1554,36 @@ test("DXY skips the target-minute bar when it closes after a mid-minute event", 
   assert.equal(result.data.DXY.beforePriceAt, new Date(previousMinute).toISOString());
 });
 
+test("market reaction captures Nasdaq and US two-year yield with explicit units", async () => {
+  const target = Date.parse("2026-08-18T12:00:30.000Z");
+  const previousMinute = Date.parse("2026-08-18T11:59:00.000Z");
+  const latestMinute = Date.parse("2026-08-18T12:14:00.000Z");
+  const fetchImpl = async (url) => {
+    const symbol = new URL(url).pathname.split("/").at(-1);
+    const closes = symbol === "NQ=F" ? [23000, 23230] : [4.25, 4.30];
+    return jsonResponse({
+      chart: {
+        result: [{
+          timestamp: [previousMinute / 1000, latestMinute / 1000],
+          indicators: { quote: [{ close: closes }] },
+        }],
+        error: null,
+      },
+    });
+  };
+
+  const result = await fetchMarketReaction({
+    beforeAt: target,
+    now: latestMinute + 60_000,
+    fetchImpl,
+    symbols: ["NASDAQ", "US2Y"],
+  });
+
+  assert.equal(result.data.NASDAQ.changePercent, 1);
+  assert.equal(result.data.US2Y.changeBasisPoints, 5);
+  assert.deepEqual(result.sources.map((source) => source.id), ["nasdaq-yahoo-finance", "us2y-yahoo-finance"]);
+});
+
 test("OKX fallback requests candles before the target and selects only completed non-future candles", async () => {
   const target = Date.parse("2026-08-18T12:00:00.000Z");
   const urls = [];

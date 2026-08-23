@@ -35,7 +35,7 @@ function story(overrides = {}) {
 }
 
 test("exports the exact version, section, and release allowlist contracts", () => {
-  assert.equal(MARKET_CONTENT_TEMPLATE_VERSION, "market-content-v1");
+  assert.equal(MARKET_CONTENT_TEMPLATE_VERSION, "market-content-v2");
   assert.deepEqual(CRYPTO_DAILY_SECTIONS, ["btc-etf-institutional", "regulation", "market-project"]);
   assert.deepEqual(RELEASE_INDICATOR_ALLOWLIST, [
     "cpi", "core-cpi", "pce", "core-pce", "nonfarm-payrolls", "unemployment-rate",
@@ -646,6 +646,32 @@ test("weekly calendar covers the current UTC Monday through Sunday, groups by da
   assert.doesNotMatch(JSON.stringify(document), /null|undefined/);
 });
 
+test("weekly calendar renders provenance-backed release values as readable scalars", () => {
+  const document = buildWeeklyCalendarDocument({
+    now,
+    events: [{
+      id: "claims",
+      title: "Continuing Jobless Claims",
+      indicator: "initial-jobless-claims",
+      country: "US",
+      importance: 3,
+      scheduledAt: "2026-08-21T08:30:00Z",
+      values: {
+        actual: { value: "1,799K", status: "verified", sourceId: "official" },
+        forecast: { rawValue: "1,790", unit: "K", status: "verified", sourceId: "calendar" },
+        previous: { value: "1,781K", status: "verified", sourceId: "official" },
+      },
+      source: { label: "Official calendar", url: "https://example.com/calendar" },
+    }],
+  });
+
+  const metrics = document.days[0].events[0].nodes.filter((node) => node.type === "metric");
+  assert.ok(metrics.some((node) => node.label === "Actual" && node.value === "1,799K"));
+  assert.ok(metrics.some((node) => node.label === "Forecast" && node.value === "1,790K"));
+  assert.ok(metrics.some((node) => node.label === "Previous" && node.value === "1,781K"));
+  assert.doesNotMatch(JSON.stringify(metrics), /\[object Object\]/);
+});
+
 test("weekly calendar localizes non-US market transmission instead of applying a Fed-only explanation", () => {
   const document = buildWeeklyCalendarDocument({
     now,
@@ -803,7 +829,7 @@ test("weekly calendar treats a date-only scheduledAt as TBD while retaining its 
 
   assert.deepEqual(document.days.map((day) => day.date), ["2026-08-20"]);
   assert.equal(document.days[0].events[0].time, "TBD");
-  assert.match(document.days[0].events[0].nodes[0].text, /^TBD —/);
+  assert.match(document.days[0].events[0].nodes[0].text, /^TBD UTC —/);
   assert.doesNotMatch(renderTelegramMarketDocument(document), /00:00/);
 });
 
