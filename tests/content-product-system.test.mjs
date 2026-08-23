@@ -161,6 +161,33 @@ test("Telegram and Discord plans preserve canonical facts and respect channel li
   assert.ok(rendered.discord.chunks.join("").includes("\\*"));
 });
 
+test("all four Telegram products render a structured text-only editorial layout", async () => {
+  const expectedKickers = new Map([
+    ["daily-market-brief", "DAILY MARKET BRIEF"],
+    ["weekly-catalyst-calendar", "WEEKLY CATALYSTS"],
+    ["data-flash", "DATA FLASH"],
+    ["market-follow-up", "MARKET FOLLOW-UP"],
+  ]);
+
+  for (const product of CONTENT_PRODUCT_TYPES) {
+    const system = createContentProductSystem({ store: storeDouble() });
+    const prepared = await system.prepare(input(product, {
+      title: `Layout <check> & ${product}`,
+    }));
+    const rendered = system.renderChannels(prepared);
+    const telegram = rendered.telegram.chunks.join("\n\n");
+
+    assert.equal(rendered.telegram.parseMode, "HTML");
+    assert.match(telegram, new RegExp(`<b>YUBIT ACADEMY · ${expectedKickers.get(product)}</b>`));
+    assert.match(telegram, /<b>01 · VERIFIED FACTS<\/b>/);
+    assert.match(telegram, /<b>02 · MARKET READ<\/b>/);
+    assert.match(telegram, /<b>03 · RISK BOUNDARY<\/b>/);
+    assert.match(telegram, /<b>04 · NEXT STEP<\/b>/);
+    assert.match(telegram, /Layout &lt;check&gt; &amp;/);
+    assert.doesNotMatch(telegram, /<img|sendPhoto|photo=/i);
+  }
+});
+
 test("lifecycle is monotonic and published/blocked states are terminal", async () => {
   const store = storeDouble();
   const system = createContentProductSystem({ store });

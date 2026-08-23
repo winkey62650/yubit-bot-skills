@@ -8,6 +8,7 @@ import {
   buildContentProductInputs,
   governAutomationContent,
 } from "../lib/content-automation-adapter.mjs";
+import { buildAcademyDemoShowcaseContent } from "../lib/academy-demo-showcase.mjs";
 import { buildAutomationDiscordPlans, buildAutomationTelegramPlans, runAutomationJob } from "../lib/automation-jobs.mjs";
 
 const NOW = "2026-08-23T12:31:00.000Z";
@@ -78,6 +79,26 @@ test("maps the three automation jobs to exactly four governed content products",
   assert.ok(binanceSource);
   assert.deepEqual(release[1].facts[0].sourceRefs, [binanceSource.id]);
   assert.match(release[1].correlationStatement, /correlation, not causation/i);
+});
+
+test("the Academy demo showcase is an explicit historical replay that yields all four governed products", () => {
+  const jobs = ["crypto-daily", "weekly-calendar", "data-release-updates"];
+  const products = jobs.flatMap((jobId) => buildContentProductInputs(
+    jobId,
+    buildAcademyDemoShowcaseContent(jobId, { now: NOW }),
+    { now: NOW, publicBaseUrl: "https://academy.example" },
+  ));
+
+  assert.deepEqual(products.map(({ product }) => product), [
+    "daily-market-brief",
+    "weekly-catalyst-calendar",
+    "data-flash",
+    "market-follow-up",
+  ]);
+  assert.equal(products.every(({ title }) => /DEMO REPLAY/i.test(title)), true);
+  assert.equal(products.every(({ sources }) => sources.every(({ url }) => url.startsWith("https://"))), true);
+  assert.equal(products.find(({ product }) => product === "data-flash")?.event.actual, "2.7% YoY");
+  assert.match(products.find(({ product }) => product === "market-follow-up")?.correlationStatement || "", /correlation, not causation/i);
 });
 
 test("a blocked governance result fails closed before distribution", async () => {
@@ -162,6 +183,36 @@ test("market delivery plans use the approved canonical channel bytes and hash", 
   assert.equal(telegram.steps[0].payload.text, "Approved &amp; canonical");
   assert.equal(discord.steps[0].payload.content, "Approved \\*canonical\\*");
   assert.doesNotMatch(telegram.steps[0].payload.text, /LEGACY/);
+});
+
+test("data release delivery includes both governed products and remains text-only when media is suppressed", () => {
+  const governance = {
+    approved: true,
+    channelPlans: [
+      {
+        productId: "data-flash-us-cpi",
+        contentHash: "sha256:flash",
+        telegram: { chunks: ["<b>YUBIT ACADEMY · DATA FLASH</b>"] },
+        discord: { chunks: ["**YUBIT ACADEMY · DATA FLASH**"] },
+      },
+      {
+        productId: "market-follow-up-us-cpi",
+        contentHash: "sha256:follow-up",
+        telegram: { chunks: ["<b>YUBIT ACADEMY · MARKET FOLLOW-UP</b>"] },
+        discord: { chunks: ["**YUBIT ACADEMY · MARKET FOLLOW-UP**"] },
+      },
+    ],
+  };
+  const payload = { document: { title: "legacy" }, contentGovernance: governance };
+  const target = { platform: "telegram", chatId: "-1003710405969", threadId: 8 };
+  const [plan] = buildAutomationTelegramPlans("data-release-updates", payload, [target], null);
+
+  assert.deepEqual(plan.contentProductIds, ["data-flash-us-cpi", "market-follow-up-us-cpi"]);
+  assert.deepEqual(plan.contentHashes, ["sha256:flash", "sha256:follow-up"]);
+  assert.deepEqual(plan.steps.map(({ method }) => method), ["sendMessage", "sendMessage"]);
+  assert.match(plan.steps[0].payload.text, /DATA FLASH/);
+  assert.match(plan.steps[1].payload.text, /MARKET FOLLOW-UP/);
+  assert.equal(plan.steps.some(({ payload }) => payload.photo || payload.imageUrl), false);
 });
 
 test("the automation runner records governed products before returning a preview", async () => {

@@ -4,9 +4,13 @@ import test from "node:test";
 
 const require = createRequire(import.meta.url);
 const {
+  DEMO_SHOWCASE_CASES,
   assertDemoAcceptanceExecution,
   assertDemoAcceptancePreview,
+  assertDemoShowcaseExecution,
+  assertDemoShowcasePreview,
   buildDemoAcceptanceTemporaryRule,
+  buildDemoShowcaseTemporaryRule,
   selectDemoAcceptanceRule,
 } = require("../lib/demo-content-acceptance.cjs");
 
@@ -148,4 +152,44 @@ test("DEMO acceptance requires one successful Topic 8 result and a matching dura
     execution: { ...execution, feedbackPersisted: false, feedbackPending: true },
     deliveries: receipts,
   }), /feedback closure/i);
+});
+
+test("four-product showcase is text-only, topic-scoped, and receipt-backed", () => {
+  const showcaseCase = DEMO_SHOWCASE_CASES[0];
+  const rule = buildDemoShowcaseTemporaryRule(showcaseCase);
+  const target = rule.targets[0];
+  const product = { id: "daily-market-brief-2026-08-23", product: "daily-market-brief", status: "distribution-ready", contentHash: "sha256:daily" };
+  const plan = {
+    target,
+    contentPolicy: "obsidian-canonical",
+    contentProductIds: [product.id],
+    contentHashes: [product.contentHash],
+    steps: [{ method: "sendMessage", payload: { text: "<b>YUBIT ACADEMY · DAILY MARKET BRIEF</b>" } }],
+  };
+  assert.deepEqual(assertDemoShowcasePreview({
+    publishable: true,
+    demoShowcase: true,
+    textOnly: true,
+    imageUrl: null,
+    contentGovernance: { approved: true, products: [product] },
+    deliveryPlans: [plan],
+  }, showcaseCase), { productIds: [product.id], stepCount: 1 });
+
+  const published = { ...product, status: "published" };
+  const execution = {
+    status: "success",
+    feedbackPersisted: true,
+    feedbackPending: false,
+    feedbackResults: [{ deliveryId: "delivery-showcase", receiptId: "feedback-showcase", feedbackPersisted: true, feedbackStatePersisted: true }],
+    run: { preview: {
+      demoShowcase: true,
+      textOnly: true,
+      imageUrl: null,
+      contentGovernance: { approved: true, products: [published] },
+      deliveryPlans: [plan],
+      targetResults: [{ target, status: "success", messageIds: [1401] }],
+    } },
+  };
+  const receipt = { id: "delivery-showcase", ruleId: rule.id, status: "success", target, targetMessageIds: [1401] };
+  assert.deepEqual(assertDemoShowcaseExecution({ ruleId: rule.id, execution, deliveries: [receipt], showcaseCase }).productTypes, ["daily-market-brief"]);
 });

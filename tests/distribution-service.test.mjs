@@ -3881,6 +3881,50 @@ test("exact-target automation execution never expands configured targets through
   assert.deepEqual(receivedTargets, [sourceTarget]);
 });
 
+test("manual automation execution passes the explicit text-only delivery guard to the runner", async () => {
+  const target = { id: "target-demo-text", chatId: "-1003710405969", threadId: 8 };
+  const rule = {
+    id: "rule-demo-text-only",
+    kind: "automation",
+    name: "Text-only demo",
+    contentType: "daily-analysis",
+    targets: [target],
+  };
+  const repository = {
+    async getRule(id) { return id === rule.id ? rule : null; },
+    async listRules() { return []; },
+    async createEvent(event) { return { id: "event-demo-text-only", ...event }; },
+    async updateEvent() {},
+    async createDelivery(delivery) { return { id: "delivery-demo-text-only", ...delivery }; },
+    async updateDelivery() {},
+  };
+  let receivedTextOnly;
+  let receivedDemoShowcase;
+
+  await runDistributionAutomationRule(rule.id, {
+    repository,
+    exactTargets: true,
+    textOnly: true,
+    demoShowcase: true,
+    env: {
+      TELEGRAM_DEMO_ONLY: "true",
+      TELEGRAM_DISTRIBUTION_APPROVED_TARGETS: "-1003710405969:8,-1003710405969:10,-1003710405969:16",
+    },
+    now: new Date("2026-08-22T00:00:00.000Z"),
+    runner: async (_jobId, options) => {
+      receivedTextOnly = options.textOnly;
+      receivedDemoShowcase = options.demoShowcase;
+      return {
+        status: "success",
+        preview: { targetResults: [{ target, status: "success", messageId: 1274 }] },
+      };
+    },
+  });
+
+  assert.equal(receivedTextOnly, true);
+  assert.equal(receivedDemoShowcase, true);
+});
+
 test("broadcast expansion is one hop, deduplicated, and never auto-publishes review rules", async () => {
   const source = { id: "source", chatId: "-1001", threadId: 10 };
   const destination = { id: "destination", chatId: "-2001", threadId: 17 };

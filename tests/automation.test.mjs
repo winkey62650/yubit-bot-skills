@@ -1108,7 +1108,10 @@ test("data release preserves successful receipts but never retries an uncertain 
 
   const retry = await run("2026-08-19T12:32:00Z");
   assert.ok(["manual-reconciliation", "skipped"].includes(retry.status));
-  assert.deepEqual(Object.fromEntries(sends), { c1: 1, c2: 1 });
+  assert.deepEqual(Object.fromEntries(sends), {
+    c1: uncertain.preview.deliveryPlans.find((plan) => plan.target.channelId === "c1").steps.length,
+    c2: 1,
+  });
   assert.deepEqual((await repository.getMeta("market-content:release-state:v1")).publishedKeys, []);
 });
 
@@ -1173,7 +1176,7 @@ test("data release retries only global acknowledgement when release-state persis
   await assert.rejects(() => automation.runAutomationJob("data-release-updates", { ...options, now: "2026-08-19T12:31:00Z" }), /release state unavailable/);
   const retried = await automation.runAutomationJob("data-release-updates", { ...options, now: "2026-08-19T12:32:00Z" });
   assert.equal(retried.status, "success");
-  assert.equal(sends, 1);
+  assert.equal(sends, 2);
   assert.equal((await repository.getMeta("market-content:release-state:v1")).monitoredEvents[0].observedAt, "2026-08-19T12:30:00.000Z");
 });
 
@@ -1205,7 +1208,7 @@ test("data release does not resend after an external send when target receipt pe
 
   assert.equal(first.status, "success");
   assert.equal(second.status, "skipped");
-  assert.equal(sends, 1);
+  assert.equal(sends, first.preview.deliveryPlans[0].steps.length);
 });
 
 test("Telegram release remains fail-closed without resending while its success receipt cannot persist", async () => {
@@ -1242,7 +1245,7 @@ test("Telegram release remains fail-closed without resending while its success r
   assert.equal(recovered.status, "success");
   assert.equal(recovered.preview.deliveryPlans.length, 0);
   assert.deepEqual((await repository.getMeta("market-content:release-state:v1")).publishedKeys, [recovered.preview.deduplicationKey]);
-  assert.equal(sends, 2);
+  assert.equal(sends, first.preview.deliveryPlans[0].steps.length);
 });
 
 test("a sending marker from a crash before the first send requires manual reconciliation", async () => {
@@ -1388,7 +1391,7 @@ test("data-release run lease renews across its TTL and releases after an excepti
   });
   const results = await Promise.all([first, second]);
   assert.deepEqual(results.map(({ status }) => status).sort(), ["skipped", "success"]);
-  assert.equal(sends, 1);
+  assert.equal(sends, results.find(({ status }) => status === "success").preview.deliveryPlans[0].steps.length);
   assert.equal(meta.has("market-content:release-run-lock:v1"), false);
 });
 
@@ -1474,7 +1477,7 @@ test("data-release run lease serializes two repository instances on one backend"
   ]);
 
   assert.deepEqual(results.map(({ status }) => status).sort(), ["skipped", "success"]);
-  assert.equal(sends, 1);
+  assert.equal(sends, results.find(({ status }) => status === "success").preview.deliveryPlans[0].steps.length);
 });
 
 test("an injected Telegram sender runs without a production bot token", async () => {

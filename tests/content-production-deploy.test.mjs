@@ -50,14 +50,16 @@ test("production workflow defaults formal-server acceptance to no-send", () => {
   assert.match(workflow, /TELEGRAM_\[\^=\]\*\|DISCORD_\[\^=\]\*/);
 });
 
-test("operator-triggered Academy DEMO acceptance is fenced to one Crypto Daily send on Topic 8", () => {
+test("operator-triggered Academy DEMO acceptance is fenced to four text products on Topics 8 and 10", () => {
   const workflow = read(".github/workflows/telegram-automations.yml");
 
   assert.match(workflow, /academy-demo/);
   assert.match(workflow, /accept-academy-demo-content\.cjs/);
-  assert.match(workflow, /TEST_EXPECTED_CHAT_ID:\s*["']-1003710405969["']/);
-  assert.match(workflow, /TEST_EXPECTED_THREAD_ID:\s*["']8["']/);
-  assert.match(workflow, /TEST_CONTENT_TYPE:\s*crypto-daily/);
+  assert.match(workflow, /products \| length == 4/);
+  assert.match(workflow, /executions \| length == 3/);
+  assert.match(workflow, /mediaIncluded == false/);
+  assert.match(workflow, /chatId == ["']-1003710405969["']/);
+  assert.match(workflow, /threadId == 8 or \.threadId == 10/);
   assert.match(workflow, /ALLOW_LIVE_TELEGRAM=true/);
   assert.match(workflow, /publisher_config_before/);
   assert.match(workflow, /publisher_config_after/);

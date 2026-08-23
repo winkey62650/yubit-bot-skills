@@ -41,7 +41,9 @@ export async function POST(request) {
       return NextResponse.json({
         ok: true,
         result: await runDistributionAutomationRule(String(body.id || ""), {
-          exactTargets: body.exactTargets === true
+          exactTargets: body.exactTargets === true,
+          textOnly: body.textOnly === true,
+          demoShowcase: body.demoShowcase === true
         })
       });
     }

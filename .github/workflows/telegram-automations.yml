@@ -25,9 +25,6 @@ jobs:
     runs-on: ubuntu-latest
     environment: Production
     env:
-      TEST_CONTENT_TYPE: crypto-daily
-      TEST_EXPECTED_CHAT_ID: "-1003710405969"
-      TEST_EXPECTED_THREAD_ID: "8"
       TEST_BASE_URL: https://152-32-161-174.sslip.io
     steps:
       - name: Install SSH password helper
@@ -35,7 +32,7 @@ jobs:
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq sshpass
 
-      - name: Send one governed content set to Academy DEMO Topic 8
+      - name: Send all four governed text products to approved Academy DEMO topics
         env:
           SSHPASS: ${{ secrets.YUBIT_SERVER_PASSWORD }}
           EXPECTED_SHA: ${{ github.sha }}
@@ -51,7 +48,7 @@ jobs:
             -o ServerAliveInterval=10 \
             -o StrictHostKeyChecking=accept-new \
             ubuntu@152.32.161.174 \
-            "EXPECTED_SHA='$EXPECTED_SHA' TEST_CONTENT_TYPE='$TEST_CONTENT_TYPE' TEST_EXPECTED_CHAT_ID='$TEST_EXPECTED_CHAT_ID' TEST_EXPECTED_THREAD_ID='$TEST_EXPECTED_THREAD_ID' TEST_BASE_URL='$TEST_BASE_URL' bash -s" \
+            "EXPECTED_SHA='$EXPECTED_SHA' TEST_BASE_URL='$TEST_BASE_URL' bash -s" \
             >"$report_path" <<'REMOTE'
           set -Eeuo pipefail
           env_file=/etc/yubit-academy/production.env
@@ -94,9 +91,6 @@ jobs:
             TEST_BASE_URL="$TEST_BASE_URL" \
             TEST_USERNAME="$auth_username" \
             TEST_PASSWORD="$auth_password" \
-            TEST_CONTENT_TYPE="$TEST_CONTENT_TYPE" \
-            TEST_EXPECTED_CHAT_ID="$TEST_EXPECTED_CHAT_ID" \
-            TEST_EXPECTED_THREAD_ID="$TEST_EXPECTED_THREAD_ID" \
             TEST_REPORT_PATH="$report_file" \
             ACCEPTANCE_QUIET=true \
             /opt/yubit-node/bin/node "$release/scripts/accept-academy-demo-content.cjs"
@@ -109,9 +103,9 @@ jobs:
           fi
           cat "$report_file"
           REMOTE
-          jq -e '.ok == true and .contentType == "crypto-daily" and .target.chatId == "-1003710405969" and .target.threadId == 8 and (.receipt.messageIds | length > 0)' "$report_path" >/dev/null
-          echo "### Academy DEMO content acceptance" >>"$GITHUB_STEP_SUMMARY"
-          jq -r '"- Release: `\(.release.commitSha)`\n- Target: `\(.target.chatId):\(.target.threadId)`\n- Telegram message IDs: `\(.receipt.messageIds | join(","))`\n- Delivery receipt: `\(.receipt.deliveryId)`"' "$report_path" >>"$GITHUB_STEP_SUMMARY"
+          jq -e '.ok == true and .historicalReplay == true and .mediaIncluded == false and (.products | length == 4) and (.executions | length == 3) and all(.targets[]; .chatId == "-1003710405969" and (.threadId == 8 or .threadId == 10))' "$report_path" >/dev/null
+          echo "### Academy DEMO four-product text acceptance" >>"$GITHUB_STEP_SUMMARY"
+          jq -r '"- Release: `\(.release.commitSha)`\n- Products: `\(.products | map(.product) | join(", "))`\n- Telegram messages: `\(.executions | map(.messageIds | join(",")) | join(" · "))`\n- Media included: `\(.mediaIncluded)`"' "$report_path" >>"$GITHUB_STEP_SUMMARY"
 
       - name: Upload Academy DEMO acceptance evidence
         uses: actions/upload-artifact@v4
