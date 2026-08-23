@@ -11,6 +11,7 @@ on:
         type: choice
         options:
           - academy-demo
+          - academy-release-recovery
           - academy-audit
           - agents
           - distribution
@@ -236,6 +237,118 @@ jobs:
         with:
           name: academy-demo-acceptance-${{ github.sha }}
           path: ${{ runner.temp }}/academy-demo-acceptance.json
+          if-no-files-found: error
+          retention-days: 30
+
+  academy_release_recovery:
+    if: inputs.job == 'academy-release-recovery'
+    runs-on: ubuntu-latest
+    environment: Production
+    env:
+      TEST_BASE_URL: https://152-32-161-174.sslip.io
+    steps:
+      - name: Install SSH password helper
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq sshpass
+
+      - name: Send only the two missing governed text products to Academy DEMO Topic 8
+        env:
+          SSHPASS: ${{ secrets.YUBIT_SERVER_PASSWORD }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -Eeuo pipefail
+          if [ -z "$SSHPASS" ]; then
+            echo "YUBIT_SERVER_PASSWORD is not configured." >&2
+            exit 1
+          fi
+          report_path="$RUNNER_TEMP/academy-demo-four-product-acceptance.json"
+          sshpass -e ssh \
+            -o ConnectTimeout=20 \
+            -o ServerAliveInterval=10 \
+            -o StrictHostKeyChecking=accept-new \
+            ubuntu@152.32.161.174 \
+            "EXPECTED_SHA='$EXPECTED_SHA' TEST_BASE_URL='$TEST_BASE_URL' bash -s" \
+            >"$report_path" <<'REMOTE'
+          set -Eeuo pipefail
+          env_file=/etc/yubit-academy/production.env
+          expected_targets='-1003710405969:8,-1003710405969:10,-1003710405969:16'
+          report_file="$(sudo --user=ubuntu mktemp)"
+          cleanup() { rm -f "$report_file"; }
+          trap cleanup EXIT
+
+          release="$(readlink -f /opt/yubit-academy/current)"
+          case "$release" in
+            /opt/yubit-academy/releases/*) ;;
+            *) echo "Current release path is invalid." >&2; exit 1 ;;
+          esac
+          current_sha="$(tr -d '[:space:]' <"$release/.release-commit")"
+          if [ "$current_sha" != "$EXPECTED_SHA" ]; then
+            echo "The requested workflow SHA is not the deployed release." >&2
+            exit 1
+          fi
+
+          read_env() {
+            sudo awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "$env_file"
+          }
+          auth_username="$(read_env AUTH_USERNAME)"
+          auth_password="$(read_env AUTH_PASSWORD)"
+          obsidian_vault_path="$(read_env OBSIDIAN_VAULT_PATH)"
+          if [ -z "$auth_username" ] || [ -z "$auth_password" ] || [ -z "$obsidian_vault_path" ]; then
+            echo "Production application credentials or Obsidian vault are unavailable." >&2
+            exit 1
+          fi
+          if [ "$(read_env TELEGRAM_DEMO_ONLY)" != "true" ] \
+            || [ "$(read_env TRADING_DEMO_ONLY)" != "true" ] \
+            || [ "$(read_env TELEGRAM_DISTRIBUTION_APPROVED_TARGETS)" != "$expected_targets" ] \
+            || [ "$(read_env ALLOW_LIVE_TELEGRAM)" != "false" ]; then
+            echo "Production Telegram safety policy is not locked." >&2
+            exit 1
+          fi
+          publisher_config_before="$(sudo grep -E '^(TELEGRAM_[^=]*|DISCORD_[^=]*|TRADING_DEMO_ONLY|ALLOW_LIVE_TELEGRAM)=' "$env_file" | sha256sum | awk '{print $1}')"
+
+          sudo --user=ubuntu env \
+            RELEASE_STAGE=production \
+            ALLOW_LIVE_TELEGRAM=true \
+            TEST_BASE_URL="$TEST_BASE_URL" \
+            TEST_USERNAME="$auth_username" \
+            TEST_PASSWORD="$auth_password" \
+            OBSIDIAN_VAULT_PATH="$obsidian_vault_path" \
+            TEST_REPORT_PATH="$report_file" \
+            ACCEPTANCE_QUIET=true \
+            /opt/yubit-node/bin/node "$release/scripts/recover-academy-demo-release.cjs"
+
+          publisher_config_after="$(sudo grep -E '^(TELEGRAM_[^=]*|DISCORD_[^=]*|TRADING_DEMO_ONLY|ALLOW_LIVE_TELEGRAM)=' "$env_file" | sha256sum | awk '{print $1}')"
+          if [ "$publisher_config_after" != "$publisher_config_before" ] \
+            || [ "$(read_env ALLOW_LIVE_TELEGRAM)" != "false" ]; then
+            echo "DEMO recovery changed persistent publisher safety configuration." >&2
+            exit 1
+          fi
+          cat "$report_file"
+          REMOTE
+          jq -e '
+            .ok == true
+            and .operation == "academy-demo-release-only-recovery"
+            and .historicalReplay == true
+            and .mediaIncluded == false
+            and .exactTargets == true
+            and (.priorExecutions | length == 2)
+            and (.priorExecutions[0].key == "daily" and .priorExecutions[0].messageIds == [1290] and .priorExecutions[0].target.threadId == 10)
+            and (.priorExecutions[1].key == "weekly" and .priorExecutions[1].messageIds == [1291] and .priorExecutions[1].target.threadId == 8)
+            and (.recoveryExecution.productTypes == ["data-flash", "market-follow-up"])
+            and (.recoveryExecution.messageIds | length == 2)
+            and (.recoveryExecution.target.chatId == "-1003710405969" and .recoveryExecution.target.threadId == 8)
+            and (.products | map(.product) == ["daily-market-brief", "weekly-catalyst-calendar", "data-flash", "market-follow-up"])
+            and (.cleanup == [{"id":"academy-demo-showcase-release-temporary","deleted":true}])
+          ' "$report_path" >/dev/null
+          echo "### Academy DEMO four-product text acceptance completed" >>"$GITHUB_STEP_SUMMARY"
+          jq -r '"- Prior messages: `\(.priorExecutions | map(.messageIds | join(",")) | join(" · "))`\n- Recovered messages: `\(.recoveryExecution.messageIds | join(","))`\n- Products: `\(.products | map(.product) | join(", "))`\n- Media included: `\(.mediaIncluded)`"' "$report_path" >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Upload complete Academy DEMO acceptance evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: academy-demo-four-product-acceptance-${{ github.sha }}
+          path: ${{ runner.temp }}/academy-demo-four-product-acceptance.json
           if-no-files-found: error
           retention-days: 30
 

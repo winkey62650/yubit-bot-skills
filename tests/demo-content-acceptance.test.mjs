@@ -9,6 +9,7 @@ const {
   assertDemoAcceptancePreview,
   assertDemoShowcaseExecution,
   assertDemoShowcasePreview,
+  assertDemoShowcaseRecoveryState,
   buildDemoAcceptanceTemporaryRule,
   buildDemoShowcaseTemporaryRule,
   selectDemoAcceptanceRule,
@@ -192,4 +193,59 @@ test("four-product showcase is text-only, topic-scoped, and receipt-backed", () 
   };
   const receipt = { id: "delivery-showcase", ruleId: rule.id, status: "success", target, targetMessageIds: [1401] };
   assert.deepEqual(assertDemoShowcaseExecution({ ruleId: rule.id, execution, deliveries: [receipt], showcaseCase }).productTypes, ["daily-market-brief"]);
+});
+
+test("release-only recovery requires exactly one prior daily and weekly receipt and no release receipt", () => {
+  const receipts = [
+    {
+      receiptId: "feedback-daily",
+      deliveryId: "delivery-daily",
+      contentProductId: "daily-market-brief-2026-08-23",
+      ruleId: "academy-demo-showcase-daily-temporary",
+      status: "success",
+      endpoint: { chatId: "-1003710405969", threadId: 10 },
+      messageIds: [1290],
+    },
+    {
+      receiptId: "feedback-weekly",
+      deliveryId: "delivery-weekly",
+      contentProductId: "weekly-catalyst-calendar-2025-07-14",
+      ruleId: "academy-demo-showcase-weekly-temporary",
+      status: "success",
+      endpoint: { chatId: "-1003710405969", threadId: 8 },
+      messageIds: [1291],
+    },
+  ];
+
+  assert.deepEqual(assertDemoShowcaseRecoveryState({ receipts, rules: [] }), [
+    {
+      key: "daily",
+      productTypes: ["daily-market-brief"],
+      productIds: ["daily-market-brief-2026-08-23"],
+      target: { chatId: "-1003710405969", threadId: 10 },
+      messageIds: [1290],
+      deliveryId: "delivery-daily",
+      feedbackReceiptId: "feedback-daily",
+    },
+    {
+      key: "weekly",
+      productTypes: ["weekly-catalyst-calendar"],
+      productIds: ["weekly-catalyst-calendar-2025-07-14"],
+      target: { chatId: "-1003710405969", threadId: 8 },
+      messageIds: [1291],
+      deliveryId: "delivery-weekly",
+      feedbackReceiptId: "feedback-weekly",
+    },
+  ]);
+
+  assert.throws(() => assertDemoShowcaseRecoveryState({ receipts: receipts.slice(1), rules: [] }), /exactly one immutable daily receipt/i);
+  assert.throws(() => assertDemoShowcaseRecoveryState({ receipts: [...receipts, receipts[0]], rules: [] }), /exactly one immutable daily receipt/i);
+  assert.throws(() => assertDemoShowcaseRecoveryState({
+    receipts: [...receipts, { ...receipts[1], ruleId: "academy-demo-showcase-release-temporary" }],
+    rules: [],
+  }), /no prior release receipt/i);
+  assert.throws(() => assertDemoShowcaseRecoveryState({
+    receipts,
+    rules: [{ id: "academy-demo-showcase-release-temporary" }],
+  }), /no temporary showcase rules/i);
 });

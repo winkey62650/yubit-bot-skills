@@ -175,10 +175,12 @@ test("run-now exists only in explicitly authorized live acceptance scripts", asy
   }
   assert.deepEqual(offenders.map((item) => item.file), [
     "accept-academy-demo-content.cjs",
+    "recover-academy-demo-release.cjs",
     "test-production-automation-delivery.cjs",
   ]);
   for (const offender of offenders) assert.match(offender.source, /authorizeLiveTelegramOperation/);
   assert.match(offenders.find((item) => item.file === "accept-academy-demo-content.cjs").source, /exactTargets:\s*true/);
+  assert.match(offenders.find((item) => item.file === "recover-academy-demo-release.cjs").source, /exactTargets:\s*true/);
 });
 
 test("production distribution gates cover all six automations and seven broadcasts", async () => {
