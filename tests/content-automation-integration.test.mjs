@@ -10,6 +10,7 @@ import {
 } from "../lib/content-automation-adapter.mjs";
 import { buildAcademyDemoShowcaseContent } from "../lib/academy-demo-showcase.mjs";
 import { buildAutomationDiscordPlans, buildAutomationTelegramPlans, runAutomationJob } from "../lib/automation-jobs.mjs";
+import { buildReleaseDeduplicationKey } from "../lib/data-release-monitor.mjs";
 
 const NOW = "2026-08-23T12:31:00.000Z";
 const OFFICIAL = {
@@ -99,6 +100,13 @@ test("the Academy demo showcase is an explicit historical replay that yields all
   assert.equal(products.every(({ sources }) => sources.every(({ url }) => url.startsWith("https://"))), true);
   assert.equal(products.find(({ product }) => product === "data-flash")?.event.actual, "2.7% YoY");
   assert.match(products.find(({ product }) => product === "market-follow-up")?.correlationStatement || "", /correlation, not causation/i);
+});
+
+test("the Academy data replay uses the canonical release identity required by durable delivery", () => {
+  const release = buildAcademyDemoShowcaseContent("data-release-updates", { now: NOW });
+
+  assert.ok(release.event.scheduledAt);
+  assert.equal(release.deduplicationKey, buildReleaseDeduplicationKey(release.event));
 });
 
 test("a blocked governance result fails closed before distribution", async () => {
