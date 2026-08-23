@@ -103,6 +103,16 @@ wait_for_service_active() {
   return 1
 }
 
+capture_service_lifecycle_state() {
+  local service="$1"
+  local state
+
+  state="$(sudo systemctl show "$service" \
+    --property=LoadState,ActiveState,SubState \
+    --no-pager 2>/dev/null || true)"
+  printf '%s\n' "$state" | LC_ALL=C sort
+}
+
 if [[ ! -s "$ENV_FILE" ]]; then
   echo "Missing production environment file: $ENV_FILE" >&2
   exit 1
@@ -339,8 +349,8 @@ else
   ln -s "$STATE_ROOT" "$release/.runtime"
 fi
 
-worker_state_before="$(sudo systemctl show yubit-academy-worker.service --property=ActiveState,SubState,MainPID --no-pager 2>/dev/null || true)"
-discord_state_before="$(sudo systemctl show yubit-academy-discord.service --property=ActiveState,SubState,MainPID --no-pager 2>/dev/null || true)"
+worker_state_before="$(capture_service_lifecycle_state yubit-academy-worker.service)"
+discord_state_before="$(capture_service_lifecycle_state yubit-academy-discord.service)"
 delivery_count_before="$(PGPASSWORD="$local_database_password" psql "$local_database_dsn" -tAc "SELECT count(*) FROM distribution_deliveries")"
 delivery_count_before="${delivery_count_before//[[:space:]]/}"
 if [[ ! "$delivery_count_before" =~ ^[0-9]+$ ]]; then
@@ -392,8 +402,8 @@ for attempt in {1..30}; do
   sleep 2
 done
 
-worker_state_after="$(sudo systemctl show yubit-academy-worker.service --property=ActiveState,SubState,MainPID --no-pager 2>/dev/null || true)"
-discord_state_after="$(sudo systemctl show yubit-academy-discord.service --property=ActiveState,SubState,MainPID --no-pager 2>/dev/null || true)"
+worker_state_after="$(capture_service_lifecycle_state yubit-academy-worker.service)"
+discord_state_after="$(capture_service_lifecycle_state yubit-academy-discord.service)"
 delivery_count_after="$(PGPASSWORD="$local_database_password" psql "$local_database_dsn" -tAc "SELECT count(*) FROM distribution_deliveries")"
 delivery_count_after="${delivery_count_after//[[:space:]]/}"
 if [[ "$worker_state_after" != "$worker_state_before" || "$discord_state_after" != "$discord_state_before" ]]; then
@@ -439,8 +449,8 @@ if [[ "${final_rule_count//[[:space:]]/}" == "0" ]]; then
   echo "Local PostgreSQL primary contains no distribution rules after restore." >&2
   exit 1
 fi
-worker_state_after="$(sudo systemctl show yubit-academy-worker.service --property=ActiveState,SubState,MainPID --no-pager 2>/dev/null || true)"
-discord_state_after="$(sudo systemctl show yubit-academy-discord.service --property=ActiveState,SubState,MainPID --no-pager 2>/dev/null || true)"
+worker_state_after="$(capture_service_lifecycle_state yubit-academy-worker.service)"
+discord_state_after="$(capture_service_lifecycle_state yubit-academy-discord.service)"
 delivery_count_after="$(PGPASSWORD="$local_database_password" psql "$local_database_dsn" -tAc "SELECT count(*) FROM distribution_deliveries")"
 delivery_count_after="${delivery_count_after//[[:space:]]/}"
 publisher_config_after="$(sudo grep -E '^(TELEGRAM_|TRADING_DEMO_ONLY|ALLOW_LIVE_TELEGRAM|DISCORD_)=' "$ENV_FILE" | sha256sum | awk '{print $1}')"

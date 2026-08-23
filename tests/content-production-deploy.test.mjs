@@ -33,6 +33,8 @@ test("DEPLOY_NO_SEND is mandatory and leaves worker and Discord lifecycle untouc
   assert.doesNotMatch(deploy, /install .*yubit-academy-(worker|discord)\.service/);
   assert.match(deploy, /delivery_count_before/);
   assert.match(deploy, /delivery_count_after/);
+  assert.match(deploy, /capture_service_lifecycle_state/);
+  assert.doesNotMatch(deploy, /property=ActiveState,SubState,MainPID/);
   assert.match(deploy, /Runtime services touched by deployment: false/);
 });
 
