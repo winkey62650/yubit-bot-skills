@@ -259,10 +259,13 @@ test("all four Telegram products render a structured text-only editorial layout"
     const telegram = rendered.telegram.chunks.join("\n\n");
 
     assert.equal(rendered.telegram.parseMode, "HTML");
-    assert.match(telegram, new RegExp(`<b>YUBIT ACADEMY  ·  ${expectedKickers.get(product)}</b>`));
+    assert.match(telegram, new RegExp(`<b>${expectedKickers.get(product)}</b>`));
     assert.match(telegram, /<b>Layout &lt;check&gt; &amp;[^<]+<\/b>\n<i>Updated 23 Aug 2026 · 12:45 UTC<\/i>/);
     assert.match(telegram, /<blockquote><b>THE READ<\/b>\n[^<]+<\/blockquote>/);
-    assert.match(telegram, /<b>🟡 Neutral · BTC<\/b>  \|  (?:0–4H|1–7D)  \|  Medium confidence  \|  Importance 5\/5/);
+    assert.match(telegram, /<b>🟡 Neutral · ₿ BTC<\/b>  \|  Medium confidence  \|  Importance 5\/5/);
+    assert.match(telegram, /₿ BTC/);
+    if (product === "daily-market-brief") assert.match(telegram, /Ξ ETH/);
+    assert.doesNotMatch(telegram, /YUBIT|ACADEMY|0–4H|1–7D/);
     assert.doesNotMatch(telegram, /<b>BIAS<\/b>[\s\S]*<b>HORIZON<\/b>[\s\S]*<b>CONFIDENCE<\/b>/);
     assert.match(telegram, expectedAnalysisBlocks.get(product));
     assert.match(telegram, product === "data-flash" ? /<b>03  ·  WHAT TO WATCH<\/b>/ : /<b>WATCH NEXT<\/b>/);
@@ -270,10 +273,14 @@ test("all four Telegram products render a structured text-only editorial layout"
     assert.match(telegram, /<b>SOURCES<\/b>/);
     assert.doesNotMatch(telegram, /👀|⚠️|🔗|✓|🧭|📅|⚡|🔎/u);
     assert.equal((telegram.match(/\p{Extended_Pictographic}/gu) ?? []).length, expectedEmojiCounts.get(product));
-    assert.match(rendered.discord.chunks.join("\n\n"), /\*\*YUBIT ACADEMY  ·/);
-    assert.match(rendered.discord.chunks.join("\n\n"), /> \*\*THE READ\*\*/);
-    assert.match(rendered.discord.chunks.join("\n\n"), /\*\*BTC · NEUTRAL\*\*  \\|  (?:0–4H|1–7D)  \\|  MEDIUM CONF\./);
-    assert.match(rendered.discord.chunks.join("\n\n"), /WHAT HAPPENED|PREV \/ CONS \/ ACTUAL|01  ·  RELEASE|01  ·  MEASURED MOVE/);
+    const discord = rendered.discord.chunks.join("\n\n");
+    assert.match(discord, new RegExp(`\\*\\*${expectedKickers.get(product)}\\*\\*`));
+    assert.match(discord, /> \*\*THE READ\*\*/);
+    assert.match(discord, /\*\*₿ BTC · NEUTRAL\*\*  \\|  MEDIUM CONF\./);
+    assert.match(discord, /₿ BTC/);
+    if (product === "daily-market-brief") assert.match(discord, /Ξ ETH/);
+    assert.doesNotMatch(discord, /YUBIT|ACADEMY|0–4H|1–7D/);
+    assert.match(discord, /WHAT HAPPENED|PREV \/ CONS \/ ACTUAL|01  ·  RELEASE|01  ·  MEASURED MOVE/);
     assert.match(telegram, /Layout &lt;check&gt; &amp;/);
     assert.doesNotMatch(telegram, /<img|sendPhoto|photo=/i);
   }

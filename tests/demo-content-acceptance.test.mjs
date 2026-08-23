@@ -165,7 +165,7 @@ test("four-product showcase is text-only, topic-scoped, and receipt-backed", () 
     contentPolicy: "obsidian-canonical",
     contentProductIds: [product.id],
     contentHashes: [product.contentHash],
-    steps: [{ method: "sendMessage", payload: { text: "<b>YUBIT ACADEMY · DAILY MARKET BRIEF</b>" } }],
+    steps: [{ method: "sendMessage", payload: { text: "<b>📊 MARKET BRIEF</b>\n\n<b>₿ BTC · NEUTRAL</b>" } }],
   };
   assert.deepEqual(assertDemoShowcasePreview({
     publishable: true,
@@ -174,7 +174,22 @@ test("four-product showcase is text-only, topic-scoped, and receipt-backed", () 
     imageUrl: null,
     contentGovernance: { approved: true, products: [product] },
     deliveryPlans: [plan],
-  }, showcaseCase), { productIds: [product.id], stepCount: 1 });
+  }, showcaseCase), {
+    productIds: [product.id],
+    stepCount: 1,
+    publisherNeutral: true,
+    publicGenericHorizonIncluded: false,
+    nativeAssetGlyphs: true,
+  });
+
+  assert.throws(() => assertDemoShowcasePreview({
+    publishable: true,
+    demoShowcase: true,
+    textOnly: true,
+    imageUrl: null,
+    contentGovernance: { approved: true, products: [product] },
+    deliveryPlans: [{ ...plan, steps: [{ method: "sendMessage", payload: { text: "<b>YUBIT ACADEMY · MARKET BRIEF</b>\n1–7D\n₿ BTC" } }] }],
+  }, showcaseCase), /publisher-neutral/i);
 
   const published = { ...product, status: "published" };
   const execution = {
@@ -270,15 +285,15 @@ test("release recovery can use a new approved rule identity without inheriting s
   }), /rule identity/i);
 });
 
-test("format validation can use a new approved rule identity without inheriting stale execution state", () => {
+test("v4 format validation can use a new approved rule identity without inheriting stale execution state", () => {
   const showcaseCase = DEMO_SHOWCASE_CASES.find((item) => item.key === "daily");
   const rule = buildDemoShowcaseTemporaryRule(showcaseCase, {
-    ruleId: "academy-demo-showcase-daily-validation-20260824-v3-temporary",
+    ruleId: "academy-demo-showcase-daily-validation-20260824-v4-temporary",
   });
 
-  assert.equal(rule.id, "academy-demo-showcase-daily-validation-20260824-v3-temporary");
+  assert.equal(rule.id, "academy-demo-showcase-daily-validation-20260824-v4-temporary");
   assert.throws(() => buildDemoShowcaseTemporaryRule(showcaseCase, {
-    ruleId: "academy-demo-showcase-release-validation-20260824-v3-temporary",
+    ruleId: "academy-demo-showcase-release-validation-20260824-v4-temporary",
   }), /rule identity/i);
 });
 

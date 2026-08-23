@@ -342,7 +342,7 @@ jobs:
           fi
           cat "$report_file"
           REMOTE
-          jq -e '.ok == true and .historicalReplay == true and .mediaIncluded == false and .visualContract == "telegram-editorial-card-v3" and .previewLabel == "DEMO PREVIEW · FORMAT TEST" and (.products | length == 4) and (.products | map(.product)) == ["daily-market-brief","weekly-catalyst-calendar","data-flash","market-follow-up"] and (.executions | length == 3) and ([.executions[].messageIds[]] | length == 4) and all(.targets[]; .chatId == "-1003710405969" and (.threadId == 8 or .threadId == 10)) and all(.cleanup[]; .deleted == true)' "$report_path" >/dev/null
+          jq -e '.ok == true and .historicalReplay == true and .mediaIncluded == false and .visualContract == "telegram-editorial-card-v4" and .previewLabel == "DEMO PREVIEW · FORMAT TEST" and (.products | length == 4) and (.products | map(.product)) == ["daily-market-brief","weekly-catalyst-calendar","data-flash","market-follow-up"] and (.executions | length == 3) and ([.executions[].messageIds[]] | length == 4) and all(.previews[]; .publisherNeutral == true and .publicGenericHorizonIncluded == false and .nativeAssetGlyphs == true) and all(.targets[]; .chatId == "-1003710405969" and (.threadId == 8 or .threadId == 10)) and all(.cleanup[]; .deleted == true)' "$report_path" >/dev/null
           echo "### Academy DEMO four-product text acceptance" >>"$GITHUB_STEP_SUMMARY"
           jq -r '"- Release: `\(.release.commitSha)`\n- Products: `\(.products | map(.product) | join(", "))`\n- Telegram messages: `\(.executions | map(.messageIds | join(",")) | join(" · "))`\n- Media included: `\(.mediaIncluded)`"' "$report_path" >>"$GITHUB_STEP_SUMMARY"
 

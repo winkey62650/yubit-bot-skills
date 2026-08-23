@@ -16,7 +16,7 @@ const { baseUrl } = authorizeLiveTelegramOperation(process.env, {
 const username = process.env.TEST_USERNAME;
 const password = process.env.TEST_PASSWORD;
 const reportPath = path.resolve(process.env.TEST_REPORT_PATH || "artifacts/academy-demo-showcase/report.json");
-const validationTag = "validation-20260824-v3";
+const validationTag = "validation-20260824-v4";
 
 if (!username || !password) throw new Error("TEST_USERNAME and TEST_PASSWORD are required");
 
@@ -42,7 +42,7 @@ function writeReport(report) {
     operation: "academy-demo-four-product-text-showcase",
     historicalReplay: true,
     mediaIncluded: false,
-    visualContract: "telegram-editorial-card-v3",
+    visualContract: "telegram-editorial-card-v4",
     previewLabel: "DEMO PREVIEW · FORMAT TEST",
     exactTargets: true,
     targets: DEMO_SHOWCASE_CASES.map((item) => ({ chatId: DEMO_CHAT_ID, threadId: item.threadId })),
