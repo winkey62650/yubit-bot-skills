@@ -125,7 +125,7 @@ jobs:
             and all(.cleanup[]; .deleted == true)
           ' "$report_path" >/dev/null
           echo "### Academy DEMO realtime text delivery" >>"$GITHUB_STEP_SUMMARY"
-          jq -r '"- Release: `\(.release.commitSha)`\n- Sent: `\(.results | map(select(.status == \"sent\") | .productTypes | join(\" + \")) | join(\", \"))`\n- Skipped: `\(.results | map(select(.status == \"skipped\") | (.key + \" (\" + (.skipReason // \"unspecified\") + \")\")) | join(\", \"))`\n- Media included: `\(.mediaIncluded)`"' "$report_path" >>"$GITHUB_STEP_SUMMARY"
+          jq -r '"- Release: `\(.release.commitSha)`\n- Sent: `\(.results | map(select(.status == "sent") | .productTypes | join(" + ")) | join(", "))`\n- Skipped: `\(.results | map(select(.status == "skipped") | (.key + " (" + (.skipReason // "unspecified") + ")")) | join(", "))`\n- Media included: `\(.mediaIncluded)`"' "$report_path" >>"$GITHUB_STEP_SUMMARY"
 
       - name: Upload Academy DEMO realtime delivery evidence
         if: always()
