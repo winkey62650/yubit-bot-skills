@@ -176,6 +176,7 @@ test("run-now exists only in explicitly authorized live acceptance scripts", asy
   assert.deepEqual(offenders.map((item) => item.file), [
     "accept-academy-demo-content.cjs",
     "recover-academy-demo-release.cjs",
+    "send-academy-realtime-demo.cjs",
     "test-production-automation-delivery.cjs",
   ]);
   for (const offender of offenders) assert.match(offender.source, /authorizeLiveTelegramOperation/);
