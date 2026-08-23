@@ -28,15 +28,15 @@ function acceptanceRule(overrides = {}) {
   };
 }
 
-test("DEMO acceptance selects exactly one enabled Crypto Daily rule with only Topic 8", () => {
+test("DEMO acceptance selects exactly one recurring Crypto Daily rule with only Topic 8", () => {
   assert.equal(selectDemoAcceptanceRule([
-    acceptanceRule(),
+    acceptanceRule({ enabled: false }),
     acceptanceRule({ id: "historical-preview", runOnce: true }),
   ]).id, "crypto-daily-demo");
   assert.throws(
     () => selectDemoAcceptanceRule([acceptanceRule(), acceptanceRule({ id: "duplicate" })]),
     (error) => {
-      assert.match(error.message, /exactly one enabled crypto-daily rule/i);
+      assert.match(error.message, /exactly one recurring crypto-daily rule/i);
       assert.match(error.message, /crypto-daily-demo/);
       assert.match(error.message, /duplicate/);
       assert.doesNotMatch(error.message, /token|password|secret/i);
