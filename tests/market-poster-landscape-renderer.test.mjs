@@ -11,6 +11,17 @@ function renderedText(model) {
   return JSON.stringify(renderLandscapeMarketPoster(e, model, LOCKED_MASTER));
 }
 
+function geometry(model) {
+  const output = renderLandscapeMarketPoster(e, model, LOCKED_MASTER);
+  return output.children.map((child) => ({
+    key: child.props["data-dynamic-field"],
+    left: child.props.style.left,
+    top: child.props.style.top,
+    width: child.props.style.width,
+    height: child.props.style.height,
+  }));
+}
+
 const footer = { sources: ["BLS", "Coinbase Exchange"], updatedAt: "2026-08-24T03:16:33.000Z" };
 const LOCKED_MASTER = "data:image/png;base64,AAAA";
 
@@ -38,13 +49,51 @@ test("the supplied VIP Wide Dense V4 template remains the visual source of truth
     footer,
   });
 
-  assert.match(text, /#EEF5F8/);
-  assert.match(text, /#071C32/);
-  assert.match(text, /#F5B83C/);
   assert.match(text, /data:image\/png;base64,AAAA/);
-  assert.match(text, /linear-gradient/);
   assert.match(text, /DAILY MARKET BRIEF/);
+  assert.match(text, /data-dynamic-field/);
+  assert.doesNotMatch(text, /linear-gradient|boxShadow/);
   assert.doesNotMatch(text, /#F4F0E7|YUBIT/i);
+});
+
+test("daily content can change without changing any field count or geometry", () => {
+  const base = { visualTemplate: { id: "daily-market-brief-v4" }, footer };
+  const sparse = geometry({ ...base, stories: [{ title: "BTC update", source: "SEC", affected: "BTC" }] });
+  const dense = geometry({ ...base, stories: Array.from({ length: 3 }, (_, index) => ({
+    title: `Story ${index + 1} with a much longer verified headline`,
+    source: "Verified source",
+    affected: index === 0 ? "BTC" : "ETH",
+    thesis: "Different daily content must remain inside the exact same fixed slot.",
+  })) });
+
+  assert.deepEqual(dense, sparse);
+  assert.equal(new Set(sparse.map(({ key }) => key)).size, sparse.length);
+  assert.equal(sparse.every(({ key }) => Boolean(key)), true);
+});
+
+test("all four V4 products keep identical dynamic-field geometry for sparse and dense input", () => {
+  const cases = [
+    ["daily-market-brief-v4",
+      { stories: [] },
+      { stories: Array.from({ length: 3 }, (_, index) => ({ title: `Verified story ${index + 1}`, source: "Official source", affected: "BTC", thesis: "Dense daily content stays in the same slot.", impact: "Positive", score: 82 })) }],
+    ["weekly-catalysts-v4",
+      { weekStart: "2026-08-24", columns: [] },
+      { weekStart: "2026-08-24", columns: Array.from({ length: 5 }, (_, index) => ({ label: `${["MON", "TUE", "WED", "THU", "FRI"][index]} ${24 + index}`, events: [{ title: `Verified event ${index + 1}`, time: "12:30", importance: 3, affected: "BTC", sensitivity: "Cross-asset repricing risk." }] })) }],
+    ["data-flash-v4",
+      { indicator: "CPI", reactions: [] },
+      { indicator: "CPI", actual: "2.7%", forecast: "2.8%", previous: "2.9%", reactions: Array.from({ length: 4 }, (_, index) => ({ symbol: ["BTC", "DXY", "NASDAQ", "US 2Y"][index], label: "+0.10%", status: "Observed" })) }],
+    ["market-follow-up-v4",
+      { reactions: [] },
+      { reactionWindow: { label: "12:30–13:00 UTC · 30 MIN" }, reactions: Array.from({ length: 4 }, (_, index) => ({ symbol: ["BTC", "ETH", "DXY", "NASDAQ"][index], label: "+0.10%", status: "Observed" })) }],
+  ];
+
+  for (const [id, sparseFields, denseFields] of cases) {
+    const base = { visualTemplate: { id }, footer };
+    const sparse = geometry({ ...base, ...sparseFields });
+    const dense = geometry({ ...base, ...denseFields });
+    assert.deepEqual(dense, sparse, `${id} must never reflow`);
+    assert.equal(new Set(sparse.map(({ key }) => key)).size, sparse.length, `${id} fields must be uniquely addressable`);
+  }
 });
 
 test("automatic posters fail closed when the locked V4 master is missing", () => {
@@ -54,7 +103,7 @@ test("automatic posters fail closed when the locked V4 master is missing", () =>
   );
 });
 
-test("sparse weekly data renders only verified event cards and never five empty weekday slots", () => {
+test("sparse weekly data preserves all five fixed weekday slots without inventing events", () => {
   const text = renderedText({
     visualTemplate: { id: "weekly-catalysts-v4" },
     weekStart: "2026-08-24",
@@ -71,13 +120,13 @@ test("sparse weekly data renders only verified event cards and never five empty 
   });
 
   assert.match(text, /U\.S\. CPI/);
-  assert.match(text, /NO FILLER EVENTS/i);
-  assert.doesNotMatch(text, /MON 24/);
-  assert.doesNotMatch(text, /WED 26/);
+  assert.match(text, /NO MATERIAL VERIFIED UPDATE/i);
+  assert.match(text, /weekly-1-day/);
+  assert.match(text, /weekly-5-day/);
   assert.doesNotMatch(text, /TBD|N\/A|NOT AVAILABLE/);
 });
 
-test("weekly catalysts is a single Monday-to-Sunday UTC view and never pulls an eighth-day event", () => {
+test("weekly catalysts keeps the V4 Monday-to-Friday frame and never pulls a later event", () => {
   const text = renderedText({
     visualTemplate: { id: "weekly-catalysts-v4" },
     weekStart: "2026-08-24",
@@ -88,12 +137,12 @@ test("weekly catalysts is a single Monday-to-Sunday UTC view and never pulls an 
     footer,
   });
 
-  assert.match(text, /24–30 AUG 2026 · UTC/);
+  assert.match(text, /24–28 AUG 2026/);
   assert.match(text, /This-week CPI/);
   assert.doesNotMatch(text, /Next-week event must not appear/);
 });
 
-test("missing flash comparisons collapse into verified context instead of dash-filled metric boxes", () => {
+test("missing flash comparisons stay in their original fixed fields and are marked unpublished", () => {
   const text = renderedText({
     visualTemplate: { id: "data-flash-v4" },
     title: "U.S. CPI at 2.7% YoY",
@@ -108,6 +157,7 @@ test("missing flash comparisons collapse into verified context instead of dash-f
   });
 
   assert.match(text, /2\.7% YoY/);
-  assert.match(text, /OFFICIAL PRINT/);
-  assert.doesNotMatch(text, /CONSENSUS[^}]*—|PREVIOUS[^}]*—|>—</);
+  assert.match(text, /NOT PUBLISHED/);
+  assert.match(text, /flash-forecast/);
+  assert.match(text, /flash-previous/);
 });

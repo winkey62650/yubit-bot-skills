@@ -53,7 +53,7 @@ test("landscape automatic templates use a hash-locked V4 structure master", asyn
     jobId: "crypto-daily",
     poster: { stories: [{ title: "ETF flows increased", source: "SEC filing" }] },
   });
-  assert.equal(selected?.composition, "locked-master-dynamic-overlay");
+  assert.equal(selected?.composition, "locked-master-fixed-field-overlay");
   assert.equal(selected?.file, "01-daily-market-brief-wide-v4.png");
   assert.match(selected?.sha256 || "", /^[a-f0-9]{64}$/);
   await assert.doesNotReject(() => loadMarketPosterMaster({ visualTemplate: selected }));
