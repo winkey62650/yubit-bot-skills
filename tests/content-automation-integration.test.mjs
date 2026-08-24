@@ -169,18 +169,18 @@ test("the Academy data replay uses the canonical release identity required by du
   const release = buildAcademyDemoShowcaseContent("data-release-updates", { now: NOW });
 
   assert.ok(release.event.scheduledAt);
-  assert.equal(release.event.id, "demo-replay-us-cpi-june-2025-format-v4");
+  assert.equal(release.event.id, "demo-replay-us-cpi-june-2025-poster-v5");
   assert.equal(release.deduplicationKey, buildReleaseDeduplicationKey(release.event));
 });
 
-test("the publisher-neutral v4 visual replay has fresh durable identities without disabling deduplication", () => {
+test("the publisher-neutral poster v5 replay has fresh durable identities without disabling deduplication", () => {
   const daily = buildAcademyDemoShowcaseContent("crypto-daily", { now: NOW });
   const weekly = buildAcademyDemoShowcaseContent("weekly-calendar", { now: NOW });
   const release = buildAcademyDemoShowcaseContent("data-release-updates", { now: NOW });
 
-  assert.equal(daily.deduplicationKey, "academy-demo-replay-daily-2025-07-15-format-v4");
-  assert.equal(weekly.deduplicationKey, "academy-demo-replay-week-2025-07-14-format-v4");
-  assert.match(release.deduplicationKey, /demo-replay-us-cpi-june-2025-format-v4/);
+  assert.equal(daily.deduplicationKey, "academy-demo-replay-daily-2025-07-15-poster-v5");
+  assert.equal(weekly.deduplicationKey, "academy-demo-replay-week-2025-07-14-poster-v5");
+  assert.match(release.deduplicationKey, /demo-replay-us-cpi-june-2025-poster-v5/);
   assert.equal(release.deduplicationKey, buildReleaseDeduplicationKey(release.event));
 });
 

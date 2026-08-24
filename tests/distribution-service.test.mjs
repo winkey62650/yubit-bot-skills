@@ -3881,7 +3881,7 @@ test("exact-target automation execution never expands configured targets through
   assert.deepEqual(receivedTargets, [sourceTarget]);
 });
 
-test("manual automation execution passes the explicit text-only delivery guard to the runner", async () => {
+test("manual Academy showcase execution passes the explicit poster delivery guard to the runner", async () => {
   const target = { id: "target-demo-text", chatId: "-1003710405969", threadId: 8 };
   const rule = {
     id: "rule-demo-text-only",
@@ -3904,7 +3904,7 @@ test("manual automation execution passes the explicit text-only delivery guard t
   await runDistributionAutomationRule(rule.id, {
     repository,
     exactTargets: true,
-    textOnly: true,
+    textOnly: false,
     demoShowcase: true,
     env: {
       TELEGRAM_DEMO_ONLY: "true",
@@ -3921,7 +3921,7 @@ test("manual automation execution passes the explicit text-only delivery guard t
     },
   });
 
-  assert.equal(receivedTextOnly, true);
+  assert.equal(receivedTextOnly, false);
   assert.equal(receivedDemoShowcase, true);
 });
 

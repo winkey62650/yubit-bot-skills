@@ -155,7 +155,7 @@ test("DEMO acceptance requires one successful Topic 8 result and a matching dura
   }), /feedback closure/i);
 });
 
-test("four-product showcase is text-only, topic-scoped, and receipt-backed", () => {
+test("four-product showcase pairs each poster with its text, remains topic-scoped, and is receipt-backed", () => {
   const showcaseCase = DEMO_SHOWCASE_CASES[0];
   const rule = buildDemoShowcaseTemporaryRule(showcaseCase);
   const target = rule.targets[0];
@@ -165,18 +165,23 @@ test("four-product showcase is text-only, topic-scoped, and receipt-backed", () 
     contentPolicy: "obsidian-canonical",
     contentProductIds: [product.id],
     contentHashes: [product.contentHash],
-    steps: [{ method: "sendMessage", payload: { text: "<b>📊 MARKET BRIEF</b>\n\n<b>₿ BTC · NEUTRAL</b>" } }],
+    steps: [
+      { method: "sendPhoto", payload: { photo: "https://academy.example/api/media/card?daily" } },
+      { method: "sendMessage", payload: { text: "<b>📊 MARKET BRIEF</b>\n\n<b>₿ BTC · NEUTRAL</b>" } },
+    ],
   };
   assert.deepEqual(assertDemoShowcasePreview({
     publishable: true,
     demoShowcase: true,
-    textOnly: true,
-    imageUrl: null,
+    textOnly: false,
+    imageUrl: "https://academy.example/api/media/card?daily",
+    mediaDelivery: { byTemplateId: { "daily-market-brief-v3": "https://academy.example/api/media/card?daily" } },
     contentGovernance: { approved: true, products: [product] },
     deliveryPlans: [plan],
   }, showcaseCase), {
     productIds: [product.id],
-    stepCount: 1,
+    stepCount: 2,
+    visualTemplateIds: ["daily-market-brief-v3"],
     publisherNeutral: true,
     publicGenericHorizonIncluded: false,
     nativeAssetGlyphs: true,
@@ -185,10 +190,11 @@ test("four-product showcase is text-only, topic-scoped, and receipt-backed", () 
   assert.throws(() => assertDemoShowcasePreview({
     publishable: true,
     demoShowcase: true,
-    textOnly: true,
-    imageUrl: null,
+    textOnly: false,
+    imageUrl: "https://academy.example/api/media/card?daily",
+    mediaDelivery: { byTemplateId: { "daily-market-brief-v3": "https://academy.example/api/media/card?daily" } },
     contentGovernance: { approved: true, products: [product] },
-    deliveryPlans: [{ ...plan, steps: [{ method: "sendMessage", payload: { text: "<b>YUBIT ACADEMY · MARKET BRIEF</b>\n1–7D\n₿ BTC" } }] }],
+    deliveryPlans: [{ ...plan, steps: [plan.steps[0], { method: "sendMessage", payload: { text: "<b>YUBIT ACADEMY · MARKET BRIEF</b>\n1–7D\n₿ BTC" } }] }],
   }, showcaseCase), /publisher-neutral/i);
 
   const published = { ...product, status: "published" };
@@ -199,14 +205,15 @@ test("four-product showcase is text-only, topic-scoped, and receipt-backed", () 
     feedbackResults: [{ deliveryId: "delivery-showcase", receiptId: "feedback-showcase", feedbackPersisted: true, feedbackStatePersisted: true }],
     run: { preview: {
       demoShowcase: true,
-      textOnly: true,
-      imageUrl: null,
+      textOnly: false,
+      imageUrl: "https://academy.example/api/media/card?daily",
+      mediaDelivery: { byTemplateId: { "daily-market-brief-v3": "https://academy.example/api/media/card?daily" } },
       contentGovernance: { approved: true, products: [published] },
       deliveryPlans: [plan],
-      targetResults: [{ target, status: "success", messageIds: [1401] }],
+      targetResults: [{ target, status: "success", messageIds: [1401, 1402] }],
     } },
   };
-  const receipt = { id: "delivery-showcase", ruleId: rule.id, status: "success", target, targetMessageIds: [1401] };
+  const receipt = { id: "delivery-showcase", ruleId: rule.id, status: "success", target, targetMessageIds: [1401, 1402] };
   assert.deepEqual(assertDemoShowcaseExecution({ ruleId: rule.id, execution, deliveries: [receipt], showcaseCase }).productTypes, ["daily-market-brief"]);
 });
 

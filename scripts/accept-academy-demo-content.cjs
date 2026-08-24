@@ -11,12 +11,12 @@ const {
 const { authorizeLiveTelegramOperation } = require("../lib/release-gate.cjs");
 
 const { baseUrl } = authorizeLiveTelegramOperation(process.env, {
-  operation: "Academy DEMO 四种内容纯文字验收",
+  operation: "Academy DEMO 四种内容海报与正文验收",
 });
 const username = process.env.TEST_USERNAME;
 const password = process.env.TEST_PASSWORD;
 const reportPath = path.resolve(process.env.TEST_REPORT_PATH || "artifacts/academy-demo-showcase/report.json");
-const validationTag = "validation-20260824-v4";
+const validationTag = "validation-20260824-poster-v5";
 
 if (!username || !password) throw new Error("TEST_USERNAME and TEST_PASSWORD are required");
 
@@ -39,9 +39,9 @@ function writeReport(report) {
   const temporaryRuleIds = [];
   const report = {
     ok: false,
-    operation: "academy-demo-four-product-text-showcase",
+    operation: "academy-demo-four-product-poster-showcase",
     historicalReplay: true,
-    mediaIncluded: false,
+    mediaIncluded: true,
     visualContract: "telegram-editorial-card-v4",
     previewLabel: "DEMO PREVIEW · FORMAT TEST",
     exactTargets: true,
@@ -81,7 +81,7 @@ function writeReport(report) {
         data: {
           jobId: showcaseCase.contentType,
           targets: rule.targets,
-          textOnly: true,
+          textOnly: false,
           demoShowcase: true,
         },
         timeout: 90_000,
@@ -105,7 +105,7 @@ function writeReport(report) {
           action: "run-now",
           id: rule.id,
           exactTargets: true,
-          textOnly: true,
+          textOnly: false,
           demoShowcase: true,
         },
         timeout: 180_000,
