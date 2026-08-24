@@ -181,3 +181,10 @@ test("Discord Bot 凭证可在后台安全配置且不会回显 Token", () => {
   assert.match(route, /credential-save[\s\S]+getDiscordStatus\([\s\S]+validation\.connected/);
   assert.match(route, /Discord Bot Token 验证失败/);
 });
+
+test("Discord 工作台将 Token 验证与 Server 列表读取结果分开显示", () => {
+  const page = read("app/discord/page.jsx");
+  assert.match(page, /guildDiscovery/);
+  assert.match(page, /Bot Token 已验证/);
+  assert.match(page, /Server 列表读取失败/);
+});

@@ -203,6 +203,56 @@ test("Discord status verifies the bot and lists guilds without exposing the toke
   );
 });
 
+test("Discord status keeps a verified Bot connected when Server discovery fails", async () => {
+  const requests = [];
+  const result = await getDiscordStatus({
+    token: "secret-token",
+    appId: "app-1",
+    fetchImpl: async (url) => {
+      const requestUrl = String(url);
+      requests.push(requestUrl);
+      if (requestUrl.endsWith("/users/@me")) {
+        return jsonResponse(200, {
+          id: "bot-1",
+          username: "Academy",
+          discriminator: "0",
+        });
+      }
+      return jsonResponse(503, { message: "Server discovery is temporarily unavailable" });
+    },
+  });
+
+  assert.equal(result.connected, true);
+  assert.equal(result.bot.username, "Academy");
+  assert.deepEqual(result.guilds, []);
+  assert.equal(result.error, "");
+  assert.equal(result.guildDiscovery.ok, false);
+  assert.match(result.guildDiscovery.error, /temporarily unavailable/);
+  assert.deepEqual(
+    requests.map((url) => new URL(url).pathname),
+    ["/api/v10/users/@me", "/api/v10/users/@me/guilds"],
+  );
+});
+
+test("Discord status stops at Bot identity validation when the Token is rejected", async () => {
+  const requests = [];
+  const result = await getDiscordStatus({
+    token: "rejected-token",
+    appId: "app-1",
+    fetchImpl: async (url) => {
+      requests.push(String(url));
+      return jsonResponse(401, { message: "401: Unauthorized" });
+    },
+  });
+
+  assert.equal(result.connected, false);
+  assert.equal(result.bot, null);
+  assert.match(result.error, /Unauthorized/);
+  assert.equal(result.guildDiscovery.ok, false);
+  assert.equal(requests.length, 1);
+  assert.match(requests[0], /\/users\/@me$/);
+});
+
 test("Discord config is persisted and normalized through repository meta", async () => {
   const repository = createRepository();
   const saved = await saveDiscordConfig(

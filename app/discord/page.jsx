@@ -14,6 +14,7 @@ const initialStatus = {
   installUrl: "",
   bot: null,
   guilds: [],
+  guildDiscovery: { ok: false, error: "" },
   config: { guilds: {}, routes: [], demoGuildId: "", syncEnabled: false, demoTemplate: null },
   gateway: null,
 };
@@ -43,6 +44,7 @@ export default function DiscordCommunityPage() {
       ...payload,
       config: { ...initialStatus.config, ...(payload?.config || {}) },
       credentials: { ...initialStatus.credentials, ...(payload?.credentials || {}) },
+      guildDiscovery: { ...initialStatus.guildDiscovery, ...(payload?.guildDiscovery || {}) },
     };
     setStatus(next);
     const demoChannels = next.config.demoTemplate?.channels || [];
@@ -112,7 +114,7 @@ export default function DiscordCommunityPage() {
   }
 
   async function saveCredentials() {
-    const result = await runAction("credential-save", { appId, publicKey, botToken }, "Discord Bot 凭证已安全保存。");
+    const result = await runAction("credential-save", { appId, publicKey, botToken }, "Discord Bot Token 已验证，凭证已安全保存。");
     if (result) setBotToken("");
   }
 
@@ -184,6 +186,11 @@ export default function DiscordCommunityPage() {
       {loading && <div className="mb-4 text-sm text-ops-muted">正在读取 Discord 状态…</div>}
       {notice && <div className="mb-4 rounded-lg bg-[#e6f7ef] px-4 py-3 text-sm font-bold text-ops-accent">{notice}</div>}
       {error && <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{error}</div>}
+      {status.connected && !status.guildDiscovery.ok && status.guildDiscovery.error && (
+        <div className="mb-4 rounded-lg bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
+          Bot Token 已验证，但 Server 列表读取失败：{status.guildDiscovery.error}。凭证仍然有效，请稍后刷新或检查 Bot 是否已加入 Server。
+        </div>
+      )}
 
       <div className="mb-6 grid gap-4 md:grid-cols-3">
         <Card className="p-5"><div className="text-sm font-bold text-ops-muted">REST API</div><div className="mt-3"><StatusPill tone={status.connected ? "green" : "amber"}>{status.connected ? "已连接" : "未连接"}</StatusPill></div><div className="mt-3 text-xs text-ops-muted">{status.bot?.username ? `@${status.bot.username}` : "等待 Bot Token"}</div></Card>
