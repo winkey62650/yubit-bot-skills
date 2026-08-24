@@ -14,6 +14,7 @@ on:
           - academy-demo
           - academy-poster-v6-recovery
           - academy-audit
+          - discord-audit
           - agents
           - distribution
           - trading
@@ -276,6 +277,189 @@ jobs:
         with:
           name: academy-demo-audit-${{ github.sha }}
           path: ${{ runner.temp }}/academy-demo-audit.json
+          if-no-files-found: error
+          retention-days: 30
+
+  discord_audit:
+    if: inputs.job == 'discord-audit'
+    runs-on: ubuntu-latest
+    environment: Production
+    env:
+      TEST_BASE_URL: https://152-32-161-174.sslip.io
+    steps:
+      - name: Install SSH password helper
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq sshpass
+
+      - name: Audit Discord credentials, gateway, and channel permissions without sending
+        env:
+          SSHPASS: ${{ secrets.YUBIT_SERVER_PASSWORD }}
+        run: |
+          set -Eeuo pipefail
+          if [ -z "$SSHPASS" ]; then
+            echo "YUBIT_SERVER_PASSWORD is not configured." >&2
+            exit 1
+          fi
+          report_path="$RUNNER_TEMP/discord-audit.json"
+          sshpass -e ssh \
+            -o ConnectTimeout=20 \
+            -o ServerAliveInterval=10 \
+            -o StrictHostKeyChecking=accept-new \
+            ubuntu@152.32.161.174 \
+            "TEST_BASE_URL='$TEST_BASE_URL' bash -s" \
+            >"$report_path" <<'REMOTE'
+          set -Eeuo pipefail
+          env_file=/etc/yubit-academy/production.env
+          read_env() {
+            sudo awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "$env_file"
+          }
+          release="$(readlink -f /opt/yubit-academy/current)"
+          export AUTH_USERNAME="$(read_env AUTH_USERNAME)"
+          export AUTH_PASSWORD="$(read_env AUTH_PASSWORD)"
+          export RELEASE_SHA="$(tr -d '[:space:]' <"$release/.release-commit")"
+          python3 <<'PYTHON'
+          import datetime
+          import http.cookiejar
+          import json
+          import os
+          import re
+          import ssl
+          import subprocess
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          base_url = os.environ["TEST_BASE_URL"]
+          cookie_jar = http.cookiejar.CookieJar()
+          opener = urllib.request.build_opener(
+              urllib.request.HTTPCookieProcessor(cookie_jar),
+              urllib.request.HTTPSHandler(context=ssl._create_unverified_context()),
+          )
+
+          def sanitize(value):
+              text = str(value or "")
+              text = re.sub(r"postgres(?:ql)?://[^\s\"']+", "postgresql://<redacted>", text, flags=re.I)
+              text = re.sub(r"(?i)(password|token|secret)([=:\"'\s]+)[^\s,}\"]+", r"\1\2<redacted>", text)
+              return text[:2000]
+
+          def request_json(path, *, payload=None):
+              request = urllib.request.Request(
+                  f"{base_url}{path}",
+                  data=None if payload is None else json.dumps(payload).encode(),
+                  headers={} if payload is None else {"content-type": "application/json"},
+                  method="GET" if payload is None else "POST",
+              )
+              try:
+                  with opener.open(request, timeout=30) as response:
+                      return json.load(response)
+              except urllib.error.HTTPError as error:
+                  body = error.read().decode("utf-8", errors="replace")
+                  raise RuntimeError(f"{path} HTTP {error.code}: {sanitize(body)}") from error
+
+          properties = [
+              "ActiveState", "SubState", "UnitFileState", "ExecMainStatus",
+              "NRestarts", "ActiveEnterTimestamp", "ExecMainStartTimestamp",
+          ]
+          show = subprocess.run(
+              ["systemctl", "show", "yubit-academy-discord.service", *[f"--property={item}" for item in properties]],
+              check=False,
+              capture_output=True,
+              text=True,
+          )
+          service = {}
+          for line in show.stdout.splitlines():
+              if "=" in line:
+                  key, value = line.split("=", 1)
+                  service[key] = value
+          service["commandStatus"] = show.returncode
+
+          errors = []
+          status = {}
+          health = {}
+          try:
+              login = request_json("/api/auth/login", payload={
+                  "username": os.environ["AUTH_USERNAME"],
+                  "password": os.environ["AUTH_PASSWORD"],
+              })
+              if login.get("ok") is not True:
+                  raise RuntimeError("login was not accepted")
+              status = request_json("/api/discord")
+              health_response = request_json("/api/discord", payload={"action": "health-check"})
+              health = health_response.get("result", {}).get("health", {})
+          except Exception as error:
+              errors.append(sanitize(error))
+
+          gateway = status.get("gateway", {}) if isinstance(status, dict) else {}
+          config = status.get("config", {}) if isinstance(status, dict) else {}
+          demo_guild_id = str(config.get("demoGuildId", "") or "")
+          guilds = health.get("guilds", []) if isinstance(health, dict) else []
+          channel_results = [
+              {
+                  "guildId": guild.get("guildId", ""),
+                  "guildName": guild.get("guildName", ""),
+                  "isDemoGuild": str(guild.get("guildId", "") or "") == demo_guild_id,
+                  "guildAvailable": guild.get("available") is True,
+                  "guildPermissionsOk": guild.get("permissionsOk") is True,
+                  "missingGuildPermissions": guild.get("missingPermissions", []),
+                  "channelId": channel.get("channelId", ""),
+                  "channelName": channel.get("name", ""),
+                  "available": channel.get("available") is True,
+                  "canView": channel.get("canView") is True,
+                  "canSend": channel.get("canSend") is True,
+                  "canEmbed": channel.get("canEmbed") is True,
+                  "canAttach": channel.get("canAttach") is True,
+                  "canReadHistory": channel.get("canReadHistory") is True,
+                  "error": sanitize(channel.get("error", "")),
+              }
+              for guild in guilds
+              for channel in guild.get("channels", [])
+          ]
+          report = {
+              "ok": not errors,
+              "readOnly": True,
+              "auditedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              "releaseSha": os.environ.get("RELEASE_SHA", ""),
+              "service": service,
+              "credentials": {
+                  "configured": status.get("configured") is True,
+                  "publicKeyConfigured": status.get("publicKeyConfigured") is True,
+                  "connected": status.get("connected") is True,
+                  "error": sanitize(status.get("error", "")),
+              },
+              "config": {
+                  "demoGuildId": demo_guild_id,
+                  "syncEnabled": config.get("syncEnabled") is True,
+                  "configuredGuildCount": len(config.get("guilds", {}) or {}),
+              },
+              "bot": status.get("bot"),
+              "gateway": {
+                  "state": gateway.get("state", ""),
+                  "online": gateway.get("online") is True,
+                  "botId": gateway.get("botId", ""),
+                  "username": gateway.get("username", ""),
+                  "guildCount": gateway.get("guildCount", 0),
+                  "lastHeartbeatAt": gateway.get("lastHeartbeatAt", ""),
+                  "lastDeliveryAt": gateway.get("lastDeliveryAt", ""),
+                  "lastError": sanitize(gateway.get("lastError", "")),
+              },
+              "healthSummary": health.get("summary", {}),
+              "channels": channel_results,
+              "errors": errors,
+          }
+          print(json.dumps(report, ensure_ascii=False, indent=2))
+          PYTHON
+          REMOTE
+          jq -e '.readOnly == true' "$report_path" >/dev/null
+          echo "### Discord read-only health audit" >>"$GITHUB_STEP_SUMMARY"
+          jq -r '"- Service: `\(.service.ActiveState)/\(.service.SubState)`\n- REST connected: `\(.credentials.connected)`\n- Gateway: `\(.gateway.state)` (online: `\(.gateway.online)`)\n- Channels: `\(.healthSummary.sendableChannels // 0)` sendable / `\(.healthSummary.blockedChannels // 0)` blocked\n- Errors: `\(.errors | join("; "))`"' "$report_path" >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Discord read-only audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: discord-audit-${{ github.sha }}
+          path: ${{ runner.temp }}/discord-audit.json
           if-no-files-found: error
           retention-days: 30
 

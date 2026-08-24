@@ -219,6 +219,19 @@ test("Academy DEMO read-only audit includes recovery and validation rule identit
   assert.match(workflow, /academy-poster-v6-recovery/);
 });
 
+test("operator recovery workflow includes a read-only Discord health audit", async () => {
+  const workflow = await readFile(new URL(".github/workflows/telegram-automations.yml", root), "utf8");
+  assert.match(workflow, /- discord-audit/);
+  assert.match(workflow, /inputs\.job == 'discord-audit'/);
+  assert.match(workflow, /\/api\/discord/);
+  assert.match(workflow, /action["']?:\s*["']health-check["']/);
+  assert.match(workflow, /yubit-academy-discord\.service/);
+  assert.match(workflow, /demoGuildId/);
+  assert.match(workflow, /isDemoGuild/);
+  assert.match(workflow, /\.readOnly == true/);
+  assert.doesNotMatch(workflow, /inputs\.job == 'discord-audit'[\s\S]{0,12000}test-message/);
+});
+
 test("market preview maps every product to its own poster media delivery", async () => {
   const route = await readFile(new URL("app/api/automation-test/route.js", root), "utf8");
   assert.match(route, /buildAutomationTelegramPlans\(jobId, result\.preview, hydratedTargets, result\.preview\.mediaDelivery\)/);
