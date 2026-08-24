@@ -319,6 +319,8 @@ jobs:
           export AUTH_USERNAME="$(read_env AUTH_USERNAME)"
           export AUTH_PASSWORD="$(read_env AUTH_PASSWORD)"
           export RELEASE_SHA="$(tr -d '[:space:]' <"$release/.release-commit")"
+          export RELEASE_PATH="$release"
+          export JSON_STORE_DIRECTORY="$(read_env JSON_STORE_DIRECTORY)"
           python3 <<'PYTHON'
           import datetime
           import http.cookiejar
@@ -393,6 +395,33 @@ jobs:
 
           gateway = status.get("gateway", {}) if isinstance(status, dict) else {}
           config = status.get("config", {}) if isinstance(status, dict) else {}
+          runtime_directory = os.environ.get("JSON_STORE_DIRECTORY") or os.path.join(os.environ["RELEASE_PATH"], ".runtime")
+          latest_demo_attempt = {}
+          try:
+              with open(os.path.join(runtime_directory, "automation-state.json"), encoding="utf-8") as handle:
+                  automation_state = json.load(handle)
+              matching_attempts = [
+                  value for key, value in automation_state.items()
+                  if str(key).startswith("discord-template:crypto-daily:") and isinstance(value, dict)
+              ]
+              if matching_attempts:
+                  attempt = max(matching_attempts, key=lambda value: str(value.get("at", "")))
+                  latest_demo_attempt = {
+                      "at": attempt.get("at", ""),
+                      "status": attempt.get("status", ""),
+                      "targetResults": [
+                          {
+                              "status": item.get("status", ""),
+                              "guildId": str(item.get("target", {}).get("guildId", "")),
+                              "channelId": str(item.get("target", {}).get("channelId", "")),
+                              "messageIds": [str(value) for value in item.get("messageIds", []) if str(value)],
+                              "error": sanitize(item.get("error", "")),
+                          }
+                          for item in attempt.get("targetResults", []) if isinstance(item, dict)
+                      ],
+                  }
+          except Exception as error:
+              latest_demo_attempt = {"auditError": sanitize(error)}
           demo_guild_id = str(config.get("demoGuildId", "") or "")
           guilds = health.get("guilds", []) if isinstance(health, dict) else []
           channel_results = [
@@ -444,6 +473,7 @@ jobs:
                   "lastDeliveryAt": gateway.get("lastDeliveryAt", ""),
                   "lastError": sanitize(gateway.get("lastError", "")),
               },
+              "latestDemoAttempt": latest_demo_attempt,
               "healthSummary": health.get("summary", {}),
               "channels": channel_results,
               "errors": errors,
