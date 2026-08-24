@@ -184,6 +184,24 @@ test("data update preserves CPI and Core CPI components as separate fact rows", 
   ]);
 });
 
+test("data update unwraps verified observation objects for display", () => {
+  const model = buildDataUpdatePosterModel({
+    title: "US CPI Released",
+    values: {
+      actual: "2.7%",
+      forecast: { value: "2.8%", rawValue: "2.8", status: "verified" },
+      previous: { value: "2.9%", rawValue: "2.9", status: "verified" },
+    },
+    source: { label: "BLS" },
+  });
+
+  assert.equal(model.actual, "2.7%");
+  assert.equal(model.forecast, "2.8%");
+  assert.equal(model.previous, "2.9%");
+  assert.equal(model.surprise, "-0.1pp");
+  assert.doesNotMatch(JSON.stringify(model), /\[object Object\]/);
+});
+
 test("data update preserves partial reactions and a bounded reaction window", () => {
   const model = buildDataUpdatePosterModel({
     generatedAt: "2026-08-21T12:45:00.000Z",

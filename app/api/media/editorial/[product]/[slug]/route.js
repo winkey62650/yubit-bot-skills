@@ -4,6 +4,7 @@ import { getDistributionRepository } from "../../../../../../lib/distribution-re
 import { getMarketPublication, marketPublicationKey } from "../../../../../../lib/market-publication.mjs";
 import { loadMarketPosterArtwork } from "../../../../../../lib/market-poster-artwork.mjs";
 import { renderPortraitMarketPoster } from "../../../../../../lib/market-poster-portrait-renderer.mjs";
+import { renderLandscapeMarketPoster } from "../../../../../../lib/market-poster-landscape-renderer.mjs";
 import { marketPosterCanvas } from "../../../../../../lib/market-poster-templates.mjs";
 
 export const runtime = "nodejs";
@@ -403,9 +404,11 @@ export async function GET(request, context = {}) {
   if (bundle.status !== "draft") return message(409, "Editorial image is not available.");
   try {
     const canvas = marketPosterCanvas(bundle.posterModel);
-    const rendered = bundle.posterModel.visualTemplate
-      ? renderPortraitMarketPoster(React.createElement, bundle.posterModel, await loadMarketPosterArtwork(bundle.posterModel))
-      : renderPoster(bundle.posterModel);
+    const rendered = bundle.posterModel.visualTemplate?.version === 4
+      ? renderLandscapeMarketPoster(React.createElement, bundle.posterModel)
+      : bundle.posterModel.visualTemplate
+        ? renderPortraitMarketPoster(React.createElement, bundle.posterModel, await loadMarketPosterArtwork(bundle.posterModel))
+        : renderPoster(bundle.posterModel);
     return new ImageResponse(rendered, {
       width: canvas.width,
       height: canvas.height,

@@ -1818,11 +1818,11 @@ function publicationPngChunk(type, data = Buffer.alloc(0)) {
 
 function verifiedEditorialPng() {
   const header = Buffer.alloc(13);
-  header.writeUInt32BE(1080, 0);
-  header.writeUInt32BE(1350, 4);
+  header.writeUInt32BE(1200, 0);
+  header.writeUInt32BE(675, 4);
   header[8] = 1;
   header[9] = 0;
-  const pixels = Buffer.alloc((Math.ceil(1080 / 8) + 1) * 1350);
+  const pixels = Buffer.alloc((Math.ceil(1200 / 8) + 1) * 675);
   return Buffer.concat([
     Buffer.from("89504e470d0a1a0a", "hex"),
     publicationPngChunk("IHDR", header),

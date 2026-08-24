@@ -14,6 +14,7 @@ import {
   buildDataUpdatePosterModel,
   buildWeeklyCalendarPosterModel,
 } from "../lib/market-poster-models.mjs";
+import { selectMarketPosterTemplate } from "../lib/market-poster-templates.mjs";
 
 const EDITORIAL_ORIGIN = "https://academy.yubit.com";
 
@@ -333,6 +334,25 @@ test("durable editorial media accepts canonical nullable data leaves", async () 
   });
   assert.equal(response.status, 200);
   assert.ok((await response.arrayBuffer()).byteLength > 100);
+});
+
+test("durable editorial media renders V4 publications on the landscape canvas", async () => {
+  const { GET } = await import("../app/api/media/editorial/[product]/[slug]/route.js");
+  const repository = new EditorialMemoryRepository();
+  const draft = editorialDraft("data-update");
+  draft.posterModel.visualTemplate = selectMarketPosterTemplate({
+    jobId: "data-release-updates",
+    poster: draft.posterModel,
+  });
+  await createMarketPublication({ repository, ...draft, now: () => "2026-08-21T00:00:00.000Z" });
+  const response = await GET(new Request(`${EDITORIAL_ORIGIN}/api/media/editorial/data-update/us-cpi%2F2026-08-21`), {
+    params: Promise.resolve({ product: draft.product, slug: "us-cpi%2F2026-08-21" }),
+    repository,
+  });
+  assert.equal(response.status, 200);
+  const png = Buffer.from(await response.arrayBuffer());
+  assert.equal(png.readUInt32BE(16), 1200);
+  assert.equal(png.readUInt32BE(20), 675);
 });
 
 test("durable editorial media route renders only drafts and serves persisted PNG bytes immutably", async () => {
