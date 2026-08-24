@@ -4,6 +4,7 @@ const { request } = require("playwright");
 const { authorizeLiveTelegramOperation } = require("../lib/release-gate.cjs");
 
 const DEMO_CHAT_ID = "-1003710405969";
+const MAX_POSTER_BYTES = 5 * 1024 * 1024;
 const POSTER_TEMPLATES = Object.freeze({
   "daily-market-brief": "daily-market-brief-v4",
   "weekly-catalyst-calendar": "weekly-catalysts-v4",
@@ -88,12 +89,36 @@ function inspectPosterSteps(steps, products, item) {
 function inspectMediaDelivery(preview, products, item) {
   if (preview.textOnly === true || !preview.imageUrl) throw new Error(`${item.key} preview is missing poster media`);
   const byTemplateId = preview.mediaDelivery?.byTemplateId || {};
+  const posterUrls = [];
   for (const product of products) {
     const templateId = POSTER_TEMPLATES[product.product];
-    if (!templateId || !/^https:\/\//i.test(String(byTemplateId[templateId] || ""))) {
+    const posterUrl = String(byTemplateId[templateId] || "");
+    if (!templateId || !/^https:\/\//i.test(posterUrl)) {
       throw new Error(`${item.key} is missing its approved V4 poster ${templateId || "template"}`);
     }
+    posterUrls.push({ product: product.product, templateId, url: posterUrl });
   }
+  return posterUrls;
+}
+
+async function preflightPoster(api, poster, item) {
+  const response = await api.get(poster.url, { timeout: 90_000 });
+  const contentType = String(response.headers()["content-type"] || "").toLowerCase();
+  if (!response.ok() || !contentType.startsWith("image/png")) {
+    throw new Error(`${item.key} poster preflight failed: HTTP ${response.status()} · ${contentType || "missing content-type"} · ${poster.url}`);
+  }
+  const bytes = await response.body();
+  if (bytes.byteLength < 1024 || bytes.byteLength > MAX_POSTER_BYTES) {
+    throw new Error(`${item.key} poster preflight failed: invalid PNG size ${bytes.byteLength} · ${poster.url}`);
+  }
+  return {
+    product: poster.product,
+    templateId: poster.templateId,
+    url: poster.url,
+    status: response.status(),
+    contentType,
+    byteLength: bytes.byteLength,
+  };
 }
 
 function buildRule(item, nonce) {
@@ -129,7 +154,7 @@ function inspectPreview(preview, item) {
     || products.some((product) => product?.status !== "distribution-ready" || !item.products.includes(product?.product))) {
     throw new Error(`${item.key} preview failed content governance`);
   }
-  inspectMediaDelivery(preview, products, item);
+  const posterUrls = inspectMediaDelivery(preview, products, item);
   const plans = Array.isArray(preview.deliveryPlans) ? preview.deliveryPlans : [];
   if (plans.length !== 1 || !targetMatches(plans[0]?.target, item)) throw new Error(`${item.key} preview left its demo Topic`);
   const steps = Array.isArray(plans[0]?.steps) ? plans[0].steps : [];
@@ -139,6 +164,7 @@ function inspectPreview(preview, item) {
     productTypes: products.map((product) => product.product),
     productIds: products.map((product) => product.id),
     contentHashes: products.map((product) => product.contentHash),
+    posterUrls,
     generatedAt: preview.generatedAt || null,
   };
 }
@@ -210,6 +236,7 @@ function writeReport(report) {
     exactTargets: true,
     startedAt: new Date().toISOString(),
     previews: [],
+    mediaPreflight: [],
     results: [],
   };
   try {
@@ -241,7 +268,12 @@ function writeReport(report) {
         data: { action: "validate", id: rule.id }, timeout: 60_000,
       }), `${item.key} rule validation`);
       if (validation.result?.ok !== true) throw new Error(`${item.key} runtime validation failed`);
-      approved.push({ item, rule });
+      approved.push({ item, rule, posterUrls: evidence.posterUrls });
+    }
+
+    // Probe every exact server-rendered poster before any Telegram mutation.
+    for (const { item, posterUrls } of approved) {
+      for (const poster of posterUrls) report.mediaPreflight.push(await preflightPoster(api, poster, item));
     }
 
     // One authorized call per eligible product family. Deliberately no retry path.

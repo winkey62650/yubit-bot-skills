@@ -307,6 +307,8 @@ function previewVisualTemplate(value) {
     id: approved.id,
     product: approved.product,
     file: approved.file,
+    sha256: approved.sha256,
+    composition: approved.composition,
     canvas: { ...approved.canvas },
     assetPath: approved.file ? `/templates/market-intelligence/${approved.file}` : null,
     version: approved.version,

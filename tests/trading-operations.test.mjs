@@ -187,12 +187,20 @@ test("run-now exists only in explicitly authorized live acceptance scripts", asy
   assert.match(recovery, /academy-demo-showcase-release-recovery-20260824-v3-temporary/);
   assert.match(recovery, /Preview and validate every residual product before the first live send/);
   assert.match(recovery, /buildDemoShowcaseTemporaryRule\(showcaseCase,\s*\{\s*ruleId:\s*recoveryRuleIds\[showcaseCase\.key\]\s*\}\)/s);
+
+  const realtime = offenders.find((item) => item.file === "send-academy-realtime-demo.cjs").source;
+  assert.match(realtime, /Probe every exact server-rendered poster before any Telegram mutation/);
+  assert.match(realtime, /preflightPoster/);
+  assert.match(realtime, /contentType\.startsWith\("image\/png"\)/);
+  assert.match(realtime, /MAX_POSTER_BYTES/);
+  assert.ok(realtime.indexOf("report.mediaPreflight.push") < realtime.indexOf('action: "run-now"'));
 });
 
 test("Academy DEMO read-only audit includes recovery and validation rule identities", async () => {
   const workflow = await readFile(new URL(".github/workflows/telegram-automations.yml", root), "utf8");
   const acceptance = await readFile(new URL("scripts/accept-academy-demo-content.cjs", root), "utf8");
-  assert.ok(workflow.includes("(daily|weekly|release)(?:-(?:recovery|validation)-[a-z0-9-]+)?-temporary"));
+  assert.ok(workflow.includes("^academy-(?:demo-showcase|realtime-demo)-(daily|weekly|release)"));
+  assert.ok(workflow.includes("(?:-(?:recovery|validation)-[a-z0-9-]+|-[a-z0-9-]+)?-temporary$"));
   assert.match(acceptance, /academy-demo-showcase-\$\{showcaseCase\.key\}-\$\{validationTag\}-temporary/);
   assert.match(workflow, /academy-demo-showcase-weekly-recovery-20260824-v3-temporary/);
   assert.match(workflow, /academy-demo-showcase-release-recovery-20260824-v3-temporary/);

@@ -218,6 +218,26 @@ test("weekly and data previews use the warm editorial research system", async ()
   assert.match(dataBranch, /CROSS-ASSET REACTION/);
 });
 
+test("V4 media previews preserve the locked master approval fields", async () => {
+  const source = await readFile(new URL("../app/api/media/card/route.js", import.meta.url), "utf8");
+  assert.match(source, /sha256:\s*approved\.sha256/);
+  assert.match(source, /composition:\s*approved\.composition/);
+
+  const { GET } = await import("../app/api/media/card/route.js");
+  const poster = {
+    kind: "crypto-daily",
+    date: "2026-08-24",
+    stories: [{ rank: "01", title: "BTC holds above verified session support", source: "CoinGecko", score: 82 }],
+  };
+  poster.visualTemplate = selectMarketPosterTemplate({ jobId: "crypto-daily", poster });
+  const response = await GET(new Request(`${EDITORIAL_ORIGIN}/api/media/card?kind=crypto-daily&data=${encodedPoster(poster)}`));
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") ?? "", /^image\/png/);
+  const png = Buffer.from(await response.arrayBuffer());
+  assert.equal(png.readUInt32BE(16), 1200);
+  assert.equal(png.readUInt32BE(20), 675);
+});
+
 test("weekly and data preview handlers safely render hostile poster JSON", async () => {
   const { GET } = await import("../app/api/media/card/route.js");
   const cases = [
