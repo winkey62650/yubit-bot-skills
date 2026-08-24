@@ -445,7 +445,7 @@ jobs:
               if poster_url:
                   probe = subprocess.run(
                       [
-                          "node",
+                          "/opt/yubit-node/bin/node",
                           "-e",
                           """
                           (async () => {
