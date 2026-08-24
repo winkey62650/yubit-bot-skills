@@ -35,7 +35,7 @@ jobs:
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq sshpass
 
-      - name: Send only currently eligible realtime text products to Academy DEMO
+      - name: Send only currently eligible realtime products with V4 posters to Academy DEMO
         env:
           SSHPASS: ${{ secrets.YUBIT_SERVER_PASSWORD }}
           EXPECTED_SHA: ${{ github.sha }}
@@ -115,16 +115,16 @@ jobs:
           REMOTE
           jq -e '
             .ok == true
-            and .operation == "academy-realtime-demo-text-delivery"
+            and .operation == "academy-realtime-demo-poster-delivery"
             and .historicalReplay == false
-            and .mediaIncluded == false
+            and .mediaIncluded == true
             and .exactTargets == true
             and (.results | length == 3)
             and all(.results[]; .status == "sent" or .status == "skipped")
-            and all(.results[] | select(.status == "sent"); .target.chatId == "-1003710405969" and (.target.threadId == 8 or .target.threadId == 10) and (.messageIds | length > 0))
+            and all(.results[] | select(.status == "sent"); .target.chatId == "-1003710405969" and (.target.threadId == 8 or .target.threadId == 10) and (.messageIds | length >= ((.productTypes | length) * 2)))
             and all(.cleanup[]; .deleted == true)
           ' "$report_path" >/dev/null
-          echo "### Academy DEMO realtime text delivery" >>"$GITHUB_STEP_SUMMARY"
+          echo "### Academy DEMO realtime V4 poster delivery" >>"$GITHUB_STEP_SUMMARY"
           jq -r '"- Release: `\(.release.commitSha)`\n- Sent: `\(.results | map(select(.status == "sent") | .productTypes | join(" + ")) | join(", "))`\n- Skipped: `\(.results | map(select(.status == "skipped") | (.key + " (" + (.skipReason // "unspecified") + ")")) | join(", "))`\n- Media included: `\(.mediaIncluded)`"' "$report_path" >>"$GITHUB_STEP_SUMMARY"
 
       - name: Upload Academy DEMO realtime delivery evidence

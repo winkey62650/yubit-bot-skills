@@ -30,19 +30,20 @@ test("all four automatic posters render on the landscape canvas with their conte
   }
 });
 
-test("the supplied warm-paper editorial template remains the visual source of truth", () => {
+test("the supplied VIP Wide Dense V4 template remains the visual source of truth", () => {
   const text = renderedText({
     visualTemplate: { id: "daily-market-brief-v4" },
     stories: [{ rank: "01", title: "Verified market development", score: 80, affected: "BTC" }],
     footer,
   });
 
-  assert.match(text, /#F4F0E7/);
-  assert.match(text, /#171714/);
-  assert.match(text, /#EFB62F/);
-  assert.match(text, /"MARKET"/);
-  assert.match(text, /"SIGNALS"/);
-  assert.doesNotMatch(text, /linear-gradient|radial-gradient|#0B1F3A|borderRadius[^}]*24|YUBIT/i);
+  assert.match(text, /#EEF5F8/);
+  assert.match(text, /#071C32/);
+  assert.match(text, /#16B8E7/);
+  assert.match(text, /#F5B83C/);
+  assert.match(text, /linear-gradient/);
+  assert.match(text, /"DAILY MARKET BRIEF"/);
+  assert.doesNotMatch(text, /#F4F0E7|YUBIT/i);
 });
 
 test("sparse weekly data renders only verified event cards and never five empty weekday slots", () => {

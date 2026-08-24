@@ -9,13 +9,16 @@ import {
 const VISUAL_TOKENS = {
   canvas: { width: 1200, height: 675 },
   palette: {
-    paper: "#E9E5DC",
-    ink: "#171717",
-    muted: "#6D6A63",
-    red: "#A3483F",
-    green: "#3F6D57",
+    paper: "#EEF5F8",
+    ink: "#071C32",
+    muted: "#60798C",
+    red: "#D85757",
+    green: "#15936E",
+    blue: "#0B5C89",
+    cyan: "#16B8E7",
+    gold: "#F5B83C",
   },
-  masthead: "MARKET INTELLIGENCE / EDITORIAL RESEARCH",
+  masthead: "MARKET INTELLIGENCE / VERIFIED RESEARCH",
 };
 
 function assertEditorialTokens(model, { sources, updatedAt }) {
@@ -549,6 +552,6 @@ test("poster builders preserve frozen inputs and return isolated JSON-serializab
 
   first.palette.paper = "#000000";
   const second = buildWeeklyCalendarPosterModel(input);
-  assert.equal(second.palette.paper, "#E9E5DC");
+  assert.equal(second.palette.paper, "#EEF5F8");
   assert.equal(input.days[0].events[0].title, "US CPI");
 });

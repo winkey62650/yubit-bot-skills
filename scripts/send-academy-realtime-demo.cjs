@@ -4,6 +4,12 @@ const { request } = require("playwright");
 const { authorizeLiveTelegramOperation } = require("../lib/release-gate.cjs");
 
 const DEMO_CHAT_ID = "-1003710405969";
+const POSTER_TEMPLATES = Object.freeze({
+  "daily-market-brief": "daily-market-brief-v4",
+  "weekly-catalyst-calendar": "weekly-catalysts-v4",
+  "data-flash": "data-flash-v4",
+  "market-follow-up": "market-follow-up-v4",
+});
 const CASES = Object.freeze([
   Object.freeze({
     key: "daily",
@@ -32,7 +38,7 @@ const CASES = Object.freeze([
 ]);
 
 const { baseUrl } = authorizeLiveTelegramOperation(process.env, {
-  operation: "Academy DEMO 实时内容纯文字发送",
+  operation: "Academy DEMO 实时内容 V4 海报与正文发送",
 });
 const username = process.env.TEST_USERNAME;
 const password = process.env.TEST_PASSWORD;
@@ -67,6 +73,29 @@ function targetMatches(target, item) {
     && !target?.guildId;
 }
 
+function inspectPosterSteps(steps, products, item) {
+  const photos = steps.filter((step) => step?.method === "sendPhoto");
+  if (photos.length !== products.length
+    || photos.some((step) => !/^https:\/\//i.test(String(step?.payload?.photo || "")) || step?.payload?.caption)
+    || steps[0]?.method !== "sendPhoto"
+    || steps.some((step, index) => step?.method === "sendPhoto" && steps[index + 1]?.method !== "sendMessage")
+    || steps.some((step) => !["sendPhoto", "sendMessage"].includes(step?.method))
+    || steps.filter((step) => step?.method === "sendMessage").some((step) => !step?.payload?.text)) {
+    throw new Error(`${item.key} must place one caption-free V4 poster immediately before each product text`);
+  }
+}
+
+function inspectMediaDelivery(preview, products, item) {
+  if (preview.textOnly === true || !preview.imageUrl) throw new Error(`${item.key} preview is missing poster media`);
+  const byTemplateId = preview.mediaDelivery?.byTemplateId || {};
+  for (const product of products) {
+    const templateId = POSTER_TEMPLATES[product.product];
+    if (!templateId || !/^https:\/\//i.test(String(byTemplateId[templateId] || ""))) {
+      throw new Error(`${item.key} is missing its approved V4 poster ${templateId || "template"}`);
+    }
+  }
+}
+
 function buildRule(item, nonce) {
   return {
     id: `academy-realtime-demo-${item.key}-${nonce}-temporary`,
@@ -90,7 +119,6 @@ function buildRule(item, nonce) {
 
 function inspectPreview(preview, item) {
   if (preview.demoShowcase === true) throw new Error(`${item.key} preview unexpectedly used historical replay`);
-  if (preview.textOnly !== true || preview.imageUrl !== null) throw new Error(`${item.key} preview is not media-free`);
   const publishable = preview.publishable ?? preview.document?.publishable ?? false;
   const skipReason = preview.skipReason || preview.document?.skipReason || null;
   if (!publishable) return { publishable: false, skipReason };
@@ -101,12 +129,11 @@ function inspectPreview(preview, item) {
     || products.some((product) => product?.status !== "distribution-ready" || !item.products.includes(product?.product))) {
     throw new Error(`${item.key} preview failed content governance`);
   }
+  inspectMediaDelivery(preview, products, item);
   const plans = Array.isArray(preview.deliveryPlans) ? preview.deliveryPlans : [];
   if (plans.length !== 1 || !targetMatches(plans[0]?.target, item)) throw new Error(`${item.key} preview left its demo Topic`);
   const steps = Array.isArray(plans[0]?.steps) ? plans[0].steps : [];
-  if (steps.length < products.length || steps.some((step) => step?.method !== "sendMessage" || step?.payload?.photo || step?.payload?.imageUrl)) {
-    throw new Error(`${item.key} preview contains media or missing text steps`);
-  }
+  inspectPosterSteps(steps, products, item);
   return {
     publishable: true,
     productTypes: products.map((product) => product.product),
@@ -119,8 +146,8 @@ function inspectPreview(preview, item) {
 function inspectExecution(execution, deliveries, rule, item) {
   if (execution.status !== "success") throw new Error(`${item.key} delivery failed: ${execution.error || execution.status || "unknown"}`);
   const preview = execution.run?.preview || {};
-  if (preview.demoShowcase === true || preview.textOnly !== true || preview.imageUrl !== null) {
-    throw new Error(`${item.key} delivery lost realtime text-only flags`);
+  if (preview.demoShowcase === true) {
+    throw new Error(`${item.key} delivery unexpectedly used historical replay`);
   }
   const results = Array.isArray(preview.targetResults) ? preview.targetResults : [];
   if (results.length !== 1 || results[0]?.status !== "success" || !targetMatches(results[0]?.target, item)) {
@@ -135,12 +162,13 @@ function inspectExecution(execution, deliveries, rule, item) {
     || products.some((product) => product?.status !== "published" || !item.products.includes(product?.product))) {
     throw new Error(`${item.key} delivery did not publish canonical Obsidian products`);
   }
+  inspectMediaDelivery(preview, products, item);
   const plans = Array.isArray(preview.deliveryPlans) ? preview.deliveryPlans : [];
   const plan = plans[0];
-  if (plans.length !== 1 || plan?.contentPolicy !== "obsidian-canonical" || !targetMatches(plan?.target, item)
-    || plan.steps?.some((step) => step?.method !== "sendMessage" || step?.payload?.photo || step?.payload?.imageUrl)) {
-    throw new Error(`${item.key} delivery was not the canonical media-free plan`);
+  if (plans.length !== 1 || plan?.contentPolicy !== "obsidian-canonical" || !targetMatches(plan?.target, item)) {
+    throw new Error(`${item.key} delivery was not the canonical V4 poster plan`);
   }
+  inspectPosterSteps(Array.isArray(plan?.steps) ? plan.steps : [], products, item);
   const matching = deliveries.filter((delivery) => delivery?.ruleId === rule.id
     && delivery?.status === "success" && targetMatches(delivery?.target, item)
     && messageIds.every((id) => messageIdsOf(delivery).includes(id)));
@@ -176,9 +204,9 @@ function writeReport(report) {
   const nonce = `${Date.now().toString(36)}-${process.pid.toString(36)}`;
   const report = {
     ok: false,
-    operation: "academy-realtime-demo-text-delivery",
+    operation: "academy-realtime-demo-poster-delivery",
     historicalReplay: false,
-    mediaIncluded: false,
+    mediaIncluded: true,
     exactTargets: true,
     startedAt: new Date().toISOString(),
     previews: [],
@@ -201,7 +229,7 @@ function writeReport(report) {
       temporaryRuleIds.push(rule.id);
 
       const previewPayload = await readJson(await api.post("/api/automation-test", {
-        data: { jobId: item.contentType, targets: created.rule.targets, textOnly: true }, timeout: 90_000,
+        data: { jobId: item.contentType, targets: created.rule.targets, textOnly: false }, timeout: 90_000,
       }), `${item.key} realtime preview`);
       const evidence = inspectPreview(previewPayload.result?.preview || {}, item);
       report.previews.push({ key: item.key, contentType: item.contentType, ...evidence });
@@ -219,7 +247,7 @@ function writeReport(report) {
     // One authorized call per eligible product family. Deliberately no retry path.
     for (const { item, rule } of approved) {
       const executionPayload = await readJson(await api.post("/api/distribution", {
-        data: { action: "run-now", id: rule.id, exactTargets: true, textOnly: true }, timeout: 180_000,
+        data: { action: "run-now", id: rule.id, exactTargets: true, textOnly: false }, timeout: 180_000,
       }), `${item.key} exact-target delivery`);
       const deliveryPayload = await readJson(await api.get("/api/distribution/logs?limit=100", {
         timeout: 30_000,
