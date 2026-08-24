@@ -46,6 +46,23 @@ test("Discord credentials are encrypted at rest and can be loaded server-side", 
   });
 });
 
+test("Discord credentials tolerate the Bot authorization prefix copied with a token", async () => {
+  const repository = createRepository();
+  await saveDiscordCredentials(
+    {
+      appId,
+      publicKey,
+      botToken: "  Bot new-secret-token  ",
+    },
+    { repository, encryptionKey },
+  );
+
+  assert.equal(
+    (await loadDiscordCredentials({ repository, encryptionKey })).botToken,
+    "new-secret-token",
+  );
+});
+
 test("credential status is safe for the browser and preserves an existing token", async () => {
   const repository = createRepository();
   await saveDiscordCredentials(
