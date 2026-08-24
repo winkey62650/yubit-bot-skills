@@ -206,7 +206,10 @@ jobs:
               raise RuntimeError("login was not accepted")
           deliveries = read_json(f"{base_url}/api/distribution/logs?limit=500")
           overview = read_json(f"{base_url}/api/distribution")
-          demo_rule = re.compile(r"^academy-demo-showcase-(daily|weekly|release)(?:-(?:recovery|validation)-[a-z0-9-]+)?-temporary$")
+          demo_rule = re.compile(
+              r"^academy-(?:demo-showcase|realtime-demo)-(daily|weekly|release)"
+              r"(?:-(?:recovery|validation)-[a-z0-9-]+|-[a-z0-9-]+)?-temporary$"
+          )
           receipt_fields = [
               "id", "ruleId", "status", "target", "targetMessageId", "targetMessageIds",
               "deliveredAt", "createdAt", "updatedAt", "error",
