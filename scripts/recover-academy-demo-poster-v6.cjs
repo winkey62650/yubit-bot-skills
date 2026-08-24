@@ -1,3 +1,4 @@
+// One-shot governed recovery for the poster-v6 Academy DEMO acceptance batch.
 const fs = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
@@ -13,25 +14,27 @@ const {
 } = require("../lib/demo-content-acceptance.cjs");
 const { authorizeLiveTelegramOperation } = require("../lib/release-gate.cjs");
 
+const MAX_POSTER_BYTES = 5 * 1024 * 1024;
+
 const { baseUrl } = authorizeLiveTelegramOperation(process.env, {
-  operation: "Academy DEMO v3 周度催化、数据快讯与市场跟进补发",
+  operation: "Academy DEMO v6 周度催化、数据快讯与市场跟进海报补发",
 });
 const username = process.env.TEST_USERNAME;
 const password = process.env.TEST_PASSWORD;
 const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
-const reportPath = path.resolve(process.env.TEST_REPORT_PATH || "artifacts/academy-demo-showcase/format-v3-recovery.json");
-const priorDailyRuleId = "academy-demo-showcase-daily-validation-20260824-v3-temporary";
-const expectedPriorDailyMessageId = 1295;
+const reportPath = path.resolve(process.env.TEST_REPORT_PATH || "artifacts/academy-demo-showcase/poster-v6-recovery.json");
+const priorDailyRuleId = "academy-demo-showcase-daily-validation-20260824-poster-v5-temporary";
+const expectedPriorDailyMessageIds = Object.freeze([1321, 1322]);
 const recoveryCases = DEMO_SHOWCASE_CASES.filter((item) => item.key === "weekly" || item.key === "release");
 const recoveryRuleIds = Object.freeze({
-  weekly: "academy-demo-showcase-weekly-recovery-20260824-v3-temporary",
-  release: "academy-demo-showcase-release-recovery-20260824-v3-temporary",
+  weekly: "academy-demo-showcase-weekly-recovery-20260824-poster-v6-temporary",
+  release: "academy-demo-showcase-release-recovery-20260824-poster-v6-temporary",
 });
 const temporaryRulePattern = /^academy-demo-showcase-(daily|weekly|release)(?:-(?:recovery|validation)-[a-z0-9-]+)?-temporary$/;
 
 if (!username || !password) throw new Error("TEST_USERNAME and TEST_PASSWORD are required");
 if (!vaultPath) throw new Error("OBSIDIAN_VAULT_PATH is required");
-if (recoveryCases.length !== 2) throw new Error("Academy DEMO v3 recovery cases are unavailable");
+if (recoveryCases.length !== 2) throw new Error("Academy DEMO v6 recovery cases are unavailable");
 
 async function readJson(response, label) {
   const payload = await response.json().catch(() => ({}));
@@ -58,26 +61,25 @@ function readImmutableDemoReceipts() {
 
 function assertRecoveryState({ receipts, rules }) {
   const temporaryRules = rules.filter((rule) => temporaryRulePattern.test(String(rule?.id || "")));
-  if (temporaryRules.length !== 0) throw new Error("Academy DEMO v3 recovery requires no temporary showcase rules");
+  if (temporaryRules.length !== 0) throw new Error("Academy DEMO v6 recovery requires no temporary showcase rules");
 
   for (const ruleId of Object.values(recoveryRuleIds)) {
     if (receipts.some((receipt) => receipt.ruleId === ruleId)) {
-      throw new Error(`Academy DEMO v3 recovery already has an immutable receipt for ${ruleId}`);
+      throw new Error(`Academy DEMO v6 recovery already has an immutable receipt for ${ruleId}`);
     }
   }
 
   const matching = receipts.filter((receipt) => receipt.ruleId === priorDailyRuleId);
-  if (matching.length !== 1) throw new Error("Academy DEMO v3 recovery requires exactly one immutable v3 daily receipt");
+  if (matching.length !== 1) throw new Error("Academy DEMO v6 recovery requires exactly one immutable poster-v5 daily receipt");
   const receipt = matching[0];
   const messageIds = messageIdsOf(receipt);
   if (receipt.status !== "success"
     || !targetMatches(receipt.endpoint || receipt.target, { threadId: 10 })
-    || messageIds.length !== 1
-    || messageIds[0] !== expectedPriorDailyMessageId
+    || JSON.stringify(messageIds) !== JSON.stringify(expectedPriorDailyMessageIds)
     || !receipt.contentProductId
     || !receipt.deliveryId
     || !receipt.receiptId) {
-    throw new Error("Academy DEMO v3 recovery found an invalid immutable v3 daily receipt");
+    throw new Error("Academy DEMO v6 recovery found an invalid immutable poster-v5 daily receipt");
   }
   return {
     key: "daily",
@@ -101,6 +103,35 @@ function productEvidence(execution) {
   }));
 }
 
+async function preflightPosters(api, preview, showcaseCase) {
+  const steps = preview.deliveryPlans?.[0]?.steps || [];
+  const posters = steps.filter((step) => step?.method === "sendPhoto");
+  if (posters.length !== showcaseCase.productTypes.length) {
+    throw new Error(`${showcaseCase.key} poster preflight requires one poster per product`);
+  }
+  const evidence = [];
+  for (let index = 0; index < posters.length; index += 1) {
+    const url = String(posters[index]?.payload?.photo || "");
+    const response = await api.get(url, { timeout: 90_000 });
+    const contentType = String(response.headers()["content-type"] || "").toLowerCase();
+    if (!response.ok() || !contentType.startsWith("image/png")) {
+      throw new Error(`${showcaseCase.key} poster preflight failed: HTTP ${response.status()} · ${contentType || "missing content-type"}`);
+    }
+    const bytes = await response.body();
+    if (bytes.byteLength < 1024 || bytes.byteLength > MAX_POSTER_BYTES) {
+      throw new Error(`${showcaseCase.key} poster preflight failed: invalid PNG size ${bytes.byteLength}`);
+    }
+    evidence.push({
+      product: showcaseCase.productTypes[index],
+      url,
+      status: response.status(),
+      contentType,
+      byteLength: bytes.byteLength,
+    });
+  }
+  return evidence;
+}
+
 function writeReport(report) {
   fs.mkdirSync(path.dirname(reportPath), { recursive: true });
   fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
@@ -112,15 +143,17 @@ function writeReport(report) {
   const createdRuleIds = [];
   const report = {
     ok: false,
-    operation: "academy-demo-format-v3-residual-recovery",
-    visualContract: "telegram-editorial-card-v3",
+    operation: "academy-demo-poster-v6-residual-recovery",
+    visualContract: "telegram-editorial-card-v4",
     historicalReplay: true,
-    mediaIncluded: false,
+    mediaIncluded: true,
+    previewLabel: "DEMO PREVIEW · FORMAT TEST",
     exactTargets: true,
     targets: recoveryCases.map((item) => ({ chatId: DEMO_CHAT_ID, threadId: item.threadId })),
     priorExecution: null,
     executions: [],
     products: [],
+    mediaPreflight: [],
     startedAt: new Date().toISOString(),
   };
   try {
@@ -158,15 +191,16 @@ function writeReport(report) {
         data: {
           jobId: showcaseCase.contentType,
           targets: created.rule.targets,
-          textOnly: true,
+          textOnly: false,
           demoShowcase: true,
         },
         timeout: 90_000,
       }), `${showcaseCase.key} content preview`);
       const preview = previewPayload.result?.preview || {};
       const previewEvidence = assertDemoShowcasePreview(preview, showcaseCase);
+      report.mediaPreflight.push(...await preflightPosters(api, preview, showcaseCase));
       if (preview.deduplicationKey !== expectedIdentities[showcaseCase.key]) {
-        throw new Error(`${showcaseCase.key} v3 durable delivery identity changed`);
+        throw new Error(`${showcaseCase.key} v6 durable delivery identity changed`);
       }
 
       const validation = await readJson(await api.post("/api/distribution", {
@@ -185,7 +219,7 @@ function writeReport(report) {
           action: "run-now",
           id: rule.id,
           exactTargets: true,
-          textOnly: true,
+          textOnly: false,
           demoShowcase: true,
         },
         timeout: 180_000,
@@ -207,7 +241,7 @@ function writeReport(report) {
     ];
     report.finishedAt = new Date().toISOString();
     report.ok = report.executions.length === 2
-      && report.executions.flatMap((item) => item.messageIds).length === 3
+      && report.executions.flatMap((item) => item.messageIds).length === 6
       && JSON.stringify(report.products.map((item) => item.product)) === JSON.stringify([
         "daily-market-brief",
         "weekly-catalyst-calendar",

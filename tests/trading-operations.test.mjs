@@ -175,18 +175,22 @@ test("run-now exists only in explicitly authorized live acceptance scripts", asy
   }
   assert.deepEqual(offenders.map((item) => item.file), [
     "accept-academy-demo-content.cjs",
-    "recover-academy-demo-format-v3.cjs",
+    "recover-academy-demo-poster-v6.cjs",
     "send-academy-realtime-demo.cjs",
     "test-production-automation-delivery.cjs",
   ]);
   for (const offender of offenders) assert.match(offender.source, /authorizeLiveTelegramOperation/);
   assert.match(offenders.find((item) => item.file === "accept-academy-demo-content.cjs").source, /exactTargets:\s*true/);
-  const recovery = offenders.find((item) => item.file === "recover-academy-demo-format-v3.cjs").source;
+  const recovery = offenders.find((item) => item.file === "recover-academy-demo-poster-v6.cjs").source;
   assert.match(recovery, /exactTargets:\s*true/);
-  assert.match(recovery, /academy-demo-showcase-weekly-recovery-20260824-v3-temporary/);
-  assert.match(recovery, /academy-demo-showcase-release-recovery-20260824-v3-temporary/);
+  assert.match(recovery, /academy-demo-showcase-weekly-recovery-20260824-poster-v6-temporary/);
+  assert.match(recovery, /academy-demo-showcase-release-recovery-20260824-poster-v6-temporary/);
   assert.match(recovery, /Preview and validate every residual product before the first live send/);
   assert.match(recovery, /buildDemoShowcaseTemporaryRule\(showcaseCase,\s*\{\s*ruleId:\s*recoveryRuleIds\[showcaseCase\.key\]\s*\}\)/s);
+  assert.match(recovery, /preflightPosters/);
+  assert.match(recovery, /contentType\.startsWith\("image\/png"\)/);
+  assert.match(recovery, /MAX_POSTER_BYTES/);
+  assert.ok(recovery.indexOf("report.mediaPreflight.push") < recovery.indexOf('action: "run-now"'));
 
   const realtime = offenders.find((item) => item.file === "send-academy-realtime-demo.cjs").source;
   assert.match(realtime, /Probe every exact server-rendered poster before any Telegram mutation/);
@@ -202,9 +206,9 @@ test("Academy DEMO read-only audit includes recovery and validation rule identit
   assert.ok(workflow.includes("^academy-(?:demo-showcase|realtime-demo)-(daily|weekly|release)"));
   assert.ok(workflow.includes("(?:-(?:recovery|validation)-[a-z0-9-]+|-[a-z0-9-]+)?-temporary$"));
   assert.match(acceptance, /academy-demo-showcase-\$\{showcaseCase\.key\}-\$\{validationTag\}-temporary/);
-  assert.match(workflow, /academy-demo-showcase-weekly-recovery-20260824-v3-temporary/);
-  assert.match(workflow, /academy-demo-showcase-release-recovery-20260824-v3-temporary/);
-  assert.match(workflow, /academy-format-v3-recovery/);
+  assert.match(workflow, /academy-demo-showcase-weekly-recovery-20260824-poster-v6-temporary/);
+  assert.match(workflow, /academy-demo-showcase-release-recovery-20260824-poster-v6-temporary/);
+  assert.match(workflow, /academy-poster-v6-recovery/);
 });
 
 test("production distribution gates cover all six automations and seven broadcasts", async () => {

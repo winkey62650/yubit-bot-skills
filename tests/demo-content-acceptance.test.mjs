@@ -304,7 +304,7 @@ test("v4 format validation can use a new approved rule identity without inheriti
   }), /rule identity/i);
 });
 
-test("v3 residual recovery identities are scoped to the missing content cases", () => {
+test("versioned residual recovery identities are scoped to the missing content cases", () => {
   const weekly = DEMO_SHOWCASE_CASES.find((item) => item.key === "weekly");
   const release = DEMO_SHOWCASE_CASES.find((item) => item.key === "release");
 

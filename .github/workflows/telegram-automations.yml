@@ -12,7 +12,7 @@ on:
         options:
           - academy-realtime-demo
           - academy-demo
-          - academy-format-v3-recovery
+          - academy-poster-v6-recovery
           - academy-audit
           - agents
           - distribution
@@ -358,8 +358,8 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  academy_format_v3_recovery:
-    if: inputs.job == 'academy-format-v3-recovery'
+  academy_poster_v6_recovery:
+    if: inputs.job == 'academy-poster-v6-recovery'
     runs-on: ubuntu-latest
     environment: Production
     env:
@@ -370,7 +370,7 @@ jobs:
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq sshpass
 
-      - name: Send only the three residual v3 text messages to Academy DEMO Topic 8
+      - name: Send only the six residual poster-and-copy messages to Academy DEMO Topic 8
         env:
           SSHPASS: ${{ secrets.YUBIT_SERVER_PASSWORD }}
           EXPECTED_SHA: ${{ github.sha }}
@@ -434,7 +434,7 @@ jobs:
             OBSIDIAN_VAULT_PATH="$obsidian_vault_path" \
             TEST_REPORT_PATH="$report_file" \
             ACCEPTANCE_QUIET=true \
-            /opt/yubit-node/bin/node "$release/scripts/recover-academy-demo-format-v3.cjs"
+            /opt/yubit-node/bin/node "$release/scripts/recover-academy-demo-poster-v6.cjs"
 
           publisher_config_after="$(sudo grep -E '^(TELEGRAM_[^=]*|DISCORD_[^=]*|TRADING_DEMO_ONLY|ALLOW_LIVE_TELEGRAM)=' "$env_file" | sha256sum | awk '{print $1}')"
           if [ "$publisher_config_after" != "$publisher_config_before" ] \
@@ -446,29 +446,32 @@ jobs:
           REMOTE
           jq -e '
             .ok == true
-            and .operation == "academy-demo-format-v3-residual-recovery"
-            and .visualContract == "telegram-editorial-card-v3"
+            and .operation == "academy-demo-poster-v6-residual-recovery"
+            and .visualContract == "telegram-editorial-card-v4"
             and .historicalReplay == true
-            and .mediaIncluded == false
+            and .mediaIncluded == true
+            and .previewLabel == "DEMO PREVIEW · FORMAT TEST"
+            and (.mediaPreflight | length == 3)
+            and all(.mediaPreflight[]; .status == 200 and (.contentType | startswith("image/png")) and .byteLength >= 1024 and .byteLength <= 5242880)
             and .exactTargets == true
-            and (.priorExecution.key == "daily" and .priorExecution.messageIds == [1295] and .priorExecution.target.threadId == 10)
+            and (.priorExecution.key == "daily" and .priorExecution.messageIds == [1321,1322] and .priorExecution.target.threadId == 10)
             and (.executions | length == 2)
-            and (.executions[0].productTypes == ["weekly-catalyst-calendar"] and (.executions[0].messageIds | length == 1) and .executions[0].target.threadId == 8)
-            and (.executions[1].productTypes == ["data-flash", "market-follow-up"] and (.executions[1].messageIds | length == 2) and .executions[1].target.threadId == 8)
-            and ([.executions[].messageIds[]] | length == 3)
+            and (.executions[0].productTypes == ["weekly-catalyst-calendar"] and (.executions[0].messageIds | length == 2) and .executions[0].target.threadId == 8)
+            and (.executions[1].productTypes == ["data-flash", "market-follow-up"] and (.executions[1].messageIds | length == 4) and .executions[1].target.threadId == 8)
+            and ([.executions[].messageIds[]] | length == 6)
             and (.products | map(.product) == ["daily-market-brief", "weekly-catalyst-calendar", "data-flash", "market-follow-up"])
             and (.cleanup == [
-              {"id":"academy-demo-showcase-weekly-recovery-20260824-v3-temporary","deleted":true},
-              {"id":"academy-demo-showcase-release-recovery-20260824-v3-temporary","deleted":true}
+              {"id":"academy-demo-showcase-weekly-recovery-20260824-poster-v6-temporary","deleted":true},
+              {"id":"academy-demo-showcase-release-recovery-20260824-poster-v6-temporary","deleted":true}
             ])
           ' "$report_path" >/dev/null
-          echo "### Academy DEMO v3 four-product text acceptance completed" >>"$GITHUB_STEP_SUMMARY"
-          jq -r '"- Existing v3 Market Brief: `\(.priorExecution.messageIds | join(","))`\n- Residual v3 messages: `\(.executions | map(.messageIds | join(",")) | join(" · "))`\n- Products: `\(.products | map(.product) | join(", "))`\n- Media included: `\(.mediaIncluded)`"' "$report_path" >>"$GITHUB_STEP_SUMMARY"
+          echo "### Academy DEMO v6 four-product poster acceptance completed" >>"$GITHUB_STEP_SUMMARY"
+          jq -r '"- Existing Market Brief: `\(.priorExecution.messageIds | join(","))`\n- Residual v6 messages: `\(.executions | map(.messageIds | join(",")) | join(" · "))`\n- Products: `\(.products | map(.product) | join(", "))`\n- Media included: `\(.mediaIncluded)`"' "$report_path" >>"$GITHUB_STEP_SUMMARY"
 
       - name: Upload complete Academy DEMO acceptance evidence
         uses: actions/upload-artifact@v4
         with:
-          name: academy-demo-format-v3-recovery-${{ github.sha }}
+          name: academy-demo-poster-v6-recovery-${{ github.sha }}
           path: ${{ runner.temp }}/academy-demo-four-product-acceptance.json
           if-no-files-found: error
           retention-days: 30

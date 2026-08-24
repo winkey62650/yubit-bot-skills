@@ -16,7 +16,7 @@ const { baseUrl } = authorizeLiveTelegramOperation(process.env, {
 const username = process.env.TEST_USERNAME;
 const password = process.env.TEST_PASSWORD;
 const reportPath = path.resolve(process.env.TEST_REPORT_PATH || "artifacts/academy-demo-showcase/report.json");
-const validationTag = "validation-20260824-poster-v5";
+const validationTag = "validation-20260824-poster-v6";
 
 if (!username || !password) throw new Error("TEST_USERNAME and TEST_PASSWORD are required");
 
