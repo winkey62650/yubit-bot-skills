@@ -30,6 +30,21 @@ test("all four automatic posters render on the landscape canvas with their conte
   }
 });
 
+test("the supplied warm-paper editorial template remains the visual source of truth", () => {
+  const text = renderedText({
+    visualTemplate: { id: "daily-market-brief-v4" },
+    stories: [{ rank: "01", title: "Verified market development", score: 80, affected: "BTC" }],
+    footer,
+  });
+
+  assert.match(text, /#F4F0E7/);
+  assert.match(text, /#171714/);
+  assert.match(text, /#EFB62F/);
+  assert.match(text, /"MARKET"/);
+  assert.match(text, /"SIGNALS"/);
+  assert.doesNotMatch(text, /linear-gradient|radial-gradient|#0B1F3A|borderRadius[^}]*24|YUBIT/i);
+});
+
 test("sparse weekly data renders only verified event cards and never five empty weekday slots", () => {
   const text = renderedText({
     visualTemplate: { id: "weekly-catalysts-v4" },
