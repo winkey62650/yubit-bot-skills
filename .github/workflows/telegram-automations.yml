@@ -395,6 +395,51 @@ jobs:
 
           gateway = status.get("gateway", {}) if isinstance(status, dict) else {}
           config = status.get("config", {}) if isinstance(status, dict) else {}
+          preview_profile = {}
+          try:
+              expected_guild_id = "1530060040508149820"
+              expected_channel_id = "1531168767374000269"
+              preview_payload = request_json("/api/automation-test", payload={
+                  "jobId": "crypto-daily",
+                  "targets": [{
+                      "platform": "discord",
+                      "guildId": expected_guild_id,
+                      "channelId": expected_channel_id,
+                      "groupName": "TheMoonShow VIP Community",
+                      "topicName": "market-insights",
+                      "enabled": True,
+                  }],
+                  "textOnly": False,
+              })
+              preview = preview_payload.get("result", {}).get("preview", {})
+              plans = preview.get("deliveryPlans", [])
+              steps = plans[0].get("steps", []) if len(plans) == 1 else []
+              profiled_steps = []
+              for index, step in enumerate(steps):
+                  payload = step.get("payload", {})
+                  content = str(payload.get("content", ""))
+                  image_url = str(payload.get("imageUrl", ""))
+                  parsed_image_url = urllib.parse.urlsplit(image_url) if image_url else None
+                  profiled_steps.append({
+                      "index": index,
+                      "method": step.get("method", ""),
+                      "contentCharacters": len(content),
+                      "contentUtf16Units": len(content.encode("utf-16-le")) // 2,
+                      "contentBytes": len(content.encode("utf-8")),
+                      "hasImageUrl": bool(image_url),
+                      "imageUrlLength": len(image_url),
+                      "imageUrlScheme": parsed_image_url.scheme if parsed_image_url else "",
+                      "imageUrlHost": parsed_image_url.netloc if parsed_image_url else "",
+                      "imageUrlPath": parsed_image_url.path if parsed_image_url else "",
+                  })
+              preview_profile = {
+                  "ok": preview_payload.get("ok") is True,
+                  "publishable": preview.get("publishable") is True,
+                  "planCount": len(plans),
+                  "steps": profiled_steps,
+              }
+          except Exception as error:
+              preview_profile = {"auditError": sanitize(error)}
           runtime_directory = os.environ.get("JSON_STORE_DIRECTORY") or os.path.join(os.environ["RELEASE_PATH"], ".runtime")
           latest_demo_attempt = {}
           try:
@@ -474,6 +519,7 @@ jobs:
                   "lastError": sanitize(gateway.get("lastError", "")),
               },
               "latestDemoAttempt": latest_demo_attempt,
+              "previewProfile": preview_profile,
               "healthSummary": health.get("summary", {}),
               "channels": channel_results,
               "errors": errors,
