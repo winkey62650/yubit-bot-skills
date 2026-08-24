@@ -169,9 +169,11 @@ test("core distribution rules stay visible when optional page data fails to load
   assert.doesNotMatch(pageSource, /\[overviewResponse, groupsResponse, socialResponse, savedSettings, savedPresets\] = await Promise\.all/);
 });
 
-test("database load failures are shown as unavailable instead of empty rule lists", () => {
+test("distribution load failures are not mislabeled as database connection failures", () => {
   assert.match(pageSource, /const \[loadError, setLoadError\] = useState\(""\)/);
   assert.match(pageSource, /后台数据暂时不可用/);
+  assert.match(pageSource, /内容规则、数据库或发布器状态读取异常/);
+  assert.doesNotMatch(pageSource, /数据库连接异常/);
   assert.match(pageSource, /loadError \? <Card/);
   assert.match(pageSource, /!loadError && view === "automation"/);
 });

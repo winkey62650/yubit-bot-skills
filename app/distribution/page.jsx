@@ -521,7 +521,7 @@ function DistributionPageContent() {
       {loading && !analyticsView ? <Card className="p-8 text-center font-bold text-ops-muted">正在加载持久化配置…</Card> : null}
       {!loading && !analyticsView && loadError ? <Card className="p-8 text-center" role="alert">
         <p className="text-base font-black text-[#a04a3d]">后台数据暂时不可用</p>
-        <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-ops-muted">数据库连接异常，系统已停止把读取失败显示成空列表。原有规则和运行记录不会在这里被覆盖。</p>
+        <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-ops-muted">内容规则、数据库或发布器状态读取异常。系统不会把读取失败显示成空列表，也不会覆盖原有规则和运行记录。</p>
         <p className="mx-auto mt-2 max-w-2xl text-xs leading-5 text-[#7b642f]">{loadError}</p>
         <button className="mt-4 min-h-11 rounded-lg bg-ops-accent px-5 text-sm font-black text-white" onClick={loadAll} type="button">重新读取</button>
       </Card> : null}

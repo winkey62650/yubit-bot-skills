@@ -667,7 +667,7 @@ test("market content migration accepts only a correctly typed deterministic sibl
   );
 });
 
-test("market content migration reuses an explicitly linked non-derived release and rejects an unlinked one", () => {
+test("market content migration reuses an explicitly linked release and preserves an independent one", () => {
   const calendar = {
     id: "calendar",
     kind: "automation",
@@ -692,9 +692,24 @@ test("market content migration reuses an explicitly linked non-derived release a
   assert.equal(migrated.rules.length, 2);
   assert.equal(migrated.rules.find((rule) => rule.contentType === "data-release-updates").id, "custom-release");
   assert.ok(!migrated.rules.some((rule) => rule.id === "calendar-data-release-updates"));
-  assert.throws(
-    () => migrateMarketContentRules([calendar, { ...linked, importedFrom: null }]),
-    /conflict.*unlinked data-release-updates/i,
+  const withIndependentRelease = migrateMarketContentRules(
+    [calendar, { ...linked, id: "rule-59fcd3ddc7c79139", importedFrom: null }],
+    new Date("2026-08-19T10:40:01.000Z"),
+  );
+  assert.deepEqual(
+    withIndependentRelease.rules
+      .filter((rule) => rule.contentType === "data-release-updates")
+      .map((rule) => rule.id)
+      .sort(),
+    ["calendar-data-release-updates", "rule-59fcd3ddc7c79139"],
+  );
+  assert.equal(
+    withIndependentRelease.rules.find((rule) => rule.id === "calendar-data-release-updates").importedFrom,
+    "calendar",
+  );
+  assert.equal(
+    withIndependentRelease.rules.find((rule) => rule.id === "rule-59fcd3ddc7c79139").importedFrom,
+    null,
   );
   assert.throws(
     () => migrateMarketContentRules([calendar, { ...linked, importedFrom: "missing-calendar" }]),
