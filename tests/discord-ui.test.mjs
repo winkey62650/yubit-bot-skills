@@ -173,8 +173,11 @@ test("Discord 健康检查不会在完成后重复刷新 Bot 与 Server 状态",
 
 test("Discord Bot 凭证可在后台安全配置且不会回显 Token", () => {
   const page = read("app/discord/page.jsx");
+  const route = read("app/api/discord/route.js");
   assert.match(page, /type="password"/);
   assert.match(page, /credential-save/);
   assert.match(page, /credential-clear/);
   assert.match(page, /tokenConfigured/);
+  assert.match(route, /credential-save[\s\S]+getDiscordStatus\([\s\S]+validation\.connected/);
+  assert.match(route, /Discord Bot Token 验证失败/);
 });

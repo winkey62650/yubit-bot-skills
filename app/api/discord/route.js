@@ -49,8 +49,20 @@ export async function POST(request) {
     const body = await request.json();
     const action = String(body?.action || "").trim();
     let result;
+    let requireConnectedStatus = false;
 
     if (action === "credential-save") {
+      const providedBotToken = String(body.botToken || "").trim();
+      if (providedBotToken) {
+        const validation = await getDiscordStatus({
+          appId: body.appId,
+          publicKey: body.publicKey,
+          botToken: providedBotToken,
+        });
+        if (!validation.connected) {
+          throw new Error(`Discord Bot Token 验证失败：${validation.error || "无法连接 Discord API"}`);
+        }
+      }
       result = {
         credentials: await saveDiscordCredentials({
           appId: body.appId,
@@ -58,6 +70,7 @@ export async function POST(request) {
           botToken: body.botToken,
         }),
       };
+      requireConnectedStatus = true;
     } else if (action === "credential-clear") {
       result = { credentials: await clearDiscordCredentials() };
     } else if (action === "initialize") {
@@ -107,6 +120,9 @@ export async function POST(request) {
     }
 
     const status = await getDiscordStatus();
+    if (requireConnectedStatus && !status.connected) {
+      throw new Error(`Discord Bot Token 验证失败：${status.error || "无法连接 Discord API"}`);
+    }
     return json({ ok: true, result, ...status });
   } catch (error) {
     return json(
