@@ -188,8 +188,8 @@ test("weekly catalysts renders one complete seven-day UTC week and never pulls a
   assert.doesNotMatch(text, /Next-week event must not appear/);
 });
 
-test("missing flash comparisons keep their original fixed fields without publishing placeholders", () => {
-  const text = renderedText({
+test("missing flash comparisons remain explicit instead of looking like broken data", () => {
+  const text = visibleText({
     visualTemplate: { id: "data-flash-v4" },
     title: "U.S. CPI at 2.7% YoY",
     indicator: "CPI",
@@ -203,9 +203,10 @@ test("missing flash comparisons keep their original fixed fields without publish
   });
 
   assert.match(text, /2\.7% YoY/);
-  assert.doesNotMatch(text, /PENDING|NOT PUBLISHED|N\/A|TBD/);
-  assert.match(text, /flash-forecast/);
-  assert.match(text, /flash-previous/);
+  assert.match(text, /NOT IN SOURCE/);
+  assert.match(text, /BTC.*DXY.*NASDAQ.*US 2Y/);
+  assert.match(text, /AWAITING TAPE/);
+  assert.match(text, /PENDING/);
 });
 
 test("poster compaction is word-safe, visibly marked, and never silently slices a token", () => {
@@ -248,12 +249,27 @@ test("publish visual gate rejects any poster that still needs visible text compa
   assert.doesNotThrow(() => assertLandscapeMarketPosterFits(fitting));
 });
 
-test("reaction boards never invent pending rows when measured data is absent", () => {
+test("reaction boards label unmeasured fixed rows without inventing market values", () => {
   const flash = visibleText({ visualTemplate: { id: "data-flash-v4" }, indicator: "CPI", actual: "2.7%", reactions: [], footer });
   const follow = visibleText({ visualTemplate: { id: "market-follow-up-v4" }, reactions: [], footer });
 
-  assert.doesNotMatch(flash, /PENDING|NOT PUBLISHED/i);
-  assert.doesNotMatch(follow, /PENDING|NOT PUBLISHED/i);
+  assert.match(flash, /BTC.*AWAITING TAPE.*PENDING/i);
+  assert.match(follow, /BTC.*NO DATA.*UNAVAILABLE/i);
+  assert.match(follow, /Cross[ -]asset tape unavailable/i);
+  assert.doesNotMatch(`${flash} ${follow}`, /\+0\.00%|-0\.00%/i);
+});
+
+test("daily watch row flattens all verified affected assets", () => {
+  const text = visibleText({
+    visualTemplate: { id: "daily-market-brief-v4" },
+    stories: [
+      { title: "CPI", affected: "BTC · ETH · DXY", posterThesis: "Rates sensitivity remains high." },
+      { title: "Policy", affected: "BTC · NASDAQ", posterThesis: "Liquidity repricing remains conditional." },
+    ],
+    footer,
+  });
+
+  assert.match(text, /BTC.*ETH.*DXY/);
 });
 
 test("poster copy stays concise and removes generic horizon labels", () => {
@@ -274,7 +290,8 @@ test("poster copy stays concise and removes generic horizon labels", () => {
   });
 
   assert.doesNotMatch(flash, /HORIZON|1–3D|AWAITING VERIFIED REACTION/i);
-  assert.doesNotMatch(follow, /HORIZON|6–24H|AWAITING VERIFIED WINDOW|AWAITING/i);
+  assert.doesNotMatch(follow, /HORIZON|6–24H|AWAITING VERIFIED WINDOW/i);
+  assert.match(follow, /AWAITING CONFIRMATION/i);
   assert.doesNotMatch(flash, /durable directional conclusion/i);
   assert.doesNotMatch(follow, /does not justify a durable directional conclusion/i);
 });

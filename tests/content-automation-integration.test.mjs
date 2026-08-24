@@ -11,6 +11,13 @@ import {
 import { buildAcademyDemoShowcaseContent } from "../lib/academy-demo-showcase.mjs";
 import { buildAutomationDiscordPlans, buildAutomationTelegramPlans, runAutomationJob } from "../lib/automation-jobs.mjs";
 import { buildReleaseDeduplicationKey } from "../lib/data-release-monitor.mjs";
+import {
+  buildCryptoDailyPosterModel,
+  buildDataUpdatePosterModel,
+  buildWeeklyCalendarPosterModel,
+} from "../lib/market-poster-models.mjs";
+import { selectMarketPosterTemplate } from "../lib/market-poster-templates.mjs";
+import { landscapePosterOverflowFields } from "../lib/market-poster-landscape-renderer.mjs";
 
 const NOW = "2026-08-23T12:31:00.000Z";
 const OFFICIAL = {
@@ -190,6 +197,73 @@ test("the Academy demo showcase is an explicit historical replay that yields all
   assert.equal(dataFlash?.event.actual, "2.7% YoY");
   assert.equal(dataFlash?.intelligence.release.surprise, "No comparable consensus");
   assert.match(products.find(({ product }) => product === "market-follow-up")?.correlationStatement || "", /correlation, not causation/i);
+});
+
+test("the exact four-product Academy demo fits every fixed V4 poster slot without compaction", () => {
+  const dailyReplay = buildAcademyDemoShowcaseContent("crypto-daily", { now: NOW, acceptanceBatchId: DEMO_ACCEPTANCE_BATCH_ID });
+  const weeklyReplay = buildAcademyDemoShowcaseContent("weekly-calendar", { now: NOW, acceptanceBatchId: DEMO_ACCEPTANCE_BATCH_ID });
+  const releaseReplay = buildAcademyDemoShowcaseContent("data-release-updates", { now: NOW, acceptanceBatchId: DEMO_ACCEPTANCE_BATCH_ID });
+  const sourceById = (replay, sourceRef) => replay.sourceManifest.find(({ id }) => id === sourceRef?.id) ?? sourceRef;
+  const daily = buildCryptoDailyPosterModel({
+    ...dailyReplay.document,
+    generatedAt: dailyReplay.generatedAt,
+    sources: dailyReplay.sourceManifest,
+    selectedStories: dailyReplay.document.selectedStories.map((story) => ({
+      ...story,
+      source: sourceById(dailyReplay, story.source),
+    })),
+  });
+  const weekly = buildWeeklyCalendarPosterModel({
+    ...weeklyReplay.document,
+    generatedAt: weeklyReplay.generatedAt,
+    sources: weeklyReplay.sourceManifest,
+    days: weeklyReplay.document.days.map((day) => ({
+      ...day,
+      events: day.events.map((event) => ({ ...event, source: sourceById(weeklyReplay, event.source) })),
+    })),
+  });
+  const releaseInput = {
+    ...releaseReplay.document,
+    event: releaseReplay.event,
+    source: releaseReplay.event.source,
+    sources: releaseReplay.sourceManifest,
+    updatedAt: releaseReplay.generatedAt,
+  };
+  const flash = buildDataUpdatePosterModel(releaseInput);
+  const followUp = buildDataUpdatePosterModel({
+    ...releaseInput,
+    reactions: [{ symbol: "BTC-USD", label: "-0.0929%", value: -0.0929 }],
+    reactionWindow: releaseReplay.reaction.window,
+    reactionSources: releaseReplay.reaction.sources.map(({ label }) => label),
+  });
+  const posters = [
+    { jobId: "crypto-daily", poster: daily },
+    { jobId: "weekly-calendar", poster: weekly },
+    { jobId: "data-release-updates", poster: flash },
+    { jobId: "data-release-updates", poster: followUp, reaction: releaseReplay.reaction },
+  ].map(({ jobId, poster, reaction }) => ({
+    ...poster,
+    visualTemplate: selectMarketPosterTemplate({ jobId, poster, reaction }),
+  }));
+
+  assert.deepEqual(posters.map(({ visualTemplate }) => visualTemplate.product), [
+    "daily-market-brief",
+    "weekly-catalyst-calendar",
+    "data-flash",
+    "market-follow-up",
+  ]);
+  assert.deepEqual(daily.stories.map(({ posterThesis }) => posterThesis), [
+    "Above-target inflation keeps rates and USD sensitivity high.",
+    "Restrictive policy limits near-term liquidity easing.",
+    "Regulated access improves structure, not today's signal.",
+  ]);
+  const weeklyEvent = weekly.columns[1].events[0];
+  assert.equal(weeklyEvent.posterMarkets, "BTC · DXY · US2Y");
+  assert.equal(weeklyEvent.posterSensitivity, "CPI can reprice rates, USD and crypto risk.");
+  assert.equal(flash.releaseTime, "2025-07-15T12:30:00.000Z");
+  assert.equal(flash.posterVerdict, "Official print verified; BTC causation unproven.");
+  assert.equal(followUp.posterInvalidation, "Archived replay; not a live trading signal.");
+  assert.deepEqual(posters.map((poster) => landscapePosterOverflowFields(poster)), [[], [], [], []]);
 });
 
 test("the Academy data replay uses the canonical release identity required by durable delivery", () => {
