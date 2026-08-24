@@ -179,6 +179,8 @@ jobs:
           import os
           import re
           import ssl
+          import urllib.error
+          import urllib.parse
           import urllib.request
 
           base_url = os.environ["TEST_BASE_URL"]
@@ -188,9 +190,24 @@ jobs:
               urllib.request.HTTPSHandler(context=ssl._create_unverified_context()),
           )
 
+          def sanitize_http_error(value):
+              sanitized = re.sub(r"postgres(?:ql)?://[^\s\"']+", "postgresql://<redacted>", value, flags=re.I)
+              sanitized = re.sub(r'(?i)(\"(?:password|token|secret)\"\s*:\s*)\"[^\"]*\"', r'\1"<redacted>"', sanitized)
+              return re.sub(r"\b\d{6,}:[A-Za-z0-9_-]{20,}\b", "<telegram-token-redacted>", sanitized)
+
           def read_json(request):
-              with opener.open(request, timeout=30) as response:
-                  return json.load(response)
+              try:
+                  with opener.open(request, timeout=30) as response:
+                      return json.load(response)
+              except urllib.error.HTTPError as error:
+                  body = error.read().decode("utf-8", errors="replace")
+                  url = request.full_url if isinstance(request, urllib.request.Request) else str(request)
+                  endpoint = urllib.parse.urlsplit(url).path
+                  if urllib.parse.urlsplit(url).query:
+                      endpoint += "?" + urllib.parse.urlsplit(url).query
+                  raise RuntimeError(
+                      f"{endpoint} failed with HTTP {error.code}: {sanitize_http_error(body[:2000])}"
+                  ) from error
 
           login_request = urllib.request.Request(
               f"{base_url}/api/auth/login",

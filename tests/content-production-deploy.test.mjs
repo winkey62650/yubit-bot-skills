@@ -68,6 +68,16 @@ test("operator-triggered Academy DEMO acceptance is fenced to four poster produc
   assert.doesNotMatch(workflow, /set_env_value\s+ALLOW_LIVE_TELEGRAM\s+true/);
 });
 
+test("read-only Academy audit reports the failing endpoint and sanitized HTTP response body", () => {
+  const workflow = read(".github/workflows/telegram-automations.yml");
+
+  assert.match(workflow, /import urllib\.error/);
+  assert.match(workflow, /except urllib\.error\.HTTPError as error:/);
+  assert.match(workflow, /error\.read\(\)\.decode\("utf-8", errors="replace"\)/);
+  assert.match(workflow, /sanitize_http_error/);
+  assert.match(workflow, /HTTP \{error\.code\}/);
+});
+
 test("authorized DEMO-only policy reconciliation is exact and rolls back on deployment failure", () => {
   const workflow = read(".github/workflows/deploy-production-server.yml");
 
