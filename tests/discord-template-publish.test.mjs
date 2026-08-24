@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { publishDiscordTemplate } from "../lib/discord-template-publish.mjs";
+import { preflightDiscordTemplate, publishDiscordTemplate } from "../lib/discord-template-publish.mjs";
 import { saveDestinationCtaConfig } from "../lib/destination-cta.mjs";
 
 const health = {
@@ -109,6 +109,42 @@ test("Discord template publishing sends only the selected live channels", async 
   assert.equal(result.failed, 1);
   assert.equal(result.results[0].messageId, "message-one");
   assert.equal(result.results[1].error, "missing permission");
+});
+
+test("Discord template preflight prepares the generated poster without sending a message", async () => {
+  let capturedOptions;
+  let preparedUrl;
+  const result = await preflightDiscordTemplate({
+    contentType: "crypto-daily",
+    channelIds: ["channel-market"],
+  }, {
+    health,
+    publicBaseUrl: "https://academy.example",
+    runJob: async (_jobId, options) => {
+      capturedOptions = options;
+      return {
+        status: "success",
+        preview: {
+          imageUrl: "https://academy.example/api/media/card?data=poster",
+        },
+      };
+    },
+    preparePoster: async (url) => {
+      preparedUrl = url;
+      return { data: Buffer.alloc(1_024), filename: "market-card.png", contentType: "image/png" };
+    },
+  });
+
+  assert.equal(capturedOptions.dryRun, true);
+  assert.equal(capturedOptions.readOnlyPreview, true);
+  assert.equal(preparedUrl, "https://academy.example/api/media/card?data=poster");
+  assert.deepEqual(result.poster, {
+    bytes: 1_024,
+    contentType: "image/png",
+    filename: "market-card.png",
+    urlLength: preparedUrl.length,
+  });
+  assert.equal(result.channelId, "channel-market");
 });
 
 for (const jobId of ["crypto-daily", "weekly-calendar", "data-release-updates"]) {

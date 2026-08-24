@@ -704,6 +704,7 @@ test("Discord message delivery supports text and image embeds", async () => {
 test("Discord message delivery converts overlong image URLs into file attachments", async () => {
   const imageUrl = `https://academy.example/api/media/card?data=${"a".repeat(2_100)}`;
   const requests = [];
+  const posterRequests = [];
   const result = await sendDiscordMessage(
     "channel-long-poster",
     {
@@ -714,27 +715,30 @@ test("Discord message delivery converts overlong image URLs into file attachment
       token: "secret",
       fetchImpl: async (url, options = {}) => {
         requests.push({ url: String(url), options });
-        if (String(url) === imageUrl) {
-          return new Response(Buffer.from("poster-bytes"), {
-            status: 200,
-            headers: { "content-type": "image/png" },
-          });
-        }
+        assert.notEqual(String(url), imageUrl, "poster downloads must not use the framework/API fetch implementation");
         return jsonResponse(200, { id: "message-long-poster", channel_id: "channel-long-poster" });
+      },
+      posterFetchImpl: async (url, options = {}) => {
+        posterRequests.push({ url: String(url), options });
+        return new Response(Buffer.from("poster-bytes"), {
+          status: 200,
+          headers: { "content-type": "image/png" },
+        });
       },
     },
   );
 
   assert.equal(result.id, "message-long-poster");
-  assert.equal(requests.length, 2);
-  assert.equal(requests[0].url, imageUrl);
-  assert.equal(requests[1].url.endsWith("/channels/channel-long-poster/messages"), true);
-  assert.equal(requests[1].options.body instanceof FormData, true);
-  assert.deepEqual(JSON.parse(requests[1].options.body.get("payload_json")), {
+  assert.equal(posterRequests.length, 1);
+  assert.equal(posterRequests[0].url, imageUrl);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].url.endsWith("/channels/channel-long-poster/messages"), true);
+  assert.equal(requests[0].options.body instanceof FormData, true);
+  assert.deepEqual(JSON.parse(requests[0].options.body.get("payload_json")), {
     content: "Daily market brief",
     allowed_mentions: { parse: [] },
   });
-  assert.equal(requests[1].options.body.get("files[0]").name, "market-card.png");
+  assert.equal(requests[0].options.body.get("files[0]").name, "market-card.png");
 });
 
 test("Discord delivery forwards AbortSignal and rejects an in-flight abort", async () => {

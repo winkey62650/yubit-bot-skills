@@ -13,7 +13,7 @@ import {
   sendDiscordTestMessage,
   updateDiscordSettings,
 } from "../../../lib/discord-service.mjs";
-import { publishDiscordTemplate } from "../../../lib/discord-template-publish.mjs";
+import { preflightDiscordTemplate, publishDiscordTemplate } from "../../../lib/discord-template-publish.mjs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -101,6 +101,15 @@ export async function POST(request) {
     } else if (action === "template-publish") {
       result = {
         templatePublish: await publishDiscordTemplate({
+          contentType: body.contentType,
+          channelIds: body.channelIds,
+        }, {
+          publicBaseUrl: new URL(request.url).origin,
+        }),
+      };
+    } else if (action === "template-preflight") {
+      result = {
+        templatePreflight: await preflightDiscordTemplate({
           contentType: body.contentType,
           channelIds: body.channelIds,
         }, {

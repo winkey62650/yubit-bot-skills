@@ -346,7 +346,7 @@ jobs:
               text = re.sub(r"(?i)(password|token|secret)([=:\"'\s]+)[^\s,}\"]+", r"\1\2<redacted>", text)
               return text[:2000]
 
-          def request_json(path, *, payload=None):
+          def request_json(path, *, payload=None, timeout=30):
               request = urllib.request.Request(
                   f"{base_url}{path}",
                   data=None if payload is None else json.dumps(payload).encode(),
@@ -354,7 +354,7 @@ jobs:
                   method="GET" if payload is None else "POST",
               )
               try:
-                  with opener.open(request, timeout=30) as response:
+                  with opener.open(request, timeout=timeout) as response:
                       return json.load(response)
               except urllib.error.HTTPError as error:
                   body = error.read().decode("utf-8", errors="replace")
@@ -397,6 +397,7 @@ jobs:
           config = status.get("config", {}) if isinstance(status, dict) else {}
           preview_profile = {}
           poster_fetch_probe = {}
+          template_preflight = {}
           try:
               expected_guild_id = "1530060040508149820"
               expected_channel_id = "1531168767374000269"
@@ -442,6 +443,13 @@ jobs:
                   "planCount": len(plans),
                   "steps": profiled_steps,
               }
+              preflight_payload = request_json("/api/discord", payload={
+                  "action": "template-preflight",
+                  "contentType": "crypto-daily",
+                  "channelIds": [expected_channel_id],
+              }, timeout=60)
+              template_preflight = preflight_payload.get("result", {}).get("templatePreflight", {})
+              template_preflight["ok"] = preflight_payload.get("ok") is True
               if poster_url:
                   probe = subprocess.run(
                       [
@@ -489,6 +497,7 @@ jobs:
           except Exception as error:
               preview_profile = {"auditError": sanitize(error)}
               poster_fetch_probe = {"ok": False, "auditError": sanitize(error)}
+              template_preflight = {"ok": False, "auditError": sanitize(error)}
           runtime_directory = os.environ.get("JSON_STORE_DIRECTORY") or os.path.join(os.environ["RELEASE_PATH"], ".runtime")
           latest_demo_attempt = {}
           try:
@@ -570,6 +579,7 @@ jobs:
               "latestDemoAttempt": latest_demo_attempt,
               "previewProfile": preview_profile,
               "posterFetchProbe": poster_fetch_probe,
+              "templatePreflight": template_preflight,
               "healthSummary": health.get("summary", {}),
               "channels": channel_results,
               "errors": errors,
@@ -577,7 +587,15 @@ jobs:
           print(json.dumps(report, ensure_ascii=False, indent=2))
           PYTHON
           REMOTE
-          jq -e '.readOnly == true' "$report_path" >/dev/null
+          jq -e '
+            .readOnly == true
+            and .templatePreflight.ok == true
+            and .templatePreflight.guildId == "1530060040508149820"
+            and .templatePreflight.channelId == "1531168767374000269"
+            and .templatePreflight.poster.contentType == "image/png"
+            and .templatePreflight.poster.filename == "market-card.png"
+            and .templatePreflight.poster.bytes > 1024
+          ' "$report_path" >/dev/null
           echo "### Discord read-only health audit" >>"$GITHUB_STEP_SUMMARY"
           jq -r '"- Service: `\(.service.ActiveState)/\(.service.SubState)`\n- REST connected: `\(.credentials.connected)`\n- Gateway: `\(.gateway.state)` (online: `\(.gateway.online)`)\n- Channels: `\(.healthSummary.sendableChannels // 0)` sendable / `\(.healthSummary.blockedChannels // 0)` blocked\n- Errors: `\(.errors | join("; "))`"' "$report_path" >>"$GITHUB_STEP_SUMMARY"
 
@@ -737,12 +755,23 @@ jobs:
           if "YUBIT ACADEMY" in combined_content.upper() or "1–7D" in combined_content.upper() or "1-7D" in combined_content.upper():
               raise RuntimeError("The preview contains retired branding or horizon labels.")
 
-          image_request = urllib.request.Request(image_url, method="GET")
-          with opener.open(image_request, timeout=45) as response:
-              image_bytes = response.read(5 * 1024 * 1024 + 1)
-              content_type = response.headers.get_content_type()
-          if content_type != "image/png" or len(image_bytes) < 1024 or len(image_bytes) > 5 * 1024 * 1024:
-              raise RuntimeError("The approved poster asset failed its delivery preflight.")
+          preflight_payload = request_json("/api/discord", payload={
+              "action": "template-preflight",
+              "contentType": "crypto-daily",
+              "channelIds": [expected_channel_id],
+          }, timeout=60)
+          template_preflight = preflight_payload.get("result", {}).get("templatePreflight", {})
+          preflight_poster = template_preflight.get("poster", {})
+          if preflight_payload.get("ok") is not True:
+              raise RuntimeError(f"The production Discord template preflight failed: {preflight_payload.get('error') or 'unknown error'}")
+          if str(template_preflight.get("guildId", "")) != expected_guild_id or str(template_preflight.get("channelId", "")) != expected_channel_id:
+              raise RuntimeError("The production Discord template preflight escaped the approved destination.")
+          if preflight_poster.get("contentType") != "image/png" or preflight_poster.get("filename") != "market-card.png":
+              raise RuntimeError("The production Discord template preflight returned an unexpected poster type.")
+          if int(preflight_poster.get("bytes", 0)) < 1024 or int(preflight_poster.get("bytes", 0)) > 5 * 1024 * 1024:
+              raise RuntimeError("The production Discord template preflight returned an invalid poster size.")
+          if int(preflight_poster.get("urlLength", 0)) <= 2048:
+              raise RuntimeError("The production Discord template preflight did not exercise the attachment path.")
 
           # This is the sole external-send call in this workflow. It is never retried.
           publish_payload = request_json("/api/discord", payload={
@@ -775,7 +804,7 @@ jobs:
               "guild": {"id": expected_guild_id, "name": guild.get("guildName", "")},
               "channel": {"id": expected_channel_id, "name": channel.get("name", "")},
               "messageIds": message_ids,
-              "poster": {"contentType": content_type, "bytes": len(image_bytes)},
+              "poster": preflight_poster,
               "telegramTouched": False,
           }
           print(json.dumps(report, ensure_ascii=False, indent=2))
