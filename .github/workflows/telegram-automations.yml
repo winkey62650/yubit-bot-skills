@@ -121,7 +121,7 @@ jobs:
             and .exactTargets == true
             and (.results | length == 3)
             and all(.results[]; .status == "sent" or .status == "skipped")
-            and all(.results[] | select(.status == "sent"); .target.chatId == "-1003710405969" and (.target.threadId == 8 or .target.threadId == 10) and (.messageIds | length >= ((.productTypes | length) * 2)))
+            and all((.results[] | select(.status == "sent")); .target.chatId == "-1003710405969" and (.target.threadId == 8 or .target.threadId == 10) and ((.messageIds | length) >= ((.productTypes | length) * 2)))
             and all(.cleanup[]; .deleted == true)
           ' "$report_path" >/dev/null
           echo "### Academy DEMO realtime V4 poster delivery" >>"$GITHUB_STEP_SUMMARY"
