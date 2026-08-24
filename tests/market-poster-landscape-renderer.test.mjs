@@ -11,6 +11,16 @@ function renderedText(model) {
   return JSON.stringify(renderLandscapeMarketPoster(e, model, LOCKED_MASTER));
 }
 
+function visibleText(model) {
+  const strings = [];
+  const visit = (node) => {
+    if (typeof node === "string") strings.push(node);
+    else if (node && typeof node === "object") (node.children || []).forEach(visit);
+  };
+  visit(renderLandscapeMarketPoster(e, model, LOCKED_MASTER));
+  return strings.join(" | ");
+}
+
 function geometry(model) {
   const output = renderLandscapeMarketPoster(e, model, LOCKED_MASTER);
   return output.children.map((child) => ({
@@ -71,6 +81,18 @@ test("daily content can change without changing any field count or geometry", ()
   assert.equal(sparse.every(({ key }) => Boolean(key)), true);
 });
 
+test("daily poster removes awkward title punctuation and does not repeat the lead thesis", () => {
+  const text = visibleText({
+    visualTemplate: { id: "daily-market-brief-v4" },
+    footer,
+    stories: [{ title: "Macro liquidity keeps the near-term read balanced", thesis: "Rates and USD direction remain the next confirmation layer.", affected: "BTC" }],
+  });
+
+  assert.match(text, /MACRO LIQUIDITY NEAR TERM READ/);
+  assert.doesNotMatch(text, /NEAR-TERM|Rates and USD direction remain the next confirmation layer.*Rates and USD direction remain the next confirmation layer/);
+  assert.match(text, /Confirmation still matters before conviction rises/);
+});
+
 test("all four V4 products keep identical dynamic-field geometry for sparse and dense input", () => {
   const cases = [
     ["daily-market-brief-v4",
@@ -120,7 +142,8 @@ test("sparse weekly data preserves all five fixed weekday slots without inventin
   });
 
   assert.match(text, /U\.S\. CPI/);
-  assert.match(text, /NO MATERIAL VERIFIED UPDATE/i);
+  assert.match(text, /NO MAJOR EVENT/i);
+  assert.doesNotMatch(text, /NO MATERIAL VERIFIED UPDATE|IMPACT · CLEAR|STATUS · CLEAR/i);
   assert.match(text, /weekly-1-day/);
   assert.match(text, /weekly-5-day/);
   assert.doesNotMatch(text, /TBD|N\/A|NOT AVAILABLE/);
@@ -138,7 +161,7 @@ test("weekly catalysts keeps the V4 Monday-to-Friday frame and never pulls a lat
   });
 
   assert.match(text, /24–28 AUG 2026/);
-  assert.match(text, /This-week CPI/);
+  assert.match(text, /This week CPI/);
   assert.doesNotMatch(text, /Next-week event must not appear/);
 });
 
@@ -160,4 +183,43 @@ test("missing flash comparisons stay in their original fixed fields and are mark
   assert.match(text, /NOT PUBLISHED/);
   assert.match(text, /flash-forecast/);
   assert.match(text, /flash-previous/);
+});
+
+test("poster copy stays concise and removes generic horizon labels", () => {
+  const flash = visibleText({
+    visualTemplate: { id: "data-flash-v4" },
+    title: "A very long official release headline that should never crowd the fixed subtitle field",
+    indicator: "CPI",
+    actual: "2.7%",
+    verdict: "The official print is verified while the first market response remains too limited to support a durable directional conclusion.",
+    reactions: [],
+    footer,
+  });
+  const follow = visibleText({
+    visualTemplate: { id: "market-follow-up-v4" },
+    verdict: "The measured move remains small and mixed while cross-asset confirmation is still incomplete and the evidence does not justify a durable directional conclusion.",
+    reactions: [],
+    footer,
+  });
+
+  assert.doesNotMatch(flash, /HORIZON|1–3D|AWAITING VERIFIED REACTION/i);
+  assert.doesNotMatch(follow, /HORIZON|6–24H|AWAITING VERIFIED WINDOW|AWAITING/i);
+  assert.doesNotMatch(flash, /durable directional conclusion/i);
+  assert.doesNotMatch(follow, /does not justify a durable directional conclusion/i);
+});
+
+test("follow-up uses concise poster fields and a compact pending status", () => {
+  const text = visibleText({
+    visualTemplate: { id: "market-follow-up-v4" },
+    tapeStatus: "AWAITING CONFIRMATION",
+    verdict: "A long verdict that should remain in the paired Telegram copy.",
+    posterVerdict: "Small mixed move; confirmation incomplete.",
+    posterConfirmation: "Needs sustained cross-asset alignment.",
+    posterInvalidation: "BTC reclaims pre-release levels.",
+    footer,
+  });
+
+  assert.match(text, /Small mixed move; confirmation incomplete/);
+  assert.match(text, /CONFIRMATION PENDING/);
+  assert.doesNotMatch(text, /A long verdict|AWAITING CONFIRMATION/);
 });

@@ -252,6 +252,8 @@ test("data update caps confirmation and invalidation without hiding numerical co
   assert.match(model.invalidation, /25 bps/u);
   assert.doesNotMatch(model.confirmation, /\p{L}…\p{L}/u);
   assert.doesNotMatch(model.invalidation, /\p{L}…\p{L}/u);
+  assert.ok(model.posterConfirmation.length <= 44);
+  assert.ok(model.posterInvalidation.length <= 44);
 });
 
 test("crypto poster keeps the highest-ranked stories and shared footer metadata", () => {
