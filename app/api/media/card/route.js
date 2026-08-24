@@ -2,6 +2,9 @@ import React from "react";
 import { ImageResponse } from "next/og.js";
 import { getMediaCardTemplate, normalizePosterMetrics } from "../../../../lib/media-card-template.mjs";
 import { loadMediaCardArtwork } from "../../../../lib/media-card-artwork.mjs";
+import { loadMarketPosterArtwork } from "../../../../lib/market-poster-artwork.mjs";
+import { renderPortraitMarketPoster } from "../../../../lib/market-poster-portrait-renderer.mjs";
+import { approvedMarketPosterTemplates } from "../../../../lib/market-poster-templates.mjs";
 
 export const runtime = "nodejs";
 
@@ -13,6 +16,13 @@ export async function GET(request) {
   const artworkUrl = await loadMediaCardArtwork(kind);
   const e = React.createElement;
   const poster = normalizeEditorialPreview(kind, decodePosterData(url.searchParams.get("data")));
+  if (poster.visualTemplate) {
+    const artwork = await loadMarketPosterArtwork(poster);
+    return new ImageResponse(renderPortraitMarketPoster(e, poster, artwork), {
+      width: 1080,
+      height: 1350,
+    });
+  }
   if (kind === "crypto-daily") {
     const stories = Array.isArray(poster.stories) ? poster.stories.slice(0, 3) : [];
     return new ImageResponse(
@@ -279,6 +289,23 @@ function previewFooter(value) {
   };
 }
 
+const APPROVED_MARKET_POSTERS = new Map(approvedMarketPosterTemplates().map((template) => [template.id, template]));
+
+function previewVisualTemplate(value) {
+  if (!isPreviewObject(value)) return null;
+  const approved = APPROVED_MARKET_POSTERS.get(previewText(value.id));
+  if (!approved || approved.file !== previewText(value.file) || approved.product !== previewText(value.product)
+      || value.canvas?.width !== approved.canvas.width || value.canvas?.height !== approved.canvas.height) return null;
+  return {
+    id: approved.id,
+    product: approved.product,
+    file: approved.file,
+    canvas: { ...approved.canvas },
+    assetPath: `/templates/market-intelligence/${approved.file}`,
+    version: 3,
+  };
+}
+
 function normalizeEditorialPreview(kind, value) {
   const poster = isPreviewObject(value) ? value : {};
   if (kind === "weekly-calendar") {
@@ -292,6 +319,7 @@ function normalizeEditorialPreview(kind, value) {
             eventKey: previewText(event.eventKey),
             title: previewText(event.title, "Verified event"),
             time: previewText(event.time, "TBD"),
+            importance: Number.isFinite(event.importance) ? event.importance : 0,
             source: previewText(event.source, "VERIFIED"),
             sensitivity: previewText(event.sensitivity),
             isPriority: event.isPriority === true,
@@ -302,6 +330,8 @@ function normalizeEditorialPreview(kind, value) {
       footer: previewFooter(poster.footer),
       highImpactCount: Number.isFinite(poster.highImpactCount) ? poster.highImpactCount : 0,
       peakDay: previewText(poster.peakDay, "—"),
+      title: previewText(poster.title, "Weekly Catalysts"),
+      visualTemplate: previewVisualTemplate(poster.visualTemplate),
       weekStart: previewText(poster.weekStart, "UTC"),
     };
   }
@@ -326,9 +356,12 @@ function normalizeEditorialPreview(kind, value) {
       tapeStatus: previewText(poster.tapeStatus, "AWAITING CONFIRMATION"),
       title: previewText(poster.title, "Data Update"),
       verdict: previewText(poster.verdict),
+      verdictStatus: previewText(poster.verdictStatus, "MONITOR"),
+      reactionWindow: isPreviewObject(poster.reactionWindow) ? { label: previewText(poster.reactionWindow.label, "OBSERVED WINDOW · UTC") } : null,
+      visualTemplate: previewVisualTemplate(poster.visualTemplate),
     };
   }
-  return poster;
+  return { ...poster, visualTemplate: previewVisualTemplate(poster.visualTemplate) };
 }
 
 function editorialCanvas() {
@@ -337,14 +370,14 @@ function editorialCanvas() {
 
 function editorialHeader(e, section, meta) {
   return e("div", { style: { position: "absolute", left: 56, right: 56, top: 34, display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 12, borderBottom: "1px solid #b9b5aa", color: "#77746c", fontSize: 12, fontWeight: 900, letterSpacing: 3 } },
-    e("span", null, `YUBIT MARKET INTELLIGENCE · ${section}`),
+    e("span", null, `MARKET INTELLIGENCE · ${section}`),
     e("span", null, cleanPosterText(meta, "VERIFIED", 52))
   );
 }
 
 function editorialFooter(e, label) {
   return e("div", { style: { position: "absolute", left: 56, right: 56, bottom: 28, display: "flex", justifyContent: "space-between", color: "#77746c", fontSize: 11, fontWeight: 900, letterSpacing: 2.2 } },
-    e("span", null, label), e("span", null, "YUBIT · MARKET COMMENTARY")
+    e("span", null, label), e("span", null, "MARKET COMMENTARY")
   );
 }
 
@@ -361,7 +394,7 @@ function editorialResearchHeader(e, section, meta, descriptor) {
     alignItems: "center", paddingBottom: 12, borderBottom: "1px solid #B8B2A7", color: "#6D6A63",
     fontSize: 10, fontWeight: 900, letterSpacing: 2,
   } },
-  e("span", { style: { display: "flex", color: "#A3483F" } }, `YUBIT ACADEMY / EDITORIAL RESEARCH / ${section}`),
+  e("span", { style: { display: "flex", color: "#A3483F" } }, `EDITORIAL RESEARCH / ${section}`),
   e("span", { style: { display: "flex" } }, cleanPosterText(descriptor, "VERIFIED RESEARCH", 52)),
   e("span", { style: { display: "flex", color: "#171717" } }, cleanPosterText(meta, "UTC", 36)));
 }

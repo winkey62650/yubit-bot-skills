@@ -15,7 +15,7 @@ const VISUAL_TOKENS = {
     red: "#A3483F",
     green: "#3F6D57",
   },
-  masthead: "YUBIT ACADEMY / EDITORIAL RESEARCH",
+  masthead: "MARKET INTELLIGENCE / EDITORIAL RESEARCH",
 };
 
 function assertEditorialTokens(model, { sources, updatedAt }) {
@@ -443,7 +443,7 @@ test("strict numeric parsing rejects placeholders and preserves Unicode minus, z
   const model = buildDataUpdatePosterModel({
     values: { actual: "−0.2%", forecast: "0%", previous: "N/A" },
     reactions: [
-      { symbol: "BTC", changePercent: "−0.4%" },
+      { symbol: "BTC-USD", changePercent: "−0.4%" },
       { symbol: "ETH", changePercent: "0%" },
       { symbol: "DXY", changePercent: "N/A" },
       { symbol: "SOL", changePercent: "" },

@@ -2,6 +2,9 @@ import React from "react";
 import { ImageResponse } from "next/og.js";
 import { getDistributionRepository } from "../../../../../../lib/distribution-repository.mjs";
 import { getMarketPublication, marketPublicationKey } from "../../../../../../lib/market-publication.mjs";
+import { loadMarketPosterArtwork } from "../../../../../../lib/market-poster-artwork.mjs";
+import { renderPortraitMarketPoster } from "../../../../../../lib/market-poster-portrait-renderer.mjs";
+import { marketPosterCanvas } from "../../../../../../lib/market-poster-templates.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -399,9 +402,13 @@ export async function GET(request, context = {}) {
 
   if (bundle.status !== "draft") return message(409, "Editorial image is not available.");
   try {
-    return new ImageResponse(renderPoster(bundle.posterModel), {
-      width: CANVAS.width,
-      height: CANVAS.height,
+    const canvas = marketPosterCanvas(bundle.posterModel);
+    const rendered = bundle.posterModel.visualTemplate
+      ? renderPortraitMarketPoster(React.createElement, bundle.posterModel, await loadMarketPosterArtwork(bundle.posterModel))
+      : renderPoster(bundle.posterModel);
+    return new ImageResponse(rendered, {
+      width: canvas.width,
+      height: canvas.height,
       headers: { "Cache-Control": "no-store" },
     });
   } catch {

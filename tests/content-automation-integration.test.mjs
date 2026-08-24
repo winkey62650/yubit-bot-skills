@@ -113,6 +113,7 @@ test("daily content maps each ranked story into decision fields and article-leve
   }), { now: NOW, publicBaseUrl: "https://academy.example" });
 
   assert.equal(daily.intelligence.catalysts[0].happened, "Tracked payment volume passed $1 billion.");
+  assert.equal(daily.intelligence.catalysts[0].horizon, "Current session");
   assert.equal(daily.intelligence.whyItMatters, "Adoption is growing, while price direction remains unconfirmed.");
   assert.deepEqual(daily.intelligence.affectedAssets, ["Stablecoins", "ETH"]);
   const articleSource = daily.sources.find((source) => source.url === "https://news.example/stablecoin-cards");
@@ -295,6 +296,75 @@ test("data release delivery includes both governed products and remains text-onl
   assert.match(plan.steps[0].payload.text, /DATA FLASH/);
   assert.match(plan.steps[1].payload.text, /MARKET FOLLOW-UP/);
   assert.equal(plan.steps.some(({ payload }) => payload.photo || payload.imageUrl), false);
+});
+
+test("data flash and market follow-up each receive the matching poster on Telegram and Discord", () => {
+  const governance = {
+    approved: true,
+    channelPlans: [
+      {
+        productId: "data-flash-us-cpi",
+        contentHash: "sha256:flash",
+        media: { templateId: "data-flash-v3" },
+        telegram: { chunks: ["<b>🚨 DATA FLASH</b>"] },
+        discord: { chunks: ["**🚨 DATA FLASH**"] },
+      },
+      {
+        productId: "market-follow-up-us-cpi",
+        contentHash: "sha256:follow-up",
+        media: { templateId: "market-follow-up-v3" },
+        telegram: { chunks: ["<b>MARKET FOLLOW-UP</b>"] },
+        discord: { chunks: ["**MARKET FOLLOW-UP**"] },
+      },
+    ],
+  };
+  const media = {
+    defaultUrl: "https://academy.example/data-flash.png",
+    byTemplateId: {
+      "data-flash-v3": "https://academy.example/data-flash.png",
+      "market-follow-up-v3": "https://academy.example/market-follow-up.png",
+    },
+  };
+  const payload = { document: { title: "legacy" }, contentGovernance: governance };
+  const [telegram] = buildAutomationTelegramPlans("data-release-updates", payload, [
+    { platform: "telegram", chatId: "-1003710405969", threadId: 8 },
+  ], media);
+  const [discord] = buildAutomationDiscordPlans("data-release-updates", payload, [
+    { platform: "discord", guildId: "g", channelId: "c" },
+  ], media);
+
+  assert.deepEqual(telegram.steps.map(({ method }) => method), ["sendPhoto", "sendMessage", "sendPhoto", "sendMessage"]);
+  assert.equal(telegram.steps[0].payload.photo, media.byTemplateId["data-flash-v3"]);
+  assert.equal(telegram.steps[2].payload.photo, media.byTemplateId["market-follow-up-v3"]);
+  assert.equal(discord.steps[0].payload.imageUrl, media.byTemplateId["data-flash-v3"]);
+  assert.equal(discord.steps[1].payload.imageUrl, media.byTemplateId["market-follow-up-v3"]);
+});
+
+test("a missing product poster never falls back to another product's image", () => {
+  const governance = {
+    approved: true,
+    channelPlans: [{
+      productId: "market-follow-up-us-cpi",
+      contentHash: "sha256:follow-up",
+      media: { templateId: "market-follow-up-v3" },
+      telegram: { chunks: ["<b>MARKET FOLLOW-UP</b>"] },
+      discord: { chunks: ["**MARKET FOLLOW-UP**"] },
+    }],
+  };
+  const media = {
+    defaultUrl: "https://academy.example/data-flash.png",
+    byTemplateId: { "data-flash-v3": "https://academy.example/data-flash.png" },
+  };
+  const payload = { document: { title: "legacy" }, contentGovernance: governance };
+  const [telegram] = buildAutomationTelegramPlans("data-release-updates", payload, [
+    { platform: "telegram", chatId: "-1003710405969", threadId: 8 },
+  ], media);
+  const [discord] = buildAutomationDiscordPlans("data-release-updates", payload, [
+    { platform: "discord", guildId: "g", channelId: "c" },
+  ], media);
+
+  assert.deepEqual(telegram.steps.map(({ method }) => method), ["sendMessage"]);
+  assert.equal(discord.steps[0].payload.imageUrl, undefined);
 });
 
 test("the automation runner records governed products before returning a preview", async () => {

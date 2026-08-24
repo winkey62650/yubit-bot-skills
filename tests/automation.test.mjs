@@ -356,7 +356,7 @@ test("dynamic poster URLs pin the approved template version and content revision
   assert.equal(url.pathname, "/api/media/card");
   assert.equal(url.searchParams.get("kind"), "events");
   assert.equal(url.searchParams.get("date"), "JULY 17");
-  assert.equal(url.searchParams.get("v"), "market-card-v4");
+  assert.equal(url.searchParams.get("v"), "market-card-v5");
   assert.equal(url.searchParams.get("rev"), "abc123def4567890");
 });
 
@@ -1818,11 +1818,11 @@ function publicationPngChunk(type, data = Buffer.alloc(0)) {
 
 function verifiedEditorialPng() {
   const header = Buffer.alloc(13);
-  header.writeUInt32BE(1200, 0);
-  header.writeUInt32BE(675, 4);
+  header.writeUInt32BE(1080, 0);
+  header.writeUInt32BE(1350, 4);
   header[8] = 1;
   header[9] = 0;
-  const pixels = Buffer.alloc((Math.ceil(1200 / 8) + 1) * 675);
+  const pixels = Buffer.alloc((Math.ceil(1080 / 8) + 1) * 1350);
   return Buffer.concat([
     Buffer.from("89504e470d0a1a0a", "hex"),
     publicationPngChunk("IHDR", header),
