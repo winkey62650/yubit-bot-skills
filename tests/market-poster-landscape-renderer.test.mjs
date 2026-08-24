@@ -8,10 +8,11 @@ function e(type, props, ...children) {
 }
 
 function renderedText(model) {
-  return JSON.stringify(renderLandscapeMarketPoster(e, model));
+  return JSON.stringify(renderLandscapeMarketPoster(e, model, LOCKED_MASTER));
 }
 
 const footer = { sources: ["BLS", "Coinbase Exchange"], updatedAt: "2026-08-24T03:16:33.000Z" };
+const LOCKED_MASTER = "data:image/png;base64,AAAA";
 
 test("all four automatic posters render on the landscape canvas with their content-only titles", () => {
   const cases = [
@@ -22,7 +23,7 @@ test("all four automatic posters render on the landscape canvas with their conte
   ];
 
   for (const [id, title, fields] of cases) {
-    const output = renderLandscapeMarketPoster(e, { ...fields, footer, visualTemplate: { id, canvas: { width: 1200, height: 675 } } });
+    const output = renderLandscapeMarketPoster(e, { ...fields, footer, visualTemplate: { id, canvas: { width: 1200, height: 675 } } }, LOCKED_MASTER);
     assert.equal(output.props.style.width, "100%");
     assert.equal(output.props.style.height, "100%");
     assert.match(JSON.stringify(output), new RegExp(title));
@@ -39,11 +40,18 @@ test("the supplied VIP Wide Dense V4 template remains the visual source of truth
 
   assert.match(text, /#EEF5F8/);
   assert.match(text, /#071C32/);
-  assert.match(text, /#16B8E7/);
   assert.match(text, /#F5B83C/);
+  assert.match(text, /data:image\/png;base64,AAAA/);
   assert.match(text, /linear-gradient/);
-  assert.match(text, /"DAILY MARKET BRIEF"/);
+  assert.match(text, /DAILY MARKET BRIEF/);
   assert.doesNotMatch(text, /#F4F0E7|YUBIT/i);
+});
+
+test("automatic posters fail closed when the locked V4 master is missing", () => {
+  assert.throws(
+    () => renderLandscapeMarketPoster(e, { visualTemplate: { id: "daily-market-brief-v4" }, stories: [] }),
+    /locked VIP Wide Dense V4 master artwork is required/i,
+  );
 });
 
 test("sparse weekly data renders only verified event cards and never five empty weekday slots", () => {

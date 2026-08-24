@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { loadMarketPosterArtwork } from "../lib/market-poster-artwork.mjs";
+import { loadMarketPosterArtwork, loadMarketPosterMaster } from "../lib/market-poster-artwork.mjs";
 import {
   approvedMarketPosterTemplates,
   marketPosterCanvas,
@@ -48,13 +48,18 @@ test("automatic selection is fail-closed and maps every core product to its own 
   assert.deepEqual(marketPosterCanvas({}), { width: 1200, height: 675 });
 });
 
-test("landscape automatic templates are generated layouts rather than bundled portrait artwork", async () => {
+test("landscape automatic templates use a hash-locked V4 structure master", async () => {
   const selected = selectMarketPosterTemplate({
     jobId: "crypto-daily",
     poster: { stories: [{ title: "ETF flows increased", source: "SEC filing" }] },
   });
+  assert.equal(selected?.composition, "locked-master-dynamic-overlay");
+  assert.equal(selected?.file, "01-daily-market-brief-wide-v4.png");
+  assert.match(selected?.sha256 || "", /^[a-f0-9]{64}$/);
+  await assert.doesNotReject(() => loadMarketPosterMaster({ visualTemplate: selected }));
+  await assert.rejects(() => loadMarketPosterArtwork({ visualTemplate: selected }), /locked master/i);
   await assert.rejects(
-    () => loadMarketPosterArtwork({ visualTemplate: selected }),
-    /generated layout/i,
+    () => loadMarketPosterMaster({ visualTemplate: { ...selected, sha256: "0".repeat(64) } }),
+    /not approved|hash mismatch/i,
   );
 });

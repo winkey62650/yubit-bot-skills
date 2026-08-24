@@ -2,7 +2,7 @@ import React from "react";
 import { ImageResponse } from "next/og.js";
 import { getDistributionRepository } from "../../../../../../lib/distribution-repository.mjs";
 import { getMarketPublication, marketPublicationKey } from "../../../../../../lib/market-publication.mjs";
-import { loadMarketPosterArtwork } from "../../../../../../lib/market-poster-artwork.mjs";
+import { loadMarketPosterArtwork, loadMarketPosterMaster } from "../../../../../../lib/market-poster-artwork.mjs";
 import { renderPortraitMarketPoster } from "../../../../../../lib/market-poster-portrait-renderer.mjs";
 import { renderLandscapeMarketPoster } from "../../../../../../lib/market-poster-landscape-renderer.mjs";
 import { marketPosterCanvas } from "../../../../../../lib/market-poster-templates.mjs";
@@ -405,7 +405,7 @@ export async function GET(request, context = {}) {
   try {
     const canvas = marketPosterCanvas(bundle.posterModel);
     const rendered = bundle.posterModel.visualTemplate?.version === 4
-      ? renderLandscapeMarketPoster(React.createElement, bundle.posterModel)
+      ? renderLandscapeMarketPoster(React.createElement, bundle.posterModel, await loadMarketPosterMaster(bundle.posterModel))
       : bundle.posterModel.visualTemplate
         ? renderPortraitMarketPoster(React.createElement, bundle.posterModel, await loadMarketPosterArtwork(bundle.posterModel))
         : renderPoster(bundle.posterModel);

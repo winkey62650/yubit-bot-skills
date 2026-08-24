@@ -4,6 +4,8 @@ import React from "react";
 import { ImageResponse } from "next/og.js";
 
 import { renderLandscapeMarketPoster } from "../lib/market-poster-landscape-renderer.mjs";
+import { loadMarketPosterMaster } from "../lib/market-poster-artwork.mjs";
+import { selectMarketPosterTemplate } from "../lib/market-poster-templates.mjs";
 
 const outputDirectory = resolve(process.argv[2] || "work/poster-preview-v4");
 const footer = { sources: ["BLS", "SEC", "Coinbase Exchange"], updatedAt: "2026-08-24T03:16:33.000Z" };
@@ -32,7 +34,7 @@ const previews = [
     invalidation: "The first reaction reverses through the pre-release benchmark.", affected: "BTC · ETH · U.S. yields · DXY",
   }],
   ["market-follow-up", {
-    visualTemplate: { id: "market-follow-up-v4" }, title: "Measured response after the U.S. CPI release", source: "Coinbase Exchange", impact: "NEUTRAL", tapeStatus: "AWAITING CONFIRMATION", footer,
+    visualTemplate: { id: "market-follow-up-v4" }, title: "Measured response after the U.S. CPI release", actual: "2.7%", source: "Coinbase Exchange", impact: "NEUTRAL", tapeStatus: "AWAITING CONFIRMATION", footer,
     reactionWindow: { label: "12:30–13:00 UTC · 30 MIN" }, reactions: [{ symbol: "BTC", label: "−0.09%", value: -0.09 }, { symbol: "ETH", label: "+0.04%", value: 0.04 }],
     verdict: "The measured move remains small and mixed. It is contextual evidence, not proof that the release caused a durable market repricing.",
     confirmation: "Direction persists beyond the initial window with rates, USD and spot volume aligned.",
@@ -42,7 +44,14 @@ const previews = [
 
 await mkdir(outputDirectory, { recursive: true });
 for (const [name, model] of previews) {
-  const response = new ImageResponse(renderLandscapeMarketPoster(React.createElement, model), { width: 1200, height: 675 });
+  const jobId = name === "daily-market-brief" ? "crypto-daily" : name === "weekly-catalysts" ? "weekly-calendar" : "data-release-updates";
+  const reaction = name === "market-follow-up" ? { prices: { BTC: { changePercent: -0.09 } } } : undefined;
+  model.visualTemplate = selectMarketPosterTemplate({ jobId, poster: model, reaction });
+  if (!model.visualTemplate) throw new Error(`No approved locked V4 template selected for ${name}.`);
+  const master = await loadMarketPosterMaster(model).catch((error) => {
+    throw new Error(`${name}: ${error.message}`, { cause: error });
+  });
+  const response = new ImageResponse(renderLandscapeMarketPoster(React.createElement, model, master), { width: 1200, height: 675 });
   await writeFile(resolve(outputDirectory, `${name}.png`), Buffer.from(await response.arrayBuffer()));
 }
 
