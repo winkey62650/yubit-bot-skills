@@ -185,6 +185,8 @@ test("run-now exists only in explicitly authorized live acceptance scripts", asy
   assert.match(recovery, /exactTargets:\s*true/);
   assert.match(recovery, /academy-demo-showcase-weekly-recovery-20260824-poster-v6-temporary/);
   assert.match(recovery, /academy-demo-showcase-release-recovery-20260824-poster-v6-temporary/);
+  assert.match(recovery, /JSON\.stringify\(messageIdsOf\(receipt\)\) === JSON\.stringify\(expectedPriorDailyMessageIds\)/);
+  assert.match(recovery, /expectedPriorDailyMessageIds = Object\.freeze\(\[1321, 1322\]\)/);
   assert.match(recovery, /Preview and validate every residual product before the first live send/);
   assert.match(recovery, /buildDemoShowcaseTemporaryRule\(showcaseCase,\s*\{\s*ruleId:\s*recoveryRuleIds\[showcaseCase\.key\]\s*\}\)/s);
   assert.match(recovery, /preflightPosters/);

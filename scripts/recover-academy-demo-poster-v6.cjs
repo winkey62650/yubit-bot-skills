@@ -73,8 +73,14 @@ function assertRecoveryState({ receipts, rules }) {
     }
   }
 
-  const matching = receipts.filter((receipt) => receipt.ruleId === priorDailyRuleId);
-  if (matching.length !== 1) throw new Error("Academy DEMO v6 recovery requires exactly one immutable poster-v5 daily receipt");
+  // Historical acceptance attempts may legitimately share the same temporary
+  // rule id. Lock recovery to the explicitly audited Telegram message pair
+  // instead of rejecting the batch merely because older receipts coexist.
+  const matching = receipts.filter((receipt) => (
+    receipt.ruleId === priorDailyRuleId
+    && JSON.stringify(messageIdsOf(receipt)) === JSON.stringify(expectedPriorDailyMessageIds)
+  ));
+  if (matching.length !== 1) throw new Error("Academy DEMO v6 recovery requires exactly one immutable poster-v5 daily receipt for messages 1321 and 1322");
   const receipt = matching[0];
   const messageIds = messageIdsOf(receipt);
   if (receipt.status !== "success"
