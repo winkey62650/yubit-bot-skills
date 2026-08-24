@@ -15,6 +15,7 @@ on:
           - academy-poster-v6-recovery
           - academy-audit
           - discord-audit
+          - discord-demo
           - agents
           - distribution
           - trading
@@ -460,6 +461,219 @@ jobs:
         with:
           name: discord-audit-${{ github.sha }}
           path: ${{ runner.temp }}/discord-audit.json
+          if-no-files-found: error
+          retention-days: 30
+
+  discord_demo:
+    if: inputs.job == 'discord-demo'
+    runs-on: ubuntu-latest
+    environment: Production
+    env:
+      TEST_BASE_URL: https://152-32-161-174.sslip.io
+      EXPECTED_DEMO_GUILD_ID: "1530060040508149820"
+      EXPECTED_DEMO_CHANNEL_ID: "1531168767374000269"
+    steps:
+      - name: Install SSH password helper
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq sshpass
+
+      - name: Preview and publish one governed Daily Market Brief to Discord Demo
+        env:
+          SSHPASS: ${{ secrets.YUBIT_SERVER_PASSWORD }}
+        run: |
+          set -Eeuo pipefail
+          if [ -z "$SSHPASS" ]; then
+            echo "YUBIT_SERVER_PASSWORD is not configured." >&2
+            exit 1
+          fi
+          report_path="$RUNNER_TEMP/discord-demo-delivery.json"
+          sshpass -e ssh \
+            -o ConnectTimeout=20 \
+            -o ServerAliveInterval=10 \
+            -o StrictHostKeyChecking=accept-new \
+            ubuntu@152.32.161.174 \
+            "TEST_BASE_URL='$TEST_BASE_URL' EXPECTED_DEMO_GUILD_ID='$EXPECTED_DEMO_GUILD_ID' EXPECTED_DEMO_CHANNEL_ID='$EXPECTED_DEMO_CHANNEL_ID' bash -s" \
+            >"$report_path" <<'REMOTE'
+          set -Eeuo pipefail
+          env_file=/etc/yubit-academy/production.env
+          read_env() {
+            sudo awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "$env_file"
+          }
+          export AUTH_USERNAME="$(read_env AUTH_USERNAME)"
+          export AUTH_PASSWORD="$(read_env AUTH_PASSWORD)"
+          export RELEASE_SHA="$(tr -d '[:space:]' <"$(readlink -f /opt/yubit-academy/current)/.release-commit")"
+          python3 <<'PYTHON'
+          import datetime
+          import http.cookiejar
+          import json
+          import os
+          import ssl
+          import urllib.error
+          import urllib.request
+
+          base_url = os.environ["TEST_BASE_URL"]
+          expected_guild_id = os.environ["EXPECTED_DEMO_GUILD_ID"]
+          expected_channel_id = os.environ["EXPECTED_DEMO_CHANNEL_ID"]
+          cookie_jar = http.cookiejar.CookieJar()
+          opener = urllib.request.build_opener(
+              urllib.request.HTTPCookieProcessor(cookie_jar),
+              urllib.request.HTTPSHandler(context=ssl._create_unverified_context()),
+          )
+
+          def request_json(path, *, payload=None, timeout=45):
+              request = urllib.request.Request(
+                  f"{base_url}{path}",
+                  data=None if payload is None else json.dumps(payload).encode(),
+                  headers={} if payload is None else {"content-type": "application/json"},
+                  method="GET" if payload is None else "POST",
+              )
+              try:
+                  with opener.open(request, timeout=timeout) as response:
+                      return json.load(response)
+              except urllib.error.HTTPError as error:
+                  body = error.read().decode("utf-8", errors="replace")
+                  raise RuntimeError(f"{path} HTTP {error.code}: {body[:1000]}") from error
+
+          login = request_json("/api/auth/login", payload={
+              "username": os.environ["AUTH_USERNAME"],
+              "password": os.environ["AUTH_PASSWORD"],
+          })
+          if login.get("ok") is not True:
+              raise RuntimeError("Production login was not accepted.")
+
+          status = request_json("/api/discord")
+          config = status.get("config", {})
+          if status.get("connected") is not True or status.get("gateway", {}).get("online") is not True:
+              raise RuntimeError("Discord Bot is not connected and online.")
+          if str(config.get("demoGuildId", "")) != expected_guild_id:
+              raise RuntimeError("The configured Discord Demo Server changed; refusing to send.")
+
+          health_payload = request_json("/api/discord", payload={"action": "health-check"})
+          health = health_payload.get("result", {}).get("health", {})
+          matches = [
+              (guild, channel)
+              for guild in health.get("guilds", [])
+              for channel in guild.get("channels", [])
+              if str(guild.get("guildId", "")) == expected_guild_id
+              and str(channel.get("channelId", "")) == expected_channel_id
+          ]
+          if len(matches) != 1:
+              raise RuntimeError("The approved Discord Demo channel is unavailable.")
+          guild, channel = matches[0]
+          required = ("available", "permissionsOk", "canView", "canSend", "canEmbed", "canAttach", "canReadHistory")
+          if guild.get("available") is not True or guild.get("permissionsOk") is not True:
+              raise RuntimeError("The Discord Demo Server did not pass the permission gate.")
+          if any(channel.get(key) is not True for key in required):
+              raise RuntimeError("The Discord Demo channel did not pass the permission gate.")
+
+          target = {
+              "platform": "discord",
+              "guildId": expected_guild_id,
+              "channelId": expected_channel_id,
+              "groupName": guild.get("guildName", ""),
+              "topicName": channel.get("name", ""),
+              "enabled": True,
+          }
+          preview_payload = request_json("/api/automation-test", payload={
+              "jobId": "crypto-daily",
+              "targets": [target],
+              "textOnly": False,
+          })
+          preview = preview_payload.get("result", {}).get("preview", {})
+          governance = preview.get("contentGovernance", {})
+          plans = preview.get("deliveryPlans", [])
+          products = governance.get("products", [])
+          poster = preview.get("poster", {})
+          visual_template = poster.get("visualTemplate", {})
+          if preview_payload.get("ok") is not True or preview.get("publishable") is not True:
+              raise RuntimeError(f"Daily Market Brief is not publishable: {preview.get('skipReason', 'unknown reason')}")
+          if governance.get("approved") is not True:
+              raise RuntimeError(f"Content governance rejected the preview: {governance.get('reason', 'unknown reason')}")
+          if not products or any(item.get("status") != "distribution-ready" for item in products):
+              raise RuntimeError("The governed content is not distribution-ready in Obsidian.")
+          if visual_template.get("id") != "daily-market-brief-v4":
+              raise RuntimeError("The preview did not use the approved Daily Market Brief V4 poster.")
+          if len(plans) != 1:
+              raise RuntimeError("The preview did not resolve to exactly one Discord destination.")
+          plan = plans[0]
+          plan_target = plan.get("target", {})
+          if plan_target.get("platform") != "discord" or str(plan_target.get("guildId", "")) != expected_guild_id or str(plan_target.get("channelId", "")) != expected_channel_id:
+              raise RuntimeError("The preview escaped the approved Discord Demo destination.")
+          steps = plan.get("steps", [])
+          if not steps or any(step.get("method") != "sendMessage" for step in steps):
+              raise RuntimeError("The Discord delivery plan is incomplete.")
+          first_payload = steps[0].get("payload", {})
+          image_url = str(first_payload.get("imageUrl", ""))
+          if not image_url or not any(str(step.get("payload", {}).get("content", "")).strip() for step in steps):
+              raise RuntimeError("The preview must include both the poster and approved copy.")
+          combined_content = "\n".join(str(step.get("payload", {}).get("content", "")) for step in steps)
+          if "YUBIT ACADEMY" in combined_content.upper() or "1–7D" in combined_content.upper() or "1-7D" in combined_content.upper():
+              raise RuntimeError("The preview contains retired branding or horizon labels.")
+
+          image_request = urllib.request.Request(image_url, method="GET")
+          with opener.open(image_request, timeout=45) as response:
+              image_bytes = response.read(5 * 1024 * 1024 + 1)
+              content_type = response.headers.get_content_type()
+          if content_type != "image/png" or len(image_bytes) < 1024 or len(image_bytes) > 5 * 1024 * 1024:
+              raise RuntimeError("The approved poster asset failed its delivery preflight.")
+
+          # This is the sole external-send call in this workflow. It is never retried.
+          publish_payload = request_json("/api/discord", payload={
+              "action": "template-publish",
+              "contentType": "crypto-daily",
+              "channelIds": [expected_channel_id],
+          }, timeout=90)
+          published = publish_payload.get("result", {}).get("templatePublish", {})
+          results = published.get("results", [])
+          if publish_payload.get("ok") is not True or published.get("status") != "success":
+              raise RuntimeError(f"Discord publish failed: {publish_payload.get('error') or published.get('message') or 'unknown error'}")
+          if published.get("delivered") != 1 or published.get("failed") != 0 or len(results) != 1:
+              raise RuntimeError("Discord publish did not produce exactly one successful destination receipt.")
+          receipt = results[0]
+          if str(receipt.get("guildId", "")) != expected_guild_id or str(receipt.get("channelId", "")) != expected_channel_id or receipt.get("status") != "success":
+              raise RuntimeError("Discord returned a receipt for an unexpected destination.")
+          message_ids = [str(value) for value in receipt.get("messageIds", []) if str(value)]
+          if not message_ids:
+              raise RuntimeError("Discord did not return message IDs for the delivered content.")
+
+          report = {
+              "ok": True,
+              "operation": "discord-demo-daily-market-brief",
+              "sentAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              "releaseSha": os.environ.get("RELEASE_SHA", ""),
+              "contentType": "crypto-daily",
+              "product": "daily-market-brief",
+              "posterTemplate": visual_template.get("id"),
+              "contentPolicy": plan.get("contentPolicy"),
+              "guild": {"id": expected_guild_id, "name": guild.get("guildName", "")},
+              "channel": {"id": expected_channel_id, "name": channel.get("name", "")},
+              "messageIds": message_ids,
+              "poster": {"contentType": content_type, "bytes": len(image_bytes)},
+              "telegramTouched": False,
+          }
+          print(json.dumps(report, ensure_ascii=False, indent=2))
+          PYTHON
+          REMOTE
+          jq -e '
+            .ok == true
+            and .operation == "discord-demo-daily-market-brief"
+            and .product == "daily-market-brief"
+            and .posterTemplate == "daily-market-brief-v4"
+            and .guild.id == "1530060040508149820"
+            and .channel.id == "1531168767374000269"
+            and (.messageIds | length) > 0
+            and .telegramTouched == false
+          ' "$report_path" >/dev/null
+          echo "### Discord Demo Daily Market Brief" >>"$GITHUB_STEP_SUMMARY"
+          jq -r '"- Destination: `\(.guild.name)` / `\(.channel.name)`\n- Product: `\(.product)`\n- Poster: `\(.posterTemplate)` (`\(.poster.bytes)` bytes)\n- Message IDs: `\(.messageIds | join(", "))`\n- Telegram touched: `\(.telegramTouched)`"' "$report_path" >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Discord Demo delivery evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: discord-demo-delivery-${{ github.sha }}
+          path: ${{ runner.temp }}/discord-demo-delivery.json
           if-no-files-found: error
           retention-days: 30
 
