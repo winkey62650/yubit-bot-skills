@@ -4,7 +4,7 @@ import { getMediaCardTemplate, normalizePosterMetrics } from "../../../../lib/me
 import { loadMediaCardArtwork } from "../../../../lib/media-card-artwork.mjs";
 import { loadMarketPosterArtwork, loadMarketPosterMaster } from "../../../../lib/market-poster-artwork.mjs";
 import { renderPortraitMarketPoster } from "../../../../lib/market-poster-portrait-renderer.mjs";
-import { renderLandscapeMarketPoster } from "../../../../lib/market-poster-landscape-renderer.mjs";
+import { assertLandscapeMarketPosterFits, renderLandscapeMarketPoster } from "../../../../lib/market-poster-landscape-renderer.mjs";
 import { approvedMarketPosterTemplates } from "../../../../lib/market-poster-templates.mjs";
 
 export const runtime = "nodejs";
@@ -18,6 +18,7 @@ export async function GET(request) {
   const e = React.createElement;
   const poster = normalizeEditorialPreview(kind, decodePosterData(url.searchParams.get("data")));
   if (poster.visualTemplate?.version === 4) {
+    assertLandscapeMarketPosterFits(poster);
     return new ImageResponse(renderLandscapeMarketPoster(e, poster, await loadMarketPosterMaster(poster)), {
       width: 1200,
       height: 675,

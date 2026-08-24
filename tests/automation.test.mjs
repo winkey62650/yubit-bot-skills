@@ -1176,7 +1176,7 @@ test("data release retries only global acknowledgement when release-state persis
   await assert.rejects(() => automation.runAutomationJob("data-release-updates", { ...options, now: "2026-08-19T12:31:00Z" }), /release state unavailable/);
   const retried = await automation.runAutomationJob("data-release-updates", { ...options, now: "2026-08-19T12:32:00Z" });
   assert.equal(retried.status, "success");
-  assert.equal(sends, 2);
+  assert.equal(sends, 1);
   assert.equal((await repository.getMeta("market-content:release-state:v1")).monitoredEvents[0].observedAt, "2026-08-19T12:30:00.000Z");
 });
 
@@ -1903,6 +1903,11 @@ function verifiedReleaseCalendar(event = verifiedReleaseEvent()) {
 }
 
 function verifiedReleaseReaction(warnings = []) {
+  const marketSource = {
+    source: "Market Data",
+    sourceUrl: "https://market.example/cross-asset",
+    observedAt: "2026-08-19T12:45:00.000Z",
+  };
   return {
     window: { start: "2026-08-19T12:29:00.000Z", end: "2026-08-19T12:45:00.000Z" },
     prices: {
@@ -1916,8 +1921,27 @@ function verifiedReleaseReaction(warnings = []) {
         sourceUrl: "https://api.binance.com/api/v3/klines",
         observedAt: "2026-08-19T12:45:00.000Z",
       },
+      DXY: {
+        symbol: "DXY",
+        beforePrice: 98.4,
+        beforePriceAt: "2026-08-19T12:29:00.000Z",
+        price: 98.2,
+        changePercent: -0.2,
+        ...marketSource,
+      },
+      US2Y: {
+        symbol: "US2Y",
+        beforePrice: 3.72,
+        beforePriceAt: "2026-08-19T12:29:00.000Z",
+        price: 3.69,
+        changePercent: -0.81,
+        ...marketSource,
+      },
     },
-    sources: [{ id: "binance", label: "Binance", url: "https://api.binance.com/api/v3/klines", status: "ok", checkedAt: "2026-08-19T12:45:00.000Z", lastSuccessAt: "2026-08-19T12:45:00.000Z", freshnessSeconds: 0 }],
+    sources: [
+      { id: "binance", label: "Binance", url: "https://api.binance.com/api/v3/klines", status: "ok", checkedAt: "2026-08-19T12:45:00.000Z", lastSuccessAt: "2026-08-19T12:45:00.000Z", freshnessSeconds: 0 },
+      { id: "cross-asset", label: "Market Data", url: "https://market.example/cross-asset", status: "ok", checkedAt: "2026-08-19T12:45:00.000Z", lastSuccessAt: "2026-08-19T12:45:00.000Z", freshnessSeconds: 0 },
+    ],
     warnings,
   };
 }

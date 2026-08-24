@@ -76,6 +76,8 @@ function input(product, overrides = {}) {
         scenarioMap: "Below consensus: risk-on; near consensus: neutral; above consensus: risk-off.",
       }],
       release: {
+        indicator: "US CPI YoY",
+        releaseTime: "2026-08-23T12:30:00.000Z",
         actual: "2.7%",
         forecast: "2.8%",
         previous: "2.9%",
@@ -188,6 +190,44 @@ test("market follow-up requires an originating flash, bounded observation window
     const result = await createContentProductSystem({ store: storeDouble() }).prepare(candidate);
     assert.equal(result.status, "blocked");
     assert.ok(result.gate.reasons.some((reason) => /follow-up|causal|observation/i.test(reason)));
+  }
+});
+
+test("Data Flash blocks incomplete release context and pending or single-asset reactions", async () => {
+  const base = input("data-flash");
+  const candidates = [
+    input("data-flash", { intelligence: { ...base.intelligence, release: { ...base.intelligence.release, indicator: "" } } }),
+    input("data-flash", { intelligence: { ...base.intelligence, release: { ...base.intelligence.release, releaseTime: "" } } }),
+    input("data-flash", { intelligence: { ...base.intelligence, release: { ...base.intelligence.release, initialReaction: ["BTC +0.50%"] } } }),
+    input("data-flash", { intelligence: { ...base.intelligence, release: { ...base.intelligence.release, initialReaction: ["BTC +0.50%", "DXY pending", "US2Y -4bp"] } } }),
+  ];
+
+  for (const candidate of candidates) {
+    const result = await createContentProductSystem({
+      store: storeDouble(),
+      now: () => new Date("2026-08-23T13:01:00.000Z"),
+    }).prepare(candidate);
+    assert.equal(result.status, "blocked");
+    assert.ok(result.gate.reasons.some((reason) => /release|reaction|cross-asset|pending/i.test(reason)));
+  }
+});
+
+test("Market Follow-up requires a completed 10–30 minute BTC plus two cross-asset window", async () => {
+  const base = input("market-follow-up");
+  const candidates = [
+    input("market-follow-up", { observationWindow: { start: "2026-08-23T12:30:00.000Z", end: "2026-08-23T12:35:00.000Z" } }),
+    input("market-follow-up", { observationWindow: { start: "2026-08-23T12:30:00.000Z", end: "2026-08-23T13:01:00.000Z" } }),
+    input("market-follow-up", { intelligence: { ...base.intelligence, followUp: { ...base.intelligence.followUp, marketMoves: ["BTC +0.50%", "ETH +0.20%"] } } }),
+    input("market-follow-up", { intelligence: { ...base.intelligence, followUp: { ...base.intelligence.followUp, marketMoves: ["BTC +0.50%", "DXY pending", "US2Y -4bp"] } } }),
+  ];
+
+  for (const candidate of candidates) {
+    const result = await createContentProductSystem({
+      store: storeDouble(),
+      now: () => new Date("2026-08-23T13:01:00.000Z"),
+    }).prepare(candidate);
+    assert.equal(result.status, "blocked");
+    assert.ok(result.gate.reasons.some((reason) => /10–30|cross-asset|pending|market moves/i.test(reason)));
   }
 });
 

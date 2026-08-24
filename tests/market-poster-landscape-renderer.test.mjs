@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { renderLandscapeMarketPoster } from "../lib/market-poster-landscape-renderer.mjs";
+import {
+  assertLandscapeMarketPosterFits,
+  landscapePosterOverflowFields,
+  renderLandscapeMarketPoster,
+} from "../lib/market-poster-landscape-renderer.mjs";
 
 function e(type, props, ...children) {
   return { type, props: props ?? {}, children: children.flat(Infinity).filter((child) => child !== null && child !== undefined) };
@@ -100,7 +104,7 @@ test("all four V4 products keep identical dynamic-field geometry for sparse and 
       { stories: Array.from({ length: 3 }, (_, index) => ({ title: `Verified story ${index + 1}`, source: "Official source", affected: "BTC", thesis: "Dense daily content stays in the same slot.", impact: "Positive", score: 82 })) }],
     ["weekly-catalysts-v4",
       { weekStart: "2026-08-24", columns: [] },
-      { weekStart: "2026-08-24", columns: Array.from({ length: 5 }, (_, index) => ({ label: `${["MON", "TUE", "WED", "THU", "FRI"][index]} ${24 + index}`, events: [{ title: `Verified event ${index + 1}`, time: "12:30", importance: 3, affected: "BTC", sensitivity: "Cross-asset repricing risk." }] })) }],
+      { weekStart: "2026-08-24", columns: Array.from({ length: 7 }, (_, index) => ({ label: `${["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"][index]} ${24 + index}`, events: [{ title: `Verified event ${index + 1}`, time: "12:30", importance: 3, affected: "BTC", sensitivity: "Cross-asset repricing risk." }] })) }],
     ["data-flash-v4",
       { indicator: "CPI", reactions: [] },
       { indicator: "CPI", actual: "2.7%", forecast: "2.8%", previous: "2.9%", reactions: Array.from({ length: 4 }, (_, index) => ({ symbol: ["BTC", "DXY", "NASDAQ", "US 2Y"][index], label: "+0.10%", status: "Observed" })) }],
@@ -125,7 +129,7 @@ test("automatic posters fail closed when the locked V4 master is missing", () =>
   );
 });
 
-test("sparse weekly data preserves all five fixed weekday slots without inventing events", () => {
+test("sparse weekly data preserves seven fixed UTC-day slots and leaves empty days blank", () => {
   const text = renderedText({
     visualTemplate: { id: "weekly-catalysts-v4" },
     weekStart: "2026-08-24",
@@ -135,6 +139,8 @@ test("sparse weekly data preserves all five fixed weekday slots without inventin
       { label: "WED 26", events: [] },
       { label: "THU 27", events: [] },
       { label: "FRI 28", events: [] },
+      { label: "SAT 29", events: [] },
+      { label: "SUN 30", events: [] },
     ],
     highImpactCount: 1,
     peakDay: "TUE 25",
@@ -142,14 +148,29 @@ test("sparse weekly data preserves all five fixed weekday slots without inventin
   });
 
   assert.match(text, /U\.S\. CPI/);
-  assert.match(text, /NO MAJOR EVENT/i);
-  assert.doesNotMatch(text, /NO MATERIAL VERIFIED UPDATE|IMPACT · CLEAR|STATUS · CLEAR/i);
+  assert.doesNotMatch(text, /NO MAJOR EVENT|NO MATERIAL VERIFIED UPDATE|IMPACT · CLEAR|STATUS · CLEAR/i);
   assert.match(text, /weekly-1-day/);
-  assert.match(text, /weekly-5-day/);
+  assert.match(text, /weekly-7-day/);
   assert.doesNotMatch(text, /TBD|N\/A|NOT AVAILABLE/);
 });
 
-test("weekly catalysts keeps the V4 Monday-to-Friday frame and never pulls a later event", () => {
+test("weekly uses one clean seven-column content surface instead of exposing the five-column master grid", () => {
+  const layout = geometry({
+    visualTemplate: { id: "weekly-catalysts-v4" },
+    weekStart: "2026-08-24",
+    columns: Array.from({ length: 7 }, (_, index) => ({ label: `${["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"][index]} ${24 + index}`, events: [] })),
+    footer,
+  });
+  const surface = layout.find(({ key }) => key === "weekly-grid-mask");
+  const dayCards = layout.filter(({ key }) => /^weekly-day-\d+-mask$/.test(key));
+
+  assert.deepEqual(surface, { key: "weekly-grid-mask", left: 14, top: 225, width: 1172, height: 307 });
+  assert.equal(dayCards.length, 7);
+  assert.equal(dayCards.every(({ width }) => width === 158), true);
+  assert.equal(dayCards.every((card, index) => index === 0 || card.left >= dayCards[index - 1].left + dayCards[index - 1].width), true);
+});
+
+test("weekly catalysts renders one complete seven-day UTC week and never pulls a later event", () => {
   const text = renderedText({
     visualTemplate: { id: "weekly-catalysts-v4" },
     weekStart: "2026-08-24",
@@ -160,12 +181,14 @@ test("weekly catalysts keeps the V4 Monday-to-Friday frame and never pulls a lat
     footer,
   });
 
-  assert.match(text, /24–28 AUG 2026/);
+  assert.match(text, /24–30 AUG 2026/);
   assert.match(text, /This week CPI/);
+  assert.match(text, /weekly-7-day/);
+  assert.doesNotMatch(text, /weekly-8-day/);
   assert.doesNotMatch(text, /Next-week event must not appear/);
 });
 
-test("missing flash comparisons stay in their original fixed fields and are marked unpublished", () => {
+test("missing flash comparisons keep their original fixed fields without publishing placeholders", () => {
   const text = renderedText({
     visualTemplate: { id: "data-flash-v4" },
     title: "U.S. CPI at 2.7% YoY",
@@ -180,9 +203,57 @@ test("missing flash comparisons stay in their original fixed fields and are mark
   });
 
   assert.match(text, /2\.7% YoY/);
-  assert.match(text, /NOT PUBLISHED/);
+  assert.doesNotMatch(text, /PENDING|NOT PUBLISHED|N\/A|TBD/);
   assert.match(text, /flash-forecast/);
   assert.match(text, /flash-previous/);
+});
+
+test("poster compaction is word-safe, visibly marked, and never silently slices a token", () => {
+  const text = visibleText({
+    visualTemplate: { id: "daily-market-brief-v4" },
+    stories: [{
+      title: "Institutional accumulation strengthens materially as cross-asset confirmation develops",
+      thesis: "Institutional participation strengthens materially as cross-asset confirmation develops across spot markets",
+      source: "Official filing",
+      affected: "BTC",
+    }],
+    footer,
+  });
+
+  assert.match(text, /…/u);
+  assert.doesNotMatch(text, /INSTITUT…|confirmat…/u);
+});
+
+test("publish visual gate rejects any poster that still needs visible text compaction", () => {
+  const overflowing = {
+    visualTemplate: { id: "daily-market-brief-v4" },
+    footer,
+    stories: [{
+      title: "This verified market headline is deliberately too long for the locked visual field",
+      source: "Official source",
+      affected: "BTC",
+    }],
+  };
+  assert.deepEqual(landscapePosterOverflowFields(overflowing), ["daily-1-title"]);
+  assert.throws(() => assertLandscapeMarketPosterFits(overflowing), /daily-1-title/);
+
+  const fitting = {
+    visualTemplate: { id: "market-follow-up-v4" },
+    footer,
+    posterVerdict: "Mixed move in completed window.",
+    posterConfirmation: "Needs cross-asset alignment.",
+    posterInvalidation: "BTC reclaims pre-release level.",
+  };
+  assert.deepEqual(landscapePosterOverflowFields(fitting), []);
+  assert.doesNotThrow(() => assertLandscapeMarketPosterFits(fitting));
+});
+
+test("reaction boards never invent pending rows when measured data is absent", () => {
+  const flash = visibleText({ visualTemplate: { id: "data-flash-v4" }, indicator: "CPI", actual: "2.7%", reactions: [], footer });
+  const follow = visibleText({ visualTemplate: { id: "market-follow-up-v4" }, reactions: [], footer });
+
+  assert.doesNotMatch(flash, /PENDING|NOT PUBLISHED/i);
+  assert.doesNotMatch(follow, /PENDING|NOT PUBLISHED/i);
 });
 
 test("poster copy stays concise and removes generic horizon labels", () => {
@@ -208,10 +279,10 @@ test("poster copy stays concise and removes generic horizon labels", () => {
   assert.doesNotMatch(follow, /does not justify a durable directional conclusion/i);
 });
 
-test("follow-up uses concise poster fields and a compact pending status", () => {
+test("follow-up uses concise poster fields and a completed tape status", () => {
   const text = visibleText({
     visualTemplate: { id: "market-follow-up-v4" },
-    tapeStatus: "AWAITING CONFIRMATION",
+    tapeStatus: "DIVERGENT",
     verdict: "A long verdict that should remain in the paired Telegram copy.",
     posterVerdict: "Small mixed move; confirmation incomplete.",
     posterConfirmation: "Needs sustained cross-asset alignment.",
@@ -220,6 +291,6 @@ test("follow-up uses concise poster fields and a compact pending status", () => 
   });
 
   assert.match(text, /Small mixed move; confirmation incomplete/);
-  assert.match(text, /CONFIRMATION PENDING/);
+  assert.match(text, /DIVERGENT/);
   assert.doesNotMatch(text, /A long verdict|AWAITING CONFIRMATION/);
 });

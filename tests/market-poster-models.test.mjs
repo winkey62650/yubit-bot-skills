@@ -42,7 +42,7 @@ test("every poster model exposes the shared Editorial Research visual tokens", (
     generatedAt: "2026-08-16T18:00:00.000Z",
     days: [{
       date: "2026-08-17",
-      events: [{ id: "cpi", title: "US CPI", source: { label: "BLS" } }],
+      events: [{ id: "cpi", title: "US CPI", importance: 5, source: { label: "BLS" } }],
     }],
   });
   const data = buildDataUpdatePosterModel({
@@ -60,14 +60,14 @@ test("every poster model exposes the shared Editorial Research visual tokens", (
   assertEditorialTokens(crypto, { sources: ["SEC"], updatedAt: "2026-08-21T08:00:00.000Z" });
 });
 
-test("weekly calendar uses five weekday columns and emphasizes exactly the top three events", () => {
-  const days = Array.from({ length: 5 }, (_, day) => ({
+test("weekly calendar uses seven UTC-day columns, excludes minor events, and emphasizes the top three", () => {
+  const days = Array.from({ length: 7 }, (_, day) => ({
     date: `2026-08-${17 + day}`,
     events: [{
       id: `event-${day}`,
       title: `Event ${day}`,
       time: `${12 + day}:30`,
-      importance: 5 - day,
+      importance: [5, 4, 3, 2, 1, 4, 3][day],
       whyItMatters: `Event ${day} changes the market path.`,
       source: { label: `Source ${day}` },
     }],
@@ -79,16 +79,18 @@ test("weekly calendar uses five weekday columns and emphasizes exactly the top t
     days,
   });
 
-  assert.equal(model.columns.length, 5);
-  assert.deepEqual(model.columns.map((column) => column.label), ["MON 17", "TUE 18", "WED 19", "THU 20", "FRI 21"]);
+  assert.equal(model.columns.length, 7);
+  assert.deepEqual(model.columns.map((column) => column.label), ["MON 17", "TUE 18", "WED 19", "THU 20", "FRI 21", "SAT 22", "SUN 23"]);
   assert.equal(model.columns.flatMap((column) => column.events).length, 5);
   assert.equal(model.columns.flatMap((column) => column.events).filter((event) => event.isPriority).length, 3);
-  assert.deepEqual(model.priorityEventIds, ["event-0", "event-1", "event-2"]);
+  assert.deepEqual(model.priorityEventIds, ["event-0", "event-1", "event-5"]);
   assert.equal(model.columns[0].events[0].visualWeight, "primary");
-  assert.equal(model.columns[3].events[0].visualWeight, "secondary");
+  assert.equal(model.columns[2].events[0].visualWeight, "secondary");
+  assert.deepEqual(model.columns[3].events, []);
+  assert.deepEqual(model.columns[4].events, []);
 });
 
-test("weekly calendar adds Crypto Weekend only for material weekend events", () => {
+test("weekly calendar keeps qualifying weekend events in their real Sat/Sun columns", () => {
   const base = {
     weekStart: "2026-08-17",
     generatedAt: "2026-08-16T18:00:00.000Z",
@@ -106,9 +108,26 @@ test("weekly calendar adds Crypto Weekend only for material weekend events", () 
     }],
   });
 
-  assert.equal(Object.hasOwn(withoutMaterialWeekend, "weekend"), false);
-  assert.equal(withMaterialWeekend.weekend.label, "CRYPTO WEEKEND");
-  assert.equal(withMaterialWeekend.weekend.events[0].id, "unlock");
+  assert.deepEqual(withoutMaterialWeekend.columns[5].events, []);
+  assert.equal(withMaterialWeekend.columns[5].events[0].id, "unlock");
+  assert.equal(withMaterialWeekend.columns[5].label, "SAT 22");
+});
+
+test("weekly calendar keeps at most one highest-importance event per day", () => {
+  const model = buildWeeklyCalendarPosterModel({
+    weekStart: "2026-08-17",
+    days: [{
+      date: "2026-08-17",
+      events: [
+        { id: "secondary", title: "Project unlock", time: "09:00", importance: 3 },
+        { id: "macro", title: "FOMC rate decision", time: "18:00", importance: 5 },
+        { id: "regulation", title: "ETF ruling", time: "12:00", importance: 4 },
+      ],
+    }],
+  });
+
+  assert.deepEqual(model.columns[0].events.map((event) => event.id), ["macro"]);
+  assert.equal(model.highImpactCount, 1);
 });
 
 test("weekly calendar caps priority descriptions on word boundaries without hiding numerical facts", () => {
@@ -363,7 +382,7 @@ test("fact tokens preserve complete times, ranges, signed currencies, and leadin
     weekStart: "2026-08-17",
     days: [{
       date: "2026-08-17",
-      events: [{ id: "lexer", title: "Lexer", whyItMatters: weeklyText }],
+      events: [{ id: "lexer", title: "Lexer", importance: 3, whyItMatters: weeklyText }],
     }],
   });
   const data = buildDataUpdatePosterModel({ confirmation: dataText });
@@ -387,7 +406,7 @@ test("overflow fact lanes stay exact, capped, and immutable in every poster mode
     weekStart: "2026-08-17",
     days: [{
       date: "2026-08-17",
-      events: [{ id: "overflow-lexer", title: "Overflow lexer", whyItMatters: overflow }],
+      events: [{ id: "overflow-lexer", title: "Overflow lexer", importance: 3, whyItMatters: overflow }],
     }],
   });
   const dataInput = deepFreeze({ confirmation: overflow });
@@ -413,19 +432,15 @@ test("overflow fact lanes stay exact, capped, and immutable in every poster mode
   assert.match(cryptoInput.selectedStories[0].rationale, /^UnbreakableContext/u);
 });
 
-test("weekly priority selection ignores ghosts and highlights three stable event occurrences", () => {
+test("weekly priority selection ignores ghosts and highlights three stable qualifying days", () => {
   const model = buildWeeklyCalendarPosterModel({
     weekStart: "2026-08-17",
     priorityEvents: [{ eventId: "ghost" }, { eventId: "duplicate" }],
-    days: [{
-      date: "2026-08-17",
-      events: [
-        { id: "duplicate", title: "Duplicate A", time: "12:00", importance: 4 },
-        { id: "duplicate", title: "Duplicate B", time: "12:01", importance: 3 },
-        { id: "duplicate", title: "Duplicate C", time: "12:02", importance: 2 },
-        { id: "visible", title: "Visible", time: "12:03", importance: 1 },
-      ],
-    }],
+    days: [
+      { date: "2026-08-17", events: [{ id: "duplicate", title: "Duplicate A", time: "12:00", importance: 4 }] },
+      { date: "2026-08-18", events: [{ id: "second", title: "Second", time: "12:01", importance: 3 }] },
+      { date: "2026-08-19", events: [{ id: "third", title: "Third", time: "12:02", importance: 5 }] },
+    ],
   });
   const events = model.columns.flatMap((column) => column.events);
   const highlighted = events.filter((event) => event.isPriority);
@@ -437,7 +452,7 @@ test("weekly priority selection ignores ghosts and highlights three stable event
   assert.equal(new Set(highlighted.map((event) => event.eventKey)).size, 3);
 });
 
-test("weekly priorities match Task 5 ids when Task 3 display metadata differs", () => {
+test("weekly priorities never reintroduce a requested low-importance event", () => {
   const model = buildWeeklyCalendarPosterModel({
     weekStart: "2026-08-17",
     priorityEvents: [{
@@ -445,21 +460,18 @@ test("weekly priorities match Task 5 ids when Task 3 display metadata differs", 
       title: "Task 5 normalized headline",
       utcTime: "2026-08-17T19:30:00.000Z",
     }],
-    days: [{
-      date: "2026-08-17",
-      events: [
-        { id: "high-1", title: "High 1", time: "10:00", importance: 5 },
-        { id: "high-2", title: "High 2", time: "11:00", importance: 4 },
-        { id: "high-3", title: "High 3", time: "12:00", importance: 3 },
-        { id: "low-priority", title: "Task 3 display headline", time: "19:30 UTC", importance: 1 },
-      ],
-    }],
+    days: [
+      { date: "2026-08-17", events: [{ id: "high-1", title: "High 1", time: "10:00", importance: 5 }] },
+      { date: "2026-08-18", events: [{ id: "high-2", title: "High 2", time: "11:00", importance: 4 }] },
+      { date: "2026-08-19", events: [{ id: "high-3", title: "High 3", time: "12:00", importance: 3 }] },
+      { date: "2026-08-20", events: [{ id: "low-priority", title: "Task 3 display headline", time: "19:30 UTC", importance: 1 }] },
+    ],
   });
 
   const highlightedIds = model.columns.flatMap((column) => column.events)
     .filter((event) => event.isPriority)
     .map((event) => event.id);
-  assert.deepEqual(highlightedIds, ["high-1", "high-2", "low-priority"]);
+  assert.deepEqual(highlightedIds, ["high-1", "high-2", "high-3"]);
 });
 
 test("strict numeric parsing rejects placeholders and preserves Unicode minus, zero, and percentages", () => {
@@ -530,7 +542,7 @@ test("weekly models are canonical under same-day input reordering", () => {
   });
 
   assert.deepEqual(reverse, forward);
-  assert.deepEqual(forward.footer.sources, ["Alpha", "Mike", "Zulu"]);
+  assert.deepEqual(forward.footer.sources, ["Alpha"]);
 });
 
 test("missing official source never creates false provenance", () => {

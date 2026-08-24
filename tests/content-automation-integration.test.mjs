@@ -57,6 +57,7 @@ test("maps the three automation jobs to exactly four governed content products",
   const release = buildContentProductInputs("data-release-updates", generated("data-release-updates", {
     event: {
       id: "us-cpi-2026-08",
+      indicator: "headline-cpi-yoy",
       title: "US CPI",
       releasedAt: NOW,
       values: { actual: "2.7%", forecast: "2.8%" },
@@ -64,7 +65,7 @@ test("maps the three automation jobs to exactly four governed content products",
     },
     document: { title: "US CPI released", verdict: "The first move remains unconfirmed.", invalidation: "Invalidate if price reverses.", values: { actual: "2.7%", forecast: "2.8%" }, nodes: [] },
     reaction: {
-      window: { start: "2026-08-23T12:29:00.000Z", end: "2026-08-23T12:45:00.000Z" },
+      window: { start: "2026-08-23T12:16:00.000Z", end: NOW },
       prices: { BTC: { changePercent: 0.5 } },
       sources: [{ id: "binance", title: "Binance", url: "https://api.binance.com", status: "ok", checkedAt: NOW, tier: "primary" }],
     },
@@ -78,12 +79,36 @@ test("maps the three automation jobs to exactly four governed content products",
   assert.equal(weekly[0].intelligence.events[0].previous, "2.9%");
   assert.deepEqual(release.map(({ product }) => product), ["data-flash", "market-follow-up"]);
   assert.equal(release[0].event.actual, "2.7%");
+  assert.equal(release[0].intelligence.release.indicator, "headline-cpi-yoy");
+  assert.equal(release[0].intelligence.release.releaseTime, NOW);
   assert.equal(release[0].facts.some((fact) => fact.actual === true), true);
   assert.equal(release[1].originatingDataFlashId, "data-flash-us-cpi-2026-08");
   const binanceSource = release[0].sources.find((source) => source.id.startsWith("binance-"));
   assert.ok(binanceSource);
   assert.deepEqual(release[1].facts[0].sourceRefs, [binanceSource.id]);
   assert.match(release[1].correlationStatement, /correlation, not causation/i);
+});
+
+test("keeps an initial reaction in Data Flash until the follow-up window is complete", () => {
+  const products = buildContentProductInputs("data-release-updates", generated("data-release-updates", {
+    event: {
+      id: "us-cpi-initial-reaction",
+      indicator: "headline-cpi-yoy",
+      title: "US CPI",
+      releasedAt: "2026-08-23T12:30:00.000Z",
+      values: { actual: "2.7%", forecast: "2.8%", previous: "2.9%" },
+    },
+    reaction: {
+      window: { start: "2026-08-23T12:29:00.000Z", end: NOW },
+      prices: {
+        BTC: { changePercent: 0.2 },
+        DXY: { changePercent: -0.1 },
+        US2Y: { changeBasisPoints: -1.2 },
+      },
+    },
+  }), { now: NOW, publicBaseUrl: "https://academy.example" });
+
+  assert.deepEqual(products.map(({ product }) => product), ["data-flash"]);
 });
 
 test("daily content maps each ranked story into decision fields and article-level evidence", () => {

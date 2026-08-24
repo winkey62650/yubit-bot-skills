@@ -4,7 +4,7 @@ import { getDistributionRepository } from "../../../../../../lib/distribution-re
 import { getMarketPublication, marketPublicationKey } from "../../../../../../lib/market-publication.mjs";
 import { loadMarketPosterArtwork, loadMarketPosterMaster } from "../../../../../../lib/market-poster-artwork.mjs";
 import { renderPortraitMarketPoster } from "../../../../../../lib/market-poster-portrait-renderer.mjs";
-import { renderLandscapeMarketPoster } from "../../../../../../lib/market-poster-landscape-renderer.mjs";
+import { assertLandscapeMarketPosterFits, renderLandscapeMarketPoster } from "../../../../../../lib/market-poster-landscape-renderer.mjs";
 import { marketPosterCanvas } from "../../../../../../lib/market-poster-templates.mjs";
 
 export const runtime = "nodejs";
@@ -88,15 +88,6 @@ function isWeeklyColumn(column) {
     && column.events.every(isWeeklyEvent);
 }
 
-function isWeeklyWeekend(weekend) {
-  return weekend === undefined || weekend === null || (
-    isPlainObject(weekend)
-    && isString(weekend.label)
-    && Array.isArray(weekend.events)
-    && weekend.events.every(isWeeklyEvent)
-  );
-}
-
 function isDataComponent(component) {
   return isPlainObject(component)
     && ["title", "indicator", "actual"].every((field) => isString(component[field]))
@@ -125,9 +116,8 @@ function isRenderablePoster(product, model) {
       && isFiniteNumber(model.highImpactCount)
       && isString(model.peakDay)
       && Array.isArray(model.columns)
-      && model.columns.length === 5
-      && model.columns.every(isWeeklyColumn)
-      && isWeeklyWeekend(model.weekend);
+      && model.columns.length === 7
+      && model.columns.every(isWeeklyColumn);
   }
   return [
     "title", "indicator", "impact", "actual", "verdictStatus", "verdict", "confirmation", "invalidation",
@@ -404,6 +394,7 @@ export async function GET(request, context = {}) {
   if (bundle.status !== "draft") return message(409, "Editorial image is not available.");
   try {
     const canvas = marketPosterCanvas(bundle.posterModel);
+    if (bundle.posterModel.visualTemplate?.version === 4) assertLandscapeMarketPosterFits(bundle.posterModel);
     const rendered = bundle.posterModel.visualTemplate?.version === 4
       ? renderLandscapeMarketPoster(React.createElement, bundle.posterModel, await loadMarketPosterMaster(bundle.posterModel))
       : bundle.posterModel.visualTemplate
