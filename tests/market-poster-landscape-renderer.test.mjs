@@ -36,6 +36,11 @@ function geometry(model) {
   }));
 }
 
+function dynamicField(model, key) {
+  const output = renderLandscapeMarketPoster(e, model, LOCKED_MASTER);
+  return output.children.find((child) => child.props["data-dynamic-field"] === key);
+}
+
 const footer = { sources: ["BLS", "Coinbase Exchange"], updatedAt: "2026-08-24T03:16:33.000Z" };
 const LOCKED_MASTER = "data:image/png;base64,AAAA";
 
@@ -130,7 +135,7 @@ test("automatic posters fail closed when the locked V4 master is missing", () =>
 });
 
 test("sparse weekly data preserves seven fixed UTC-day slots and leaves empty days blank", () => {
-  const text = renderedText({
+  const model = {
     visualTemplate: { id: "weekly-catalysts-v4" },
     weekStart: "2026-08-24",
     columns: [
@@ -145,13 +150,37 @@ test("sparse weekly data preserves seven fixed UTC-day slots and leaves empty da
     highImpactCount: 1,
     peakDay: "TUE 25",
     footer,
-  });
+  };
+  const text = renderedText(model);
 
   assert.match(text, /U\.S\. CPI/);
+  assert.match(text, /SOURCE · BLS/);
   assert.doesNotMatch(text, /NO MAJOR EVENT|NO MATERIAL VERIFIED UPDATE|IMPACT · CLEAR|STATUS · CLEAR/i);
   assert.match(text, /weekly-1-day/);
   assert.match(text, /weekly-7-day/);
   assert.doesNotMatch(text, /TBD|N\/A|NOT AVAILABLE/);
+
+  const activeCard = dynamicField(model, "weekly-day-2-mask");
+  const emptyWeekday = dynamicField(model, "weekly-day-1-mask");
+  const emptyWeekend = dynamicField(model, "weekly-day-6-mask");
+  const emptyEventLane = dynamicField(model, "weekly-1-event");
+  const dayLabel = dynamicField(model, "weekly-2-day");
+  const dateLabel = dynamicField(model, "weekly-2-date");
+  const eventTitle = dynamicField(model, "weekly-2-event");
+  const eventDetail = dynamicField(model, "weekly-2-sensitivity");
+  assert.equal(activeCard.props.style.backgroundColor, "#FFFBF2");
+  assert.equal(activeCard.props.style.border, "2px solid #D6A037");
+  assert.equal(emptyWeekday.props.style.backgroundColor, "#FAFCFE");
+  assert.equal(emptyWeekend.props.style.backgroundColor, "#F5F8FC");
+  assert.equal(emptyEventLane.children[0], "");
+  assert.equal(emptyEventLane.props.style.backgroundColor, "transparent");
+  assert.equal(emptyEventLane.props.style.borderBottom, "1px solid #E8EFF6");
+  assert.match(dayLabel.props.style.fontFamily, /Arial Narrow/);
+  assert.equal(dayLabel.props.style.letterSpacing, 0.8);
+  assert.match(dateLabel.props.style.fontFamily, /SFMono-Regular/);
+  assert.equal(dateLabel.props.style.fontVariantNumeric, "tabular-nums");
+  assert.equal(eventTitle.props.style.fontWeight, 700);
+  assert.equal(eventDetail.props.style.fontWeight, 500);
 });
 
 test("weekly uses one clean seven-column content surface instead of exposing the five-column master grid", () => {
