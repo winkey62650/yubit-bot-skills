@@ -4,6 +4,7 @@ import { getMediaCardTemplate, normalizePosterMetrics } from "../../../../lib/me
 import { loadMediaCardArtwork } from "../../../../lib/media-card-artwork.mjs";
 import { loadMarketPosterArtwork } from "../../../../lib/market-poster-artwork.mjs";
 import { renderPortraitMarketPoster } from "../../../../lib/market-poster-portrait-renderer.mjs";
+import { renderLandscapeMarketPoster } from "../../../../lib/market-poster-landscape-renderer.mjs";
 import { approvedMarketPosterTemplates } from "../../../../lib/market-poster-templates.mjs";
 
 export const runtime = "nodejs";
@@ -16,6 +17,12 @@ export async function GET(request) {
   const artworkUrl = await loadMediaCardArtwork(kind);
   const e = React.createElement;
   const poster = normalizeEditorialPreview(kind, decodePosterData(url.searchParams.get("data")));
+  if (poster.visualTemplate?.version === 4) {
+    return new ImageResponse(renderLandscapeMarketPoster(e, poster), {
+      width: 1200,
+      height: 675,
+    });
+  }
   if (poster.visualTemplate) {
     const artwork = await loadMarketPosterArtwork(poster);
     return new ImageResponse(renderPortraitMarketPoster(e, poster, artwork), {
@@ -294,15 +301,15 @@ const APPROVED_MARKET_POSTERS = new Map(approvedMarketPosterTemplates().map((tem
 function previewVisualTemplate(value) {
   if (!isPreviewObject(value)) return null;
   const approved = APPROVED_MARKET_POSTERS.get(previewText(value.id));
-  if (!approved || approved.file !== previewText(value.file) || approved.product !== previewText(value.product)
+  if (!approved || (approved.file || "") !== previewText(value.file) || approved.product !== previewText(value.product)
       || value.canvas?.width !== approved.canvas.width || value.canvas?.height !== approved.canvas.height) return null;
   return {
     id: approved.id,
     product: approved.product,
     file: approved.file,
     canvas: { ...approved.canvas },
-    assetPath: `/templates/market-intelligence/${approved.file}`,
-    version: 3,
+    assetPath: approved.file ? `/templates/market-intelligence/${approved.file}` : null,
+    version: approved.version,
   };
 }
 
@@ -310,7 +317,7 @@ function normalizeEditorialPreview(kind, value) {
   const poster = isPreviewObject(value) ? value : {};
   if (kind === "weekly-calendar") {
     const columns = (Array.isArray(poster.columns) ? poster.columns : [])
-      .filter(isPreviewObject).slice(0, 5).map((column) => ({
+      .filter(isPreviewObject).slice(0, 7).map((column) => ({
         date: previewText(column.date),
         label: previewText(column.label),
         events: (Array.isArray(column.events) ? column.events : [])
@@ -333,11 +340,28 @@ function normalizeEditorialPreview(kind, value) {
       title: previewText(poster.title, "Weekly Catalysts"),
       visualTemplate: previewVisualTemplate(poster.visualTemplate),
       weekStart: previewText(poster.weekStart, "UTC"),
+      weekend: isPreviewObject(poster.weekend) ? {
+        label: previewText(poster.weekend.label, "WEEKEND"),
+        events: (Array.isArray(poster.weekend.events) ? poster.weekend.events : [])
+          .filter(isPreviewObject).slice(0, 3).map((event, eventIndex) => ({
+            id: previewText(event.id, `weekend-event-${eventIndex}`),
+            eventKey: previewText(event.eventKey),
+            title: previewText(event.title, "Verified event"),
+            time: previewText(event.time),
+            importance: Number.isFinite(event.importance) ? event.importance : 0,
+            source: previewText(event.source, "VERIFIED"),
+            sensitivity: previewText(event.sensitivity),
+            dateLabel: previewText(event.dateLabel),
+            isPriority: event.isPriority === true,
+          })),
+      } : null,
     };
   }
   if (kind === "data-update") {
     return {
       actual: previewText(poster.actual, "—"),
+      affected: previewText(poster.affected),
+      components: previewText(poster.components),
       confirmation: previewText(poster.confirmation),
       footer: previewFooter(poster.footer),
       forecast: previewText(poster.forecast, "—"),
