@@ -396,6 +396,7 @@ jobs:
           gateway = status.get("gateway", {}) if isinstance(status, dict) else {}
           config = status.get("config", {}) if isinstance(status, dict) else {}
           preview_profile = {}
+          poster_fetch_probe = {}
           try:
               expected_guild_id = "1530060040508149820"
               expected_channel_id = "1531168767374000269"
@@ -415,11 +416,14 @@ jobs:
               plans = preview.get("deliveryPlans", [])
               steps = plans[0].get("steps", []) if len(plans) == 1 else []
               profiled_steps = []
+              poster_url = ""
               for index, step in enumerate(steps):
                   payload = step.get("payload", {})
                   content = str(payload.get("content", ""))
                   image_url = str(payload.get("imageUrl", ""))
                   parsed_image_url = urllib.parse.urlsplit(image_url) if image_url else None
+                  if image_url and not poster_url:
+                      poster_url = image_url
                   profiled_steps.append({
                       "index": index,
                       "method": step.get("method", ""),
@@ -438,8 +442,53 @@ jobs:
                   "planCount": len(plans),
                   "steps": profiled_steps,
               }
+              if poster_url:
+                  probe = subprocess.run(
+                      [
+                          "node",
+                          "-e",
+                          """
+                          (async () => {
+                            try {
+                              const response = await fetch(process.env.POSTER_PROBE_URL);
+                              const body = await response.arrayBuffer();
+                              console.log(JSON.stringify({
+                                ok: response.ok,
+                                status: response.status,
+                                contentType: response.headers.get('content-type') || '',
+                                bytes: body.byteLength,
+                              }));
+                            } catch (error) {
+                              console.log(JSON.stringify({
+                                ok: false,
+                                error: {
+                                  name: error?.name || '',
+                                  message: error?.message || '',
+                                  causeName: error?.cause?.name || '',
+                                  causeMessage: error?.cause?.message || '',
+                                  causeCode: error?.cause?.code || '',
+                                },
+                              }));
+                            }
+                          })();
+                          """,
+                      ],
+                      check=False,
+                      capture_output=True,
+                      text=True,
+                      timeout=45,
+                      env={**os.environ, "POSTER_PROBE_URL": poster_url},
+                  )
+                  try:
+                      poster_fetch_probe = json.loads(probe.stdout.strip())
+                  except Exception:
+                      poster_fetch_probe = {
+                          "ok": False,
+                          "error": {"message": sanitize(probe.stderr or probe.stdout or "Node poster probe returned no result.")},
+                      }
           except Exception as error:
               preview_profile = {"auditError": sanitize(error)}
+              poster_fetch_probe = {"ok": False, "auditError": sanitize(error)}
           runtime_directory = os.environ.get("JSON_STORE_DIRECTORY") or os.path.join(os.environ["RELEASE_PATH"], ".runtime")
           latest_demo_attempt = {}
           try:
@@ -520,6 +569,7 @@ jobs:
               },
               "latestDemoAttempt": latest_demo_attempt,
               "previewProfile": preview_profile,
+              "posterFetchProbe": poster_fetch_probe,
               "healthSummary": health.get("summary", {}),
               "channels": channel_results,
               "errors": errors,
