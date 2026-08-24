@@ -288,6 +288,27 @@ function previewText(value, fallback = "") {
   return fallback;
 }
 
+function previewTextArray(value, limit = 6) {
+  return (Array.isArray(value) ? value : [])
+    .map((item) => previewText(item))
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
+function previewDataComponents(value, limit = 6) {
+  return (Array.isArray(value) ? value : [])
+    .filter(isPreviewObject)
+    .slice(0, limit)
+    .map((component) => ({
+      title: previewText(component.title, "Release"),
+      indicator: previewText(component.indicator),
+      actual: previewText(component.actual, "—"),
+      forecast: previewText(component.forecast),
+      previous: previewText(component.previous),
+      surprise: previewText(component.surprise),
+    }));
+}
+
 function previewFooter(value) {
   const footer = isPreviewObject(value) ? value : {};
   return {
@@ -328,10 +349,15 @@ function normalizeEditorialPreview(kind, value) {
             id: previewText(event.id, `event-${eventIndex}`),
             eventKey: previewText(event.eventKey),
             title: previewText(event.title, "Verified event"),
+            posterTitle: previewText(event.posterTitle),
             time: previewText(event.time, "TBD"),
             importance: Number.isFinite(event.importance) ? event.importance : 0,
             source: previewText(event.source, "VERIFIED"),
+            posterSource: previewText(event.posterSource),
             sensitivity: previewText(event.sensitivity),
+            posterSensitivity: previewText(event.posterSensitivity),
+            markets: previewTextArray(event.markets, 4),
+            posterMarkets: previewText(event.posterMarkets),
             isPriority: event.isPriority === true,
           })),
       }));
@@ -340,6 +366,7 @@ function normalizeEditorialPreview(kind, value) {
       footer: previewFooter(poster.footer),
       highImpactCount: Number.isFinite(poster.highImpactCount) ? poster.highImpactCount : 0,
       peakDay: previewText(poster.peakDay, "—"),
+      posterSources: previewTextArray(poster.posterSources, 6),
       title: previewText(poster.title, "Weekly Catalysts"),
       visualTemplate: previewVisualTemplate(poster.visualTemplate),
       weekStart: previewText(poster.weekStart, "UTC"),
@@ -350,10 +377,15 @@ function normalizeEditorialPreview(kind, value) {
             id: previewText(event.id, `weekend-event-${eventIndex}`),
             eventKey: previewText(event.eventKey),
             title: previewText(event.title, "Verified event"),
+            posterTitle: previewText(event.posterTitle),
             time: previewText(event.time),
             importance: Number.isFinite(event.importance) ? event.importance : 0,
             source: previewText(event.source, "VERIFIED"),
+            posterSource: previewText(event.posterSource),
             sensitivity: previewText(event.sensitivity),
+            posterSensitivity: previewText(event.posterSensitivity),
+            markets: previewTextArray(event.markets, 4),
+            posterMarkets: previewText(event.posterMarkets),
             dateLabel: previewText(event.dateLabel),
             isPriority: event.isPriority === true,
           })),
@@ -364,27 +396,44 @@ function normalizeEditorialPreview(kind, value) {
     return {
       actual: previewText(poster.actual, "—"),
       affected: previewText(poster.affected),
-      components: previewText(poster.components),
+      components: previewDataComponents(poster.components, 6),
       confirmation: previewText(poster.confirmation),
+      posterConfirmation: previewText(poster.posterConfirmation),
       footer: previewFooter(poster.footer),
       forecast: previewText(poster.forecast, "—"),
       impact: previewText(poster.impact, "Neutral"),
       indicator: previewText(poster.indicator, "OFFICIAL RELEASE"),
       invalidation: previewText(poster.invalidation),
+      posterInvalidation: previewText(poster.posterInvalidation),
+      officialSource: previewText(poster.officialSource),
       previous: previewText(poster.previous, "—"),
+      posterSources: previewTextArray(poster.posterSources, 6),
+      posterTitle: previewText(poster.posterTitle),
       reactions: (Array.isArray(poster.reactions) ? poster.reactions : [])
         .filter(isPreviewObject).slice(0, 4).map((reaction) => ({
           label: previewText(reaction.label, "—"),
+          status: previewText(reaction.status),
           symbol: previewText(reaction.symbol, "ASSET"),
           value: Number.isFinite(reaction.value) ? reaction.value : 0,
         })),
+      releaseTime: previewText(poster.releaseTime),
+      revised: previewText(poster.revised),
       source: previewText(poster.source, "OFFICIAL DATA"),
+      posterSource: previewText(poster.posterSource),
       surprise: previewText(poster.surprise, "—"),
       tapeStatus: previewText(poster.tapeStatus, "AWAITING CONFIRMATION"),
       title: previewText(poster.title, "Data Update"),
       verdict: previewText(poster.verdict),
+      posterVerdict: previewText(poster.posterVerdict),
       verdictStatus: previewText(poster.verdictStatus, "MONITOR"),
-      reactionWindow: isPreviewObject(poster.reactionWindow) ? { label: previewText(poster.reactionWindow.label, "OBSERVED WINDOW · UTC") } : null,
+      reactionWindow: isPreviewObject(poster.reactionWindow) ? {
+        start: previewText(poster.reactionWindow.start),
+        end: previewText(poster.reactionWindow.end),
+        label: previewText(poster.reactionWindow.label, "OBSERVED WINDOW · UTC"),
+      } : null,
+      volatility: previewText(poster.volatility),
+      volume: previewText(poster.volume),
+      breadth: previewText(poster.breadth),
       visualTemplate: previewVisualTemplate(poster.visualTemplate),
     };
   }

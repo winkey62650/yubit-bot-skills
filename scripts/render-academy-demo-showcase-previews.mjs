@@ -49,10 +49,21 @@ const releaseInput = {
   sources: releaseReplay.sourceManifest,
   updatedAt: releaseReplay.generatedAt,
 };
-const flash = buildDataUpdatePosterModel(releaseInput);
+const reactionItems = (reaction) => Object.entries(reaction.prices).map(([symbol, value]) => ({
+  symbol,
+  label: `${value.changePercent >= 0 ? "+" : ""}${value.changePercent.toFixed(2)}%`,
+  value: value.changePercent,
+}));
+const flash = buildDataUpdatePosterModel({
+  ...releaseInput,
+  reactions: reactionItems(releaseReplay.initialReaction),
+  reactionSources: releaseReplay.initialReaction.sources.map(({ label }) => label),
+});
 const followUp = buildDataUpdatePosterModel({
   ...releaseInput,
-  reactions: [{ symbol: "BTC-USD", label: "-0.0929%", value: -0.0929 }],
+  source: releaseReplay.reaction.sources[0],
+  tapeStatus: releaseReplay.reaction.status === "complete" ? "CONFIRMED" : undefined,
+  reactions: reactionItems(releaseReplay.reaction),
   reactionWindow: releaseReplay.reaction.window,
   reactionSources: releaseReplay.reaction.sources.map(({ label }) => label),
 });

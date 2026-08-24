@@ -18,6 +18,7 @@ import {
 } from "../lib/market-poster-models.mjs";
 import { selectMarketPosterTemplate } from "../lib/market-poster-templates.mjs";
 import { landscapePosterOverflowFields } from "../lib/market-poster-landscape-renderer.mjs";
+import { GET as renderMediaCard } from "../app/api/media/card/route.js";
 
 const NOW = "2026-08-23T12:31:00.000Z";
 const OFFICIAL = {
@@ -194,8 +195,16 @@ test("the Academy demo showcase is an explicit historical replay that yields all
   assert.equal(products.every(({ intelligence }) => intelligence.previewLabel === "DEMO PREVIEW · FORMAT TEST"), true);
   assert.equal(products.every(({ sources }) => sources.every(({ url }) => url.startsWith("https://"))), true);
   const dataFlash = products.find(({ product }) => product === "data-flash");
-  assert.equal(dataFlash?.event.actual, "2.7% YoY");
-  assert.equal(dataFlash?.intelligence.release.surprise, "No comparable consensus");
+  assert.equal(dataFlash?.event.actual, "2.7%");
+  assert.equal(dataFlash?.intelligence.release.forecast, "2.6%");
+  assert.equal(dataFlash?.intelligence.release.previous, "2.4%");
+  assert.equal(dataFlash?.intelligence.release.surprise, "2.7% vs 2.6%");
+  assert.deepEqual(dataFlash?.intelligence.release.initialReaction, [
+    "BTC-USD +0.40%",
+    "ETH-USD +0.79%",
+    "SOL-USD +0.89%",
+    "XRP-USD +1.07%",
+  ]);
   assert.match(products.find(({ product }) => product === "market-follow-up")?.correlationStatement || "", /correlation, not causation/i);
 });
 
@@ -229,10 +238,23 @@ test("the exact four-product Academy demo fits every fixed V4 poster slot withou
     sources: releaseReplay.sourceManifest,
     updatedAt: releaseReplay.generatedAt,
   };
-  const flash = buildDataUpdatePosterModel(releaseInput);
+  const flash = buildDataUpdatePosterModel({
+    ...releaseInput,
+    reactions: Object.entries(releaseReplay.initialReaction.prices).map(([symbol, value]) => ({
+      symbol,
+      label: `${value.changePercent >= 0 ? "+" : ""}${value.changePercent.toFixed(2)}%`,
+      value: value.changePercent,
+    })),
+  });
   const followUp = buildDataUpdatePosterModel({
     ...releaseInput,
-    reactions: [{ symbol: "BTC-USD", label: "-0.0929%", value: -0.0929 }],
+    source: releaseReplay.reaction.sources[0],
+    tapeStatus: "CONFIRMED",
+    reactions: Object.entries(releaseReplay.reaction.prices).map(([symbol, value]) => ({
+      symbol,
+      label: `${value.changePercent >= 0 ? "+" : ""}${value.changePercent.toFixed(2)}%`,
+      value: value.changePercent,
+    })),
     reactionWindow: releaseReplay.reaction.window,
     reactionSources: releaseReplay.reaction.sources.map(({ label }) => label),
   });
@@ -261,27 +283,61 @@ test("the exact four-product Academy demo fits every fixed V4 poster slot withou
   assert.equal(weeklyEvent.posterMarkets, "BTC · DXY · US2Y");
   assert.equal(weeklyEvent.posterSensitivity, "CPI can reprice rates, USD and crypto risk.");
   assert.equal(flash.releaseTime, "2025-07-15T12:30:00.000Z");
-  assert.equal(flash.posterVerdict, "Official print verified; BTC causation unproven.");
+  assert.equal(flash.actual, "2.7%");
+  assert.equal(flash.forecast, "2.6%");
+  assert.equal(flash.previous, "2.4%");
+  assert.deepEqual(flash.reactions.map(({ symbol }) => symbol), ["BTC", "ETH", "SOL", "XRP"]);
+  assert.equal(flash.posterVerdict, "CPI beat consensus; crypto rose, causation unproven.");
+  assert.deepEqual(followUp.reactions.map(({ symbol }) => symbol), ["BTC", "ETH", "SOL", "XRP"]);
+  assert.equal(followUp.tapeStatus, "CONFIRMED");
+  assert.equal(followUp.posterSource, "COINBASE");
   assert.equal(followUp.posterInvalidation, "Archived replay; not a live trading signal.");
   assert.deepEqual(posters.map((poster) => landscapePosterOverflowFields(poster)), [[], [], [], []]);
+});
+
+test("the exact production media URLs for all four Academy demo products render as PNG", async () => {
+  const target = [{ channel: "telegram", chatId: "demo" }];
+  const results = [];
+  for (const jobId of ["crypto-daily", "weekly-calendar", "data-release-updates"]) {
+    results.push(await runAutomationJob(jobId, {
+      dryRun: true,
+      readOnlyPreview: true,
+      force: true,
+      demoShowcase: true,
+      demoAcceptanceBatchId: DEMO_ACCEPTANCE_BATCH_ID,
+      targets: target,
+      publicBaseUrl: "https://academy.example",
+      now: new Date(NOW),
+    }));
+  }
+  const urls = results.flatMap((result) => Object.values(result.preview.mediaDelivery.byTemplateId));
+
+  assert.equal(urls.length, 4);
+  assert.equal(new Set(urls).size, 4);
+  for (const url of urls) {
+    const response = await renderMediaCard(new Request(url));
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("content-type") || "", /^image\/png\b/);
+    assert.ok((await response.arrayBuffer()).byteLength > 1024);
+  }
 });
 
 test("the Academy data replay uses the canonical release identity required by durable delivery", () => {
   const release = buildAcademyDemoShowcaseContent("data-release-updates", { now: NOW, acceptanceBatchId: DEMO_ACCEPTANCE_BATCH_ID });
 
   assert.ok(release.event.scheduledAt);
-  assert.equal(release.event.id, `demo-replay-us-cpi-june-2025-poster-v6-batch-${DEMO_ACCEPTANCE_BATCH_ID}`);
+  assert.equal(release.event.id, `demo-replay-us-cpi-june-2025-poster-v7-batch-${DEMO_ACCEPTANCE_BATCH_ID}`);
   assert.equal(release.deduplicationKey, buildReleaseDeduplicationKey(release.event));
 });
 
-test("the publisher-neutral poster v6 replay has fresh durable identities without disabling deduplication", () => {
+test("the publisher-neutral poster v7 replay has fresh durable identities without disabling deduplication", () => {
   const daily = buildAcademyDemoShowcaseContent("crypto-daily", { now: NOW, acceptanceBatchId: DEMO_ACCEPTANCE_BATCH_ID });
   const weekly = buildAcademyDemoShowcaseContent("weekly-calendar", { now: NOW, acceptanceBatchId: DEMO_ACCEPTANCE_BATCH_ID });
   const release = buildAcademyDemoShowcaseContent("data-release-updates", { now: NOW, acceptanceBatchId: DEMO_ACCEPTANCE_BATCH_ID });
 
-  assert.equal(daily.deduplicationKey, `academy-demo-replay-daily-2025-07-15-poster-v6-batch-${DEMO_ACCEPTANCE_BATCH_ID}`);
-  assert.equal(weekly.deduplicationKey, `academy-demo-replay-week-2025-07-14-poster-v6-batch-${DEMO_ACCEPTANCE_BATCH_ID}`);
-  assert.match(release.deduplicationKey, new RegExp(`demo-replay-us-cpi-june-2025-poster-v6-batch-${DEMO_ACCEPTANCE_BATCH_ID}`));
+  assert.equal(daily.deduplicationKey, `academy-demo-replay-daily-2025-07-15-poster-v7-batch-${DEMO_ACCEPTANCE_BATCH_ID}`);
+  assert.equal(weekly.deduplicationKey, `academy-demo-replay-week-2025-07-14-poster-v7-batch-${DEMO_ACCEPTANCE_BATCH_ID}`);
+  assert.match(release.deduplicationKey, new RegExp(`demo-replay-us-cpi-june-2025-poster-v7-batch-${DEMO_ACCEPTANCE_BATCH_ID}`));
   assert.equal(release.deduplicationKey, buildReleaseDeduplicationKey(release.event));
 });
 
