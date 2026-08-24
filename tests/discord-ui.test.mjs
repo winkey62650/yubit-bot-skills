@@ -163,6 +163,13 @@ test("Discord 管理 API 只暴露受控动作", () => {
   assert.match(route, /initialized/i);
 });
 
+test("Discord 模板发布使用公开部署地址而不是反向代理内部地址", () => {
+  const route = read("app/api/discord/route.js");
+  assert.match(route, /resolveAutomationPreviewBaseUrl/);
+  assert.match(route, /publicBaseUrl: resolveAutomationPreviewBaseUrl\(request\.url\)/);
+  assert.doesNotMatch(route, /publicBaseUrl: new URL\(request\.url\)\.origin/);
+});
+
 test("Discord 健康检查不会在完成后重复刷新 Bot 与 Server 状态", () => {
   const route = read("app/api/discord/route.js");
   assert.match(

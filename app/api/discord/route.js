@@ -14,6 +14,7 @@ import {
   updateDiscordSettings,
 } from "../../../lib/discord-service.mjs";
 import { preflightDiscordTemplate, publishDiscordTemplate } from "../../../lib/discord-template-publish.mjs";
+import { resolveAutomationPreviewBaseUrl } from "../../../lib/automation-jobs.mjs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -104,7 +105,7 @@ export async function POST(request) {
           contentType: body.contentType,
           channelIds: body.channelIds,
         }, {
-          publicBaseUrl: new URL(request.url).origin,
+          publicBaseUrl: resolveAutomationPreviewBaseUrl(request.url),
         }),
       };
     } else if (action === "template-preflight") {
@@ -113,7 +114,7 @@ export async function POST(request) {
           contentType: body.contentType,
           channelIds: body.channelIds,
         }, {
-          publicBaseUrl: new URL(request.url).origin,
+          publicBaseUrl: resolveAutomationPreviewBaseUrl(request.url),
         }),
       };
     } else if (action === "manual-publish" || action === "direct-publish") {
