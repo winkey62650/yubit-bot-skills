@@ -3900,12 +3900,14 @@ test("manual Academy showcase execution passes the explicit poster delivery guar
   };
   let receivedTextOnly;
   let receivedDemoShowcase;
+  let receivedDemoAcceptanceBatchId;
 
   await runDistributionAutomationRule(rule.id, {
     repository,
     exactTargets: true,
     textOnly: false,
     demoShowcase: true,
+    demoAcceptanceBatchId: "acceptance-32702768575",
     env: {
       TELEGRAM_DEMO_ONLY: "true",
       TELEGRAM_DISTRIBUTION_APPROVED_TARGETS: "-1003710405969:8,-1003710405969:10,-1003710405969:16",
@@ -3914,6 +3916,7 @@ test("manual Academy showcase execution passes the explicit poster delivery guar
     runner: async (_jobId, options) => {
       receivedTextOnly = options.textOnly;
       receivedDemoShowcase = options.demoShowcase;
+      receivedDemoAcceptanceBatchId = options.demoAcceptanceBatchId;
       return {
         status: "success",
         preview: { targetResults: [{ target, status: "success", messageId: 1274 }] },
@@ -3923,6 +3926,7 @@ test("manual Academy showcase execution passes the explicit poster delivery guar
 
   assert.equal(receivedTextOnly, false);
   assert.equal(receivedDemoShowcase, true);
+  assert.equal(receivedDemoAcceptanceBatchId, "acceptance-32702768575");
 });
 
 test("broadcast expansion is one hop, deduplicated, and never auto-publishes review rules", async () => {

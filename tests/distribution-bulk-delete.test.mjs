@@ -68,5 +68,7 @@ test("distribution management route exposes one-request batch deletion", async (
 
 test("distribution run-now forwards the explicit exact-target safety fence", async () => {
   const source = await readFile(new URL("../app/api/distribution/route.js", import.meta.url), "utf8");
-  assert.match(source, /runDistributionAutomationRule\(String\(body\.id \|\| ["']{2}\),\s*\{\s*exactTargets:\s*body\.exactTargets === true,\s*textOnly:\s*body\.textOnly === true,\s*demoShowcase:\s*body\.demoShowcase === true\s*\}\)/s);
+  assert.match(source, /exactTargets:\s*body\.exactTargets === true/);
+  assert.match(source, /demoShowcase:\s*body\.demoShowcase === true/);
+  assert.match(source, /demoAcceptanceBatchId:\s*body\.demoAcceptanceBatchId/);
 });

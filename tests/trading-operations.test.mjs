@@ -205,7 +205,7 @@ test("Academy DEMO read-only audit includes recovery and validation rule identit
   const acceptance = await readFile(new URL("scripts/accept-academy-demo-content.cjs", root), "utf8");
   assert.ok(workflow.includes("^academy-(?:demo-showcase|realtime-demo)-(daily|weekly|release)"));
   assert.ok(workflow.includes("(?:-(?:recovery|validation)-[a-z0-9-]+|-[a-z0-9-]+)?-temporary$"));
-  assert.match(acceptance, /academy-demo-showcase-\$\{showcaseCase\.key\}-\$\{validationTag\}-temporary/);
+  assert.match(acceptance, /academy-demo-showcase-\$\{showcaseCase\.key\}-\$\{validationTag\}-\$\{acceptanceBatchId\}-temporary/);
   assert.match(workflow, /academy-demo-showcase-weekly-recovery-20260824-poster-v6-temporary/);
   assert.match(workflow, /academy-demo-showcase-release-recovery-20260824-poster-v6-temporary/);
   assert.match(workflow, /academy-poster-v6-recovery/);

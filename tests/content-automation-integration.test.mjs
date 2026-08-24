@@ -142,11 +142,13 @@ test("daily community cards keep the evidence section to the top three ranked st
   assert.deepEqual(daily.intelligence.catalysts.map(({ headline }) => headline), stories.slice(0, 3).map(({ title }) => title));
 });
 
+const DEMO_ACCEPTANCE_BATCH_ID = "acceptance-32702768575";
+
 test("the Academy demo showcase is an explicit historical replay that yields all four governed products", () => {
   const jobs = ["crypto-daily", "weekly-calendar", "data-release-updates"];
   const products = jobs.flatMap((jobId) => buildContentProductInputs(
     jobId,
-    buildAcademyDemoShowcaseContent(jobId, { now: NOW }),
+    buildAcademyDemoShowcaseContent(jobId, { now: NOW, acceptanceBatchId: DEMO_ACCEPTANCE_BATCH_ID }),
     { now: NOW, publicBaseUrl: "https://academy.example" },
   ));
 
@@ -166,22 +168,35 @@ test("the Academy demo showcase is an explicit historical replay that yields all
 });
 
 test("the Academy data replay uses the canonical release identity required by durable delivery", () => {
-  const release = buildAcademyDemoShowcaseContent("data-release-updates", { now: NOW });
+  const release = buildAcademyDemoShowcaseContent("data-release-updates", { now: NOW, acceptanceBatchId: DEMO_ACCEPTANCE_BATCH_ID });
 
   assert.ok(release.event.scheduledAt);
-  assert.equal(release.event.id, "demo-replay-us-cpi-june-2025-poster-v6");
+  assert.equal(release.event.id, `demo-replay-us-cpi-june-2025-poster-v6-batch-${DEMO_ACCEPTANCE_BATCH_ID}`);
   assert.equal(release.deduplicationKey, buildReleaseDeduplicationKey(release.event));
 });
 
 test("the publisher-neutral poster v6 replay has fresh durable identities without disabling deduplication", () => {
-  const daily = buildAcademyDemoShowcaseContent("crypto-daily", { now: NOW });
-  const weekly = buildAcademyDemoShowcaseContent("weekly-calendar", { now: NOW });
-  const release = buildAcademyDemoShowcaseContent("data-release-updates", { now: NOW });
+  const daily = buildAcademyDemoShowcaseContent("crypto-daily", { now: NOW, acceptanceBatchId: DEMO_ACCEPTANCE_BATCH_ID });
+  const weekly = buildAcademyDemoShowcaseContent("weekly-calendar", { now: NOW, acceptanceBatchId: DEMO_ACCEPTANCE_BATCH_ID });
+  const release = buildAcademyDemoShowcaseContent("data-release-updates", { now: NOW, acceptanceBatchId: DEMO_ACCEPTANCE_BATCH_ID });
 
-  assert.equal(daily.deduplicationKey, "academy-demo-replay-daily-2025-07-15-poster-v6");
-  assert.equal(weekly.deduplicationKey, "academy-demo-replay-week-2025-07-14-poster-v6");
-  assert.match(release.deduplicationKey, /demo-replay-us-cpi-june-2025-poster-v6/);
+  assert.equal(daily.deduplicationKey, `academy-demo-replay-daily-2025-07-15-poster-v6-batch-${DEMO_ACCEPTANCE_BATCH_ID}`);
+  assert.equal(weekly.deduplicationKey, `academy-demo-replay-week-2025-07-14-poster-v6-batch-${DEMO_ACCEPTANCE_BATCH_ID}`);
+  assert.match(release.deduplicationKey, new RegExp(`demo-replay-us-cpi-june-2025-poster-v6-batch-${DEMO_ACCEPTANCE_BATCH_ID}`));
   assert.equal(release.deduplicationKey, buildReleaseDeduplicationKey(release.event));
+});
+
+test("Academy demo acceptance batches are isolated while one batch remains idempotent", () => {
+  const first = buildAcademyDemoShowcaseContent("crypto-daily", { now: NOW, acceptanceBatchId: "acceptance-101" });
+  const retry = buildAcademyDemoShowcaseContent("crypto-daily", { now: NOW, acceptanceBatchId: "acceptance-101" });
+  const next = buildAcademyDemoShowcaseContent("crypto-daily", { now: NOW, acceptanceBatchId: "acceptance-102" });
+
+  assert.equal(first.deduplicationKey, retry.deduplicationKey);
+  assert.notEqual(first.deduplicationKey, next.deduplicationKey);
+  assert.throws(
+    () => buildAcademyDemoShowcaseContent("crypto-daily", { now: NOW, acceptanceBatchId: "../unsafe" }),
+    /ACADEMY_DEMO_ACCEPTANCE_BATCH_ID_INVALID/,
+  );
 });
 
 test("a blocked governance result fails closed before distribution", async () => {

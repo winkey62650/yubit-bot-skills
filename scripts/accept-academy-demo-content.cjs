@@ -17,8 +17,12 @@ const username = process.env.TEST_USERNAME;
 const password = process.env.TEST_PASSWORD;
 const reportPath = path.resolve(process.env.TEST_REPORT_PATH || "artifacts/academy-demo-showcase/report.json");
 const validationTag = "validation-20260824-poster-v6";
+const acceptanceBatchId = String(process.env.ACADEMY_DEMO_ACCEPTANCE_BATCH_ID || "").trim().toLowerCase();
 
 if (!username || !password) throw new Error("TEST_USERNAME and TEST_PASSWORD are required");
+if (!/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/.test(acceptanceBatchId)) {
+  throw new Error("ACADEMY_DEMO_ACCEPTANCE_BATCH_ID_INVALID");
+}
 
 async function readJson(response, label) {
   const payload = await response.json().catch(() => ({}));
@@ -45,6 +49,7 @@ function writeReport(report) {
     visualContract: "telegram-editorial-card-v4",
     previewLabel: "DEMO PREVIEW · FORMAT TEST",
     exactTargets: true,
+    acceptanceBatchId,
     targets: DEMO_SHOWCASE_CASES.map((item) => ({ chatId: DEMO_CHAT_ID, threadId: item.threadId })),
     products: [],
     previews: [],
@@ -61,7 +66,7 @@ function writeReport(report) {
     const rules = [];
     for (const showcaseCase of DEMO_SHOWCASE_CASES) {
       const temporaryRule = buildDemoShowcaseTemporaryRule(showcaseCase, {
-        ruleId: `academy-demo-showcase-${showcaseCase.key}-${validationTag}-temporary`,
+        ruleId: `academy-demo-showcase-${showcaseCase.key}-${validationTag}-${acceptanceBatchId}-temporary`,
       });
       const created = await readJson(await api.post("/api/distribution", {
         data: { rule: temporaryRule },
@@ -83,6 +88,7 @@ function writeReport(report) {
           targets: rule.targets,
           textOnly: false,
           demoShowcase: true,
+          demoAcceptanceBatchId: acceptanceBatchId,
         },
         timeout: 90_000,
       }), `${showcaseCase.key} content preview`);
@@ -107,6 +113,7 @@ function writeReport(report) {
           exactTargets: true,
           textOnly: false,
           demoShowcase: true,
+          demoAcceptanceBatchId: acceptanceBatchId,
         },
         timeout: 180_000,
       }), `${showcaseCase.key} exact-target delivery`);

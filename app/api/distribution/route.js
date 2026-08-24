@@ -43,7 +43,8 @@ export async function POST(request) {
         result: await runDistributionAutomationRule(String(body.id || ""), {
           exactTargets: body.exactTargets === true,
           textOnly: body.textOnly === true,
-          demoShowcase: body.demoShowcase === true
+          demoShowcase: body.demoShowcase === true,
+          demoAcceptanceBatchId: body.demoAcceptanceBatchId
         })
       });
     }

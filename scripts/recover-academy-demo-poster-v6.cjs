@@ -23,6 +23,7 @@ const username = process.env.TEST_USERNAME;
 const password = process.env.TEST_PASSWORD;
 const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
 const reportPath = path.resolve(process.env.TEST_REPORT_PATH || "artifacts/academy-demo-showcase/poster-v6-recovery.json");
+const acceptanceBatchId = String(process.env.ACADEMY_DEMO_ACCEPTANCE_BATCH_ID || "").trim().toLowerCase();
 const priorDailyRuleId = "academy-demo-showcase-daily-validation-20260824-poster-v5-temporary";
 const expectedPriorDailyMessageIds = Object.freeze([1321, 1322]);
 const recoveryCases = DEMO_SHOWCASE_CASES.filter((item) => item.key === "weekly" || item.key === "release");
@@ -34,6 +35,9 @@ const temporaryRulePattern = /^academy-demo-showcase-(daily|weekly|release)(?:-(
 
 if (!username || !password) throw new Error("TEST_USERNAME and TEST_PASSWORD are required");
 if (!vaultPath) throw new Error("OBSIDIAN_VAULT_PATH is required");
+if (!/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/.test(acceptanceBatchId)) {
+  throw new Error("ACADEMY_DEMO_ACCEPTANCE_BATCH_ID_INVALID");
+}
 if (recoveryCases.length !== 2) throw new Error("Academy DEMO v6 recovery cases are unavailable");
 
 async function readJson(response, label) {
@@ -149,6 +153,7 @@ function writeReport(report) {
     mediaIncluded: true,
     previewLabel: "DEMO PREVIEW · FORMAT TEST",
     exactTargets: true,
+    acceptanceBatchId,
     targets: recoveryCases.map((item) => ({ chatId: DEMO_CHAT_ID, threadId: item.threadId })),
     priorExecution: null,
     executions: [],
@@ -172,7 +177,10 @@ function writeReport(report) {
     const fixtureUrl = pathToFileURL(path.resolve(__dirname, "../lib/academy-demo-showcase.mjs")).href;
     const { buildAcademyDemoShowcaseContent } = await import(fixtureUrl);
     const expectedIdentities = Object.fromEntries(recoveryCases.map((showcaseCase) => {
-      const fixture = buildAcademyDemoShowcaseContent(showcaseCase.contentType, { now: new Date() });
+      const fixture = buildAcademyDemoShowcaseContent(showcaseCase.contentType, {
+        now: new Date(),
+        acceptanceBatchId,
+      });
       return [showcaseCase.key, fixture.deduplicationKey];
     }));
 
@@ -193,6 +201,7 @@ function writeReport(report) {
           targets: created.rule.targets,
           textOnly: false,
           demoShowcase: true,
+          demoAcceptanceBatchId: acceptanceBatchId,
         },
         timeout: 90_000,
       }), `${showcaseCase.key} content preview`);
@@ -221,6 +230,7 @@ function writeReport(report) {
           exactTargets: true,
           textOnly: false,
           demoShowcase: true,
+          demoAcceptanceBatchId: acceptanceBatchId,
         },
         timeout: 180_000,
       }), `${showcaseCase.key} exact-target delivery`);

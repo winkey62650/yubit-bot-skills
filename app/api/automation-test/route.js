@@ -31,6 +31,7 @@ export async function POST(request) {
       targets: hydratedTargets,
       textOnly: body.textOnly === true,
       demoShowcase: body.demoShowcase === true,
+      demoAcceptanceBatchId: body.demoAcceptanceBatchId,
       publicBaseUrl: resolveAutomationPreviewBaseUrl(request.url)
     });
     const jobId = String(body.jobId || "");

@@ -278,6 +278,7 @@ jobs:
         env:
           SSHPASS: ${{ secrets.YUBIT_SERVER_PASSWORD }}
           EXPECTED_SHA: ${{ github.sha }}
+          ACCEPTANCE_BATCH_ID: acceptance-${{ github.run_id }}
         run: |
           set -Eeuo pipefail
           if [ -z "$SSHPASS" ]; then
@@ -290,7 +291,7 @@ jobs:
             -o ServerAliveInterval=10 \
             -o StrictHostKeyChecking=accept-new \
             ubuntu@152.32.161.174 \
-            "EXPECTED_SHA='$EXPECTED_SHA' TEST_BASE_URL='$TEST_BASE_URL' bash -s" \
+            "EXPECTED_SHA='$EXPECTED_SHA' TEST_BASE_URL='$TEST_BASE_URL' ACADEMY_DEMO_ACCEPTANCE_BATCH_ID='$ACCEPTANCE_BATCH_ID' bash -s" \
             >"$report_path" <<'REMOTE'
           set -Eeuo pipefail
           env_file=/etc/yubit-academy/production.env
@@ -335,6 +336,7 @@ jobs:
             TEST_PASSWORD="$auth_password" \
             TEST_REPORT_PATH="$report_file" \
             ACCEPTANCE_QUIET=true \
+            ACADEMY_DEMO_ACCEPTANCE_BATCH_ID="$ACADEMY_DEMO_ACCEPTANCE_BATCH_ID" \
             /opt/yubit-node/bin/node "$release/scripts/accept-academy-demo-content.cjs"
 
           publisher_config_after="$(sudo grep -E '^(TELEGRAM_[^=]*|DISCORD_[^=]*|TRADING_DEMO_ONLY|ALLOW_LIVE_TELEGRAM)=' "$env_file" | sha256sum | awk '{print $1}')"
@@ -374,6 +376,7 @@ jobs:
         env:
           SSHPASS: ${{ secrets.YUBIT_SERVER_PASSWORD }}
           EXPECTED_SHA: ${{ github.sha }}
+          ACCEPTANCE_BATCH_ID: recovery-${{ github.run_id }}
         run: |
           set -Eeuo pipefail
           if [ -z "$SSHPASS" ]; then
@@ -386,7 +389,7 @@ jobs:
             -o ServerAliveInterval=10 \
             -o StrictHostKeyChecking=accept-new \
             ubuntu@152.32.161.174 \
-            "EXPECTED_SHA='$EXPECTED_SHA' TEST_BASE_URL='$TEST_BASE_URL' bash -s" \
+            "EXPECTED_SHA='$EXPECTED_SHA' TEST_BASE_URL='$TEST_BASE_URL' ACADEMY_DEMO_ACCEPTANCE_BATCH_ID='$ACCEPTANCE_BATCH_ID' bash -s" \
             >"$report_path" <<'REMOTE'
           set -Eeuo pipefail
           env_file=/etc/yubit-academy/production.env
@@ -434,6 +437,7 @@ jobs:
             OBSIDIAN_VAULT_PATH="$obsidian_vault_path" \
             TEST_REPORT_PATH="$report_file" \
             ACCEPTANCE_QUIET=true \
+            ACADEMY_DEMO_ACCEPTANCE_BATCH_ID="$ACADEMY_DEMO_ACCEPTANCE_BATCH_ID" \
             /opt/yubit-node/bin/node "$release/scripts/recover-academy-demo-poster-v6.cjs"
 
           publisher_config_after="$(sudo grep -E '^(TELEGRAM_[^=]*|DISCORD_[^=]*|TRADING_DEMO_ONLY|ALLOW_LIVE_TELEGRAM)=' "$env_file" | sha256sum | awk '{print $1}')"
