@@ -6,6 +6,7 @@ const { request } = require("playwright");
 const {
   DEMO_CHAT_ID,
   DEMO_SHOWCASE_CASES,
+  assertDemoShowcasePosterUrls,
   assertDemoShowcaseExecution,
   assertDemoShowcasePreview,
   buildDemoShowcaseTemporaryRule,
@@ -116,13 +117,10 @@ function productEvidence(execution) {
 async function preflightPosters(api, preview, showcaseCase) {
   const steps = preview.deliveryPlans?.[0]?.steps || [];
   const posters = steps.filter((step) => step?.method === "sendPhoto");
-  if (posters.length !== showcaseCase.productTypes.length) {
-    throw new Error(`${showcaseCase.key} poster preflight requires one poster per product`);
-  }
+  const identities = assertDemoShowcasePosterUrls(posters.map((step) => step?.payload?.photo), showcaseCase);
   const evidence = [];
-  for (let index = 0; index < posters.length; index += 1) {
-    const url = String(posters[index]?.payload?.photo || "");
-    const response = await api.get(url, { timeout: 90_000 });
+  for (const identity of identities) {
+    const response = await api.get(identity.url, { timeout: 90_000 });
     const contentType = String(response.headers()["content-type"] || "").toLowerCase();
     if (!response.ok() || !contentType.startsWith("image/png")) {
       throw new Error(`${showcaseCase.key} poster preflight failed: HTTP ${response.status()} · ${contentType || "missing content-type"}`);
@@ -132,8 +130,7 @@ async function preflightPosters(api, preview, showcaseCase) {
       throw new Error(`${showcaseCase.key} poster preflight failed: invalid PNG size ${bytes.byteLength}`);
     }
     evidence.push({
-      product: showcaseCase.productTypes[index],
-      url,
+      ...identity,
       status: response.status(),
       contentType,
       byteLength: bytes.byteLength,
@@ -226,6 +223,12 @@ function writeReport(report) {
       prepared.push({ showcaseCase, rule: created.rule, preview: previewEvidence, deduplicationKey: preview.deduplicationKey });
     }
     report.previews = prepared.map(({ showcaseCase, preview, deduplicationKey }) => ({ key: showcaseCase.key, ...preview, deduplicationKey }));
+
+    if (report.mediaPreflight.length !== 3
+      || new Set(report.mediaPreflight.map((item) => item.url)).size !== 3
+      || new Set(report.mediaPreflight.map((item) => item.templateId)).size !== 3) {
+      throw new Error("Academy DEMO recovery requires three distinct canonical poster masters before delivery");
+    }
 
     for (const { showcaseCase, rule } of prepared) {
       // Authorized one-shot recovery: one live call per case, deliberately without retry.

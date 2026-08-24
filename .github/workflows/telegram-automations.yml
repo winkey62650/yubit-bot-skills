@@ -347,7 +347,38 @@ jobs:
           fi
           cat "$report_file"
           REMOTE
-          jq -e '.ok == true and .historicalReplay == true and .mediaIncluded == true and .visualContract == "telegram-editorial-card-v4" and .previewLabel == "DEMO PREVIEW · FORMAT TEST" and (.products | length == 4) and (.products | map(.product)) == ["daily-market-brief","weekly-catalyst-calendar","data-flash","market-follow-up"] and (.executions | length == 3) and ([.executions[].messageIds[]] | length == 8) and all(.previews[]; .publisherNeutral == true and .publicGenericHorizonIncluded == false and .nativeAssetGlyphs == true and (.visualTemplateIds | length) == (.productIds | length)) and all(.targets[]; .chatId == "-1003710405969" and (.threadId == 8 or .threadId == 10)) and all(.cleanup[]; .deleted == true)' "$report_path" >/dev/null
+          jq -e '
+            .ok == true
+            and .historicalReplay == true
+            and .mediaIncluded == true
+            and .visualContract == "telegram-editorial-card-v4"
+            and .previewLabel == "DEMO PREVIEW · FORMAT TEST"
+            and (.products | length == 4)
+            and (.products | map(.product)) == ["daily-market-brief","weekly-catalyst-calendar","data-flash","market-follow-up"]
+            and (.executions | length == 3)
+            and ([.executions[].messageIds[]] | length == 8)
+            and (.mediaPreflight | length == 4)
+            and ((.mediaPreflight | map(.url) | unique | length) == 4)
+            and ((.mediaPreflight | map(.templateId) | unique | length) == 4)
+            and (.mediaPreflight | map({product, templateId})) == [
+              {"product":"daily-market-brief","templateId":"daily-market-brief-v4"},
+              {"product":"weekly-catalyst-calendar","templateId":"weekly-catalysts-v4"},
+              {"product":"data-flash","templateId":"data-flash-v4"},
+              {"product":"market-follow-up","templateId":"market-follow-up-v4"}
+            ]
+            and all(.mediaPreflight[];
+              .status == 200
+              and (.contentType | startswith("image/png"))
+              and .byteLength >= 1024
+              and .byteLength <= 5242880
+              and .composition == "locked-master-fixed-field-overlay"
+              and .version == 4
+              and .canvas == {"width":1200,"height":675}
+            )
+            and all(.previews[]; .publisherNeutral == true and .publicGenericHorizonIncluded == false and .nativeAssetGlyphs == true and (.visualTemplateIds | length) == (.productIds | length))
+            and all(.targets[]; .chatId == "-1003710405969" and (.threadId == 8 or .threadId == 10))
+            and all(.cleanup[]; .deleted == true)
+          ' "$report_path" >/dev/null
           echo "### Academy DEMO four-product poster acceptance" >>"$GITHUB_STEP_SUMMARY"
           jq -r '"- Release: `\(.release.commitSha)`\n- Products: `\(.products | map(.product) | join(", "))`\n- Telegram messages: `\(.executions | map(.messageIds | join(",")) | join(" · "))`\n- Media included: `\(.mediaIncluded)`"' "$report_path" >>"$GITHUB_STEP_SUMMARY"
 
@@ -456,7 +487,14 @@ jobs:
             and .mediaIncluded == true
             and .previewLabel == "DEMO PREVIEW · FORMAT TEST"
             and (.mediaPreflight | length == 3)
-            and all(.mediaPreflight[]; .status == 200 and (.contentType | startswith("image/png")) and .byteLength >= 1024 and .byteLength <= 5242880)
+            and ((.mediaPreflight | map(.url) | unique | length) == 3)
+            and ((.mediaPreflight | map(.templateId) | unique | length) == 3)
+            and (.mediaPreflight | map({product, templateId})) == [
+              {"product":"weekly-catalyst-calendar","templateId":"weekly-catalysts-v4"},
+              {"product":"data-flash","templateId":"data-flash-v4"},
+              {"product":"market-follow-up","templateId":"market-follow-up-v4"}
+            ]
+            and all(.mediaPreflight[]; .status == 200 and (.contentType | startswith("image/png")) and .byteLength >= 1024 and .byteLength <= 5242880 and .composition == "locked-master-fixed-field-overlay" and .version == 4 and .canvas == {"width":1200,"height":675})
             and .exactTargets == true
             and (.priorExecution.key == "daily" and .priorExecution.messageIds == [1321,1322] and .priorExecution.target.threadId == 10)
             and (.executions | length == 2)

@@ -37,8 +37,8 @@ export async function POST(request) {
     const jobId = String(body.jobId || "");
     if (result?.preview?.publishable === true && MARKET_PREVIEW_JOBS.has(jobId) && hydratedTargets.length) {
       const deliveryPlans = [
-        ...buildAutomationTelegramPlans(jobId, result.preview, hydratedTargets, result.preview.imageUrl),
-        ...buildAutomationDiscordPlans(jobId, result.preview, hydratedTargets, result.preview.imageUrl)
+        ...buildAutomationTelegramPlans(jobId, result.preview, hydratedTargets, result.preview.mediaDelivery),
+        ...buildAutomationDiscordPlans(jobId, result.preview, hydratedTargets, result.preview.mediaDelivery)
       ];
       result.preview = {
         ...result.preview,

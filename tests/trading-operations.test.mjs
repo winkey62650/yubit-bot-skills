@@ -192,7 +192,13 @@ test("run-now exists only in explicitly authorized live acceptance scripts", asy
   assert.match(recovery, /preflightPosters/);
   assert.match(recovery, /contentType\.startsWith\("image\/png"\)/);
   assert.match(recovery, /MAX_POSTER_BYTES/);
+  assert.match(recovery, /new Set\(report\.mediaPreflight\.map\(\(item\) => item\.url\)\)\.size !== 3/);
   assert.ok(recovery.indexOf("report.mediaPreflight.push") < recovery.indexOf('action: "run-now"'));
+
+  const acceptance = offenders.find((item) => item.file === "accept-academy-demo-content.cjs").source;
+  assert.match(acceptance, /new Set\(report\.mediaPreflight\.map\(\(item\) => item\.url\)\)\.size !== 4/);
+  assert.match(acceptance, /assertDemoShowcasePosterUrls/);
+  assert.ok(acceptance.indexOf("report.mediaPreflight.push") < acceptance.indexOf('action: "run-now"'));
 
   const realtime = offenders.find((item) => item.file === "send-academy-realtime-demo.cjs").source;
   assert.match(realtime, /Probe every exact server-rendered poster before any Telegram mutation/);
@@ -211,6 +217,13 @@ test("Academy DEMO read-only audit includes recovery and validation rule identit
   assert.match(workflow, /academy-demo-showcase-weekly-recovery-20260824-poster-v6-temporary/);
   assert.match(workflow, /academy-demo-showcase-release-recovery-20260824-poster-v6-temporary/);
   assert.match(workflow, /academy-poster-v6-recovery/);
+});
+
+test("market preview maps every product to its own poster media delivery", async () => {
+  const route = await readFile(new URL("app/api/automation-test/route.js", root), "utf8");
+  assert.match(route, /buildAutomationTelegramPlans\(jobId, result\.preview, hydratedTargets, result\.preview\.mediaDelivery\)/);
+  assert.match(route, /buildAutomationDiscordPlans\(jobId, result\.preview, hydratedTargets, result\.preview\.mediaDelivery\)/);
+  assert.doesNotMatch(route, /buildAutomationTelegramPlans\(jobId, result\.preview, hydratedTargets, result\.preview\.imageUrl\)/);
 });
 
 test("production distribution gates cover all six automations and seven broadcasts", async () => {

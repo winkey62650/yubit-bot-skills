@@ -4,11 +4,14 @@ const { request } = require("playwright");
 const {
   DEMO_CHAT_ID,
   DEMO_SHOWCASE_CASES,
+  assertDemoShowcasePosterUrls,
   assertDemoShowcaseExecution,
   assertDemoShowcasePreview,
   buildDemoShowcaseTemporaryRule,
 } = require("../lib/demo-content-acceptance.cjs");
 const { authorizeLiveTelegramOperation } = require("../lib/release-gate.cjs");
+
+const MAX_POSTER_BYTES = 5 * 1024 * 1024;
 
 const { baseUrl } = authorizeLiveTelegramOperation(process.env, {
   operation: "Academy DEMO 四种内容海报与正文验收",
@@ -38,6 +41,25 @@ function writeReport(report) {
   if (process.env.ACCEPTANCE_QUIET !== "true") process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 }
 
+async function preflightPosters(api, preview, showcaseCase) {
+  const posters = (preview.deliveryPlans?.[0]?.steps || []).filter((step) => step?.method === "sendPhoto");
+  const identities = assertDemoShowcasePosterUrls(posters.map((step) => step?.payload?.photo), showcaseCase);
+  const evidence = [];
+  for (const identity of identities) {
+    const response = await api.get(identity.url, { timeout: 90_000 });
+    const contentType = String(response.headers()["content-type"] || "").toLowerCase();
+    if (!response.ok() || !contentType.startsWith("image/png")) {
+      throw new Error(`${showcaseCase.key} poster preflight failed: HTTP ${response.status()} · ${contentType || "missing content-type"}`);
+    }
+    const bytes = await response.body();
+    if (bytes.byteLength < 1024 || bytes.byteLength > MAX_POSTER_BYTES) {
+      throw new Error(`${showcaseCase.key} poster preflight failed: invalid PNG size ${bytes.byteLength}`);
+    }
+    evidence.push({ ...identity, status: response.status(), contentType, byteLength: bytes.byteLength });
+  }
+  return evidence;
+}
+
 (async () => {
   const api = await request.newContext({ baseURL: baseUrl });
   const temporaryRuleIds = [];
@@ -54,6 +76,7 @@ function writeReport(report) {
     products: [],
     previews: [],
     executions: [],
+    mediaPreflight: [],
     startedAt: new Date().toISOString(),
   };
   try {
@@ -95,12 +118,19 @@ function writeReport(report) {
       const preview = previewPayload.result?.preview || {};
       const evidence = assertDemoShowcasePreview(preview, showcaseCase);
       report.previews.push({ key: showcaseCase.key, contentType: showcaseCase.contentType, ...evidence });
+      report.mediaPreflight.push(...await preflightPosters(api, preview, showcaseCase));
 
       const validation = await readJson(await api.post("/api/distribution", {
         data: { action: "validate", id: rule.id },
         timeout: 60_000,
       }), `${showcaseCase.key} rule validation`);
       if (validation.result?.ok !== true) throw new Error(`${showcaseCase.key} Academy DEMO rule validation failed`);
+    }
+
+    if (report.mediaPreflight.length !== 4
+      || new Set(report.mediaPreflight.map((item) => item.url)).size !== 4
+      || new Set(report.mediaPreflight.map((item) => item.templateId)).size !== 4) {
+      throw new Error("Academy DEMO batch requires four distinct canonical poster masters before delivery");
     }
 
     for (let index = 0; index < DEMO_SHOWCASE_CASES.length; index += 1) {

@@ -5,6 +5,7 @@ import test from "node:test";
 const require = createRequire(import.meta.url);
 const {
   DEMO_SHOWCASE_CASES,
+  assertDemoShowcasePosterUrls,
   assertDemoAcceptanceExecution,
   assertDemoAcceptancePreview,
   assertDemoShowcaseExecution,
@@ -14,6 +15,45 @@ const {
   buildDemoShowcaseTemporaryRule,
   selectDemoAcceptanceRule,
 } = require("../lib/demo-content-acceptance.cjs");
+
+const posterContracts = {
+  "daily-market-brief": {
+    id: "daily-market-brief-v4",
+    file: "01-daily-market-brief-wide-v4.png",
+    sha256: "8a378c4a4bcab99b92b005c383eae9fb483f8c6df36c1623f98d97f3b67c38ec",
+  },
+  "weekly-catalyst-calendar": {
+    id: "weekly-catalysts-v4",
+    file: "04-weekly-catalysts-wide-v4.png",
+    sha256: "bed57b795a96890772c4b27a5c3880d1bf7f360e82921011bc5431c76073b2b4",
+  },
+  "data-flash": {
+    id: "data-flash-v4",
+    file: "02-data-flash-wide-v4.png",
+    sha256: "85c3a05946f3f1b1b0071d85ad25e97c65c8acaa8198d97f6af09a8b6b6d1d57",
+  },
+  "market-follow-up": {
+    id: "market-follow-up-v4",
+    file: "03-market-follow-up-wide-v4.png",
+    sha256: "1d78546f6a9d10837550ebe78a938fafe7cdb1f1c7b33def61661550a05dca6e",
+  },
+};
+
+function posterUrl(product, overrides = {}) {
+  const contract = posterContracts[product];
+  const visualTemplate = {
+    id: contract.id,
+    product,
+    file: contract.file,
+    assetPath: `/templates/market-intelligence/${contract.file}`,
+    sha256: contract.sha256,
+    composition: "locked-master-fixed-field-overlay",
+    version: 4,
+    canvas: { width: 1200, height: 675 },
+    ...overrides,
+  };
+  return `https://academy.example/api/media/card?kind=crypto-daily&data=${Buffer.from(JSON.stringify({ visualTemplate })).toString("base64url")}`;
+}
 
 const expectedTarget = {
   id: "demo-events",
@@ -166,7 +206,7 @@ test("four-product showcase pairs each poster with its text, remains topic-scope
     contentProductIds: [product.id],
     contentHashes: [product.contentHash],
     steps: [
-      { method: "sendPhoto", payload: { photo: "https://academy.example/api/media/card?daily" } },
+      { method: "sendPhoto", payload: { photo: posterUrl("daily-market-brief") } },
       { method: "sendMessage", payload: { text: "<b>📊 MARKET BRIEF</b>\n\n<b>₿ BTC · NEUTRAL</b>" } },
     ],
   };
@@ -174,8 +214,8 @@ test("four-product showcase pairs each poster with its text, remains topic-scope
     publishable: true,
     demoShowcase: true,
     textOnly: false,
-    imageUrl: "https://academy.example/api/media/card?daily",
-    mediaDelivery: { byTemplateId: { "daily-market-brief-v4": "https://academy.example/api/media/card?daily" } },
+    imageUrl: posterUrl("daily-market-brief"),
+    mediaDelivery: { byTemplateId: { "daily-market-brief-v4": posterUrl("daily-market-brief") } },
     contentGovernance: { approved: true, products: [product] },
     deliveryPlans: [plan],
   }, showcaseCase), {
@@ -185,14 +225,15 @@ test("four-product showcase pairs each poster with its text, remains topic-scope
     publisherNeutral: true,
     publicGenericHorizonIncluded: false,
     nativeAssetGlyphs: true,
+    posterIdentities: assertDemoShowcasePosterUrls([posterUrl("daily-market-brief")], showcaseCase),
   });
 
   assert.throws(() => assertDemoShowcasePreview({
     publishable: true,
     demoShowcase: true,
     textOnly: false,
-    imageUrl: "https://academy.example/api/media/card?daily",
-    mediaDelivery: { byTemplateId: { "daily-market-brief-v4": "https://academy.example/api/media/card?daily" } },
+    imageUrl: posterUrl("daily-market-brief"),
+    mediaDelivery: { byTemplateId: { "daily-market-brief-v4": posterUrl("daily-market-brief") } },
     contentGovernance: { approved: true, products: [product] },
     deliveryPlans: [{ ...plan, steps: [plan.steps[0], { method: "sendMessage", payload: { text: "<b>YUBIT ACADEMY · MARKET BRIEF</b>\n1–7D\n₿ BTC" } }] }],
   }, showcaseCase), /publisher-neutral/i);
@@ -206,8 +247,8 @@ test("four-product showcase pairs each poster with its text, remains topic-scope
     run: { preview: {
       demoShowcase: true,
       textOnly: false,
-      imageUrl: "https://academy.example/api/media/card?daily",
-      mediaDelivery: { byTemplateId: { "daily-market-brief-v4": "https://academy.example/api/media/card?daily" } },
+      imageUrl: posterUrl("daily-market-brief"),
+      mediaDelivery: { byTemplateId: { "daily-market-brief-v4": posterUrl("daily-market-brief") } },
       contentGovernance: { approved: true, products: [published] },
       deliveryPlans: [plan],
       targetResults: [{ target, status: "success", messageIds: [1401, 1402] }],
@@ -215,6 +256,27 @@ test("four-product showcase pairs each poster with its text, remains topic-scope
   };
   const receipt = { id: "delivery-showcase", ruleId: rule.id, status: "success", target, targetMessageIds: [1401, 1402] };
   assert.deepEqual(assertDemoShowcaseExecution({ ruleId: rule.id, execution, deliveries: [receipt], showcaseCase }).productTypes, ["daily-market-brief"]);
+});
+
+test("poster gate locks every product to its distinct 1200x675 V4 master", () => {
+  const release = DEMO_SHOWCASE_CASES.find((item) => item.key === "release");
+  const urls = [posterUrl("data-flash"), posterUrl("market-follow-up")];
+  assert.deepEqual(
+    assertDemoShowcasePosterUrls(urls, release).map(({ product, templateId, canvas }) => ({ product, templateId, canvas })),
+    [
+      { product: "data-flash", templateId: "data-flash-v4", canvas: { width: 1200, height: 675 } },
+      { product: "market-follow-up", templateId: "market-follow-up-v4", canvas: { width: 1200, height: 675 } },
+    ],
+  );
+  assert.throws(() => assertDemoShowcasePosterUrls([urls[0], urls[0]], release), /duplicate poster URLs/i);
+  assert.throws(() => assertDemoShowcasePosterUrls([
+    posterUrl("data-flash"),
+    posterUrl("market-follow-up", { id: "data-flash-v4" }),
+  ], release), /non-canonical V4 master/i);
+  assert.throws(() => assertDemoShowcasePosterUrls([
+    posterUrl("data-flash"),
+    posterUrl("market-follow-up", { canvas: { width: 1080, height: 1350 } }),
+  ], release), /non-canonical V4 master/i);
 });
 
 test("release-only recovery requires exactly one prior daily and weekly receipt and no release receipt", () => {
