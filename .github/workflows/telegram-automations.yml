@@ -890,6 +890,14 @@ jobs:
               cta_registry_payload = request_json("/api/destination-cta")
               destination_cta = (cta_registry_payload.get("registry") or {}).get(f"telegram:{house_chat_id}") or {}
               if destination_cta.get("ctaEnabled") is not True or not str(destination_cta.get("ctaContent") or "").strip():
+                  legacy_cta_url = str(house_targets[0].get("ctaUrl") or "").strip()
+                  report["ctaDiagnostics"] = {
+                      "registryKeys": sorted((cta_registry_payload.get("registry") or {}).keys()),
+                      "legacyEnabled": house_targets[0].get("ctaEnabled") is True,
+                      "legacyTextCharacters": len(str(house_targets[0].get("ctaText") or "").strip()),
+                      "legacyUrlHost": urllib.parse.urlsplit(legacy_cta_url).netloc,
+                      "legacyInternalUrl": bool(internal_url_pattern.search(legacy_cta_url)),
+                  }
                   raise RuntimeError("House group-level saved destination CTA is missing")
               target = copy.deepcopy(house_targets[0])
               for field in ("guildId", "guildName", "channelId", "channelName"):
