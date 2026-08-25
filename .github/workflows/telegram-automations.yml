@@ -770,8 +770,10 @@ jobs:
           export TELEGRAM_API_HASH="$(read_env TELEGRAM_API_HASH)"
           export TELEGRAM_USER_SESSION_ENCRYPTION_KEY="$(read_env TELEGRAM_USER_SESSION_ENCRYPTION_KEY)"
           cta_recovery_file="$(mktemp)"
-          trap 'rm -f "$cta_recovery_file"' EXIT
+          cta_backup_recovery_file="$(mktemp)"
+          trap 'rm -f "$cta_recovery_file" "$cta_backup_recovery_file"' EXIT
           export HOUSE_CTA_RECOVERY_FILE="$cta_recovery_file"
+          export HOUSE_CTA_BACKUP_RECOVERY_FILE="$cta_backup_recovery_file"
           cd "$release"
           node_runtime=/opt/yubit-node/bin/node
           if [ ! -x "$node_runtime" ]; then
@@ -971,6 +973,148 @@ jobs:
             console.log(JSON.stringify(report));
           });
           NODE
+          sudo -E python3 >"$cta_backup_recovery_file" <<'PYTHON'
+          import glob
+          import json
+          import os
+          import re
+          import subprocess
+
+          backup_root = "/var/backups/yubit-academy/postgres"
+          house_chat_id = os.environ["HOUSE_CHAT_ID"]
+          house_thread_id = int(os.environ["HOUSE_THREAD_ID"])
+          internal_pattern = re.compile(
+              r"(?:152-32-161-174\.sslip\.io|localhost|127\.0\.0\.1|/api/|/admin(?:\b|/)|/distribution(?:\b|/))",
+              re.I,
+          )
+          report = {"ok": False, "selected": None, "diagnostics": {"backupCount": 0, "scannedCount": 0}}
+
+          def copy_unescape(value):
+              output = []
+              index = 0
+              escapes = {"b": "\b", "f": "\f", "n": "\n", "r": "\r", "t": "\t", "v": "\v", "\\": "\\"}
+              while index < len(value):
+                  if value[index] != "\\" or index + 1 >= len(value):
+                      output.append(value[index])
+                      index += 1
+                      continue
+                  marker = value[index + 1]
+                  if marker in escapes:
+                      output.append(escapes[marker])
+                      index += 2
+                      continue
+                  if marker in "01234567":
+                      end = index + 2
+                      while end < len(value) and end < index + 4 and value[end] in "01234567":
+                          end += 1
+                      output.append(chr(int(value[index + 1:end], 8)))
+                      index = end
+                      continue
+                  if marker == "x":
+                      end = index + 2
+                      while end < len(value) and end < index + 4 and value[end] in "0123456789abcdefABCDEF":
+                          end += 1
+                      if end > index + 2:
+                          output.append(chr(int(value[index + 2:end], 16)))
+                          index = end
+                          continue
+                  output.append(marker)
+                  index += 2
+              return "".join(output)
+
+          def table_rows(dump_path, table):
+              completed = subprocess.run(
+                  ["pg_restore", "--data-only", f"--table={table}", "--file=-", dump_path],
+                  text=True,
+                  capture_output=True,
+                  timeout=90,
+                  check=False,
+              )
+              if completed.returncode != 0:
+                  return []
+              rows = []
+              columns = None
+              for line in completed.stdout.splitlines():
+                  match = re.match(rf"COPY (?:public\.)?{re.escape(table)} \(([^)]+)\) FROM stdin;$", line)
+                  if match:
+                      columns = [item.strip() for item in match.group(1).split(",")]
+                      continue
+                  if columns is None:
+                      continue
+                  if line == r"\.":
+                      columns = None
+                      continue
+                  values = [None if item == r"\N" else copy_unescape(item) for item in line.split("\t")]
+                  if len(values) == len(columns):
+                      rows.append(dict(zip(columns, values)))
+              return rows
+
+          def normalized_content(value):
+              if not isinstance(value, dict):
+                  return ""
+              enabled = value.get("ctaEnabled", value.get("enabled"))
+              content = str(value.get("ctaContent", value.get("content", "")) or "").strip()
+              if not content:
+                  content = "\n".join(filter(None, (
+                      str(value.get("ctaText", value.get("text", "")) or "").strip(),
+                      str(value.get("ctaUrl", value.get("url", "")) or "").strip(),
+                  )))
+              if enabled is not True or not content or internal_pattern.search(content):
+                  return ""
+              return content
+
+          backups = sorted(glob.glob(f"{backup_root}/yubit-academy-*.dump"), reverse=True)
+          report["diagnostics"]["backupCount"] = len(backups)
+          for backup in backups:
+              report["diagnostics"]["scannedCount"] += 1
+              candidates = []
+              registry_rows = table_rows(backup, "distribution_meta")
+              registry_row = next((row for row in registry_rows if row.get("key") == "distribution:destination-cta:v1"), None)
+              if registry_row:
+                  try:
+                      registry = json.loads(registry_row.get("value") or "{}")
+                  except json.JSONDecodeError:
+                      registry = {}
+                  preferred_keys = [
+                      f"telegram:{house_chat_id}",
+                      f"telegram:{house_chat_id}:{house_thread_id}",
+                      f"telegram:{house_chat_id}:channel",
+                  ]
+                  for key in preferred_keys:
+                      content = normalized_content(registry.get(key))
+                      if content:
+                          candidates.append((content, "destination-cta-registry"))
+                          break
+              if not candidates:
+                  legacy = set()
+                  for row in table_rows(backup, "distribution_targets"):
+                      if str(row.get("chat_id") or "") != house_chat_id:
+                          continue
+                      enabled = str(row.get("cta_enabled") or "").lower() in {"t", "true", "1"}
+                      content = "\n".join(filter(None, (
+                          str(row.get("cta_text") or "").strip(),
+                          str(row.get("cta_url") or "").strip(),
+                      )))
+                      if enabled and content and not internal_pattern.search(content):
+                          legacy.add(content)
+                  if len(legacy) == 1:
+                      candidates.append((next(iter(legacy)), "distribution-target"))
+              unique = {content: source for content, source in candidates}
+              if len(unique) == 1:
+                  content, source = next(iter(unique.items()))
+                  report["selected"] = {
+                      "content": content,
+                      "source": f"postgres-backup-{source}",
+                      "backup": os.path.basename(backup),
+                  }
+                  report["ok"] = True
+                  break
+
+          if report["selected"]:
+              report["diagnostics"]["selectedBackup"] = report["selected"].pop("backup")
+              report["diagnostics"]["selectedCharacters"] = len(report["selected"]["content"])
+          print(json.dumps(report, ensure_ascii=False))
+          PYTHON
           python3 <<'PYTHON'
           import copy
           import datetime
@@ -1168,6 +1312,18 @@ jobs:
                       historical_selected = historical_recovery.get("selected") or {}
                       recovered_content = str(historical_selected.get("content") or "").strip()
                       recovery_source = str(historical_selected.get("source") or "")
+                      if not recovered_content:
+                          with open(os.environ["HOUSE_CTA_BACKUP_RECOVERY_FILE"], encoding="utf-8") as backup_handle:
+                              backup_recovery = json.load(backup_handle)
+                          report["ctaDiagnostics"]["backupRecovery"] = {
+                              "ok": backup_recovery.get("ok") is True,
+                              "backupCount": (backup_recovery.get("diagnostics") or {}).get("backupCount", 0),
+                              "scannedCount": (backup_recovery.get("diagnostics") or {}).get("scannedCount", 0),
+                              "selectedBackup": (backup_recovery.get("diagnostics") or {}).get("selectedBackup", ""),
+                          }
+                          backup_selected = backup_recovery.get("selected") or {}
+                          recovered_content = str(backup_selected.get("content") or "").strip()
+                          recovery_source = str(backup_selected.get("source") or "")
                       if not recovered_content:
                           previous_request_json = build_json_client(previous_base_url)
                           previous_login = previous_request_json("/api/auth/login", payload={
