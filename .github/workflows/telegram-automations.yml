@@ -377,9 +377,51 @@ jobs:
                   service[key] = value
           service["commandStatus"] = show.returncode
 
+          worker_show = subprocess.run(
+              ["systemctl", "show", "yubit-academy-worker.service", *[f"--property={item}" for item in properties]],
+              check=False,
+              capture_output=True,
+              text=True,
+          )
+          worker_service = {}
+          for line in worker_show.stdout.splitlines():
+              if "=" in line:
+                  key, value = line.split("=", 1)
+                  worker_service[key] = value
+          worker_service["commandStatus"] = worker_show.returncode
+
+          worker_journal = subprocess.run(
+              [
+                  "journalctl", "-u", "yubit-academy-worker.service", "--since", "2026-08-18 00:00:00",
+                  "--no-pager", "-o", "cat", "-n", "5000",
+              ],
+              check=False,
+              capture_output=True,
+              text=True,
+          )
+          distribution_worker_events = []
+          for line in worker_journal.stdout.splitlines():
+              try:
+                  event = json.loads(line)
+              except Exception:
+                  continue
+              if event.get("task") != "distribution":
+                  continue
+              distribution_worker_events.append({
+                  "timestamp": event.get("timestamp", ""),
+                  "level": event.get("level", ""),
+                  "event": event.get("event", ""),
+                  "durationMs": event.get("durationMs", 0),
+                  "result": event.get("result", {}),
+                  "error": sanitize(event.get("error", "")),
+              })
+          distribution_worker_events = distribution_worker_events[-100:]
+
           errors = []
           status = {}
           health = {}
+          distribution_overview = {}
+          distribution_deliveries = {}
           try:
               login = request_json("/api/auth/login", payload={
                   "username": os.environ["AUTH_USERNAME"],
@@ -390,6 +432,8 @@ jobs:
               status = request_json("/api/discord")
               health_response = request_json("/api/discord", payload={"action": "health-check"})
               health = health_response.get("result", {}).get("health", {})
+              distribution_overview = request_json("/api/distribution")
+              distribution_deliveries = request_json("/api/distribution/logs?limit=500")
           except Exception as error:
               errors.append(sanitize(error))
 
@@ -526,6 +570,65 @@ jobs:
           except Exception as error:
               latest_demo_attempt = {"auditError": sanitize(error)}
           demo_guild_id = str(config.get("demoGuildId", "") or "")
+          discovered_guilds = [
+              {
+                  "id": str(guild.get("id", "")),
+                  "name": str(guild.get("name", "")),
+                  "owner": guild.get("owner") is True,
+                  "configured": str(guild.get("id", "")) in (config.get("guilds", {}) or {}),
+                  "isDemoGuild": str(guild.get("id", "")) == demo_guild_id,
+              }
+              for guild in status.get("guilds", [])
+              if isinstance(guild, dict)
+          ]
+          rule_fields = ["id", "name", "contentType", "enabled", "status", "schedulePreset", "nextRunAt", "leaseUntil", "runOnce"]
+          distribution_rules = []
+          for rule in distribution_overview.get("rules", []):
+              if not isinstance(rule, dict):
+                  continue
+              targets = []
+              for target in rule.get("targets", []):
+                  if not isinstance(target, dict) or str(target.get("platform", "")) != "discord":
+                      continue
+                  targets.append({
+                      "platform": "discord",
+                      "guildId": str(target.get("guildId", "")),
+                      "channelId": str(target.get("channelId", "")),
+                      "groupName": str(target.get("groupName", "")),
+                      "topicName": str(target.get("topicName", "")),
+                      "enabled": target.get("enabled") is not False,
+                  })
+              if targets:
+                  distribution_rules.append({
+                      **{field: rule.get(field) for field in rule_fields},
+                      "targets": targets,
+                  })
+          recent_deliveries = []
+          for delivery in distribution_deliveries.get("items", []):
+              if not isinstance(delivery, dict):
+                  continue
+              target = delivery.get("target", {}) if isinstance(delivery.get("target"), dict) else {}
+              if str(target.get("platform", "")) != "discord":
+                  continue
+              recent_deliveries.append({
+                  "id": str(delivery.get("id", "")),
+                  "ruleId": str(delivery.get("ruleId", "")),
+                  "status": str(delivery.get("status", "")),
+                  "attempts": delivery.get("attempts", 0),
+                  "target": {
+                      "platform": "discord",
+                      "guildId": str(target.get("guildId", "")),
+                      "channelId": str(target.get("channelId", "")),
+                      "groupName": str(target.get("groupName", "")),
+                      "topicName": str(target.get("topicName", "")),
+                  },
+                  "targetMessageId": str(delivery.get("targetMessageId", "")),
+                  "targetMessageIds": [str(value) for value in delivery.get("targetMessageIds", []) if str(value)],
+                  "error": sanitize(delivery.get("error", "")),
+                  "createdAt": str(delivery.get("createdAt", "")),
+                  "updatedAt": str(delivery.get("updatedAt", "")),
+                  "deliveredAt": str(delivery.get("deliveredAt", "")),
+              })
           guilds = health.get("guilds", []) if isinstance(health, dict) else []
           channel_results = [
               {
@@ -554,6 +657,8 @@ jobs:
               "auditedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
               "releaseSha": os.environ.get("RELEASE_SHA", ""),
               "service": service,
+              "workerService": worker_service,
+              "distributionWorkerEvents": distribution_worker_events,
               "credentials": {
                   "configured": status.get("configured") is True,
                   "publicKeyConfigured": status.get("publicKeyConfigured") is True,
@@ -566,6 +671,9 @@ jobs:
                   "configuredGuildCount": len(config.get("guilds", {}) or {}),
               },
               "bot": status.get("bot"),
+              "discoveredGuilds": discovered_guilds,
+              "distributionRules": distribution_rules,
+              "recentDeliveries": recent_deliveries,
               "gateway": {
                   "state": gateway.get("state", ""),
                   "online": gateway.get("online") is True,

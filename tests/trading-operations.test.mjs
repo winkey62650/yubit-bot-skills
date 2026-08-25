@@ -228,6 +228,10 @@ test("operator recovery workflow includes a read-only Discord health audit", asy
   assert.match(workflow, /yubit-academy-discord\.service/);
   assert.match(workflow, /demoGuildId/);
   assert.match(workflow, /isDemoGuild/);
+  assert.match(workflow, /discoveredGuilds/);
+  assert.match(workflow, /distributionRules/);
+  assert.match(workflow, /recentDeliveries/);
+  assert.match(workflow, /yubit-academy-worker\.service/);
   assert.match(workflow, /\.readOnly == true/);
   assert.doesNotMatch(workflow, /inputs\.job == 'discord-audit'[\s\S]{0,12000}test-message/);
 });
