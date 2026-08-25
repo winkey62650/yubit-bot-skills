@@ -765,6 +765,7 @@ jobs:
           export AUTH_PASSWORD="$(read_env AUTH_PASSWORD)"
           export RELEASE_SHA="$(tr -d '[:space:]' <"$release/.release-commit")"
           python3 <<'PYTHON'
+          import copy
           import datetime
           import http.cookiejar
           import json
@@ -855,6 +856,7 @@ jobs:
               "releaseSha": os.environ["RELEASE_SHA"],
               "startedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
           }
+          temporary_rule_id = ""
           try:
               login = request_json("/api/auth/login", payload={
                   "username": os.environ["AUTH_USERNAME"],
@@ -876,13 +878,40 @@ jobs:
                   if (
                       rule.get("contentType") == "crypto-daily"
                       and rule.get("enabled") is True
-                      and len(targets) == 1
-                      and target_matches(targets[0])
+                      and any(target_matches(target) for target in targets)
                   ):
                       candidates.append(rule)
               if len(candidates) != 1:
-                  raise RuntimeError(f"expected one exact House Market Brief rule, found {len(candidates)}")
-              rule = candidates[0]
+                  raise RuntimeError(f"expected one House Market Brief source rule, found {len(candidates)}")
+              source_rule = candidates[0]
+              house_targets = [target for target in source_rule.get("targets") or [] if target_matches(target)]
+              if len(house_targets) != 1:
+                  raise RuntimeError(f"expected one House target inside the source rule, found {len(house_targets)}")
+              target = copy.deepcopy(house_targets[0])
+              target["platform"] = "telegram"
+              target["enabled"] = True
+
+              temporary_rule = copy.deepcopy(source_rule)
+              timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d%H%M%S")
+              temporary_rule_id = f"house-market-brief-resend-{timestamp}-{os.urandom(4).hex()}-temporary"
+              temporary_rule.update({
+                  "id": temporary_rule_id,
+                  "kind": "automation",
+                  "name": "House of Crypto · Market Brief · one-time resend",
+                  "contentType": "crypto-daily",
+                  "enabled": False,
+                  "runOnce": False,
+                  "status": "ready",
+                  "targets": [target],
+              })
+              for field in ("lastRunAt", "lastError", "nextRunAt", "createdAt", "updatedAt"):
+                  temporary_rule.pop(field, None)
+              created = request_json("/api/distribution", payload={"rule": temporary_rule})
+              rule = created.get("rule") or {}
+              if rule.get("id") != temporary_rule_id:
+                  raise RuntimeError("temporary House resend rule identity changed")
+              if len(rule.get("targets") or []) != 1 or not target_matches(rule["targets"][0]):
+                  raise RuntimeError("temporary House resend rule escaped the exact target")
               target = rule["targets"][0]
 
               validation = request_json("/api/distribution", payload={"action": "validate", "id": rule["id"]}, timeout=60)
@@ -980,7 +1009,12 @@ jobs:
 
               report.update({
                   "ok": True,
-                  "rule": {"id": rule["id"], "name": rule.get("name"), "contentType": rule.get("contentType")},
+                  "rule": {
+                      "id": rule["id"],
+                      "sourceId": source_rule.get("id"),
+                      "name": rule.get("name"),
+                      "contentType": rule.get("contentType"),
+                  },
                   "validation": {"ok": True, "checkCount": len(validation_result.get("checks") or [])},
                   "preview": {
                       "publishable": True,
@@ -1002,6 +1036,16 @@ jobs:
               })
           except Exception as error:
               report["error"] = clean_error(error)
+          finally:
+              if temporary_rule_id:
+                  try:
+                      request_json("/api/distribution", payload={"action": "delete", "id": temporary_rule_id})
+                      report["cleanup"] = {"id": temporary_rule_id, "deleted": True}
+                  except Exception as cleanup_error:
+                      report["cleanup"] = {"id": temporary_rule_id, "deleted": False}
+                      if report.get("ok") is True:
+                          report["ok"] = False
+                          report["error"] = f"temporary rule cleanup failed: {clean_error(cleanup_error)}"
           print(json.dumps(report, ensure_ascii=False, indent=2))
           if not report["ok"]:
               raise SystemExit(1)
