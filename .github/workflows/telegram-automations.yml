@@ -1717,14 +1717,19 @@ jobs:
               boundary = steps[-1].get("ctaBoundary") or {}
               start = boundary.get("start")
               end = boundary.get("end")
+              final_text_utf16 = final_text.encode("utf-16-le")
+              final_text_units = len(final_text_utf16) // 2
+              boundary_text = ""
+              if isinstance(start, int) and isinstance(end, int) and 0 <= start <= end <= final_text_units:
+                  boundary_text = final_text_utf16[start * 2:end * 2].decode("utf-16-le")
               if (
                   boundary.get("kind") != "destination-cta"
                   or boundary.get("placement") != "suffix"
                   or not isinstance(start, int)
                   or not isinstance(end, int)
                   or start < 0
-                  or end != len(final_text)
-                  or final_text[start:end].strip() == ""
+                  or end != final_text_units
+                  or boundary_text.strip() == ""
               ):
                   raise RuntimeError("saved destination CTA is not the final rendered block")
               if internal_url_pattern.search(final_text):
