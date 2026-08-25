@@ -863,6 +863,22 @@ jobs:
               healthy = any(str(item.get("status", "")).lower() in {"ok", "healthy", "success"} for item in sources)
               return healthy, sources
 
+          def saved_legacy_ctas(rules):
+              candidates = set()
+              for rule in rules or []:
+                  for target in rule.get("targets") or []:
+                      if str(target.get("chatId") or "") != house_chat_id:
+                          continue
+                      content = str(target.get("ctaContent") or "").strip()
+                      if not content:
+                          content = "\n".join(filter(None, (
+                              str(target.get("ctaText") or "").strip(),
+                              str(target.get("ctaUrl") or "").strip(),
+                          )))
+                      if target.get("ctaEnabled") is True and content and not internal_url_pattern.search(content):
+                          candidates.add(content)
+              return sorted(candidates)
+
           def preflight_image(url):
               parsed = urllib.parse.urlsplit(url)
               if parsed.scheme != "https" or not parsed.netloc:
@@ -925,25 +941,51 @@ jobs:
                       "legacyUrlHost": urllib.parse.urlsplit(legacy_cta_url).netloc,
                       "legacyInternalUrl": bool(internal_url_pattern.search(legacy_cta_url)),
                   }
-                  previous_request_json = build_json_client(previous_base_url)
-                  previous_login = previous_request_json("/api/auth/login", payload={
-                      "username": os.environ["AUTH_USERNAME"],
-                      "password": os.environ["AUTH_PASSWORD"],
-                  })
-                  if previous_login.get("ok") is not True:
-                      raise RuntimeError("previous content-system login was not accepted")
-                  previous_payload = previous_request_json("/api/destination-cta")
-                  previous_registry = previous_payload.get("registry") or {}
-                  recovered = previous_registry.get(f"telegram:{house_chat_id}") or {}
-                  recovered_content = str(recovered.get("ctaContent") or "").strip()
-                  report["ctaDiagnostics"]["previousRegistryKeys"] = sorted(previous_registry.keys())
-                  report["ctaDiagnostics"]["previousHouseEnabled"] = recovered.get("ctaEnabled") is True
-                  report["ctaDiagnostics"]["previousHouseCharacters"] = len(recovered_content)
-                  report["ctaDiagnostics"]["previousHouseInternalUrl"] = bool(internal_url_pattern.search(recovered_content))
-                  if recovered.get("ctaEnabled") is not True or not recovered_content:
-                      raise RuntimeError("House saved destination CTA is missing from current and previous registries")
+                  recovered_content = ""
+                  recovery_source = ""
+                  production_legacy = saved_legacy_ctas(rules)
+                  report["ctaDiagnostics"]["productionLegacyCandidateCount"] = len(production_legacy)
+                  if len(production_legacy) > 1:
+                      raise RuntimeError("multiple different House CTAs remain in production distribution rules")
+                  if len(production_legacy) == 1:
+                      recovered_content = production_legacy[0]
+                      recovery_source = "production-distribution-rule"
+                  else:
+                      previous_request_json = build_json_client(previous_base_url)
+                      previous_login = previous_request_json("/api/auth/login", payload={
+                          "username": os.environ["AUTH_USERNAME"],
+                          "password": os.environ["AUTH_PASSWORD"],
+                      })
+                      if previous_login.get("ok") is not True:
+                          raise RuntimeError("previous content-system login was not accepted")
+                      previous_registry = {}
+                      try:
+                          previous_payload = previous_request_json("/api/destination-cta")
+                          previous_registry = previous_payload.get("registry") or {}
+                          report["ctaDiagnostics"]["previousDestinationRegistryAvailable"] = True
+                      except RuntimeError:
+                          report["ctaDiagnostics"]["previousDestinationRegistryAvailable"] = False
+                      recovered = previous_registry.get(f"telegram:{house_chat_id}") or {}
+                      recovered_content = str(recovered.get("ctaContent") or "").strip()
+                      report["ctaDiagnostics"]["previousRegistryKeys"] = sorted(previous_registry.keys())
+                      if recovered.get("ctaEnabled") is True and recovered_content:
+                          recovery_source = "previous-content-system-registry"
+                      else:
+                          recovered_content = ""
+                          previous_overview = previous_request_json("/api/distribution")
+                          previous_legacy = saved_legacy_ctas(previous_overview.get("rules") or [])
+                          report["ctaDiagnostics"]["previousLegacyCandidateCount"] = len(previous_legacy)
+                          if len(previous_legacy) > 1:
+                              raise RuntimeError("multiple different House CTAs remain in previous distribution rules")
+                          if len(previous_legacy) == 1:
+                              recovered_content = previous_legacy[0]
+                              recovery_source = "previous-content-system-distribution-rule"
+                  report["ctaDiagnostics"]["recoveredCharacters"] = len(recovered_content)
+                  report["ctaDiagnostics"]["recoveredInternalUrl"] = bool(internal_url_pattern.search(recovered_content))
+                  if not recovered_content:
+                      raise RuntimeError("House saved destination CTA is missing from current and previous content systems")
                   if internal_url_pattern.search(recovered_content):
-                      raise RuntimeError("previous House saved destination CTA contains a backend or internal URL")
+                      raise RuntimeError("recovered House saved destination CTA contains a backend or internal URL")
                   saved_payload = request_json("/api/destination-cta", payload={"config": {
                       "platform": "telegram",
                       "chatId": house_chat_id,
@@ -959,7 +1001,7 @@ jobs:
                   ):
                       raise RuntimeError("recovered House destination CTA did not persist exactly")
                   report["ctaRecovery"] = {
-                      "source": "previous-content-system-registry",
+                      "source": recovery_source,
                       "characters": len(recovered_content),
                       "internalUrlAbsent": True,
                   }
