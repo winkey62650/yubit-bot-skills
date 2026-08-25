@@ -887,7 +887,13 @@ jobs:
               house_targets = [target for target in source_rule.get("targets") or [] if target_matches(target)]
               if len(house_targets) != 1:
                   raise RuntimeError(f"expected one House target inside the source rule, found {len(house_targets)}")
+              cta_registry_payload = request_json("/api/destination-cta")
+              destination_cta = (cta_registry_payload.get("registry") or {}).get(f"telegram:{house_chat_id}") or {}
+              if destination_cta.get("ctaEnabled") is not True or not str(destination_cta.get("ctaContent") or "").strip():
+                  raise RuntimeError("House group-level saved destination CTA is missing")
               target = copy.deepcopy(house_targets[0])
+              for field in ("guildId", "guildName", "channelId", "channelName"):
+                  target.pop(field, None)
               target["platform"] = "telegram"
               target["enabled"] = True
 
