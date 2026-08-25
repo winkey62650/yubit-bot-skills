@@ -1742,9 +1742,30 @@ jobs:
                   "textOnly": False,
               }, timeout=180)
               execution = execution_payload.get("result") or {}
-              target_results = ((execution.get("run") or {}).get("preview") or {}).get("targetResults") or []
+              execution_run = execution.get("run") or {}
+              execution_preview = execution_run.get("preview") or {}
+              execution_governance = execution_preview.get("contentGovernance") or {}
+              report["executionDiagnostics"] = {
+                  "status": execution.get("status"),
+                  "error": execution.get("error"),
+                  "runStatus": execution_run.get("status"),
+                  "message": execution_run.get("message"),
+                  "publishable": execution_preview.get("publishable"),
+                  "skipReason": execution_preview.get("skipReason"),
+                  "publicationError": execution_preview.get("publicationError"),
+                  "governanceApproved": execution_governance.get("approved"),
+                  "governanceReason": execution_governance.get("reason"),
+              }
+              target_results = execution_preview.get("targetResults") or []
               if execution.get("status") != "success" or len(target_results) != 1:
-                  raise RuntimeError(f"live resend failed: {execution.get('error') or execution.get('status') or 'unknown'}")
+                  diagnostic = next((str(value) for value in (
+                      execution.get("error"),
+                      execution_run.get("message"),
+                      execution_preview.get("skipReason"),
+                      execution_governance.get("reason"),
+                      execution.get("status"),
+                  ) if value), "unknown")
+                  raise RuntimeError(f"live resend failed: {diagnostic}")
               receipt = target_results[0]
               ids = message_ids(receipt)
               if receipt.get("status") != "success" or not target_matches(receipt.get("target") or {}) or len(ids) < 2:
