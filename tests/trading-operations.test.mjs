@@ -251,6 +251,18 @@ test("operator recovery workflow includes a read-only House of Crypto Telegram a
   assert.doesNotMatch(workflow, /inputs\.job == 'telegram-house-audit'[\s\S]{0,16000}(?:sendMessage|sendPhoto|run-now|test-message)/);
 });
 
+test("operator workflow has an exact House topic send-delete connectivity probe", async () => {
+  const workflow = await readFile(".github/workflows/telegram-automations.yml", "utf8");
+
+  assert.match(workflow, /telegram-house-probe/);
+  assert.match(workflow, /HOUSE_CHAT_ID: "-1001702053978"/);
+  assert.match(workflow, /HOUSE_THREAD_ID: "309971"/);
+  assert.match(workflow, /sendMessage/);
+  assert.match(workflow, /deleteMessage/);
+  assert.match(workflow, /disable_notification/);
+  assert.match(workflow, /\.sent == true and \.deleted == true/);
+});
+
 test("market preview maps every product to its own poster media delivery", async () => {
   const route = await readFile(new URL("app/api/automation-test/route.js", root), "utf8");
   assert.match(route, /buildAutomationTelegramPlans\(jobId, result\.preview, hydratedTargets, result\.preview\.mediaDelivery\)/);

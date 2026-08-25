@@ -15,6 +15,7 @@ on:
           - academy-poster-v6-recovery
           - academy-audit
           - telegram-house-audit
+          - telegram-house-probe
           - discord-audit
           - discord-demo
           - agents
@@ -582,6 +583,143 @@ jobs:
         with:
           name: telegram-house-audit-${{ github.sha }}
           path: ${{ runner.temp }}/telegram-house-audit.json
+          if-no-files-found: error
+          retention-days: 30
+
+  telegram_house_probe:
+    if: inputs.job == 'telegram-house-probe'
+    runs-on: ubuntu-latest
+    environment: Production
+    env:
+      HOUSE_CHAT_ID: "-1001702053978"
+      HOUSE_THREAD_ID: "309971"
+    steps:
+      - name: Install SSH password helper
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq sshpass
+
+      - name: Send and immediately delete an exact House topic probe
+        env:
+          SSHPASS: ${{ secrets.YUBIT_SERVER_PASSWORD }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -Eeuo pipefail
+          if [ -z "$SSHPASS" ]; then
+            echo "YUBIT_SERVER_PASSWORD is not configured." >&2
+            exit 1
+          fi
+          report_path="$RUNNER_TEMP/telegram-house-probe.json"
+          sshpass -e ssh \
+            -o ConnectTimeout=20 \
+            -o ServerAliveInterval=10 \
+            -o StrictHostKeyChecking=accept-new \
+            ubuntu@152.32.161.174 \
+            "EXPECTED_SHA='$EXPECTED_SHA' HOUSE_CHAT_ID='$HOUSE_CHAT_ID' HOUSE_THREAD_ID='$HOUSE_THREAD_ID' bash -s" \
+            >"$report_path" <<'REMOTE'
+          set -Eeuo pipefail
+          env_file=/etc/yubit-academy/production.env
+          read_env() {
+            sudo awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "$env_file"
+          }
+          release="$(readlink -f /opt/yubit-academy/current)"
+          current_sha="$(tr -d '[:space:]' <"$release/.release-commit")"
+          if [ "$current_sha" != "$EXPECTED_SHA" ]; then
+            echo "The requested workflow SHA is not the deployed release." >&2
+            exit 1
+          fi
+          expected_target="$HOUSE_CHAT_ID:$HOUSE_THREAD_ID"
+          approved_targets="$(read_env TELEGRAM_DISTRIBUTION_APPROVED_TARGETS)"
+          case ",$approved_targets," in
+            *",$expected_target,"*) ;;
+            *) echo "House topic is not production-approved." >&2; exit 1 ;;
+          esac
+          export SPEAKER_BOT_TOKEN="$(read_env SPEAKER_BOT_TOKEN)"
+          if [ -z "$SPEAKER_BOT_TOKEN" ]; then
+            export SPEAKER_BOT_TOKEN="$(read_env TRADER1_BOT_TOKEN)"
+          fi
+          python3 <<'PYTHON'
+          import datetime
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+
+          token = os.environ.get("SPEAKER_BOT_TOKEN", "").strip()
+          chat_id = os.environ["HOUSE_CHAT_ID"]
+          thread_id = os.environ["HOUSE_THREAD_ID"]
+          if not token:
+              raise RuntimeError("Telegram bot credential is unavailable")
+
+          def call(method, payload):
+              request = urllib.request.Request(
+                  f"https://api.telegram.org/bot{token}/{method}",
+                  data=urllib.parse.urlencode(payload).encode(),
+                  headers={"content-type": "application/x-www-form-urlencoded"},
+                  method="POST",
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  body = json.load(response)
+              if body.get("ok") is not True:
+                  raise RuntimeError(f"Telegram {method} was not accepted")
+              return body.get("result")
+
+          report = {
+              "ok": False,
+              "operation": "telegram-house-send-delete-probe",
+              "target": {"chatId": chat_id, "threadId": int(thread_id)},
+              "sent": False,
+              "deleted": False,
+              "messageId": None,
+              "testedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+          }
+          message_id = None
+          try:
+              bot = call("getMe", {})
+              chat = call("getChat", {"chat_id": chat_id})
+              sent = call("sendMessage", {
+                  "chat_id": chat_id,
+                  "message_thread_id": thread_id,
+                  "text": "CHANNEL CHECK · House of Crypto delivery path verified. This message will be removed automatically.",
+                  "disable_notification": "true",
+                  "disable_web_page_preview": "true",
+              })
+              message_id = int(sent["message_id"])
+              report.update({
+                  "sent": True,
+                  "messageId": message_id,
+                  "returnedThreadId": sent.get("message_thread_id"),
+                  "bot": {"id": str(bot.get("id", "")), "username": str(bot.get("username", ""))},
+                  "chat": {"id": str(chat.get("id", "")), "title": str(chat.get("title", "")), "isForum": chat.get("is_forum") is True},
+              })
+          finally:
+              if message_id is not None:
+                  report["deleted"] = call("deleteMessage", {
+                      "chat_id": chat_id,
+                      "message_id": message_id,
+                  }) is True
+          report["ok"] = report["sent"] is True and report["deleted"] is True
+          print(json.dumps(report, ensure_ascii=False, indent=2))
+          if not report["ok"]:
+              raise SystemExit(1)
+          PYTHON
+          REMOTE
+          jq -e '
+            .ok == true
+            and .operation == "telegram-house-send-delete-probe"
+            and .target == {"chatId":"-1001702053978","threadId":309971}
+            and .sent == true and .deleted == true
+            and (.messageId | type == "number")
+          ' "$report_path" >/dev/null
+          echo "### House of Crypto Telegram send-delete probe" >>"$GITHUB_STEP_SUMMARY"
+          jq -r '"- Target: `\(.target.chatId):\(.target.threadId)`\n- Bot: `@\(.bot.username)`\n- Message ID: `\(.messageId)`\n- Sent: `\(.sent)`\n- Deleted: `\(.deleted)`"' "$report_path" >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Upload House of Crypto Telegram probe evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: telegram-house-probe-${{ github.sha }}
+          path: ${{ runner.temp }}/telegram-house-probe.json
           if-no-files-found: error
           retention-days: 30
 
