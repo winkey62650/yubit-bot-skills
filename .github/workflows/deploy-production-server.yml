@@ -82,7 +82,7 @@ jobs:
           cleanup_remote() {
             if [ -n "$env_backup" ] && [ "$deployment_committed" != "1" ]; then
               sudo cp -p "$env_backup" "$env_file" || true
-              sudo systemctl restart yubit-academy.service || true
+              sudo systemctl restart yubit-academy-web.service || true
               echo "Restored the pre-deployment production policy."
             fi
             if [ -n "$env_rewrite" ]; then sudo rm -f "$env_rewrite" || true; fi

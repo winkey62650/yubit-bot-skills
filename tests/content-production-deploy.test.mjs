@@ -88,9 +88,12 @@ test("governed Telegram target policy includes House and rolls back on deploymen
   assert.match(workflow, /expected_targets='-1003710405969:8,-1003710405969:10,-1003710405969:16,-1001702053978:309971'/);
   assert.match(workflow, /set_env_value TELEGRAM_DISTRIBUTION_APPROVED_TARGETS "\$expected_targets"/);
   assert.match(workflow, /set_env_value ALLOW_LIVE_TELEGRAM false/);
+  assert.match(workflow, /systemctl restart yubit-academy-web\.service/);
   assert.match(workflow, /\[ -n "\$env_backup" \] && \[ "\$deployment_committed" != "1" \]/);
+  const deployScript = read("deploy/server/deploy.sh");
+  assert.match(deployScript, /expected_distribution_targets='-1003710405969:8,-1003710405969:10,-1003710405969:16,-1001702053978:309971'/);
   assert.match(workflow, /sudo cp -p "\$env_backup" "\$env_file"/);
-  assert.match(workflow, /sudo systemctl restart yubit-academy\.service/);
+  assert.doesNotMatch(workflow, /sudo systemctl restart yubit-academy\.service/);
   assert.match(workflow, /deployment_committed=1/);
 });
 
