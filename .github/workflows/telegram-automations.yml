@@ -987,7 +987,12 @@ jobs:
               r"(?:152-32-161-174\.sslip\.io|localhost|127\.0\.0\.1|/api/|/admin(?:\b|/)|/distribution(?:\b|/))",
               re.I,
           )
-          report = {"ok": False, "selected": None, "diagnostics": {"backupCount": 0, "scannedCount": 0}}
+          report = {
+              "ok": False,
+              "selected": None,
+              "telegramSessionSnapshot": None,
+              "diagnostics": {"backupCount": 0, "scannedCount": 0, "sessionBackup": "", "sessionAccountCount": 0},
+          }
 
           def copy_unescape(value):
               output = []
@@ -1069,12 +1074,41 @@ jobs:
               report["diagnostics"]["scannedCount"] += 1
               candidates = []
               registry_rows = table_rows(backup, "distribution_meta")
-              registry_row = next((row for row in registry_rows if row.get("key") == "distribution:destination-cta:v1"), None)
-              if registry_row:
+              meta_values = {}
+              for row in registry_rows:
+                  key = str(row.get("key") or "")
+                  if not key:
+                      continue
                   try:
-                      registry = json.loads(registry_row.get("value") or "{}")
+                      meta_values[key] = json.loads(row.get("value") or "null")
                   except json.JSONDecodeError:
-                      registry = {}
+                      continue
+
+              if report["telegramSessionSnapshot"] is None:
+                  catalog = meta_values.get("telegram-authorized-accounts-v1") or {}
+                  accounts = catalog.get("accounts") if isinstance(catalog, dict) else []
+                  accounts = accounts if isinstance(accounts, list) else []
+                  session_records = {}
+                  usable_accounts = []
+                  for account in accounts:
+                      user_id = str((account or {}).get("userId") or "")
+                      record = meta_values.get(f"telegram-session-v1:{user_id}")
+                      if not user_id or not isinstance(record, dict) or not record.get("encryptedSession"):
+                          continue
+                      usable_accounts.append(account)
+                      session_records[f"telegram-session-v1:{user_id}"] = record
+                  if usable_accounts:
+                      report["telegramSessionSnapshot"] = {
+                          "accountsRecord": {"accounts": usable_accounts},
+                          "records": session_records,
+                      }
+                      report["diagnostics"]["sessionBackup"] = os.path.basename(backup)
+                      report["diagnostics"]["sessionAccountCount"] = len(usable_accounts)
+
+              registry = meta_values.get("distribution:destination-cta:v1")
+              registry_row = registry if isinstance(registry, dict) else None
+              if registry_row:
+                  registry = registry_row
                   preferred_keys = [
                       f"telegram:{house_chat_id}",
                       f"telegram:{house_chat_id}:{house_thread_id}",
@@ -1115,6 +1149,190 @@ jobs:
               report["diagnostics"]["selectedCharacters"] = len(report["selected"]["content"])
           print(json.dumps(report, ensure_ascii=False))
           PYTHON
+          "$node_runtime" --input-type=module <<'NODE'
+          import { readFile, writeFile } from "node:fs/promises";
+          import { TelegramClient, sessions } from "teleproto";
+          import { createTelegramUserSessionStore } from "./lib/telegram-user-session.mjs";
+
+          const recoveryPath = process.env.HOUSE_CTA_RECOVERY_FILE;
+          const backupPath = process.env.HOUSE_CTA_BACKUP_RECOVERY_FILE;
+          const houseChatId = String(process.env.HOUSE_CHAT_ID || "");
+          const houseThreadId = Number(process.env.HOUSE_THREAD_ID || 0);
+          const internalPattern = /(?:152-32-161-174\.sslip\.io|localhost|127\.0\.0\.1|\/api\/|\/admin(?:\b|\/)|\/distribution(?:\b|\/))/i;
+          const sourceHosts = new Set([
+            "bls.gov", "www.bls.gov", "bea.gov", "www.bea.gov", "federalreserve.gov", "www.federalreserve.gov",
+            "sec.gov", "www.sec.gov", "coindesk.com", "www.coindesk.com", "cointelegraph.com", "www.cointelegraph.com",
+            "reuters.com", "www.reuters.com", "bloomberg.com", "www.bloomberg.com", "cmegroup.com", "www.cmegroup.com",
+            "coinmarketcal.com", "www.coinmarketcal.com", "tradingeconomics.com", "www.tradingeconomics.com"
+          ]);
+
+          function safeExternal(content) {
+            const value = String(content || "").trim();
+            return value && !internalPattern.test(value) ? value : "";
+          }
+
+          function publicCtaUrl(value) {
+            try {
+              const parsed = new URL(value);
+              return parsed.protocol === "https:" && !internalPattern.test(value) && !sourceHosts.has(parsed.hostname.toLowerCase());
+            } catch {
+              return false;
+            }
+          }
+
+          function messageUrls(message) {
+            const text = String((message && message.message) || "");
+            const values = [];
+            for (const entity of Array.isArray(message && message.entities) ? message.entities : []) {
+              const direct = String((entity && entity.url) || "").trim();
+              const offset = Number(entity && entity.offset);
+              const length = Number(entity && entity.length);
+              const visible = Number.isInteger(offset) && Number.isInteger(length) ? text.slice(offset, offset + length) : "";
+              const value = direct || (/^https?:\/\//i.test(visible) ? visible : "");
+              if (value) values.push({ url: value, offset: Number.isInteger(offset) ? offset : text.lastIndexOf(visible) });
+            }
+            for (const match of text.matchAll(/https?:\/\/[^\s<>]+/gi)) {
+              values.push({ url: match[0].replace(/[),.;!?]+$/, ""), offset: match.index || 0 });
+            }
+            for (const row of Array.isArray(message?.replyMarkup?.rows) ? message.replyMarkup.rows : []) {
+              for (const button of Array.isArray(row?.buttons) ? row.buttons : []) {
+                const url = String(button?.url || "").trim();
+                if (url) values.push({ url, offset: Math.max(0, text.length - 1) });
+              }
+            }
+            const unique = new Map();
+            for (const item of values) unique.set(item.url, item);
+            return [...unique.values()];
+          }
+
+          function paragraphAt(text, offset) {
+            const before = text.lastIndexOf("\n\n", Math.max(0, offset));
+            const after = text.indexOf("\n\n", Math.max(0, offset));
+            return text.slice(before < 0 ? 0 : before + 2, after < 0 ? text.length : after).trim();
+          }
+
+          async function main() {
+            const recovery = JSON.parse(await readFile(recoveryPath, "utf8"));
+            if (recovery?.selected?.content) return;
+            const backup = JSON.parse(await readFile(backupPath, "utf8"));
+            const snapshot = backup?.telegramSessionSnapshot;
+            recovery.diagnostics = recovery.diagnostics || {};
+            recovery.diagnostics.backupSessionAccountCount = Number(backup?.diagnostics?.sessionAccountCount || 0);
+            recovery.diagnostics.backupSessionAvailable = Boolean(snapshot);
+            if (!snapshot) {
+              await writeFile(recoveryPath, JSON.stringify(recovery));
+              return;
+            }
+
+            const repository = {
+              async getMeta(key) {
+                if (key === "telegram-authorized-accounts-v1") return snapshot.accountsRecord || null;
+                return (snapshot.records || {})[key] || null;
+              },
+              async setMeta() {
+                throw new Error("backup Telegram session repository is read-only");
+              }
+            };
+            const store = createTelegramUserSessionStore({
+              repository,
+              encryptionKey: process.env.TELEGRAM_USER_SESSION_ENCRYPTION_KEY
+            });
+            const accounts = await store.listAccounts().catch(() => []);
+            const occurrences = new Map();
+            const errors = [];
+            let scannedAccount = "";
+
+            for (const account of accounts) {
+              let client;
+              try {
+                const stored = await store.load(account.userId);
+                const envApiId = Number(process.env.TELEGRAM_API_ID);
+                const envApiHash = String(process.env.TELEGRAM_API_HASH || "").trim();
+                const apiId = Number.isSafeInteger(envApiId) && envApiId > 0 ? envApiId : Number(stored.apiId);
+                const apiHash = envApiHash || String(stored.apiHash || "");
+                client = new TelegramClient(new sessions.StringSession(stored.session), apiId, apiHash, {
+                  connectionRetries: 3,
+                  autoReconnect: false
+                });
+                await client.connect();
+                if (!(await client.checkAuthorization())) throw new Error("Telegram session is unauthorized");
+                let peer;
+                try {
+                  peer = await client.getInputEntity(houseChatId);
+                } catch {
+                  const dialogs = await client.getDialogs({ limit: 500 });
+                  const dialog = dialogs.find((item) => {
+                    const raw = String(item?.entity?.id || "").replace(/^-/, "");
+                    return `-100${raw}` === houseChatId;
+                  });
+                  if (!dialog?.entity) throw new Error("House dialog is not visible");
+                  peer = await client.getInputEntity(dialog.entity);
+                }
+
+                let messages = [];
+                let topicScoped = true;
+                try {
+                  messages = await client.getMessages(peer, { limit: 1000, replyTo: houseThreadId });
+                } catch {
+                  topicScoped = false;
+                  messages = await client.getMessages(peer, { limit: 1000 });
+                }
+                for (const message of Array.from(messages || [])) {
+                  const text = String(message?.message || "").trim();
+                  const reply = message?.replyTo || {};
+                  const exactTopic = Number(reply.replyToTopId || reply.reply_to_top_id || reply.replyToMsgId || reply.reply_to_msg_id || 0) === houseThreadId;
+                  if (!topicScoped && !exactTopic && Number(message?.id || 0) !== houseThreadId) continue;
+                  for (const item of messageUrls(message)) {
+                    if (!publicCtaUrl(item.url)) continue;
+                    const paragraph = paragraphAt(text, item.offset);
+                    if (/^(?:source|sources|来源)\s*[:：]/i.test(paragraph)) continue;
+                    const content = safeExternal(paragraph.includes(item.url) ? paragraph : `${paragraph}\n${item.url}`);
+                    if (!content) continue;
+                    const current = occurrences.get(item.url) || { url: item.url, count: 0, latestMessageId: 0, content };
+                    current.count += 1;
+                    if (Number(message?.id || 0) > current.latestMessageId) {
+                      current.latestMessageId = Number(message.id || 0);
+                      current.content = content;
+                    }
+                    occurrences.set(item.url, current);
+                  }
+                }
+                scannedAccount = String(account.userId || "");
+                break;
+              } catch (error) {
+                errors.push(String(error?.message || error).slice(0, 300));
+              } finally {
+                if (client) await client.disconnect().catch(() => undefined);
+              }
+            }
+
+            const ranked = [...occurrences.values()].sort((left, right) => right.count - left.count || right.latestMessageId - left.latestMessageId);
+            const top = ranked[0];
+            const runnerUp = ranked[1];
+            const ctaLike = top && (/(?:join|community|member|vip|academy|加入|社群|会员)/i.test(top.content) || /https:\/\/t\.me\//i.test(top.url));
+            if (top && ctaLike && (!runnerUp || top.count > runnerUp.count)) {
+              recovery.selected = {
+                content: top.content,
+                source: "house-topic-history-backup-session",
+                occurrenceCount: top.count,
+                latestMessageId: top.latestMessageId
+              };
+              recovery.ok = true;
+            }
+            recovery.telegramCandidates = ranked.map(({ content, ...item }) => ({ ...item, contentCharacters: content.length }));
+            recovery.diagnostics.backupTelegramCandidateCount = ranked.length;
+            recovery.diagnostics.backupTelegramAccount = scannedAccount;
+            recovery.diagnostics.backupTelegramErrors = errors;
+            await writeFile(recoveryPath, JSON.stringify(recovery));
+          }
+
+          main().catch(async (error) => {
+            const recovery = JSON.parse(await readFile(recoveryPath, "utf8").catch(() => "{}"));
+            recovery.diagnostics = recovery.diagnostics || {};
+            recovery.diagnostics.backupTelegramFatalError = String(error?.message || error).slice(0, 500);
+            await writeFile(recoveryPath, JSON.stringify(recovery));
+          });
+          NODE
           python3 <<'PYTHON'
           import copy
           import datetime
