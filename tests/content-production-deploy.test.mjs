@@ -78,13 +78,14 @@ test("read-only Academy audit reports the failing endpoint and sanitized HTTP re
   assert.match(workflow, /HTTP \{error\.code\}/);
 });
 
-test("authorized DEMO-only policy reconciliation is exact and rolls back on deployment failure", () => {
+test("governed Telegram target policy includes House and rolls back on deployment failure", () => {
   const workflow = read(".github/workflows/deploy-production-server.yml");
 
   assert.match(workflow, /env_backup="\$\(mktemp\)"/);
   assert.match(workflow, /sudo cp -p "\$env_file" "\$env_backup"/);
   assert.match(workflow, /set_env_value TELEGRAM_DEMO_ONLY true/);
   assert.match(workflow, /set_env_value TRADING_DEMO_ONLY true/);
+  assert.match(workflow, /expected_targets='-1003710405969:8,-1003710405969:10,-1003710405969:16,-1001702053978:309971'/);
   assert.match(workflow, /set_env_value TELEGRAM_DISTRIBUTION_APPROVED_TARGETS "\$expected_targets"/);
   assert.match(workflow, /set_env_value ALLOW_LIVE_TELEGRAM false/);
   assert.match(workflow, /\[ -n "\$env_backup" \] && \[ "\$deployment_committed" != "1" \]/);

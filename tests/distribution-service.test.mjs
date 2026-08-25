@@ -3380,6 +3380,48 @@ test("broadcast validation checks ForwardBot on the source and the desktop publi
   assert.match(result.checks.find((check) => check.key === `target:${target.id}`).message, /本机发布桥在线/);
 });
 
+test("automation validation reports a target blocked by the governed production allowlist", async () => {
+  const target = {
+    id: "house-market-events",
+    chatId: "-1001702053978",
+    chatType: "supergroup",
+    threadId: 309971,
+    groupName: "THE HOUSE OF CRYPTO",
+    topicName: "3. Market Events"
+  };
+  const repository = new MemoryDistributionRepository({
+    rules: [{
+      id: "rule-house-daily",
+      kind: "automation",
+      enabled: true,
+      mode: "automatic",
+      contentType: "crypto-daily",
+      targets: [target]
+    }]
+  });
+  repository.health = async () => ({ ok: true });
+  const calls = [];
+  const result = await validateRuleRuntime("rule-house-daily", {
+    repository,
+    env: {
+      NODE_ENV: "production",
+      TELEGRAM_DEMO_ONLY: "true",
+      TELEGRAM_DISTRIBUTION_APPROVED_TARGETS: "-1003710405969:8,-1003710405969:10,-1003710405969:16",
+      SPEAKER_BOT_TOKEN: "123:speaker-token"
+    },
+    telegram: async (_token, method) => {
+      calls.push(method);
+      if (method === "getMe") return { id: 123, username: "Satoshi_geniustrader_bot" };
+      throw new Error(`unexpected Telegram method: ${method}`);
+    },
+    groupConfig: { groups: [{ chatId: target.chatId, topics: [{ threadId: target.threadId, name: target.topicName }] }] }
+  });
+
+  assert.equal(result.ok, false);
+  assert.deepEqual(calls, ["getMe"]);
+  assert.match(result.checks.find((check) => check.key === `target:${target.id}:policy`).message, /生产允许列表/);
+});
+
 test("a desktop broadcast webhook queues the exact approved target Topic for the local bridge", async () => {
   const source = { chatId: "-1003710405969", chatType: "supergroup", threadId: 8 };
   const target = {
@@ -4002,7 +4044,7 @@ test("production no-send deployment preserves the existing Telegram and Discord 
   const workflow = await readFile(new URL("../.github/workflows/deploy-production-server.yml", import.meta.url), "utf8");
   const desktopRoute = await readFile(new URL("../app/api/cron/desktop-publisher/route.js", import.meta.url), "utf8");
 
-  assert.match(workflow, /expected_targets='-1003710405969:8,-1003710405969:10,-1003710405969:16'/);
+  assert.match(workflow, /expected_targets='-1003710405969:8,-1003710405969:10,-1003710405969:16,-1001702053978:309971'/);
   assert.match(workflow, /read_env TELEGRAM_DEMO_ONLY.*!= "true"/);
   assert.match(workflow, /read_env TRADING_DEMO_ONLY.*!= "true"/);
   assert.match(workflow, /read_env ALLOW_LIVE_TELEGRAM.*= "true"/);

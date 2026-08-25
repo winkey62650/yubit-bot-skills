@@ -324,6 +324,10 @@ jobs:
           release="$(readlink -f /opt/yubit-academy/current)"
           export AUTH_USERNAME="$(read_env AUTH_USERNAME)"
           export AUTH_PASSWORD="$(read_env AUTH_PASSWORD)"
+          export SPEAKER_BOT_TOKEN="$(read_env SPEAKER_BOT_TOKEN)"
+          if [ -z "$SPEAKER_BOT_TOKEN" ]; then
+            export SPEAKER_BOT_TOKEN="$(read_env TRADER1_BOT_TOKEN)"
+          fi
           export RELEASE_SHA="$(tr -d '[:space:]' <"$release/.release-commit")"
           export DISTRIBUTION_APPROVED_TARGETS="$(read_env TELEGRAM_DISTRIBUTION_APPROVED_TARGETS)"
           export USER_PUBLISHER_TARGETS="$(read_env TELEGRAM_USER_PUBLISHER_TARGETS)"
