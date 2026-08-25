@@ -764,6 +764,197 @@ jobs:
           export AUTH_USERNAME="$(read_env AUTH_USERNAME)"
           export AUTH_PASSWORD="$(read_env AUTH_PASSWORD)"
           export RELEASE_SHA="$(tr -d '[:space:]' <"$release/.release-commit")"
+          export DATABASE_URL="$(read_env DATABASE_URL)"
+          export POSTGRES_URL="$(read_env POSTGRES_URL)"
+          export TELEGRAM_API_ID="$(read_env TELEGRAM_API_ID)"
+          export TELEGRAM_API_HASH="$(read_env TELEGRAM_API_HASH)"
+          export TELEGRAM_USER_SESSION_ENCRYPTION_KEY="$(read_env TELEGRAM_USER_SESSION_ENCRYPTION_KEY)"
+          cta_recovery_file="$(mktemp)"
+          trap 'rm -f "$cta_recovery_file"' EXIT
+          export HOUSE_CTA_RECOVERY_FILE="$cta_recovery_file"
+          cd "$release"
+          node --input-type=module >"$cta_recovery_file" <<'NODE'
+          import { TelegramClient, sessions } from "teleproto";
+          import { getDistributionRepository } from "./lib/distribution-repository.mjs";
+          import { createTelegramUserSessionStore } from "./lib/telegram-user-session.mjs";
+
+          const houseChatId = String(process.env.HOUSE_CHAT_ID || "");
+          const houseThreadId = Number(process.env.HOUSE_THREAD_ID || 0);
+          const internalPattern = /(?:152-32-161-174\.sslip\.io|localhost|127\.0\.0\.1|\/api\/|\/admin(?:\b|\/)|\/distribution(?:\b|\/))/i;
+          const sourceHosts = new Set([
+            "bls.gov", "www.bls.gov", "bea.gov", "www.bea.gov", "federalreserve.gov", "www.federalreserve.gov",
+            "sec.gov", "www.sec.gov", "coindesk.com", "www.coindesk.com", "cointelegraph.com", "www.cointelegraph.com",
+            "reuters.com", "www.reuters.com", "bloomberg.com", "www.bloomberg.com", "cmegroup.com", "www.cmegroup.com",
+            "coinmarketcal.com", "www.coinmarketcal.com", "tradingeconomics.com", "www.tradingeconomics.com"
+          ]);
+          const report = { ok: false, eventCandidates: [], telegramCandidates: [], selected: null, diagnostics: {} };
+
+          function exactTarget(target = {}) {
+            return String(target.chatId || "") === houseChatId && Number(target.threadId || 0) === houseThreadId;
+          }
+
+          function safeExternal(content) {
+            const value = String(content || "").trim();
+            return value && !internalPattern.test(value) ? value : "";
+          }
+
+          function candidateFromPlan(plan = {}) {
+            const direct = safeExternal(plan.target?.ctaContent);
+            if (plan.target?.ctaEnabled === true && direct) return direct;
+            const steps = Array.isArray(plan.steps) ? plan.steps : [];
+            const finalStep = steps.at(-1) || {};
+            const boundary = finalStep.ctaBoundary || {};
+            const text = String(finalStep.payload?.text || finalStep.payload?.caption || "");
+            if (boundary.kind !== "destination-cta" || boundary.placement !== "suffix") return "";
+            if (!Number.isInteger(boundary.start) || !Number.isInteger(boundary.end) || boundary.end !== text.length) return "";
+            return safeExternal(text.slice(boundary.start, boundary.end));
+          }
+
+          function messageUrls(message) {
+            const text = String(message?.message || "");
+            const values = [];
+            for (const entity of Array.isArray(message?.entities) ? message.entities : []) {
+              const direct = String(entity?.url || "").trim();
+              const offset = Number(entity?.offset);
+              const length = Number(entity?.length);
+              const visible = Number.isInteger(offset) && Number.isInteger(length) ? text.slice(offset, offset + length) : "";
+              const value = direct || (/^https?:\/\//i.test(visible) ? visible : "");
+              if (value) values.push({ url: value, offset: Number.isInteger(offset) ? offset : text.lastIndexOf(visible), visible });
+            }
+            for (const match of text.matchAll(/https?:\/\/[^\s<>]+/gi)) {
+              values.push({ url: match[0].replace(/[),.;!?]+$/, ""), offset: match.index || 0, visible: match[0] });
+            }
+            const unique = new Map();
+            for (const value of values) unique.set(`${value.url}:${value.offset}`, value);
+            return [...unique.values()];
+          }
+
+          function publicCtaUrl(value) {
+            try {
+              const parsed = new URL(value);
+              return parsed.protocol === "https:" && !internalPattern.test(value) && !sourceHosts.has(parsed.hostname.toLowerCase());
+            } catch {
+              return false;
+            }
+          }
+
+          function paragraphAt(text, offset) {
+            const before = text.lastIndexOf("\n\n", Math.max(0, offset));
+            const after = text.indexOf("\n\n", Math.max(0, offset));
+            return text.slice(before < 0 ? 0 : before + 2, after < 0 ? text.length : after).trim();
+          }
+
+          let repository;
+          try {
+            repository = await getDistributionRepository();
+            const deliveries = await repository.listDeliveries({ limit: 500 });
+            const seenEvents = new Set();
+            for (const delivery of deliveries) {
+              if (!exactTarget(delivery.target) || seenEvents.has(delivery.eventId)) continue;
+              seenEvents.add(delivery.eventId);
+              const event = await repository.getEvent(delivery.eventId);
+              const plans = Array.isArray(event?.payload?.deliveryPlans) ? event.payload.deliveryPlans : [];
+              for (const plan of plans.filter((item) => exactTarget(item?.target))) {
+                const content = candidateFromPlan(plan);
+                if (!content) continue;
+                report.eventCandidates.push({ content, eventId: event.id, createdAt: String(event.createdAt || "") });
+              }
+            }
+            report.eventCandidates.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+            report.diagnostics.eventCount = seenEvents.size;
+          } catch (error) {
+            report.diagnostics.eventError = String(error?.message || error).slice(0, 500);
+          }
+
+          if (report.eventCandidates.length) {
+            report.selected = { ...report.eventCandidates[0], source: "production-delivery-event" };
+          } else if (repository) {
+            const urlOccurrences = new Map();
+            const store = createTelegramUserSessionStore({
+              repository,
+              encryptionKey: process.env.TELEGRAM_USER_SESSION_ENCRYPTION_KEY
+            });
+            const accounts = await store.listAccounts().catch(() => []);
+            report.diagnostics.accountCount = accounts.length;
+            for (const account of accounts) {
+              let client;
+              try {
+                const stored = await store.load(account.userId);
+                const envApiId = Number(process.env.TELEGRAM_API_ID);
+                const envApiHash = String(process.env.TELEGRAM_API_HASH || "").trim();
+                const apiId = Number.isSafeInteger(envApiId) && envApiId > 0 ? envApiId : Number(stored.apiId);
+                const apiHash = envApiHash || String(stored.apiHash || "");
+                client = new TelegramClient(new sessions.StringSession(stored.session), apiId, apiHash, {
+                  connectionRetries: 3,
+                  autoReconnect: false
+                });
+                await client.connect();
+                if (!(await client.checkAuthorization())) throw new Error("Telegram session is unauthorized");
+                let peer;
+                try {
+                  peer = await client.getInputEntity(houseChatId);
+                } catch {
+                  const dialogs = await client.getDialogs({ limit: 500 });
+                  const dialog = dialogs.find((item) => {
+                    const raw = String(item?.entity?.id || "").replace(/^-/, "");
+                    return `-100${raw}` === houseChatId;
+                  });
+                  if (!dialog?.entity) throw new Error("House dialog is not visible");
+                  peer = await client.getInputEntity(dialog.entity);
+                }
+                let messages;
+                let topicScoped = true;
+                try {
+                  messages = await client.getMessages(peer, { limit: 300, replyTo: houseThreadId });
+                } catch {
+                  topicScoped = false;
+                  messages = await client.getMessages(peer, { limit: 300 });
+                }
+                for (const message of Array.from(messages || [])) {
+                  const text = String(message?.message || "").trim();
+                  if (!text) continue;
+                  const reply = message?.replyTo || {};
+                  const exactTopic = Number(reply.replyToTopId || reply.reply_to_top_id || reply.replyToMsgId || reply.reply_to_msg_id || 0) === houseThreadId;
+                  if (!topicScoped && !exactTopic && Number(message?.id || 0) !== houseThreadId) continue;
+                  for (const item of messageUrls(message)) {
+                    if (!publicCtaUrl(item.url)) continue;
+                    if (text.length - Math.max(0, item.offset) > 700) continue;
+                    const paragraph = paragraphAt(text, item.offset);
+                    if (/^(?:source|sources|来源)\s*[:：]/i.test(paragraph)) continue;
+                    const content = safeExternal(paragraph.includes(item.url) ? paragraph : `${paragraph}\n${item.url}`);
+                    if (!content) continue;
+                    const key = item.url;
+                    const current = urlOccurrences.get(key) || { url: key, count: 0, latestMessageId: 0, content };
+                    current.count += 1;
+                    if (Number(message.id || 0) > current.latestMessageId) {
+                      current.latestMessageId = Number(message.id || 0);
+                      current.content = content;
+                    }
+                    urlOccurrences.set(key, current);
+                  }
+                }
+                report.diagnostics.telegramAccount = String(account.userId || "");
+                break;
+              } catch (error) {
+                report.diagnostics.telegramErrors ||= [];
+                report.diagnostics.telegramErrors.push(String(error?.message || error).slice(0, 300));
+              } finally {
+                if (client) await client.disconnect().catch(() => undefined);
+              }
+            }
+            report.telegramCandidates = [...urlOccurrences.values()].sort((left, right) => right.count - left.count || right.latestMessageId - left.latestMessageId);
+            const top = report.telegramCandidates[0];
+            const runnerUp = report.telegramCandidates[1];
+            if (top?.count >= 2 && (!runnerUp || top.count > runnerUp.count)) {
+              report.selected = { content: top.content, source: "house-topic-history", occurrenceCount: top.count, latestMessageId: top.latestMessageId };
+            }
+          }
+
+          report.ok = Boolean(report.selected?.content);
+          report.diagnostics.eventCandidateCount = report.eventCandidates.length;
+          report.diagnostics.telegramCandidateCount = report.telegramCandidates.length;
+          console.log(JSON.stringify(report));
+          NODE
           python3 <<'PYTHON'
           import copy
           import datetime
@@ -951,35 +1142,46 @@ jobs:
                       recovered_content = production_legacy[0]
                       recovery_source = "production-distribution-rule"
                   else:
-                      previous_request_json = build_json_client(previous_base_url)
-                      previous_login = previous_request_json("/api/auth/login", payload={
-                          "username": os.environ["AUTH_USERNAME"],
-                          "password": os.environ["AUTH_PASSWORD"],
-                      })
-                      if previous_login.get("ok") is not True:
-                          raise RuntimeError("previous content-system login was not accepted")
-                      previous_registry = {}
-                      try:
-                          previous_payload = previous_request_json("/api/destination-cta")
-                          previous_registry = previous_payload.get("registry") or {}
-                          report["ctaDiagnostics"]["previousDestinationRegistryAvailable"] = True
-                      except RuntimeError:
-                          report["ctaDiagnostics"]["previousDestinationRegistryAvailable"] = False
-                      recovered = previous_registry.get(f"telegram:{house_chat_id}") or {}
-                      recovered_content = str(recovered.get("ctaContent") or "").strip()
-                      report["ctaDiagnostics"]["previousRegistryKeys"] = sorted(previous_registry.keys())
-                      if recovered.get("ctaEnabled") is True and recovered_content:
-                          recovery_source = "previous-content-system-registry"
-                      else:
-                          recovered_content = ""
-                          previous_overview = previous_request_json("/api/distribution")
-                          previous_legacy = saved_legacy_ctas(previous_overview.get("rules") or [])
-                          report["ctaDiagnostics"]["previousLegacyCandidateCount"] = len(previous_legacy)
-                          if len(previous_legacy) > 1:
-                              raise RuntimeError("multiple different House CTAs remain in previous distribution rules")
-                          if len(previous_legacy) == 1:
-                              recovered_content = previous_legacy[0]
-                              recovery_source = "previous-content-system-distribution-rule"
+                      with open(os.environ["HOUSE_CTA_RECOVERY_FILE"], encoding="utf-8") as recovery_handle:
+                          historical_recovery = json.load(recovery_handle)
+                      report["ctaDiagnostics"]["historicalRecovery"] = {
+                          "ok": historical_recovery.get("ok") is True,
+                          "eventCandidateCount": (historical_recovery.get("diagnostics") or {}).get("eventCandidateCount", 0),
+                          "telegramCandidateCount": (historical_recovery.get("diagnostics") or {}).get("telegramCandidateCount", 0),
+                      }
+                      historical_selected = historical_recovery.get("selected") or {}
+                      recovered_content = str(historical_selected.get("content") or "").strip()
+                      recovery_source = str(historical_selected.get("source") or "")
+                      if not recovered_content:
+                          previous_request_json = build_json_client(previous_base_url)
+                          previous_login = previous_request_json("/api/auth/login", payload={
+                              "username": os.environ["AUTH_USERNAME"],
+                              "password": os.environ["AUTH_PASSWORD"],
+                          })
+                          if previous_login.get("ok") is not True:
+                              raise RuntimeError("previous content-system login was not accepted")
+                          previous_registry = {}
+                          try:
+                              previous_payload = previous_request_json("/api/destination-cta")
+                              previous_registry = previous_payload.get("registry") or {}
+                              report["ctaDiagnostics"]["previousDestinationRegistryAvailable"] = True
+                          except RuntimeError:
+                              report["ctaDiagnostics"]["previousDestinationRegistryAvailable"] = False
+                          recovered = previous_registry.get(f"telegram:{house_chat_id}") or {}
+                          recovered_content = str(recovered.get("ctaContent") or "").strip()
+                          report["ctaDiagnostics"]["previousRegistryKeys"] = sorted(previous_registry.keys())
+                          if recovered.get("ctaEnabled") is True and recovered_content:
+                              recovery_source = "previous-content-system-registry"
+                          else:
+                              recovered_content = ""
+                              previous_overview = previous_request_json("/api/distribution")
+                              previous_legacy = saved_legacy_ctas(previous_overview.get("rules") or [])
+                              report["ctaDiagnostics"]["previousLegacyCandidateCount"] = len(previous_legacy)
+                              if len(previous_legacy) > 1:
+                                  raise RuntimeError("multiple different House CTAs remain in previous distribution rules")
+                              if len(previous_legacy) == 1:
+                                  recovered_content = previous_legacy[0]
+                                  recovery_source = "previous-content-system-distribution-rule"
                   report["ctaDiagnostics"]["recoveredCharacters"] = len(recovered_content)
                   report["ctaDiagnostics"]["recoveredInternalUrl"] = bool(internal_url_pattern.search(recovered_content))
                   if not recovered_content:
