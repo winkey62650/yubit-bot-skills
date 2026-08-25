@@ -173,6 +173,9 @@ jobs:
           export AUTH_USERNAME="$(read_env AUTH_USERNAME)"
           export AUTH_PASSWORD="$(read_env AUTH_PASSWORD)"
           export SPEAKER_BOT_TOKEN="$(read_env SPEAKER_BOT_TOKEN)"
+          if [ -z "$SPEAKER_BOT_TOKEN" ]; then
+            export SPEAKER_BOT_TOKEN="$(read_env TRADER1_BOT_TOKEN)"
+          fi
           export OBSIDIAN_VAULT_PATH="$(read_env OBSIDIAN_VAULT_PATH)"
           export RELEASE_SHA="$(tr -d '[:space:]' <"$release/.release-commit")"
           python3 <<'PYTHON'
