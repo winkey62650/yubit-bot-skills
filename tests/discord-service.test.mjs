@@ -675,8 +675,9 @@ test("Discord service uses encrypted credentials saved from the backend", async 
   assert.equal(JSON.stringify(result).includes("stored-secret-token"), false);
 });
 
-test("Discord message delivery supports text and image embeds", async () => {
+test("Discord message delivery uploads ordinary poster URLs as file attachments", async () => {
   let request;
+  const posterRequests = [];
   const result = await sendDiscordMessage(
     "channel-3",
     {
@@ -687,18 +688,54 @@ test("Discord message delivery supports text and image embeds", async () => {
       token: "secret",
       fetchImpl: async (url, options) => {
         request = { url: String(url), options };
-        return jsonResponse(200, { id: "message-1", channel_id: "channel-3" });
+        return jsonResponse(200, {
+          id: "message-1",
+          channel_id: "channel-3",
+          attachments: [{ id: "attachment-1", filename: "market-card.png" }],
+        });
+      },
+      posterFetchImpl: async (url, options = {}) => {
+        posterRequests.push({ url: String(url), options });
+        return new Response(Buffer.from("poster-bytes"), {
+          status: 200,
+          headers: { "content-type": "image/png" },
+        });
       },
     },
   );
 
   assert.equal(result.id, "message-1");
+  assert.equal(posterRequests.length, 1);
+  assert.equal(posterRequests[0].url, "https://cdn.example.com/market.png");
   assert.equal(request.url.endsWith("/channels/channel-3/messages"), true);
-  assert.deepEqual(JSON.parse(request.options.body), {
+  assert.equal(request.options.body instanceof FormData, true);
+  assert.deepEqual(JSON.parse(request.options.body.get("payload_json")), {
     content: "Daily market update",
-    embeds: [{ image: { url: "https://cdn.example.com/market.png" } }],
     allowed_mentions: { parse: [] },
   });
+  assert.equal(request.options.body.get("files[0]").name, "market-card.png");
+});
+
+test("Discord poster delivery fails closed when the returned message has no attachment", async () => {
+  await assert.rejects(
+    sendDiscordMessage(
+      "channel-missing-poster",
+      { content: "Daily market update", imageUrl: "https://cdn.example.com/market.png" },
+      {
+        token: "secret",
+        fetchImpl: async () => jsonResponse(200, {
+          id: "message-without-poster",
+          channel_id: "channel-missing-poster",
+          attachments: [],
+        }),
+        posterFetchImpl: async () => new Response(Buffer.from("poster-bytes"), {
+          status: 200,
+          headers: { "content-type": "image/png" },
+        }),
+      },
+    ),
+    /did not confirm an image attachment/i,
+  );
 });
 
 test("Discord message delivery converts overlong image URLs into file attachments", async () => {
@@ -716,7 +753,11 @@ test("Discord message delivery converts overlong image URLs into file attachment
       fetchImpl: async (url, options = {}) => {
         requests.push({ url: String(url), options });
         assert.notEqual(String(url), imageUrl, "poster downloads must not use the framework/API fetch implementation");
-        return jsonResponse(200, { id: "message-long-poster", channel_id: "channel-long-poster" });
+        return jsonResponse(200, {
+          id: "message-long-poster",
+          channel_id: "channel-long-poster",
+          attachments: [{ id: "attachment-long", filename: "market-card.png" }],
+        });
       },
       posterFetchImpl: async (url, options = {}) => {
         posterRequests.push({ url: String(url), options });
@@ -790,7 +831,11 @@ test("Discord message delivery uploads a local image as a multipart attachment",
       token: "secret",
       fetchImpl: async (url, options) => {
         request = { url: String(url), options };
-        return jsonResponse(200, { id: "message-photo", channel_id: "channel-photo" });
+        return jsonResponse(200, {
+          id: "message-photo",
+          channel_id: "channel-photo",
+          attachments: [{ id: "attachment-photo", filename: "signal.png" }],
+        });
       },
     },
   );
@@ -832,13 +877,21 @@ test("Discord manual publish deduplicates targets and isolates per-target failur
     {
       token: "manual-secret-token",
       repository,
+      posterFetchImpl: async () => new Response(Buffer.from("manual-poster"), {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      }),
       fetchImpl: async (url) => {
         const channelId = String(url).match(/channels\/([^/]+)\/messages/)?.[1];
         if (channelId) requests.push(channelId);
         if (channelId === "channel-fail") {
           throw new Error("Missing Access manual-secret-token");
         }
-        return jsonResponse(200, { id: `message-${channelId}`, channel_id: channelId });
+        return jsonResponse(200, {
+          id: `message-${channelId}`,
+          channel_id: channelId,
+          attachments: [{ id: `attachment-${channelId}`, filename: "market-card.png" }],
+        });
       },
     },
   );

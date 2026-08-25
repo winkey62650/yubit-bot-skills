@@ -32,8 +32,9 @@ test("builds explicit agent social targets only from writable Discord channels",
       guildId: "guild-1",
       guildName: "Demo Server",
       channels: [
-        { channelId: "channel-1", name: "news", permissionsOk: true, canEmbed: true },
-        { channelId: "channel-2", name: "blocked", permissionsOk: false, canEmbed: true },
+        { channelId: "channel-1", name: "news", permissionsOk: true, canAttach: true },
+        { channelId: "channel-2", name: "blocked", permissionsOk: false, canAttach: true },
+        { channelId: "channel-3", name: "no-files", permissionsOk: true, canAttach: false },
       ],
     },
   ]);

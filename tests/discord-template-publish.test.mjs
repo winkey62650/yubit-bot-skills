@@ -10,16 +10,17 @@ const health = {
       guildId: "guild-one",
       guildName: "Guild One",
       channels: [
-        { channelId: "channel-market", name: "market", permissionsOk: true },
-        { channelId: "channel-research", name: "research", permissionsOk: true },
+        { channelId: "channel-market", name: "market", permissionsOk: true, canAttach: true },
+        { channelId: "channel-research", name: "research", permissionsOk: true, canAttach: true },
         { channelId: "channel-blocked", name: "blocked", permissionsOk: false },
+        { channelId: "channel-no-files", name: "no-files", permissionsOk: true, canAttach: false },
       ],
     },
     {
       guildId: "guild-two",
       guildName: "Guild Two",
       channels: [
-        { channelId: "channel-signals", name: "signals", permissionsOk: true },
+        { channelId: "channel-signals", name: "signals", permissionsOk: true, canAttach: true },
       ],
     },
   ],
@@ -49,6 +50,13 @@ test("Discord template publishing rejects channels that fail the live permission
   await assert.rejects(
     publishDiscordTemplate({ contentType: "daily-events", channelIds: ["channel-blocked"] }, { health }),
     /channel-blocked/,
+  );
+});
+
+test("Discord template publishing requires Attach Files permission for posters", async () => {
+  await assert.rejects(
+    publishDiscordTemplate({ contentType: "daily-events", channelIds: ["channel-no-files"] }, { health }),
+    /channel-no-files/,
   );
 });
 
