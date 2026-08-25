@@ -799,24 +799,26 @@ jobs:
           }
 
           function candidateFromPlan(plan = {}) {
-            const direct = safeExternal(plan.target?.ctaContent);
-            if (plan.target?.ctaEnabled === true && direct) return direct;
+            const target = plan.target || {};
+            const direct = safeExternal(target.ctaContent);
+            if (target.ctaEnabled === true && direct) return direct;
             const steps = Array.isArray(plan.steps) ? plan.steps : [];
-            const finalStep = steps.at(-1) || {};
+            const finalStep = steps.length ? steps[steps.length - 1] : {};
             const boundary = finalStep.ctaBoundary || {};
-            const text = String(finalStep.payload?.text || finalStep.payload?.caption || "");
+            const payload = finalStep.payload || {};
+            const text = String(payload.text || payload.caption || "");
             if (boundary.kind !== "destination-cta" || boundary.placement !== "suffix") return "";
             if (!Number.isInteger(boundary.start) || !Number.isInteger(boundary.end) || boundary.end !== text.length) return "";
             return safeExternal(text.slice(boundary.start, boundary.end));
           }
 
           function messageUrls(message) {
-            const text = String(message?.message || "");
+            const text = String((message && message.message) || "");
             const values = [];
-            for (const entity of Array.isArray(message?.entities) ? message.entities : []) {
-              const direct = String(entity?.url || "").trim();
-              const offset = Number(entity?.offset);
-              const length = Number(entity?.length);
+            for (const entity of Array.isArray(message && message.entities) ? message.entities : []) {
+              const direct = String((entity && entity.url) || "").trim();
+              const offset = Number(entity && entity.offset);
+              const length = Number(entity && entity.length);
               const visible = Number.isInteger(offset) && Number.isInteger(length) ? text.slice(offset, offset + length) : "";
               const value = direct || (/^https?:\/\//i.test(visible) ? visible : "");
               if (value) values.push({ url: value, offset: Number.isInteger(offset) ? offset : text.lastIndexOf(visible), visible });
@@ -853,8 +855,9 @@ jobs:
               if (!exactTarget(delivery.target) || seenEvents.has(delivery.eventId)) continue;
               seenEvents.add(delivery.eventId);
               const event = await repository.getEvent(delivery.eventId);
-              const plans = Array.isArray(event?.payload?.deliveryPlans) ? event.payload.deliveryPlans : [];
-              for (const plan of plans.filter((item) => exactTarget(item?.target))) {
+              const payload = (event && event.payload) || {};
+              const plans = Array.isArray(payload.deliveryPlans) ? payload.deliveryPlans : [];
+              for (const plan of plans.filter((item) => exactTarget(item && item.target))) {
                 const content = candidateFromPlan(plan);
                 if (!content) continue;
                 report.eventCandidates.push({ content, eventId: event.id, createdAt: String(event.createdAt || "") });
@@ -863,7 +866,7 @@ jobs:
             report.eventCandidates.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
             report.diagnostics.eventCount = seenEvents.size;
           } catch (error) {
-            report.diagnostics.eventError = String(error?.message || error).slice(0, 500);
+            report.diagnostics.eventError = String((error && error.message) || error).slice(0, 500);
           }
 
           if (report.eventCandidates.length) {
@@ -896,10 +899,11 @@ jobs:
                 } catch {
                   const dialogs = await client.getDialogs({ limit: 500 });
                   const dialog = dialogs.find((item) => {
-                    const raw = String(item?.entity?.id || "").replace(/^-/, "");
+                    const entity = (item && item.entity) || {};
+                    const raw = String(entity.id || "").replace(/^-/, "");
                     return `-100${raw}` === houseChatId;
                   });
-                  if (!dialog?.entity) throw new Error("House dialog is not visible");
+                  if (!dialog || !dialog.entity) throw new Error("House dialog is not visible");
                   peer = await client.getInputEntity(dialog.entity);
                 }
                 let messages;
@@ -911,11 +915,11 @@ jobs:
                   messages = await client.getMessages(peer, { limit: 300 });
                 }
                 for (const message of Array.from(messages || [])) {
-                  const text = String(message?.message || "").trim();
+                  const text = String((message && message.message) || "").trim();
                   if (!text) continue;
-                  const reply = message?.replyTo || {};
+                  const reply = (message && message.replyTo) || {};
                   const exactTopic = Number(reply.replyToTopId || reply.reply_to_top_id || reply.replyToMsgId || reply.reply_to_msg_id || 0) === houseThreadId;
-                  if (!topicScoped && !exactTopic && Number(message?.id || 0) !== houseThreadId) continue;
+                  if (!topicScoped && !exactTopic && Number((message && message.id) || 0) !== houseThreadId) continue;
                   for (const item of messageUrls(message)) {
                     if (!publicCtaUrl(item.url)) continue;
                     if (text.length - Math.max(0, item.offset) > 700) continue;
@@ -936,8 +940,8 @@ jobs:
                 report.diagnostics.telegramAccount = String(account.userId || "");
                 break;
               } catch (error) {
-                report.diagnostics.telegramErrors ||= [];
-                report.diagnostics.telegramErrors.push(String(error?.message || error).slice(0, 300));
+                if (!Array.isArray(report.diagnostics.telegramErrors)) report.diagnostics.telegramErrors = [];
+                report.diagnostics.telegramErrors.push(String((error && error.message) || error).slice(0, 300));
               } finally {
                 if (client) await client.disconnect().catch(() => undefined);
               }
@@ -945,12 +949,12 @@ jobs:
             report.telegramCandidates = [...urlOccurrences.values()].sort((left, right) => right.count - left.count || right.latestMessageId - left.latestMessageId);
             const top = report.telegramCandidates[0];
             const runnerUp = report.telegramCandidates[1];
-            if (top?.count >= 2 && (!runnerUp || top.count > runnerUp.count)) {
+            if (top && top.count >= 2 && (!runnerUp || top.count > runnerUp.count)) {
               report.selected = { content: top.content, source: "house-topic-history", occurrenceCount: top.count, latestMessageId: top.latestMessageId };
             }
           }
 
-          report.ok = Boolean(report.selected?.content);
+          report.ok = Boolean(report.selected && report.selected.content);
           report.diagnostics.eventCandidateCount = report.eventCandidates.length;
           report.diagnostics.telegramCandidateCount = report.telegramCandidates.length;
           console.log(JSON.stringify(report));
