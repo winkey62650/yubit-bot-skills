@@ -813,7 +813,7 @@ jobs:
 
           def target_matches(target):
               return (
-                  str(target.get("platform", "telegram")) == "telegram"
+                  str(target.get("platform") or "telegram") == "telegram"
                   and str(target.get("chatId", "")) == house_chat_id
                   and int(target.get("threadId") or 0) == house_thread_id
               )
