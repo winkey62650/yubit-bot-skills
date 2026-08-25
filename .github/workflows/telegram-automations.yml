@@ -16,6 +16,7 @@ on:
           - academy-audit
           - telegram-house-audit
           - telegram-house-probe
+          - telegram-house-resend
           - discord-audit
           - discord-demo
           - agents
@@ -720,6 +721,314 @@ jobs:
         with:
           name: telegram-house-probe-${{ github.sha }}
           path: ${{ runner.temp }}/telegram-house-probe.json
+          if-no-files-found: error
+          retention-days: 30
+
+  telegram_house_resend:
+    if: inputs.job == 'telegram-house-resend'
+    runs-on: ubuntu-latest
+    environment: Production
+    env:
+      TEST_BASE_URL: https://152-32-161-174.sslip.io
+      HOUSE_CHAT_ID: "-1001702053978"
+      HOUSE_THREAD_ID: "309971"
+    steps:
+      - name: Install SSH password helper
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq sshpass
+
+      - name: Resend one canonical Market Brief to the exact House topic
+        env:
+          SSHPASS: ${{ secrets.YUBIT_SERVER_PASSWORD }}
+        run: |
+          set -Eeuo pipefail
+          if [ -z "$SSHPASS" ]; then
+            echo "YUBIT_SERVER_PASSWORD is not configured." >&2
+            exit 1
+          fi
+          report_path="$RUNNER_TEMP/telegram-house-resend.json"
+          sshpass -e ssh \
+            -o ConnectTimeout=20 \
+            -o ServerAliveInterval=10 \
+            -o StrictHostKeyChecking=accept-new \
+            ubuntu@152.32.161.174 \
+            "TEST_BASE_URL='$TEST_BASE_URL' HOUSE_CHAT_ID='$HOUSE_CHAT_ID' HOUSE_THREAD_ID='$HOUSE_THREAD_ID' bash -s" \
+            >"$report_path" <<'REMOTE'
+          set -Eeuo pipefail
+          env_file=/etc/yubit-academy/production.env
+          read_env() {
+            sudo awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "$env_file"
+          }
+          release="$(readlink -f /opt/yubit-academy/current)"
+          export AUTH_USERNAME="$(read_env AUTH_USERNAME)"
+          export AUTH_PASSWORD="$(read_env AUTH_PASSWORD)"
+          export RELEASE_SHA="$(tr -d '[:space:]' <"$release/.release-commit")"
+          python3 <<'PYTHON'
+          import datetime
+          import http.cookiejar
+          import json
+          import os
+          import re
+          import ssl
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          base_url = os.environ["TEST_BASE_URL"].rstrip("/")
+          house_chat_id = os.environ["HOUSE_CHAT_ID"]
+          house_thread_id = int(os.environ["HOUSE_THREAD_ID"])
+          internal_url_pattern = re.compile(
+              r"(?:152-32-161-174\.sslip\.io|localhost|127\.0\.0\.1|/api/|/admin(?:\b|/)|/distribution(?:\b|/))",
+              re.I,
+          )
+          cookie_jar = http.cookiejar.CookieJar()
+          opener = urllib.request.build_opener(
+              urllib.request.HTTPCookieProcessor(cookie_jar),
+              urllib.request.HTTPSHandler(context=ssl._create_unverified_context()),
+          )
+
+          def clean_error(value):
+              text = str(value or "")
+              text = re.sub(r"postgres(?:ql)?://[^\s\"']+", "postgresql://<redacted>", text, flags=re.I)
+              text = re.sub(r"(?i)(password|token|secret)([=:\"'\s]+)[^\s,}\"]+", r"\1\2<redacted>", text)
+              return text[:2000]
+
+          def request_json(path, *, payload=None, timeout=30):
+              request = urllib.request.Request(
+                  f"{base_url}{path}",
+                  data=None if payload is None else json.dumps(payload).encode(),
+                  headers={} if payload is None else {"content-type": "application/json"},
+                  method="GET" if payload is None else "POST",
+              )
+              try:
+                  with opener.open(request, timeout=timeout) as response:
+                      body = json.load(response)
+              except urllib.error.HTTPError as error:
+                  body = error.read().decode("utf-8", errors="replace")
+                  raise RuntimeError(f"{path} HTTP {error.code}: {clean_error(body)}") from error
+              if body.get("ok") is False:
+                  raise RuntimeError(f"{path}: {clean_error(body.get('error', 'request failed'))}")
+              return body
+
+          def target_matches(target):
+              return (
+                  str(target.get("platform", "telegram")) == "telegram"
+                  and str(target.get("chatId", "")) == house_chat_id
+                  and int(target.get("threadId") or 0) == house_thread_id
+              )
+
+          def message_ids(value):
+              candidates = value.get("messageIds") or value.get("targetMessageIds") or []
+              if not candidates:
+                  one = value.get("messageId") or value.get("targetMessageId")
+                  candidates = [one] if one is not None else []
+              return [int(item) for item in candidates if str(item).isdigit()]
+
+          def reliable_sources(preview):
+              candidates = [
+                  preview.get("sources"),
+                  (preview.get("diagnostics") or {}).get("sources"),
+                  ((preview.get("document") or {}).get("diagnostics") or {}).get("sources"),
+              ]
+              sources = next((items for items in candidates if isinstance(items, list) and items), [])
+              healthy = any(str(item.get("status", "")).lower() in {"ok", "healthy", "success"} for item in sources)
+              return healthy, sources
+
+          def preflight_image(url):
+              parsed = urllib.parse.urlsplit(url)
+              if parsed.scheme != "https" or not parsed.netloc:
+                  raise RuntimeError("poster URL is not an absolute HTTPS URL")
+              request = urllib.request.Request(url, headers={"user-agent": "HouseResendAcceptance/1.0"})
+              with urllib.request.urlopen(request, timeout=45, context=ssl._create_unverified_context()) as response:
+                  body = response.read(5 * 1024 * 1024 + 1)
+                  content_type = response.headers.get("content-type", "").lower()
+                  status = response.status
+              if status != 200 or not content_type.startswith("image/png") or not (1024 <= len(body) <= 5 * 1024 * 1024):
+                  raise RuntimeError("poster media preflight failed")
+              return {"status": status, "contentType": content_type, "bytes": len(body), "host": parsed.netloc}
+
+          report = {
+              "ok": False,
+              "operation": "telegram-house-market-brief-resend",
+              "target": {"chatId": house_chat_id, "threadId": house_thread_id},
+              "releaseSha": os.environ["RELEASE_SHA"],
+              "startedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+          }
+          try:
+              login = request_json("/api/auth/login", payload={
+                  "username": os.environ["AUTH_USERNAME"],
+                  "password": os.environ["AUTH_PASSWORD"],
+              })
+              if login.get("ok") is not True:
+                  raise RuntimeError("production login was not accepted")
+
+              release_info = request_json("/api/release-info")
+              release_commit = str((release_info.get("release") or release_info.get("result") or {}).get("commit", ""))
+              if release_commit and release_commit != os.environ["RELEASE_SHA"]:
+                  raise RuntimeError("release identity mismatch")
+
+              overview = request_json("/api/distribution")
+              rules = overview.get("rules") or []
+              candidates = []
+              for rule in rules:
+                  targets = rule.get("targets") or []
+                  if (
+                      rule.get("kind") == "automation"
+                      and rule.get("contentType") == "crypto-daily"
+                      and rule.get("enabled") is True
+                      and len(targets) == 1
+                      and target_matches(targets[0])
+                  ):
+                      candidates.append(rule)
+              if len(candidates) != 1:
+                  raise RuntimeError(f"expected one exact House Market Brief rule, found {len(candidates)}")
+              rule = candidates[0]
+              target = rule["targets"][0]
+
+              validation = request_json("/api/distribution", payload={"action": "validate", "id": rule["id"]}, timeout=60)
+              validation_result = validation.get("result") or {}
+              if validation_result.get("ok") is not True:
+                  raise RuntimeError("distribution rule runtime validation failed")
+
+              preview_payload = request_json("/api/automation-test", payload={
+                  "jobId": "crypto-daily",
+                  "targets": [target],
+                  "textOnly": False,
+                  "previewChallenge": os.urandom(32).hex(),
+              }, timeout=90)
+              preview = (preview_payload.get("result") or {}).get("preview") or {}
+              if preview.get("publishable") is not True:
+                  raise RuntimeError(f"Market Brief is not publishable: {preview.get('skipReason') or 'unknown'}")
+              source_ok, sources = reliable_sources(preview)
+              if not source_ok:
+                  raise RuntimeError("Market Brief has no healthy realtime source")
+              governance = preview.get("contentGovernance") or {}
+              products = governance.get("products") or []
+              if (
+                  governance.get("approved") is not True
+                  or len(products) != 1
+                  or products[0].get("product") != "daily-market-brief"
+                  or products[0].get("status") != "distribution-ready"
+              ):
+                  raise RuntimeError("canonical content governance did not approve one daily Market Brief")
+              plans = preview.get("deliveryPlans") or []
+              if len(plans) != 1 or not target_matches(plans[0].get("target") or {}):
+                  raise RuntimeError("preview escaped the exact House topic")
+              plan = plans[0]
+              plan_target = plan.get("target") or {}
+              cta_content = str(plan_target.get("ctaContent") or "").strip()
+              if plan_target.get("ctaEnabled") is not True or not cta_content:
+                  raise RuntimeError("House saved destination CTA was not hydrated")
+              steps = plan.get("steps") or []
+              if len(steps) < 2 or steps[0].get("method") != "sendPhoto" or steps[-1].get("method") != "sendMessage":
+                  raise RuntimeError("Market Brief must contain a poster followed by copy")
+              poster_url = str((steps[0].get("payload") or {}).get("photo") or "")
+              media = preflight_image(poster_url)
+              final_text = str((steps[-1].get("payload") or {}).get("text") or "")
+              boundary = steps[-1].get("ctaBoundary") or {}
+              start = boundary.get("start")
+              end = boundary.get("end")
+              if (
+                  boundary.get("kind") != "destination-cta"
+                  or boundary.get("placement") != "suffix"
+                  or not isinstance(start, int)
+                  or not isinstance(end, int)
+                  or start < 0
+                  or end != len(final_text)
+                  or final_text[start:end].strip() == ""
+              ):
+                  raise RuntimeError("saved destination CTA is not the final rendered block")
+              if internal_url_pattern.search(final_text):
+                  raise RuntimeError("public copy contains a backend or internal URL")
+
+              execution_payload = request_json("/api/distribution", payload={
+                  "action": "run-now",
+                  "id": rule["id"],
+                  "exactTargets": True,
+                  "textOnly": False,
+              }, timeout=180)
+              execution = execution_payload.get("result") or {}
+              target_results = ((execution.get("run") or {}).get("preview") or {}).get("targetResults") or []
+              if execution.get("status") != "success" or len(target_results) != 1:
+                  raise RuntimeError(f"live resend failed: {execution.get('error') or execution.get('status') or 'unknown'}")
+              receipt = target_results[0]
+              ids = message_ids(receipt)
+              if receipt.get("status") != "success" or not target_matches(receipt.get("target") or {}) or len(ids) < 2:
+                  raise RuntimeError("live resend did not return poster and copy message IDs for the exact target")
+
+              delivery_payload = request_json("/api/distribution/logs?limit=500")
+              deliveries = delivery_payload.get("items") or delivery_payload.get("deliveries") or []
+              matches = [item for item in deliveries if (
+                  item.get("ruleId") == rule["id"]
+                  and item.get("status") == "success"
+                  and target_matches(item.get("target") or {})
+                  and all(message_id in message_ids(item) for message_id in ids)
+              )]
+              if len(matches) != 1:
+                  raise RuntimeError("durable delivery receipt was not persisted exactly once")
+              feedback_results = execution.get("feedbackResults") or []
+              feedback = next((item for item in feedback_results if item.get("deliveryId") == matches[0].get("id")), None)
+              if (
+                  execution.get("feedbackPersisted") is not True
+                  or execution.get("feedbackPending") is True
+                  or not feedback
+                  or feedback.get("feedbackPersisted") is not True
+                  or feedback.get("feedbackStatePersisted") is not True
+                  or not feedback.get("receiptId")
+              ):
+                  raise RuntimeError("content feedback receipt was not closed")
+
+              report.update({
+                  "ok": True,
+                  "rule": {"id": rule["id"], "name": rule.get("name"), "contentType": rule.get("contentType")},
+                  "validation": {"ok": True, "checkCount": len(validation_result.get("checks") or [])},
+                  "preview": {
+                      "publishable": True,
+                      "sourceCount": len(sources),
+                      "productId": products[0].get("id"),
+                      "contentHash": products[0].get("contentHash"),
+                      "ctaHydrated": True,
+                      "ctaCharacters": len(cta_content),
+                      "internalUrlAbsent": True,
+                      "media": media,
+                  },
+                  "delivery": {
+                      "messageIds": ids,
+                      "deliveryId": matches[0].get("id"),
+                      "feedbackReceiptId": feedback.get("receiptId"),
+                      "deliveredAt": matches[0].get("deliveredAt"),
+                  },
+                  "finishedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              })
+          except Exception as error:
+              report["error"] = clean_error(error)
+          print(json.dumps(report, ensure_ascii=False, indent=2))
+          if not report["ok"]:
+              raise SystemExit(1)
+          PYTHON
+          REMOTE
+          jq -e '
+            .ok == true
+            and .operation == "telegram-house-market-brief-resend"
+            and .target == {"chatId":"-1001702053978","threadId":309971}
+            and .preview.publishable == true
+            and .preview.ctaHydrated == true
+            and .preview.internalUrlAbsent == true
+            and (.preview.media.bytes >= 1024)
+            and (.delivery.messageIds | length >= 2)
+            and (.delivery.deliveryId | type == "string" and length > 0)
+            and (.delivery.feedbackReceiptId | type == "string" and length > 0)
+          ' "$report_path" >/dev/null
+          echo "### House of Crypto Market Brief resend" >>"$GITHUB_STEP_SUMMARY"
+          jq -r '"- Target: `\(.target.chatId):\(.target.threadId)`\n- Rule: `\(.rule.id)`\n- Message IDs: `\(.delivery.messageIds | join(", "))`\n- CTA: saved destination CTA rendered, no internal URL\n- Poster: `\(.preview.media.contentType)`, `\(.preview.media.bytes)` bytes\n- Durable receipt: `\(.delivery.deliveryId)`\n- Feedback receipt: `\(.delivery.feedbackReceiptId)`"' "$report_path" >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Upload House of Crypto resend evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: telegram-house-resend-${{ github.sha }}
+          path: ${{ runner.temp }}/telegram-house-resend.json
           if-no-files-found: error
           retention-days: 30
 
