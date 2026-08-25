@@ -172,6 +172,7 @@ jobs:
           release="$(readlink -f /opt/yubit-academy/current)"
           export AUTH_USERNAME="$(read_env AUTH_USERNAME)"
           export AUTH_PASSWORD="$(read_env AUTH_PASSWORD)"
+          export SPEAKER_BOT_TOKEN="$(read_env SPEAKER_BOT_TOKEN)"
           export OBSIDIAN_VAULT_PATH="$(read_env OBSIDIAN_VAULT_PATH)"
           export RELEASE_SHA="$(tr -d '[:space:]' <"$release/.release-commit")"
           python3 <<'PYTHON'
@@ -413,6 +414,7 @@ jobs:
           delivery_payload = {}
           authorization = {}
           account_dialogs = []
+          bot_access = {}
           try:
               login = request_json("/api/auth/login", payload={
                   "username": os.environ["AUTH_USERNAME"],
@@ -450,6 +452,44 @@ jobs:
                   account_dialogs.append(entry)
           except Exception as error:
               errors.append(sanitize(error))
+
+          def telegram_bot_call(method, payload):
+              token = os.environ.get("SPEAKER_BOT_TOKEN", "").strip()
+              if not token:
+                  raise RuntimeError("SPEAKER_BOT_TOKEN is not configured")
+              request = urllib.request.Request(
+                  f"https://api.telegram.org/bot{token}/{method}",
+                  data=urllib.parse.urlencode(payload).encode(),
+                  headers={"content-type": "application/x-www-form-urlencoded"},
+                  method="POST",
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  body = json.load(response)
+              if body.get("ok") is not True:
+                  raise RuntimeError(f"Telegram {method} was not accepted")
+              return body.get("result", {})
+
+          try:
+              bot = telegram_bot_call("getMe", {})
+              chat = telegram_bot_call("getChat", {"chat_id": house_chat_id})
+              member = telegram_bot_call("getChatMember", {
+                  "chat_id": house_chat_id,
+                  "user_id": bot.get("id"),
+              })
+              bot_access = {
+                  "botId": str(bot.get("id", "")),
+                  "username": str(bot.get("username", "")),
+                  "chatTitle": str(chat.get("title", "")),
+                  "chatType": str(chat.get("type", "")),
+                  "isForum": chat.get("is_forum") is True,
+                  "memberStatus": str(member.get("status", "")),
+                  "canPostMessages": member.get("can_post_messages"),
+                  "canManageTopics": member.get("can_manage_topics"),
+                  "canSend": member.get("status") in ("creator", "administrator", "member")
+                      and member.get("is_member", True) is not False,
+              }
+          except Exception as error:
+              bot_access = {"canSend": False, "error": sanitize(error)}
 
           rule_fields = ["id", "name", "contentType", "enabled", "status", "nextRunAt", "lastRunAt", "lastError"]
           distribution_rules = []
@@ -516,6 +556,7 @@ jobs:
                   "userPublisherTarget": house_chat_id in publisher_targets,
               },
               "publisher": authorization.get("publisher", {}),
+              "botAccess": bot_access,
               "accounts": account_dialogs,
               "distributionRules": distribution_rules,
               "recentDeliveries": recent_deliveries,
