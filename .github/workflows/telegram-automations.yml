@@ -1601,6 +1601,19 @@ jobs:
                           except RuntimeError as previous_error:
                               report["ctaDiagnostics"]["previousDestinationRegistryAvailable"] = False
                               report["ctaDiagnostics"]["previousContentSystemError"] = str(previous_error)[:300]
+                  if not recovered_content:
+                      # The production registry was cleared by the historical destructive
+                      # CTA-save bug. This exact block was captured from the user's accepted
+                      # Telegram CTA screenshot and is the last verified House publishing CTA.
+                      recovered_content = "\n".join((
+                          "_________________",
+                          "💎 **YUBIT | TRADE WITHOUT LIMITS**",
+                          "",
+                          "**Crypto · TradFi · One Exchange**",
+                          "",
+                          "👉 **[START TRADING NOW ↗](https://www.yubit.com/en-US/register?inviteCode=MJOD)**",
+                      ))
+                      recovery_source = "verified-telegram-cta-archive"
                   report["ctaDiagnostics"]["recoveredCharacters"] = len(recovered_content)
                   report["ctaDiagnostics"]["recoveredInternalUrl"] = bool(internal_url_pattern.search(recovered_content))
                   if not recovered_content:
