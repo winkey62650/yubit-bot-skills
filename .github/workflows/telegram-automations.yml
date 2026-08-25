@@ -1669,6 +1669,10 @@ jobs:
               if len(rule.get("targets") or []) != 1 or not target_matches(rule["targets"][0]):
                   raise RuntimeError("temporary House resend rule escaped the exact target")
               target = rule["targets"][0]
+              # Telegram targets are stored without an explicit platform discriminator.
+              # The CTA preview evidence gate intentionally requires one so a signed
+              # Telegram plan cannot be confused with a Discord destination.
+              target["platform"] = "telegram"
 
               validation = request_json("/api/distribution", payload={"action": "validate", "id": rule["id"]}, timeout=60)
               validation_result = validation.get("result") or {}
