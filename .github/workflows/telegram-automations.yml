@@ -893,7 +893,9 @@ jobs:
 
               temporary_rule = copy.deepcopy(source_rule)
               timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d%H%M%S")
-              temporary_rule_id = f"house-market-brief-resend-{timestamp}-{os.urandom(4).hex()}-temporary"
+              nonce = os.urandom(4).hex()
+              temporary_rule_id = f"house-market-brief-resend-{timestamp}-{nonce}-temporary"
+              target["id"] = f"house-market-brief-resend-target-{nonce}"
               temporary_rule.update({
                   "id": temporary_rule_id,
                   "kind": "automation",
