@@ -130,7 +130,7 @@ test("all four V4 products keep identical dynamic-field geometry for sparse and 
 test("automatic posters fail closed when the locked V4 master is missing", () => {
   assert.throws(
     () => renderLandscapeMarketPoster(e, { visualTemplate: { id: "daily-market-brief-v4" }, stories: [] }),
-    /locked VIP Wide Dense V4 master artwork is required/i,
+    /locked market poster master artwork is required/i,
   );
 });
 
@@ -215,6 +215,43 @@ test("weekly catalysts renders one complete seven-day UTC week and never pulls a
   assert.match(text, /weekly-7-day/);
   assert.doesNotMatch(text, /weekly-8-day/);
   assert.doesNotMatch(text, /Next-week event must not appear/);
+});
+
+test("weekly poster uses five weekday columns with a primary and secondary watch lane", () => {
+  const model = {
+    visualTemplate: { id: "weekly-catalysts-v5" },
+    weekStart: "2026-08-24",
+    columns: [
+      {
+        label: "MON 24",
+        events: [
+          { title: "US durable goods", time: "12:30", importance: 4, source: "Census", lane: "primary" },
+          { title: "Dallas Fed survey", time: "14:30", importance: 2, source: "Dallas Fed", lane: "secondary" },
+        ],
+      },
+      ...Array.from({ length: 6 }, (_, index) => ({ label: `DAY ${index + 2}`, events: [] })),
+    ],
+    footer,
+  };
+  const text = renderedText(model);
+
+  assert.match(text, /24–28 AUG 2026/);
+  assert.match(text, /US durable goods/i);
+  assert.match(text, /Dallas Fed survey/i);
+  assert.match(text, /SECONDARY WATCH/);
+  assert.match(text, /weekly-5-day/);
+  assert.doesNotMatch(text, /weekly-6-day|weekly-7-day/);
+  assert.doesNotMatch(text, /[●○]/u);
+  assert.equal(dynamicField(model, "weekly-1-impact-dots").children.length, 5);
+  assert.deepEqual(
+    geometry(model).find(({ key }) => key === "weekly-1-body-mask"),
+    { key: "weekly-1-body-mask", left: 13, top: 196, width: 232, height: 310 },
+  );
+  assert.equal(dynamicField(model, "weekly-v5-subtitle").props.style.height, 34);
+  assert.deepEqual(
+    geometry(model).find(({ key }) => key === "weekly-v5-subtitle-mask"),
+    { key: "weekly-v5-subtitle-mask", left: 140, top: 96, width: 480, height: 50 },
+  );
 });
 
 test("missing flash comparisons remain explicit instead of looking like broken data", () => {

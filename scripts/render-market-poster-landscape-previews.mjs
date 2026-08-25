@@ -7,7 +7,7 @@ import { assertLandscapeMarketPosterFits, renderLandscapeMarketPoster } from "..
 import { loadMarketPosterMaster } from "../lib/market-poster-artwork.mjs";
 import { selectMarketPosterTemplate } from "../lib/market-poster-templates.mjs";
 
-const outputDirectory = resolve(process.argv[2] || "work/poster-preview-v4");
+const outputDirectory = resolve(process.argv[2] || "work/poster-preview-current");
 const footer = { sources: ["BLS", "SEC", "Coinbase Exchange"], updatedAt: "2026-08-24T03:16:33.000Z" };
 
 const previews = [
@@ -21,13 +21,32 @@ const previews = [
     ],
   }],
   ["weekly-catalysts", {
-    visualTemplate: { id: "weekly-catalysts-v4" }, weekStart: "2026-08-24", highImpactCount: 3, peakDay: "MON 24", footer,
+    visualTemplate: { id: "weekly-catalysts-v5" }, weekStart: "2026-08-24", highImpactCount: 5, peakDay: "WED 26",
+    footer: { sources: ["U.S. BEA / Census", "U.S. BLS", "Federal Reserve"], updatedAt: "2026-08-25T08:00:00.000Z" },
     columns: [
-      { label: "MON 24", events: [{ id: "fed-remarks", title: "Fed Chair policy remarks", time: "14:00 UTC", importance: 5, source: "Federal Reserve", isPriority: true, affected: "BTC · DXY · U.S. 2Y", sensitivity: "Rate-path shifts can reprice USD, yields and crypto." }] },
-      { label: "TUE 25", events: [] },
-      { label: "WED 26", events: [{ id: "core-pce", title: "U.S. Core PCE", time: "12:30 UTC", importance: 5, source: "U.S. BEA", isPriority: true, affected: "BTC · ETH · DXY", sensitivity: "Inflation surprise sets the rates and risk-asset bias." }] },
-      { label: "THU 27", events: [] },
-      { label: "FRI 28", events: [{ id: "sec-deadline", title: "SEC market-structure deadline", time: "20:00 UTC", importance: 4, source: "SEC", isPriority: true, affected: "BTC · ETH", sensitivity: "A filing could reset institutional-access expectations." }] },
+      { label: "MON 24", events: [
+        { id: "fed-h10", title: "Federal Reserve H.10 Foreign Exchange Rates", posterTitle: "Fed H.10 FX Rates", time: "20:15 UTC", importance: 1, source: "Federal Reserve", lane: "primary", affected: "DXY · FX" },
+        { id: "fed-h15", title: "Federal Reserve H.15 Selected Interest Rates", posterTitle: "Fed H.15 Selected Rates", time: "20:15 UTC", importance: 1, source: "Federal Reserve", lane: "secondary", affected: "U.S. 2Y · DXY" },
+      ] },
+      { label: "TUE 25", events: [
+        { id: "new-home-sales", title: "U.S. New Home Sales", posterTitle: "U.S. New Home Sales", time: "14:00 UTC", importance: 3, source: "U.S. Census Bureau", lane: "primary", affected: "BTC · DXY · U.S. 2Y", sensitivity: "Housing demand informs the growth and rates read." },
+        { id: "fed-h6", title: "Federal Reserve H.6 Money Stock Measures", posterTitle: "Fed H.6 Money Stock", time: "17:00 UTC", importance: 1, source: "Federal Reserve", lane: "secondary", affected: "DXY · LIQUIDITY" },
+      ] },
+      { label: "WED 26", events: [
+        { id: "gdp-second", title: "U.S. GDP Second Estimate", posterTitle: "U.S. GDP Second Estimate", time: "12:30 UTC", importance: 5, source: "U.S. BEA", lane: "primary", isPriority: true, affected: "BTC · DXY · U.S. 2Y", sensitivity: "The growth revision can reset rates and risk pricing." },
+        { id: "pce-july", title: "U.S. Personal Income & Outlays", posterTitle: "Personal Income & Outlays", time: "12:30 UTC", importance: 5, source: "U.S. BEA", lane: "secondary", affected: "BTC · ETH · DXY" },
+        { id: "durable-goods", title: "U.S. Durable Goods Orders", posterTitle: "Durable Goods Orders", time: "12:30 UTC", importance: 3, source: "U.S. Census Bureau", lane: "secondary", affected: "DXY · U.S. 2Y" },
+      ] },
+      { label: "THU 27", events: [
+        { id: "advance-indicators", title: "U.S. Advance Economic Indicators", posterTitle: "Advance Economic Indicators", time: "12:30 UTC", importance: 3, source: "U.S. Census Bureau", lane: "primary", affected: "DXY · U.S. 2Y" },
+        { id: "steel-imports", title: "Preliminary U.S. Steel Imports", posterTitle: "Preliminary Steel Imports", time: "14:00 UTC", importance: 1, source: "U.S. Census Bureau", lane: "secondary", affected: "DXY" },
+        { id: "employment-projections", title: "U.S. Employment Projections", posterTitle: "Employment Projections", time: "14:00 UTC", importance: 1, source: "U.S. BLS", lane: "secondary", affected: "U.S. 2Y" },
+      ] },
+      { label: "FRI 28", events: [
+        { id: "county-wages", title: "County Employment & Wages", posterTitle: "County Employment & Wages", time: "14:00 UTC", importance: 2, source: "U.S. BLS", lane: "primary", affected: "U.S. 2Y" },
+        { id: "ces-benchmark", title: "CES Preliminary Benchmark", posterTitle: "CES Preliminary Benchmark", time: "14:00 UTC", importance: 2, source: "U.S. BLS", lane: "secondary", affected: "U.S. 2Y · DXY" },
+        { id: "fed-h8", title: "Federal Reserve H.8 Bank Balance Sheets", posterTitle: "Fed H.8 Bank Balance Sheets", time: "20:15 UTC", importance: 1, source: "Federal Reserve", lane: "secondary", affected: "LIQUIDITY · U.S. BANKS" },
+      ] },
       { label: "SAT 29", events: [] },
       { label: "SUN 30", events: [] },
     ],
@@ -57,7 +76,7 @@ for (const [name, model] of previews) {
   const jobId = name === "daily-market-brief" ? "crypto-daily" : name === "weekly-catalysts" ? "weekly-calendar" : "data-release-updates";
   const reaction = name === "market-follow-up" ? { prices: { BTC: { changePercent: -0.09 } } } : undefined;
   model.visualTemplate = selectMarketPosterTemplate({ jobId, poster: model, reaction });
-  if (!model.visualTemplate) throw new Error(`No approved locked V4 template selected for ${name}.`);
+  if (!model.visualTemplate) throw new Error(`No approved locked template selected for ${name}.`);
   const master = await loadMarketPosterMaster(model).catch((error) => {
     throw new Error(`${name}: ${error.message}`, { cause: error });
   });

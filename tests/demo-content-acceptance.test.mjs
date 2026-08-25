@@ -23,9 +23,10 @@ const posterContracts = {
     sha256: "8a378c4a4bcab99b92b005c383eae9fb483f8c6df36c1623f98d97f3b67c38ec",
   },
   "weekly-catalyst-calendar": {
-    id: "weekly-catalysts-v4",
-    file: "04-weekly-catalysts-wide-v4.png",
-    sha256: "bed57b795a96890772c4b27a5c3880d1bf7f360e82921011bc5431c76073b2b4",
+    id: "weekly-catalysts-v5",
+    file: "04-weekly-catalysts-wide-v5.png",
+    sha256: "e38394e2e0bf29c05c853df883d319d6261c5dab7f42cbd1d5b2a83f4301108d",
+    version: 5,
   },
   "data-flash": {
     id: "data-flash-v4",
@@ -48,7 +49,7 @@ function posterUrl(product, overrides = {}) {
     assetPath: `/templates/market-intelligence/${contract.file}`,
     sha256: contract.sha256,
     composition: "locked-master-fixed-field-overlay",
-    version: 4,
+    version: contract.version || 4,
     canvas: { width: 1200, height: 675 },
     ...overrides,
   };
@@ -272,11 +273,11 @@ test("poster gate locks every product to its distinct 1200x675 V4 master", () =>
   assert.throws(() => assertDemoShowcasePosterUrls([
     posterUrl("data-flash"),
     posterUrl("market-follow-up", { id: "data-flash-v4" }),
-  ], release), /non-canonical V4 master/i);
+  ], release), /non-canonical locked master/i);
   assert.throws(() => assertDemoShowcasePosterUrls([
     posterUrl("data-flash"),
     posterUrl("market-follow-up", { canvas: { width: 1080, height: 1350 } }),
-  ], release), /non-canonical V4 master/i);
+  ], release), /non-canonical locked master/i);
 });
 
 test("release-only recovery requires exactly one prior daily and weekly receipt and no release receipt", () => {

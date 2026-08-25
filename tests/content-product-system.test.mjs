@@ -345,7 +345,10 @@ test("stale real-time intelligence is blocked while explicit historical replay r
 
 test("lifecycle is monotonic and published/blocked states are terminal", async () => {
   const store = storeDouble();
-  const system = createContentProductSystem({ store });
+  const system = createContentProductSystem({
+    store,
+    now: () => new Date("2026-08-23T13:01:00.000Z"),
+  });
   const ready = await system.prepare(input("daily-market-brief"));
   const published = await system.publish(ready, { targetCount: 2 });
   assert.equal(published.status, "published");
@@ -357,7 +360,10 @@ test("lifecycle is monotonic and published/blocked states are terminal", async (
 test("distribution approval is denied when Obsidian readback differs from the exact canonical payload", async () => {
   const store = storeDouble();
   store.readProduct = async ({ product, id }) => ({ ...store.writes.at(-1)[1], product, id, canonicalText: "tampered" });
-  const result = await createContentProductSystem({ store }).prepare(input("daily-market-brief"));
+  const result = await createContentProductSystem({
+    store,
+    now: () => new Date("2026-08-23T13:01:00.000Z"),
+  }).prepare(input("daily-market-brief"));
   assert.equal(result.status, "blocked");
   assert.match(result.gate.reasons.join(" "), /readback|canonical/i);
 });

@@ -7,7 +7,7 @@ const DEMO_CHAT_ID = "-1003710405969";
 const MAX_POSTER_BYTES = 5 * 1024 * 1024;
 const POSTER_TEMPLATES = Object.freeze({
   "daily-market-brief": "daily-market-brief-v4",
-  "weekly-catalyst-calendar": "weekly-catalysts-v4",
+  "weekly-catalyst-calendar": "weekly-catalysts-v5",
   "data-flash": "data-flash-v4",
   "market-follow-up": "market-follow-up-v4",
 });

@@ -15,7 +15,7 @@ test("the automatic poster set uses Telegram landscape while specialist artwork 
   assert.equal(templates.filter(({ auto }) => !auto).length, 3);
   assert.equal(templates.filter(({ auto }) => auto).every(({ canvas }) => canvas.width === 1200 && canvas.height === 675), true);
   assert.equal(templates.filter(({ auto }) => !auto).every(({ canvas }) => canvas.width === 1080 && canvas.height === 1350), true);
-  assert.equal(templates.find(({ id }) => id === "weekly-catalysts-v4")?.timeScope, "single-utc-week");
+  assert.equal(templates.find(({ id }) => id === "weekly-catalysts-v5")?.timeScope, "single-utc-workweek");
 });
 
 test("automatic selection is fail-closed and maps every core product to its own template", () => {
@@ -39,7 +39,7 @@ test("automatic selection is fail-closed and maps every core product to its own 
 
   assert.deepEqual([daily?.id, weekly?.id, flash?.id, followUp?.id], [
     "daily-market-brief-v4",
-    "weekly-catalysts-v4",
+    "weekly-catalysts-v5",
     "data-flash-v4",
     "market-follow-up-v4",
   ]);

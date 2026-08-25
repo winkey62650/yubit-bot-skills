@@ -17,7 +17,7 @@ export async function GET(request) {
   const artworkUrl = await loadMediaCardArtwork(kind);
   const e = React.createElement;
   const poster = normalizeEditorialPreview(kind, decodePosterData(url.searchParams.get("data")));
-  if (poster.visualTemplate?.version === 4) {
+  if (poster.visualTemplate?.composition === "locked-master-fixed-field-overlay") {
     assertLandscapeMarketPosterFits(poster);
     return new ImageResponse(renderLandscapeMarketPoster(e, poster, await loadMarketPosterMaster(poster)), {
       width: 1200,

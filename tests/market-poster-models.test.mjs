@@ -60,7 +60,7 @@ test("every poster model exposes the shared Editorial Research visual tokens", (
   assertEditorialTokens(crypto, { sources: ["SEC"], updatedAt: "2026-08-21T08:00:00.000Z" });
 });
 
-test("weekly calendar uses seven UTC-day columns, excludes minor events, and emphasizes the top three", () => {
+test("weekly calendar uses seven UTC-day columns, keeps sourced minor events, and emphasizes the top three", () => {
   const days = Array.from({ length: 7 }, (_, day) => ({
     date: `2026-08-${17 + day}`,
     events: [{
@@ -81,13 +81,13 @@ test("weekly calendar uses seven UTC-day columns, excludes minor events, and emp
 
   assert.equal(model.columns.length, 7);
   assert.deepEqual(model.columns.map((column) => column.label), ["MON 17", "TUE 18", "WED 19", "THU 20", "FRI 21", "SAT 22", "SUN 23"]);
-  assert.equal(model.columns.flatMap((column) => column.events).length, 5);
+  assert.equal(model.columns.flatMap((column) => column.events).length, 7);
   assert.equal(model.columns.flatMap((column) => column.events).filter((event) => event.isPriority).length, 3);
   assert.deepEqual(model.priorityEventIds, ["event-0", "event-1", "event-5"]);
   assert.equal(model.columns[0].events[0].visualWeight, "primary");
   assert.equal(model.columns[2].events[0].visualWeight, "secondary");
-  assert.deepEqual(model.columns[3].events, []);
-  assert.deepEqual(model.columns[4].events, []);
+  assert.equal(model.columns[3].events[0].visualWeight, "secondary");
+  assert.equal(model.columns[4].events[0].visualWeight, "secondary");
 });
 
 test("weekly calendar keeps qualifying weekend events in their real Sat/Sun columns", () => {
@@ -113,7 +113,7 @@ test("weekly calendar keeps qualifying weekend events in their real Sat/Sun colu
   assert.equal(withMaterialWeekend.columns[5].label, "SAT 22");
 });
 
-test("weekly calendar keeps at most one highest-importance event per day", () => {
+test("weekly calendar keeps one primary and two secondary events per day", () => {
   const model = buildWeeklyCalendarPosterModel({
     weekStart: "2026-08-17",
     days: [{
@@ -126,8 +126,29 @@ test("weekly calendar keeps at most one highest-importance event per day", () =>
     }],
   });
 
-  assert.deepEqual(model.columns[0].events.map((event) => event.id), ["macro"]);
-  assert.equal(model.highImpactCount, 1);
+  assert.deepEqual(model.columns[0].events.map((event) => event.id), ["macro", "regulation", "secondary"]);
+  assert.deepEqual(model.columns[0].events.map((event) => event.lane), ["primary", "secondary", "secondary"]);
+  assert.equal(model.highImpactCount, 3);
+});
+
+test("weekly calendar keeps one primary and up to two sourced secondary events per day", () => {
+  const model = buildWeeklyCalendarPosterModel({
+    weekStart: "2026-08-17",
+    days: [{
+      date: "2026-08-17",
+      events: [
+        { id: "main", title: "Fed chair speaks", time: "18:00", importance: 5, source: { label: "Federal Reserve" } },
+        { id: "secondary-1", title: "Regional activity index", time: "12:30", importance: 2, source: { label: "Federal Reserve" } },
+        { id: "secondary-2", title: "Major token unlock", time: "09:00", importance: 1, source: { label: "Project filing" } },
+        { id: "secondary-3", title: "Treasury auction", time: "17:00", importance: 1, source: { label: "U.S. Treasury" } },
+        { id: "unverified", title: "Rumoured listing", time: "08:00", importance: 2 },
+      ],
+    }],
+  });
+
+  assert.deepEqual(model.columns[0].events.map((event) => event.id), ["main", "secondary-1", "secondary-2"]);
+  assert.deepEqual(model.columns[0].events.map((event) => event.lane), ["primary", "secondary", "secondary"]);
+  assert.equal(model.columns[0].events.some((event) => event.id === "unverified"), false);
 });
 
 test("weekly calendar caps priority descriptions on word boundaries without hiding numerical facts", () => {
@@ -542,7 +563,7 @@ test("weekly models are canonical under same-day input reordering", () => {
   });
 
   assert.deepEqual(reverse, forward);
-  assert.deepEqual(forward.footer.sources, ["Alpha"]);
+  assert.deepEqual(forward.footer.sources, ["Alpha", "Mike", "Zulu"]);
 });
 
 test("missing official source never creates false provenance", () => {

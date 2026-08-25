@@ -394,8 +394,9 @@ export async function GET(request, context = {}) {
   if (bundle.status !== "draft") return message(409, "Editorial image is not available.");
   try {
     const canvas = marketPosterCanvas(bundle.posterModel);
-    if (bundle.posterModel.visualTemplate?.version === 4) assertLandscapeMarketPosterFits(bundle.posterModel);
-    const rendered = bundle.posterModel.visualTemplate?.version === 4
+    const usesLockedMaster = bundle.posterModel.visualTemplate?.composition === "locked-master-fixed-field-overlay";
+    if (usesLockedMaster) assertLandscapeMarketPosterFits(bundle.posterModel);
+    const rendered = usesLockedMaster
       ? renderLandscapeMarketPoster(React.createElement, bundle.posterModel, await loadMarketPosterMaster(bundle.posterModel))
       : bundle.posterModel.visualTemplate
         ? renderPortraitMarketPoster(React.createElement, bundle.posterModel, await loadMarketPosterArtwork(bundle.posterModel))
