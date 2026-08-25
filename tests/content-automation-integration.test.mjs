@@ -419,6 +419,55 @@ test("dry-run uses an isolated vault and never mutates the configured production
   }
 });
 
+test("live governance gives changed source titles distinct immutable evidence identities", async () => {
+  const vaultPath = await mkdtemp(join(tmpdir(), "yubit-source-title-vault-"));
+  const source = {
+    id: "coindesk",
+    url: "https://www.coindesk.com/markets/2026/08/23/market-update",
+    tier: "secondary",
+    observedAt: NOW,
+    status: "verified",
+  };
+  const content = (title) => generated("crypto-daily", {
+    sourceManifest: [{ ...source, title }],
+    sources: [{ ...source, title }],
+    document: {
+      title: "Daily brief",
+      selectedStories: [{
+        id: "market-update",
+        title,
+        summary: "Verified market conditions changed during the session.",
+        url: source.url,
+        publishedAt: NOW,
+        source: { id: source.id, label: "CoinDesk", kind: source.tier },
+        rationale: "The update may affect near-term positioning.",
+        affectedAssets: ["BTC"],
+        confidence: "Medium",
+        whatToWatch: "Watch spot volume and cross-asset confirmation.",
+      }],
+    },
+  });
+
+  try {
+    const first = await governAutomationContent("crypto-daily", content("Bitcoin steadies after the open"), {
+      dryRun: false,
+      now: NOW,
+      vaultPath,
+    });
+    const second = await governAutomationContent("crypto-daily", content("Bitcoin advances as volume returns"), {
+      dryRun: false,
+      now: NOW,
+      vaultPath,
+    });
+
+    assert.equal(first.approved, true);
+    assert.equal(second.approved, true);
+    assert.notEqual(first.products[0].sources[0].id, second.products[0].sources[0].id);
+  } finally {
+    await rm(vaultPath, { recursive: true, force: true });
+  }
+});
+
 test("live governance fails closed when the Obsidian vault is not configured", async () => {
   const previous = process.env.OBSIDIAN_VAULT_PATH;
   delete process.env.OBSIDIAN_VAULT_PATH;
