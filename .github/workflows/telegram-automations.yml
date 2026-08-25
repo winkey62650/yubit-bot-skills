@@ -846,6 +846,7 @@ jobs:
             return text.slice(before < 0 ? 0 : before + 2, after < 0 ? text.length : after).trim();
           }
 
+          async function main() {
           let repository;
           try {
             repository = await getDistributionRepository();
@@ -958,6 +959,12 @@ jobs:
           report.diagnostics.eventCandidateCount = report.eventCandidates.length;
           report.diagnostics.telegramCandidateCount = report.telegramCandidates.length;
           console.log(JSON.stringify(report));
+          }
+
+          main().catch((error) => {
+            report.diagnostics.fatalError = String((error && error.message) || error).slice(0, 500);
+            console.log(JSON.stringify(report));
+          });
           NODE
           python3 <<'PYTHON'
           import copy
