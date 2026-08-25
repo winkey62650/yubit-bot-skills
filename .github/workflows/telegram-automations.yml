@@ -1097,6 +1097,18 @@ jobs:
                           continue
                       usable_accounts.append(account)
                       session_records[f"telegram-session-v1:{user_id}"] = record
+                  session_schema = "multi-account"
+                  if not usable_accounts:
+                      legacy_record = meta_values.get("telegram-user-publisher-v1") or {}
+                      legacy_user_id = str(legacy_record.get("userId") or "") if isinstance(legacy_record, dict) else ""
+                      if legacy_user_id and legacy_record.get("encryptedSession"):
+                          usable_accounts = [{
+                              "userId": legacy_user_id,
+                              "label": legacy_record.get("label") or "Recovered Telegram account",
+                              "phone": legacy_record.get("phone") or "",
+                          }]
+                          session_records[f"telegram-session-v1:{legacy_user_id}"] = legacy_record
+                          session_schema = "legacy-single"
                   if usable_accounts:
                       report["telegramSessionSnapshot"] = {
                           "accountsRecord": {"accounts": usable_accounts},
@@ -1104,6 +1116,7 @@ jobs:
                       }
                       report["diagnostics"]["sessionBackup"] = os.path.basename(backup)
                       report["diagnostics"]["sessionAccountCount"] = len(usable_accounts)
+                      report["diagnostics"]["sessionSchema"] = session_schema
 
               registry = meta_values.get("distribution:destination-cta:v1")
               registry_row = registry if isinstance(registry, dict) else None
@@ -1277,6 +1290,10 @@ jobs:
                   topicScoped = false;
                   messages = await client.getMessages(peer, { limit: 1000 });
                 }
+                if (!Array.from(messages || []).length) {
+                  topicScoped = false;
+                  messages = await client.getMessages(peer, { limit: 1000 });
+                }
                 for (const message of Array.from(messages || [])) {
                   const text = String(message?.message || "").trim();
                   const reply = message?.replyTo || {};
@@ -1298,7 +1315,7 @@ jobs:
                   }
                 }
                 scannedAccount = String(account.userId || "");
-                break;
+                if (occurrences.size) break;
               } catch (error) {
                 errors.push(String(error?.message || error).slice(0, 300));
               } finally {
@@ -1526,6 +1543,11 @@ jobs:
                           "ok": historical_recovery.get("ok") is True,
                           "eventCandidateCount": (historical_recovery.get("diagnostics") or {}).get("eventCandidateCount", 0),
                           "telegramCandidateCount": (historical_recovery.get("diagnostics") or {}).get("telegramCandidateCount", 0),
+                          "backupSessionAvailable": (historical_recovery.get("diagnostics") or {}).get("backupSessionAvailable", False),
+                          "backupSessionAccountCount": (historical_recovery.get("diagnostics") or {}).get("backupSessionAccountCount", 0),
+                          "backupTelegramCandidateCount": (historical_recovery.get("diagnostics") or {}).get("backupTelegramCandidateCount", 0),
+                          "backupTelegramErrors": (historical_recovery.get("diagnostics") or {}).get("backupTelegramErrors", []),
+                          "backupTelegramFatalError": (historical_recovery.get("diagnostics") or {}).get("backupTelegramFatalError", ""),
                       }
                       historical_selected = historical_recovery.get("selected") or {}
                       recovered_content = str(historical_selected.get("content") or "").strip()
@@ -1538,44 +1560,51 @@ jobs:
                               "backupCount": (backup_recovery.get("diagnostics") or {}).get("backupCount", 0),
                               "scannedCount": (backup_recovery.get("diagnostics") or {}).get("scannedCount", 0),
                               "selectedBackup": (backup_recovery.get("diagnostics") or {}).get("selectedBackup", ""),
+                              "sessionBackup": (backup_recovery.get("diagnostics") or {}).get("sessionBackup", ""),
+                              "sessionAccountCount": (backup_recovery.get("diagnostics") or {}).get("sessionAccountCount", 0),
+                              "sessionSchema": (backup_recovery.get("diagnostics") or {}).get("sessionSchema", ""),
                           }
                           backup_selected = backup_recovery.get("selected") or {}
                           recovered_content = str(backup_selected.get("content") or "").strip()
                           recovery_source = str(backup_selected.get("source") or "")
                       if not recovered_content:
-                          previous_request_json = build_json_client(previous_base_url)
-                          previous_login = previous_request_json("/api/auth/login", payload={
-                              "username": os.environ["AUTH_USERNAME"],
-                              "password": os.environ["AUTH_PASSWORD"],
-                          })
-                          if previous_login.get("ok") is not True:
-                              raise RuntimeError("previous content-system login was not accepted")
                           previous_registry = {}
                           try:
-                              previous_payload = previous_request_json("/api/destination-cta")
-                              previous_registry = previous_payload.get("registry") or {}
-                              report["ctaDiagnostics"]["previousDestinationRegistryAvailable"] = True
-                          except RuntimeError:
+                              previous_request_json = build_json_client(previous_base_url)
+                              previous_login = previous_request_json("/api/auth/login", payload={
+                                  "username": os.environ["AUTH_USERNAME"],
+                                  "password": os.environ["AUTH_PASSWORD"],
+                              })
+                              if previous_login.get("ok") is not True:
+                                  raise RuntimeError("previous content-system login was not accepted")
+                              try:
+                                  previous_payload = previous_request_json("/api/destination-cta")
+                                  previous_registry = previous_payload.get("registry") or {}
+                                  report["ctaDiagnostics"]["previousDestinationRegistryAvailable"] = True
+                              except RuntimeError:
+                                  report["ctaDiagnostics"]["previousDestinationRegistryAvailable"] = False
+                              recovered = previous_registry.get(f"telegram:{house_chat_id}") or {}
+                              recovered_content = str(recovered.get("ctaContent") or "").strip()
+                              report["ctaDiagnostics"]["previousRegistryKeys"] = sorted(previous_registry.keys())
+                              if recovered.get("ctaEnabled") is True and recovered_content:
+                                  recovery_source = "previous-content-system-registry"
+                              else:
+                                  recovered_content = ""
+                                  previous_overview = previous_request_json("/api/distribution")
+                                  previous_legacy = saved_legacy_ctas(previous_overview.get("rules") or [])
+                                  report["ctaDiagnostics"]["previousLegacyCandidateCount"] = len(previous_legacy)
+                                  if len(previous_legacy) > 1:
+                                      raise RuntimeError("multiple different House CTAs remain in previous distribution rules")
+                                  if len(previous_legacy) == 1:
+                                      recovered_content = previous_legacy[0]
+                                      recovery_source = "previous-content-system-distribution-rule"
+                          except RuntimeError as previous_error:
                               report["ctaDiagnostics"]["previousDestinationRegistryAvailable"] = False
-                          recovered = previous_registry.get(f"telegram:{house_chat_id}") or {}
-                          recovered_content = str(recovered.get("ctaContent") or "").strip()
-                          report["ctaDiagnostics"]["previousRegistryKeys"] = sorted(previous_registry.keys())
-                          if recovered.get("ctaEnabled") is True and recovered_content:
-                              recovery_source = "previous-content-system-registry"
-                          else:
-                              recovered_content = ""
-                              previous_overview = previous_request_json("/api/distribution")
-                              previous_legacy = saved_legacy_ctas(previous_overview.get("rules") or [])
-                              report["ctaDiagnostics"]["previousLegacyCandidateCount"] = len(previous_legacy)
-                              if len(previous_legacy) > 1:
-                                  raise RuntimeError("multiple different House CTAs remain in previous distribution rules")
-                              if len(previous_legacy) == 1:
-                                  recovered_content = previous_legacy[0]
-                                  recovery_source = "previous-content-system-distribution-rule"
+                              report["ctaDiagnostics"]["previousContentSystemError"] = str(previous_error)[:300]
                   report["ctaDiagnostics"]["recoveredCharacters"] = len(recovered_content)
                   report["ctaDiagnostics"]["recoveredInternalUrl"] = bool(internal_url_pattern.search(recovered_content))
                   if not recovered_content:
-                      raise RuntimeError("House saved destination CTA is missing from current and previous content systems")
+                      raise RuntimeError("House saved destination CTA could not be recovered from production, backups, or topic history")
                   if internal_url_pattern.search(recovered_content):
                       raise RuntimeError("recovered House saved destination CTA contains a backend or internal URL")
                   saved_payload = request_json("/api/destination-cta", payload={"config": {
