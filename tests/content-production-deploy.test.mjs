@@ -66,6 +66,8 @@ test("operator-triggered Academy DEMO acceptance is fenced to four poster produc
   assert.match(workflow, /report_file=.*sudo --user=ubuntu mktemp/);
   assert.match(workflow, /ALLOW_LIVE_TELEGRAM.*false/s);
   assert.doesNotMatch(workflow, /set_env_value\s+ALLOW_LIVE_TELEGRAM\s+true/);
+  assert.match(workflow, /"product":"weekly-catalyst-calendar","templateId":"weekly-catalysts-v5","version":5/);
+  assert.doesNotMatch(workflow, /"product":"weekly-catalyst-calendar","templateId":"weekly-catalysts-v4"/);
 });
 
 test("read-only Academy audit reports the failing endpoint and sanitized HTTP response body", () => {

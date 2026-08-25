@@ -1342,11 +1342,11 @@ jobs:
             and (.mediaPreflight | length == 4)
             and ((.mediaPreflight | map(.url) | unique | length) == 4)
             and ((.mediaPreflight | map(.templateId) | unique | length) == 4)
-            and (.mediaPreflight | map({product, templateId})) == [
-              {"product":"daily-market-brief","templateId":"daily-market-brief-v4"},
-              {"product":"weekly-catalyst-calendar","templateId":"weekly-catalysts-v4"},
-              {"product":"data-flash","templateId":"data-flash-v4"},
-              {"product":"market-follow-up","templateId":"market-follow-up-v4"}
+            and (.mediaPreflight | map({product, templateId, version})) == [
+              {"product":"daily-market-brief","templateId":"daily-market-brief-v4","version":4},
+              {"product":"weekly-catalyst-calendar","templateId":"weekly-catalysts-v5","version":5},
+              {"product":"data-flash","templateId":"data-flash-v4","version":4},
+              {"product":"market-follow-up","templateId":"market-follow-up-v4","version":4}
             ]
             and all(.mediaPreflight[];
               .status == 200
@@ -1354,7 +1354,6 @@ jobs:
               and .byteLength >= 1024
               and .byteLength <= 5242880
               and .composition == "locked-master-fixed-field-overlay"
-              and .version == 4
               and .canvas == {"width":1200,"height":675}
             )
             and all(.previews[]; .publisherNeutral == true and .publicGenericHorizonIncluded == false and .nativeAssetGlyphs == true and (.visualTemplateIds | length) == (.productIds | length))
@@ -1471,12 +1470,12 @@ jobs:
             and (.mediaPreflight | length == 3)
             and ((.mediaPreflight | map(.url) | unique | length) == 3)
             and ((.mediaPreflight | map(.templateId) | unique | length) == 3)
-            and (.mediaPreflight | map({product, templateId})) == [
-              {"product":"weekly-catalyst-calendar","templateId":"weekly-catalysts-v4"},
-              {"product":"data-flash","templateId":"data-flash-v4"},
-              {"product":"market-follow-up","templateId":"market-follow-up-v4"}
+            and (.mediaPreflight | map({product, templateId, version})) == [
+              {"product":"weekly-catalyst-calendar","templateId":"weekly-catalysts-v5","version":5},
+              {"product":"data-flash","templateId":"data-flash-v4","version":4},
+              {"product":"market-follow-up","templateId":"market-follow-up-v4","version":4}
             ]
-            and all(.mediaPreflight[]; .status == 200 and (.contentType | startswith("image/png")) and .byteLength >= 1024 and .byteLength <= 5242880 and .composition == "locked-master-fixed-field-overlay" and .version == 4 and .canvas == {"width":1200,"height":675})
+            and all(.mediaPreflight[]; .status == 200 and (.contentType | startswith("image/png")) and .byteLength >= 1024 and .byteLength <= 5242880 and .composition == "locked-master-fixed-field-overlay" and .canvas == {"width":1200,"height":675})
             and .exactTargets == true
             and (.priorExecution.key == "daily" and .priorExecution.messageIds == [1321,1322] and .priorExecution.target.threadId == 10)
             and (.executions | length == 2)
