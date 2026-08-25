@@ -874,8 +874,7 @@ jobs:
               for rule in rules:
                   targets = rule.get("targets") or []
                   if (
-                      rule.get("kind") == "automation"
-                      and rule.get("contentType") == "crypto-daily"
+                      rule.get("contentType") == "crypto-daily"
                       and rule.get("enabled") is True
                       and len(targets) == 1
                       and target_matches(targets[0])
