@@ -777,6 +777,7 @@ jobs:
           import urllib.request
 
           base_url = os.environ["TEST_BASE_URL"].rstrip("/")
+          previous_base_url = "https://yubit-bot-skills-academy.vercel.app"
           house_chat_id = os.environ["HOUSE_CHAT_ID"]
           house_thread_id = int(os.environ["HOUSE_THREAD_ID"])
           internal_url_pattern = re.compile(
@@ -811,6 +812,32 @@ jobs:
               if body.get("ok") is False:
                   raise RuntimeError(f"{path}: {clean_error(body.get('error', 'request failed'))}")
               return body
+
+          def build_json_client(origin):
+              jar = http.cookiejar.CookieJar()
+              client = urllib.request.build_opener(
+                  urllib.request.HTTPCookieProcessor(jar),
+                  urllib.request.HTTPSHandler(context=ssl._create_unverified_context()),
+              )
+
+              def call(path, *, payload=None, timeout=30):
+                  request = urllib.request.Request(
+                      f"{origin}{path}",
+                      data=None if payload is None else json.dumps(payload).encode(),
+                      headers={} if payload is None else {"content-type": "application/json"},
+                      method="GET" if payload is None else "POST",
+                  )
+                  try:
+                      with client.open(request, timeout=timeout) as response:
+                          body = json.load(response)
+                  except urllib.error.HTTPError as error:
+                      body = error.read().decode("utf-8", errors="replace")
+                      raise RuntimeError(f"previous {path} HTTP {error.code}: {clean_error(body)}") from error
+                  if body.get("ok") is False:
+                      raise RuntimeError(f"previous {path}: {clean_error(body.get('error', 'request failed'))}")
+                  return body
+
+              return call
 
           def target_matches(target):
               return (
@@ -898,7 +925,44 @@ jobs:
                       "legacyUrlHost": urllib.parse.urlsplit(legacy_cta_url).netloc,
                       "legacyInternalUrl": bool(internal_url_pattern.search(legacy_cta_url)),
                   }
-                  raise RuntimeError("House group-level saved destination CTA is missing")
+                  previous_request_json = build_json_client(previous_base_url)
+                  previous_login = previous_request_json("/api/auth/login", payload={
+                      "username": os.environ["AUTH_USERNAME"],
+                      "password": os.environ["AUTH_PASSWORD"],
+                  })
+                  if previous_login.get("ok") is not True:
+                      raise RuntimeError("previous content-system login was not accepted")
+                  previous_payload = previous_request_json("/api/destination-cta")
+                  previous_registry = previous_payload.get("registry") or {}
+                  recovered = previous_registry.get(f"telegram:{house_chat_id}") or {}
+                  recovered_content = str(recovered.get("ctaContent") or "").strip()
+                  report["ctaDiagnostics"]["previousRegistryKeys"] = sorted(previous_registry.keys())
+                  report["ctaDiagnostics"]["previousHouseEnabled"] = recovered.get("ctaEnabled") is True
+                  report["ctaDiagnostics"]["previousHouseCharacters"] = len(recovered_content)
+                  report["ctaDiagnostics"]["previousHouseInternalUrl"] = bool(internal_url_pattern.search(recovered_content))
+                  if recovered.get("ctaEnabled") is not True or not recovered_content:
+                      raise RuntimeError("House saved destination CTA is missing from current and previous registries")
+                  if internal_url_pattern.search(recovered_content):
+                      raise RuntimeError("previous House saved destination CTA contains a backend or internal URL")
+                  saved_payload = request_json("/api/destination-cta", payload={"config": {
+                      "platform": "telegram",
+                      "chatId": house_chat_id,
+                      "chatType": "supergroup",
+                      "groupName": "THE HOUSE OF CRYPTO",
+                      "ctaEnabled": True,
+                      "ctaContent": recovered_content,
+                  }})
+                  destination_cta = (saved_payload.get("registry") or {}).get(f"telegram:{house_chat_id}") or {}
+                  if (
+                      destination_cta.get("ctaEnabled") is not True
+                      or str(destination_cta.get("ctaContent") or "").strip() != recovered_content
+                  ):
+                      raise RuntimeError("recovered House destination CTA did not persist exactly")
+                  report["ctaRecovery"] = {
+                      "source": "previous-content-system-registry",
+                      "characters": len(recovered_content),
+                      "internalUrlAbsent": True,
+                  }
               target = copy.deepcopy(house_targets[0])
               for field in ("guildId", "guildName", "channelId", "channelName"):
                   target.pop(field, None)
