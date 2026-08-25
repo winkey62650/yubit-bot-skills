@@ -9,7 +9,12 @@ import {
   governAutomationContent,
 } from "../lib/content-automation-adapter.mjs";
 import { buildAcademyDemoShowcaseContent } from "../lib/academy-demo-showcase.mjs";
-import { buildAutomationDiscordPlans, buildAutomationTelegramPlans, runAutomationJob } from "../lib/automation-jobs.mjs";
+import {
+  assertNoInternalUrlsInDeliveryPlans,
+  buildAutomationDiscordPlans,
+  buildAutomationTelegramPlans,
+  runAutomationJob,
+} from "../lib/automation-jobs.mjs";
 import { buildReleaseDeduplicationKey } from "../lib/data-release-monitor.mjs";
 import {
   buildCryptoDailyPosterModel,
@@ -50,6 +55,16 @@ function generated(templateId, overrides = {}) {
 
 const DAILY_RSS = `<?xml version="1.0"?><rss><channel><item><guid>governed-daily</guid><title>Bitcoin ETF records net inflow</title><link>https://example.com/governed-daily</link><description>Institutional demand increased.</description><pubDate>Sun, 23 Aug 2026 11:00:00 GMT</pubDate></item></channel></rss>`;
 
+test("public message gate blocks the application origin but ignores poster transport URLs", () => {
+  const internalOrigin = "https://internal.example";
+  assert.throws(() => assertNoInternalUrlsInDeliveryPlans([{
+    steps: [{ payload: { text: "Read more at https://internal.example/academy" } }],
+  }], internalOrigin), /PUBLIC_MESSAGE_INTERNAL_URL_BLOCKED/);
+  assert.doesNotThrow(() => assertNoInternalUrlsInDeliveryPlans([{
+    steps: [{ payload: { content: "Join https://community.example/invite", imageUrl: "https://internal.example/api/media/card" } }],
+  }], internalOrigin));
+});
+
 function rssFetch() {
   return Promise.resolve(new Response(DAILY_RSS, {
     status: 200,
@@ -86,6 +101,7 @@ test("maps the three automation jobs to exactly four governed content products",
   assert.equal(weekly[0].intelligence.events[0].forecast, "2.8%");
   assert.equal(weekly[0].intelligence.events[0].previous, "2.9%");
   assert.deepEqual(release.map(({ product }) => product), ["data-flash", "market-follow-up"]);
+  assert.equal([daily, weekly, ...release].every((product) => !("cta" in product)), true);
   assert.equal(release[0].event.actual, "2.7%");
   assert.equal(release[0].intelligence.release.indicator, "headline-cpi-yoy");
   assert.equal(release[0].intelligence.release.releaseTime, NOW);

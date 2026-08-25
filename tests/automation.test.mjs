@@ -2500,7 +2500,7 @@ test("secondary data release verifies only its card and emits no article link", 
   assert.equal(payloads[0].method, "sendPhoto");
   const communityText = payloads.filter(({ method }) => method === "sendMessage").map(({ payload }) => payload.text).join("\n");
   assert.doesNotMatch(communityText, /\/data-updates\/|read (?:the )?full/i);
-  assert.match(communityText, /https:\/\/academy\.example\/academy/);
+  assert.doesNotMatch(communityText, /https:\/\/academy\.example\/academy/);
 });
 
 test("missing official actual blocks data publication persistence and every sender", async () => {

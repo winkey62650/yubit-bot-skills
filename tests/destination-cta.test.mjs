@@ -9,6 +9,7 @@ import {
   mergeDestinationCtaConfigs,
   saveDestinationCtaConfig,
   saveDestinationCtaRegistry,
+  requireSavedMarketEventCtas,
 } from "../lib/destination-cta.mjs";
 import { composeManualMessage } from "../lib/manual-cta.mjs";
 import {
@@ -158,6 +159,39 @@ test("an explicitly disabled Telegram group overrides legacy rule CTA for every 
   assert.equal(targets[1].ctaEnabled, false);
   assert.equal(targets[1].ctaContent, "");
   assert.equal(composeManualMessage("body", targets[0]), "body");
+});
+
+test("an unconfigured destination cannot preserve an inline legacy or backend CTA", async () => {
+  const repo = repository();
+  const [target] = await hydrateDestinationCtas(repo, [{
+    platform: "telegram",
+    chatId: "-1009",
+    ctaEnabled: true,
+    ctaText: "Open dashboard",
+    ctaUrl: "https://internal.example/academy",
+    ctaContent: "Open dashboard\nhttps://internal.example/academy",
+  }]);
+
+  assert.equal("ctaEnabled" in target, false);
+  assert.equal("ctaContent" in target, false);
+  assert.equal("ctaSource" in target, false);
+  assert.equal("ctaText" in target, false);
+  assert.equal("ctaUrl" in target, false);
+});
+
+test("Market Events require one enabled saved CTA for every target", () => {
+  const ready = [{ platform: "telegram", chatId: "-1001", ctaEnabled: true, ctaContent: "Join", ctaSource: "destination-registry" }];
+  assert.equal(requireSavedMarketEventCtas("weekly-calendar", ready), ready);
+  assert.throws(
+    () => requireSavedMarketEventCtas("crypto-daily", [{ platform: "telegram", chatId: "-1002", ctaSource: "missing" }]),
+    /MARKET_EVENTS_DESTINATION_CTA_REQUIRED/,
+  );
+  assert.throws(
+    () => requireSavedMarketEventCtas("data-release-updates", [{ platform: "telegram", chatId: "-1002", ctaEnabled: false, ctaContent: "", ctaSource: "missing" }]),
+    /MARKET_EVENTS_DESTINATION_CTA_REQUIRED/,
+  );
+  const unrelated = [{ platform: "telegram", chatId: "-1002", ctaSource: "missing" }];
+  assert.equal(requireSavedMarketEventCtas("agent-sync-4h", unrelated), unrelated);
 });
 
 test("legacy Telegram topic CTA records are read as one group CTA", async () => {

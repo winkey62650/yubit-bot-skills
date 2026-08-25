@@ -29,6 +29,7 @@ import {
   verifyTelegramWebhookSecret
 } from "../lib/distribution-service.mjs";
 import { MemoryDistributionRepository } from "../lib/distribution-engine.mjs";
+import { saveDestinationCtaRegistry } from "../lib/destination-cta.mjs";
 import {
   RELEASE_STATE_META_KEY,
   acknowledgeDataReleaseTarget,
@@ -2655,6 +2656,12 @@ test("desktop publishing queues generated content and completes only after a Dem
     DEMO_TELEGRAM_CHAT_ID: target.chatId,
     APP_BASE_URL: "https://academy.example.com"
   };
+  await saveDestinationCtaRegistry(repository, [{
+    platform: "telegram",
+    chatId: target.chatId,
+    ctaEnabled: true,
+    ctaContent: "Join the community",
+  }]);
   let runnerOptions;
 
   const run = await runDistributionAutomationRule(rule.id, {

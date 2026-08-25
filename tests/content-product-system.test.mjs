@@ -44,7 +44,6 @@ function input(product, overrides = {}) {
     inferences: [{ text: "The print may reduce near-term rate anxiety." }],
     risk: "A later official revision can change the reading.",
     invalidation: "Invalidate if the official release is revised.",
-    cta: { label: "Discuss in the community", url: "https://academy.example/discuss" },
     intelligence: {
       updatedAt: "2026-08-23T12:45:00.000Z",
       importance: 5,
@@ -161,14 +160,13 @@ test("missing, unknown, or secondary-only evidence blocks distribution fail-clos
   }
 });
 
-test("facts and inferences, timestamps, risk, invalidation, CTA, and language are mandatory", async () => {
+test("facts and inferences, timestamps, risk, invalidation, and language are mandatory", async () => {
   const invalidInputs = [
     input("daily-market-brief", { facts: [] }),
     input("daily-market-brief", { inferences: [] }),
     input("daily-market-brief", { risk: "" }),
     input("daily-market-brief", { invalidation: "" }),
     input("daily-market-brief", { language: "xx" }),
-    input("daily-market-brief", { cta: { label: "Guaranteed profit", url: "http://unsafe.example" } }),
     input("daily-market-brief", { event: { ...input("daily-market-brief").event, occurredAt: "not-a-time" } }),
     input("daily-market-brief", { intelligence: { ...input("daily-market-brief").intelligence, horizon: "" } }),
     input("daily-market-brief", { intelligence: { ...input("daily-market-brief").intelligence, confidence: "Certain" } }),
@@ -178,6 +176,15 @@ test("facts and inferences, timestamps, risk, invalidation, CTA, and language ar
     const result = await createContentProductSystem({ store: storeDouble() }).prepare(candidate);
     assert.equal(result.status, "blocked");
   }
+});
+
+test("content products reject intrinsic CTA because delivery owns destination CTA", async () => {
+  const result = await createContentProductSystem({ store: storeDouble() }).prepare(input("daily-market-brief", {
+    cta: { label: "Open admin", url: "https://internal.example/academy" },
+  }));
+
+  assert.equal(result.status, "blocked");
+  assert.match(result.gate.reasons.join(" "), /destination CTA|delivery/i);
 });
 
 test("market follow-up requires an originating flash, bounded observation window, and non-causal wording", async () => {
@@ -311,6 +318,7 @@ test("all four Telegram products render a structured text-only editorial layout"
     assert.match(telegram, product === "data-flash" ? /<b>03  ·  WHAT TO WATCH<\/b>/ : /<b>WATCH NEXT<\/b>/);
     assert.match(telegram, /<b>RISK \/ INVALIDATION<\/b>/);
     assert.match(telegram, /<b>SOURCES<\/b>/);
+    assert.doesNotMatch(telegram, /academy\.example|Join the market discussion|Discuss in the community/i);
     assert.doesNotMatch(telegram, /👀|⚠️|🔗|✓|🧭|📅|⚡|🔎/u);
     assert.equal((telegram.match(/\p{Extended_Pictographic}/gu) ?? []).length, expectedEmojiCounts.get(product));
     const discord = rendered.discord.chunks.join("\n\n");
@@ -321,6 +329,7 @@ test("all four Telegram products render a structured text-only editorial layout"
     if (product === "daily-market-brief") assert.match(discord, /Ξ ETH/);
     assert.doesNotMatch(discord, /YUBIT|ACADEMY|0–4H|1–7D/);
     assert.match(discord, /WHAT HAPPENED|PREV \/ CONS \/ ACTUAL|01  ·  RELEASE|01  ·  MEASURED MOVE/);
+    assert.doesNotMatch(discord, /academy\.example|Join the market discussion|Discuss in the community/i);
     assert.match(telegram, /Layout &lt;check&gt; &amp;/);
     assert.doesNotMatch(telegram, /<img|sendPhoto|photo=/i);
   }
