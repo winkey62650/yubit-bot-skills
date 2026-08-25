@@ -14,6 +14,7 @@ on:
           - academy-demo
           - academy-poster-v6-recovery
           - academy-audit
+          - telegram-house-audit
           - discord-audit
           - discord-demo
           - agents
@@ -278,6 +279,261 @@ jobs:
         with:
           name: academy-demo-audit-${{ github.sha }}
           path: ${{ runner.temp }}/academy-demo-audit.json
+          if-no-files-found: error
+          retention-days: 30
+
+  telegram_house_audit:
+    if: inputs.job == 'telegram-house-audit'
+    runs-on: ubuntu-latest
+    environment: Production
+    env:
+      TEST_BASE_URL: https://152-32-161-174.sslip.io
+      HOUSE_CHAT_ID: "-1001702053978"
+    steps:
+      - name: Install SSH password helper
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq sshpass
+
+      - name: Audit House of Crypto Telegram routing without sending
+        env:
+          SSHPASS: ${{ secrets.YUBIT_SERVER_PASSWORD }}
+        run: |
+          set -Eeuo pipefail
+          if [ -z "$SSHPASS" ]; then
+            echo "YUBIT_SERVER_PASSWORD is not configured." >&2
+            exit 1
+          fi
+          report_path="$RUNNER_TEMP/telegram-house-audit.json"
+          sshpass -e ssh \
+            -o ConnectTimeout=20 \
+            -o ServerAliveInterval=10 \
+            -o StrictHostKeyChecking=accept-new \
+            ubuntu@152.32.161.174 \
+            "TEST_BASE_URL='$TEST_BASE_URL' HOUSE_CHAT_ID='$HOUSE_CHAT_ID' bash -s" \
+            >"$report_path" <<'REMOTE'
+          set -Eeuo pipefail
+          env_file=/etc/yubit-academy/production.env
+          read_env() {
+            sudo awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "$env_file"
+          }
+          release="$(readlink -f /opt/yubit-academy/current)"
+          export AUTH_USERNAME="$(read_env AUTH_USERNAME)"
+          export AUTH_PASSWORD="$(read_env AUTH_PASSWORD)"
+          export RELEASE_SHA="$(tr -d '[:space:]' <"$release/.release-commit")"
+          export DISTRIBUTION_APPROVED_TARGETS="$(read_env TELEGRAM_DISTRIBUTION_APPROVED_TARGETS)"
+          export USER_PUBLISHER_TARGETS="$(read_env TELEGRAM_USER_PUBLISHER_TARGETS)"
+          python3 <<'PYTHON'
+          import datetime
+          import http.cookiejar
+          import json
+          import os
+          import re
+          import ssl
+          import subprocess
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          base_url = os.environ["TEST_BASE_URL"]
+          house_chat_id = os.environ["HOUSE_CHAT_ID"]
+          cookie_jar = http.cookiejar.CookieJar()
+          opener = urllib.request.build_opener(
+              urllib.request.HTTPCookieProcessor(cookie_jar),
+              urllib.request.HTTPSHandler(context=ssl._create_unverified_context()),
+          )
+
+          def sanitize(value):
+              text = str(value or "")
+              text = re.sub(r"postgres(?:ql)?://[^\s\"']+", "postgresql://<redacted>", text, flags=re.I)
+              text = re.sub(r"(?i)(password|token|secret)([=:\"'\s]+)[^\s,}\"]+", r"\1\2<redacted>", text)
+              return text[:2000]
+
+          def request_json(path, *, payload=None, timeout=90):
+              request = urllib.request.Request(
+                  f"{base_url}{path}",
+                  data=None if payload is None else json.dumps(payload).encode(),
+                  headers={} if payload is None else {"content-type": "application/json"},
+                  method="GET" if payload is None else "POST",
+              )
+              try:
+                  with opener.open(request, timeout=timeout) as response:
+                      return json.load(response)
+              except urllib.error.HTTPError as error:
+                  body = error.read().decode("utf-8", errors="replace")
+                  raise RuntimeError(f"{path} HTTP {error.code}: {sanitize(body)}") from error
+
+          properties = [
+              "ActiveState", "SubState", "UnitFileState", "ExecMainStatus",
+              "NRestarts", "ActiveEnterTimestamp", "ExecMainStartTimestamp",
+          ]
+          worker_show = subprocess.run(
+              ["systemctl", "show", "yubit-academy-worker.service", *[f"--property={item}" for item in properties]],
+              check=False,
+              capture_output=True,
+              text=True,
+          )
+          worker_service = {}
+          for line in worker_show.stdout.splitlines():
+              if "=" in line:
+                  key, value = line.split("=", 1)
+                  worker_service[key] = value
+          worker_service["commandStatus"] = worker_show.returncode
+
+          journal = subprocess.run(
+              [
+                  "journalctl", "-u", "yubit-academy-worker.service", "--since", "2026-08-18 00:00:00",
+                  "--no-pager", "-o", "cat", "-n", "5000",
+              ],
+              check=False,
+              capture_output=True,
+              text=True,
+          )
+          worker_events = []
+          for line in journal.stdout.splitlines():
+              if house_chat_id not in line and "TELEGRAM_GROUP_IDENTITY_NOT_AVAILABLE" not in line:
+                  continue
+              try:
+                  event = json.loads(line)
+              except Exception:
+                  worker_events.append({"message": sanitize(line)})
+                  continue
+              worker_events.append({
+                  "timestamp": event.get("timestamp", ""),
+                  "level": event.get("level", ""),
+                  "event": event.get("event", ""),
+                  "task": event.get("task", ""),
+                  "result": event.get("result", {}),
+                  "error": sanitize(event.get("error", "")),
+              })
+          worker_events = worker_events[-100:]
+
+          errors = []
+          overview = {}
+          delivery_payload = {}
+          authorization = {}
+          account_dialogs = []
+          try:
+              login = request_json("/api/auth/login", payload={
+                  "username": os.environ["AUTH_USERNAME"],
+                  "password": os.environ["AUTH_PASSWORD"],
+              })
+              if login.get("ok") is not True:
+                  raise RuntimeError("login was not accepted")
+              overview = request_json("/api/distribution")
+              delivery_payload = request_json("/api/distribution/logs?limit=500")
+              authorization = request_json("/api/telegram/user-authorization")
+              for account in authorization.get("accounts", []):
+                  user_id = str(account.get("userId", ""))
+                  if not user_id:
+                      continue
+                  entry = {
+                      "userId": user_id,
+                      "username": str(account.get("username", "")),
+                      "firstName": str(account.get("firstName", "")),
+                      "houseVisibleAsWritable": False,
+                      "house": None,
+                  }
+                  try:
+                      dialogs = request_json(
+                          "/api/telegram/dialogs?userId=" + urllib.parse.quote(user_id),
+                          timeout=150,
+                      )
+                      house = next(
+                          (item for item in dialogs.get("groups", []) if str(item.get("id", "")) == house_chat_id),
+                          None,
+                      )
+                      entry["houseVisibleAsWritable"] = house is not None
+                      entry["house"] = house
+                  except Exception as error:
+                      entry["error"] = sanitize(error)
+                  account_dialogs.append(entry)
+          except Exception as error:
+              errors.append(sanitize(error))
+
+          rule_fields = ["id", "name", "contentType", "enabled", "status", "nextRunAt", "lastRunAt", "lastError"]
+          distribution_rules = []
+          for rule in overview.get("rules", []):
+              if not isinstance(rule, dict):
+                  continue
+              targets = [
+                  {
+                      "id": str(target.get("id", "")),
+                      "chatId": str(target.get("chatId", "")),
+                      "threadId": target.get("threadId"),
+                      "groupName": str(target.get("groupName", "")),
+                      "topicName": str(target.get("topicName", "")),
+                      "enabled": target.get("enabled") is not False,
+                  }
+                  for target in rule.get("targets", [])
+                  if isinstance(target, dict) and str(target.get("chatId", "")) == house_chat_id
+              ]
+              if targets:
+                  distribution_rules.append({
+                      **{field: rule.get(field) for field in rule_fields},
+                      "targets": targets,
+                  })
+
+          recent_deliveries = []
+          for delivery in delivery_payload.get("items", []):
+              if not isinstance(delivery, dict):
+                  continue
+              target = delivery.get("target", {}) if isinstance(delivery.get("target"), dict) else {}
+              if str(target.get("chatId", "")) != house_chat_id:
+                  continue
+              recent_deliveries.append({
+                  "id": str(delivery.get("id", "")),
+                  "ruleId": str(delivery.get("ruleId", "")),
+                  "status": str(delivery.get("status", "")),
+                  "attempts": delivery.get("attempts", 0),
+                  "target": {
+                      "chatId": house_chat_id,
+                      "threadId": target.get("threadId"),
+                      "groupName": str(target.get("groupName", "")),
+                      "topicName": str(target.get("topicName", "")),
+                  },
+                  "targetMessageId": str(delivery.get("targetMessageId", "")),
+                  "targetMessageIds": [str(value) for value in delivery.get("targetMessageIds", []) if str(value)],
+                  "error": sanitize(delivery.get("error", "")),
+                  "createdAt": str(delivery.get("createdAt", "")),
+                  "updatedAt": str(delivery.get("updatedAt", "")),
+                  "deliveredAt": str(delivery.get("deliveredAt", "")),
+              })
+
+          approved = [value for value in re.split(r"[\s,;]+", os.environ.get("DISTRIBUTION_APPROVED_TARGETS", "")) if value]
+          publisher_targets = [value for value in re.split(r"[\s,;]+", os.environ.get("USER_PUBLISHER_TARGETS", "")) if value]
+          report = {
+              "ok": not errors,
+              "readOnly": True,
+              "accountCatalogKey": "telegram-authorized-accounts-v1",
+              "auditedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              "releaseSha": os.environ.get("RELEASE_SHA", ""),
+              "houseChatId": house_chat_id,
+              "workerService": worker_service,
+              "workerEvents": worker_events,
+              "routingPolicy": {
+                  "distributionApproved": any(value == house_chat_id or value.startswith(house_chat_id + ":") for value in approved),
+                  "userPublisherTarget": house_chat_id in publisher_targets,
+              },
+              "publisher": authorization.get("publisher", {}),
+              "accounts": account_dialogs,
+              "distributionRules": distribution_rules,
+              "recentDeliveries": recent_deliveries,
+              "errors": errors,
+          }
+          print(json.dumps(report, ensure_ascii=False, indent=2))
+          PYTHON
+          REMOTE
+          jq -e '.ok == true and .readOnly == true and .houseChatId == "-1001702053978"' "$report_path" >/dev/null
+          echo "### House of Crypto Telegram read-only audit" >>"$GITHUB_STEP_SUMMARY"
+          jq -r '"- Release: `\(.releaseSha)`\n- Accounts checked: `\(.accounts | length)`\n- Writable identities: `\([.accounts[] | select(.houseVisibleAsWritable == true)] | length)`\n- Matching rules: `\(.distributionRules | length)`\n- Matching receipts: `\(.recentDeliveries | length)`\n- Errors: `\(.errors | join("; "))`"' "$report_path" >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Upload House of Crypto Telegram read-only audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: telegram-house-audit-${{ github.sha }}
+          path: ${{ runner.temp }}/telegram-house-audit.json
           if-no-files-found: error
           retention-days: 30
 

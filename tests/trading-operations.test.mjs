@@ -236,6 +236,21 @@ test("operator recovery workflow includes a read-only Discord health audit", asy
   assert.doesNotMatch(workflow, /inputs\.job == 'discord-audit'[\s\S]{0,12000}test-message/);
 });
 
+test("operator recovery workflow includes a read-only House of Crypto Telegram audit", async () => {
+  const workflow = await readFile(new URL(".github/workflows/telegram-automations.yml", root), "utf8");
+  assert.match(workflow, /- telegram-house-audit/);
+  assert.match(workflow, /inputs\.job == 'telegram-house-audit'/);
+  assert.match(workflow, /-1001702053978/);
+  assert.match(workflow, /\/api\/telegram\/user-authorization/);
+  assert.match(workflow, /\/api\/telegram\/dialogs\?userId=/);
+  assert.match(workflow, /telegram-authorized-accounts-v1/);
+  assert.match(workflow, /distributionRules/);
+  assert.match(workflow, /recentDeliveries/);
+  assert.match(workflow, /yubit-academy-worker\.service/);
+  assert.match(workflow, /\.readOnly == true/);
+  assert.doesNotMatch(workflow, /inputs\.job == 'telegram-house-audit'[\s\S]{0,16000}(?:sendMessage|sendPhoto|run-now|test-message)/);
+});
+
 test("market preview maps every product to its own poster media delivery", async () => {
   const route = await readFile(new URL("app/api/automation-test/route.js", root), "utf8");
   assert.match(route, /buildAutomationTelegramPlans\(jobId, result\.preview, hydratedTargets, result\.preview\.mediaDelivery\)/);
