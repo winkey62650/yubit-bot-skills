@@ -13,6 +13,7 @@ const REQUIRED_TELEGRAM_TARGETS = new Set([
   "-1003710405969:8",
   "-1003710405969:10",
   "-1003710405969:16",
+  "-1001702053978:309971",
 ]);
 const REQUIRED_APPROVED_TARGETS = [...REQUIRED_TELEGRAM_TARGETS].join(",");
 
@@ -49,7 +50,7 @@ export async function auditContentProduction({
   }
   if (telegramDemoOnly !== "true" || tradingDemoOnly !== "true"
       || approvedTelegramTargets !== REQUIRED_APPROVED_TARGETS || allowLiveTelegram === "true") {
-    pushFailure("TELEGRAM_SAFETY_POLICY_MISMATCH", "Telegram production policy is not locked to the DEMO group Topics 8/10/16");
+    pushFailure("TELEGRAM_SAFETY_POLICY_MISMATCH", "Telegram production policy is not locked to the governed DEMO and House Topic allowlist");
   }
   if (workerStateBefore !== workerStateAfter || discordStateBefore !== discordStateAfter) {
     pushFailure("PUBLISHER_RUNTIME_STATE_CHANGED", "Worker or Discord runtime state changed during the no-send deployment");

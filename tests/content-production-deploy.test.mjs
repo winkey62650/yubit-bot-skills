@@ -92,6 +92,8 @@ test("governed Telegram target policy includes House and rolls back on deploymen
   assert.match(workflow, /\[ -n "\$env_backup" \] && \[ "\$deployment_committed" != "1" \]/);
   const deployScript = read("deploy/server/deploy.sh");
   assert.match(deployScript, /expected_distribution_targets='-1003710405969:8,-1003710405969:10,-1003710405969:16,-1001702053978:309971'/);
+  const auditScript = read("scripts/audit-content-production.mjs");
+  assert.match(auditScript, /"-1001702053978:309971"/);
   assert.match(workflow, /sudo cp -p "\$env_backup" "\$env_file"/);
   assert.doesNotMatch(workflow, /sudo systemctl restart yubit-academy\.service/);
   assert.match(workflow, /deployment_committed=1/);

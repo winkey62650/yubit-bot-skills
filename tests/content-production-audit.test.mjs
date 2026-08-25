@@ -11,7 +11,7 @@ function healthyOptions(overrides = {}) {
     deployNoSend: "1",
     telegramDemoOnly: "true",
     tradingDemoOnly: "true",
-    approvedTelegramTargets: "-1003710405969:8,-1003710405969:10,-1003710405969:16",
+    approvedTelegramTargets: "-1003710405969:8,-1003710405969:10,-1003710405969:16,-1001702053978:309971",
     allowLiveTelegram: "false",
     deliveryCountBefore: "17",
     workerStateBefore: "ActiveState=inactive\nSubState=dead\nMainPID=0",
@@ -41,6 +41,7 @@ function healthyOptions(overrides = {}) {
         { platform: "telegram", chatId: "-1003710405969", threadId: "8" },
         { platform: "telegram", chatId: "-1003710405969", threadId: "10" },
         { platform: "telegram", chatId: "-1003710405969", threadId: "16" },
+        { platform: "telegram", chatId: "-1001702053978", threadId: "309971" },
         { platform: "discord", guildId: "guild", channelId: "one" },
         { platform: "discord", guildId: "guild", channelId: "two" },
       ];
@@ -68,8 +69,8 @@ test("read-only production audit validates exact SHA, vault, database, and recei
   assert.equal(report.database.ruleCount, 4);
   assert.equal(report.database.deliveryCount, 17);
   assert.equal(report.database.deliveryDelta, 0);
-  assert.deepEqual(report.database.enabledTargetsByPlatform, { discord: 2, telegram: 3 });
-  assert.deepEqual(report.database.effectiveTargetsByPlatform, { discord: 2, telegram: 3 });
+  assert.deepEqual(report.database.enabledTargetsByPlatform, { discord: 2, telegram: 4 });
+  assert.deepEqual(report.database.effectiveTargetsByPlatform, { discord: 2, telegram: 4 });
   assert.deepEqual(report.database.dormantTargetsByPlatform, {});
   assert.deepEqual(report.products, [
     "daily-market-brief",
