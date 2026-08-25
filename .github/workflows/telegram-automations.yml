@@ -773,7 +773,12 @@ jobs:
           trap 'rm -f "$cta_recovery_file"' EXIT
           export HOUSE_CTA_RECOVERY_FILE="$cta_recovery_file"
           cd "$release"
-          node --input-type=module >"$cta_recovery_file" <<'NODE'
+          node_runtime=/opt/yubit-node/bin/node
+          if [ ! -x "$node_runtime" ]; then
+            echo "Production application Node runtime is unavailable." >&2
+            exit 1
+          fi
+          "$node_runtime" --input-type=module >"$cta_recovery_file" <<'NODE'
           import { TelegramClient, sessions } from "teleproto";
           import { getDistributionRepository } from "./lib/distribution-repository.mjs";
           import { createTelegramUserSessionStore } from "./lib/telegram-user-session.mjs";
