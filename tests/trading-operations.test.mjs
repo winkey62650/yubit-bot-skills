@@ -301,6 +301,8 @@ test("market preview maps every product to its own poster media delivery", async
 
 test("Market Intelligence Demo workflow is exact-target, no-retry, and deployment-bound", async () => {
   const script = await readFile(new URL("scripts/accept-market-intelligence-demo.cjs", root), "utf8");
+  const deliveryRoute = await readFile(new URL("app/api/market-intelligence-demo-delivery/route.js", root), "utf8");
+  const deliveryGate = await readFile(new URL("lib/market-intelligence-demo-delivery.mjs", root), "utf8");
   const workflow = await readFile(new URL(".github/workflows/telegram-automations.yml", root), "utf8");
 
   assert.match(script, /authorizeLiveTelegramOperation/);
@@ -310,21 +312,40 @@ test("Market Intelligence Demo workflow is exact-target, no-retry, and deploymen
   assert.match(script, /MARKET_INTELLIGENCE_DEMO_ACCEPTANCE_BATCH_ID/);
   assert.match(script, /\/api\/destination-cta/);
   assert.match(script, /\/api\/automation-test/);
+  assert.match(script, /\/api\/market-intelligence-demo-delivery/);
   assert.match(script, /demoAcceptance:\s*true/);
+  assert.match(script, /previewChallenge/);
   assert.match(script, /market-intelligence-alert-v1/);
-  assert.match(script, /resolveSpeakerBot/);
-  assert.ok(script.indexOf('telegram.post("/getMe"') < script.indexOf('telegram.post("/sendPhoto"'));
-  assert.match(script, /report\.botIdentity/);
-  assert.ok(script.indexOf("preflightPoster") < script.indexOf('telegram.post("/sendPhoto"'));
-  assert.equal((script.match(/telegram\.post\("\/sendPhoto"/g) || []).length, 1);
-  assert.doesNotMatch(script, /run-now|sendMessage/);
+  assert.match(script, /report\.publisherIdentity/);
+  assert.ok(script.indexOf("preflightPoster") < script.indexOf('api.post("/api/market-intelligence-demo-delivery"'));
+  assert.doesNotMatch(script, /api\.telegram\.org|resolveSpeakerBot|telegram\.post\("\/sendPhoto"|run-now|sendMessage/);
+
+  assert.match(deliveryGate, /verifyCtaPreviewBoundary/);
+  assert.match(deliveryGate, /chatId:\s*"-1003710405969"/);
+  assert.match(deliveryGate, /threadId:\s*16/);
+  assert.match(deliveryGate, /market-intelligence-alert-v1/);
+  assert.match(deliveryGate, /TELEGRAM_DEMO_ONLY/);
+  assert.match(deliveryGate, /TRADING_DEMO_ONLY/);
+  assert.match(deliveryGate, /TELEGRAM_DISTRIBUTION_APPROVED_TARGETS/);
+
+  assert.match(deliveryRoute, /telegramDeliveryEnvironment/);
+  assert.match(deliveryRoute, /telegramUserPublisherHealth/);
+  assert.match(deliveryRoute, /compareAndSetMeta/);
+  assert.match(deliveryRoute, /status:\s*"sending"/);
+  assert.match(deliveryRoute, /status:\s*"uncertain"/);
+  assert.match(deliveryRoute, /status:\s*"delivered"/);
+  assert.equal((deliveryRoute.match(/telegramCall\(/g) || []).length, 1);
+  assert.equal((deliveryRoute.match(/"sendPhoto"/g) || []).length, 1);
+  assert.match(deliveryRoute, /\{ env: publisherEnv \}/);
+  assert.doesNotMatch(deliveryRoute, /retry|sendMessage/);
 
   assert.match(workflow, /- market-intelligence-demo/);
   assert.match(workflow, /inputs\.job == 'market-intelligence-demo'/);
   assert.match(workflow, /accept-market-intelligence-demo\.cjs/);
   assert.match(workflow, /EXPECTED_SHA/);
-  assert.match(workflow, /SPEAKER_BOT_TOKEN="\$speaker_bot_token"/);
-  assert.match(workflow, /TRADER1_BOT_TOKEN="\$trader1_bot_token"/);
+  assert.match(workflow, /publisherIdentity\.mode == "user"/);
+  assert.match(workflow, /publisherIdentity\.username == "@Serenity_Crypto"/);
+  assert.doesNotMatch(workflow, /SPEAKER_BOT_TOKEN="\$speaker_bot_token"|TRADER1_BOT_TOKEN="\$trader1_bot_token"/);
   assert.match(workflow, /read_env ALLOW_LIVE_TELEGRAM\)" != "false"/);
   assert.match(workflow, /publisher_config_before/);
   assert.match(workflow, /publisher_config_after/);

@@ -1,5 +1,6 @@
 const fs = require("node:fs");
 const path = require("node:path");
+const { randomBytes } = require("node:crypto");
 const { request } = require("playwright");
 const { authorizeLiveTelegramOperation } = require("../lib/release-gate.cjs");
 
@@ -21,14 +22,11 @@ const { baseUrl } = authorizeLiveTelegramOperation(process.env, {
 });
 const username = String(process.env.TEST_USERNAME || "").trim();
 const password = String(process.env.TEST_PASSWORD || "").trim();
-const speakerBotToken = String(process.env.SPEAKER_BOT_TOKEN || "").trim();
-const trader1BotToken = String(process.env.TRADER1_BOT_TOKEN || "").trim();
 const expectedCommitSha = String(process.env.EXPECTED_COMMIT_SHA || "").trim().toLowerCase();
 const acceptanceBatchId = String(process.env.MARKET_INTELLIGENCE_DEMO_ACCEPTANCE_BATCH_ID || "").trim().toLowerCase();
 const reportPath = path.resolve(process.env.TEST_REPORT_PATH || "artifacts/market-intelligence-demo/report.json");
 
 if (!username || !password) throw new Error("TEST_USERNAME and TEST_PASSWORD are required");
-if (!speakerBotToken && !trader1BotToken) throw new Error("SPEAKER_BOT_TOKEN or TRADER1_BOT_TOKEN is required");
 if (!/^[0-9a-f]{7,64}$/.test(expectedCommitSha)) throw new Error("EXPECTED_COMMIT_SHA is required");
 if (!/^[a-z0-9][a-z0-9-]{5,79}$/.test(acceptanceBatchId)) throw new Error("MARKET_INTELLIGENCE_DEMO_ACCEPTANCE_BATCH_ID is invalid");
 
@@ -81,6 +79,7 @@ function inspectPreview(payload, cta) {
   }
   const steps = Array.isArray(plan.steps) ? plan.steps : [];
   if (steps.length !== 1 || steps[0]?.method !== "sendPhoto") throw new Error("Demo acceptance must contain exactly one Telegram sendPhoto operation");
+  if (!steps[0]?.ctaBoundary?.evidence?.signature) throw new Error("The Demo plan is missing signed preview evidence");
   const form = steps[0].payload || {};
   const photo = String(form.photo || "");
   const caption = String(form.caption || "");
@@ -114,43 +113,6 @@ async function preflightPoster(api, photo) {
   return { status: response.status(), contentType, byteLength: bytes.byteLength, url: photo };
 }
 
-async function resolveSpeakerBot() {
-  const candidates = [
-    { role: "SpeakerBot.primary", token: speakerBotToken },
-    { role: "SpeakerBot.fallback", token: trader1BotToken },
-  ].filter((candidate, index, all) => candidate.token
-    && all.findIndex((entry) => entry.token === candidate.token) === index);
-
-  for (const candidate of candidates) {
-    const telegram = await request.newContext({ baseURL: `https://api.telegram.org/bot${candidate.token}` });
-    try {
-      const identity = await readJson(await telegram.post("/getMe", { timeout: 30_000 }), "Telegram getMe");
-      const botId = Number(identity.result?.id);
-      if (!Number.isSafeInteger(botId) || botId <= 0) throw new Error("Telegram getMe returned an invalid bot identity");
-      await readJson(await telegram.post("/getChat", {
-        form: { chat_id: TARGET.chatId }, timeout: 30_000,
-      }), "Telegram getChat");
-      const membership = await readJson(await telegram.post("/getChatMember", {
-        form: { chat_id: TARGET.chatId, user_id: botId }, timeout: 30_000,
-      }), "Telegram getChatMember");
-      const status = String(membership.result?.status || "");
-      if (["left", "kicked"].includes(status)) throw new Error("SpeakerBot is not a member of the Demo group");
-      return {
-        telegram,
-        identity: {
-          role: candidate.role,
-          id: botId,
-          username: String(identity.result?.username || ""),
-          membershipStatus: status,
-        },
-      };
-    } catch {
-      await telegram.dispose();
-    }
-  }
-  throw new Error("No configured SpeakerBot credential passed Telegram identity and Demo-group access checks");
-}
-
 function writeReport(report) {
   fs.mkdirSync(path.dirname(reportPath), { recursive: true });
   fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
@@ -169,6 +131,7 @@ function writeReport(report) {
     startedAt: new Date().toISOString(),
   };
   try {
+    const previewChallenge = randomBytes(32).toString("base64url");
     await readJson(await api.post("/api/auth/login", {
       data: { username, password }, timeout: 30_000,
     }), "login");
@@ -182,6 +145,7 @@ function writeReport(report) {
         textOnly: false,
         demoAcceptance: true,
         demoAcceptanceBatchId: acceptanceBatchId,
+        previewChallenge,
       },
       timeout: 90_000,
     }), "Market Intelligence Demo preview");
@@ -190,30 +154,23 @@ function writeReport(report) {
     report.cta = { key: CTA_KEY, source: inspected.plan.target.ctaSource, enabled: true, urlCount: extractUrls(cta.ctaContent).length };
     report.mediaPreflight = await preflightPoster(api, inspected.photo);
 
-    const resolvedBot = await resolveSpeakerBot();
-    report.botIdentity = resolvedBot.identity;
-
     // All read-only gates have passed. This is the single authorized external mutation; there is deliberately no retry.
-    const telegram = resolvedBot.telegram;
-    try {
-      const sent = await readJson(await telegram.post("/sendPhoto", {
-        form: inspected.form,
-        timeout: 90_000,
-      }), "Telegram sendPhoto");
-      const messageId = Number(sent.result?.message_id);
-      const messageThreadId = Number(sent.result?.message_thread_id);
-      if (!Number.isSafeInteger(messageId) || messageId <= 0 || messageThreadId !== TARGET.threadId) {
-        throw new Error("Telegram did not return the expected Demo topic receipt");
-      }
-      report.delivery = {
-        target: { chatId: TARGET.chatId, threadId: TARGET.threadId },
-        messageId,
-        messageThreadId,
-        templateVersion: inspected.plan.templateVersion,
-      };
-    } finally {
-      await telegram.dispose();
+    const delivered = await readJson(await api.post("/api/market-intelligence-demo-delivery", {
+      data: {
+        plan: inspected.plan,
+        previewChallenge,
+        acceptanceBatchId,
+      },
+      timeout: 90_000,
+    }), "Market Intelligence Demo delivery");
+    const messageId = Number(delivered.delivery?.messageId);
+    const messageThreadId = Number(delivered.delivery?.messageThreadId);
+    if (!Number.isSafeInteger(messageId) || messageId <= 0 || messageThreadId !== TARGET.threadId) {
+      throw new Error("Telegram did not return the expected Demo topic receipt");
     }
+    report.delivery = delivered.delivery;
+    report.publisherIdentity = delivered.publisherIdentity;
+    report.receiptPersisted = delivered.receiptPersisted === true;
     report.ok = true;
     report.completedAt = new Date().toISOString();
     writeReport(report);
