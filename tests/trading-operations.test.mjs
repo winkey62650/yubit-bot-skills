@@ -177,6 +177,7 @@ test("run-now exists only in explicitly authorized live acceptance scripts", asy
     "accept-academy-demo-content.cjs",
     "recover-academy-demo-poster-v6.cjs",
     "send-academy-realtime-demo.cjs",
+    "supplement-academy-demo-daily.cjs",
     "test-production-automation-delivery.cjs",
   ]);
   for (const offender of offenders) assert.match(offender.source, /authorizeLiveTelegramOperation/);
@@ -212,6 +213,26 @@ test("run-now exists only in explicitly authorized live acceptance scripts", asy
   assert.match(realtime, /contentType\.startsWith\("image\/png"\)/);
   assert.match(realtime, /MAX_POSTER_BYTES/);
   assert.ok(realtime.indexOf("report.mediaPreflight.push") < realtime.indexOf('action: "run-now"'));
+
+  const supplement = offenders.find((item) => item.file === "supplement-academy-demo-daily.cjs").source;
+  assert.match(supplement, /TARGET_THREAD_ID = 8/);
+  assert.match(supplement, /exactTargets:\s*true/);
+  assert.match(supplement, /assertDemoShowcasePosterUrls/);
+  assert.match(supplement, /contentType\.startsWith\("image\/png"\)/);
+  assert.match(supplement, /execution\.messageIds\.length === 2/);
+  assert.ok(supplement.indexOf("preflightPoster(api, preview)") < supplement.indexOf('action: "run-now"'));
+});
+
+test("Academy DEMO Market Brief supplement is fenced to one poster-copy pair in Topic 8", async () => {
+  const workflow = await readFile(new URL(".github/workflows/telegram-automations.yml", root), "utf8");
+  assert.match(workflow, /- academy-demo-daily-supplement/);
+  assert.match(workflow, /inputs\.job == 'academy-demo-daily-supplement'/);
+  assert.match(workflow, /supplement-academy-demo-daily\.cjs/);
+  assert.match(workflow, /\.product == "daily-market-brief"/);
+  assert.match(workflow, /\.target == \{"chatId":"-1003710405969","threadId":8\}/);
+  assert.match(workflow, /\(\.execution\.messageIds \| length\) == 2/);
+  assert.match(workflow, /\.mediaPreflight\[0\]\.templateId == "daily-market-brief-v4"/);
+  assert.match(workflow, /\.cleanup\.deleted == true/);
 });
 
 test("Academy DEMO read-only audit includes recovery and validation rule identities", async () => {

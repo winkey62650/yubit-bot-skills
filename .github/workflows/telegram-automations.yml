@@ -12,6 +12,7 @@ on:
         options:
           - academy-realtime-demo
           - academy-demo
+          - academy-demo-daily-supplement
           - academy-poster-v6-recovery
           - academy-audit
           - telegram-house-audit
@@ -2645,6 +2646,132 @@ jobs:
         with:
           name: academy-demo-acceptance-${{ github.sha }}
           path: ${{ runner.temp }}/academy-demo-acceptance.json
+          if-no-files-found: error
+          retention-days: 30
+
+  academy_demo_daily_supplement:
+    if: inputs.job == 'academy-demo-daily-supplement'
+    runs-on: ubuntu-latest
+    environment: Production
+    env:
+      TEST_BASE_URL: https://152-32-161-174.sslip.io
+    steps:
+      - name: Install SSH password helper
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq sshpass
+
+      - name: Supplement only Market Brief poster and copy to Academy DEMO Topic 8
+        env:
+          SSHPASS: ${{ secrets.YUBIT_SERVER_PASSWORD }}
+          EXPECTED_SHA: ${{ github.sha }}
+          ACCEPTANCE_BATCH_ID: supplement-${{ github.run_id }}
+        run: |
+          set -Eeuo pipefail
+          if [ -z "$SSHPASS" ]; then
+            echo "YUBIT_SERVER_PASSWORD is not configured." >&2
+            exit 1
+          fi
+          report_path="$RUNNER_TEMP/academy-demo-daily-supplement.json"
+          sshpass -e ssh \
+            -o ConnectTimeout=20 \
+            -o ServerAliveInterval=10 \
+            -o StrictHostKeyChecking=accept-new \
+            ubuntu@152.32.161.174 \
+            "EXPECTED_SHA='$EXPECTED_SHA' TEST_BASE_URL='$TEST_BASE_URL' ACADEMY_DEMO_ACCEPTANCE_BATCH_ID='$ACCEPTANCE_BATCH_ID' bash -s" \
+            >"$report_path" <<'REMOTE'
+          set -Eeuo pipefail
+          env_file=/etc/yubit-academy/production.env
+          expected_targets='-1003710405969:8,-1003710405969:10,-1003710405969:16,-1001702053978:309971'
+          report_file="$(sudo --user=ubuntu mktemp)"
+          cleanup() { rm -f "$report_file"; }
+          trap cleanup EXIT
+
+          release="$(readlink -f /opt/yubit-academy/current)"
+          case "$release" in
+            /opt/yubit-academy/releases/*) ;;
+            *) echo "Current release path is invalid." >&2; exit 1 ;;
+          esac
+          current_sha="$(tr -d '[:space:]' <"$release/.release-commit")"
+          if [ "$current_sha" != "$EXPECTED_SHA" ]; then
+            echo "The requested workflow SHA is not the deployed release." >&2
+            exit 1
+          fi
+
+          read_env() {
+            sudo awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "$env_file"
+          }
+          auth_username="$(read_env AUTH_USERNAME)"
+          auth_password="$(read_env AUTH_PASSWORD)"
+          if [ -z "$auth_username" ] || [ -z "$auth_password" ]; then
+            echo "Production application credentials are unavailable." >&2
+            exit 1
+          fi
+          if [ "$(read_env TELEGRAM_DEMO_ONLY)" != "true" ] \
+            || [ "$(read_env TELEGRAM_DISTRIBUTION_APPROVED_TARGETS)" != "$expected_targets" ] \
+            || [ "$(read_env ALLOW_LIVE_TELEGRAM)" != "false" ]; then
+            echo "Production Telegram safety policy is not locked." >&2
+            exit 1
+          fi
+          publisher_config_before="$(sudo grep -E '^(TELEGRAM_[^=]*|DISCORD_[^=]*|TRADING_DEMO_ONLY|ALLOW_LIVE_TELEGRAM)=' "$env_file" | sha256sum | awk '{print $1}')"
+
+          set +e
+          sudo --user=ubuntu env \
+            RELEASE_STAGE=production \
+            ALLOW_LIVE_TELEGRAM=true \
+            TEST_BASE_URL="$TEST_BASE_URL" \
+            TEST_USERNAME="$auth_username" \
+            TEST_PASSWORD="$auth_password" \
+            TEST_REPORT_PATH="$report_file" \
+            ACCEPTANCE_QUIET=true \
+            ACADEMY_DEMO_ACCEPTANCE_BATCH_ID="$ACADEMY_DEMO_ACCEPTANCE_BATCH_ID" \
+            /opt/yubit-node/bin/node "$release/scripts/supplement-academy-demo-daily.cjs"
+          script_status=$?
+          set -e
+
+          publisher_config_after="$(sudo grep -E '^(TELEGRAM_[^=]*|DISCORD_[^=]*|TRADING_DEMO_ONLY|ALLOW_LIVE_TELEGRAM)=' "$env_file" | sha256sum | awk '{print $1}')"
+          if [ "$publisher_config_after" != "$publisher_config_before" ] \
+            || [ "$(read_env ALLOW_LIVE_TELEGRAM)" != "false" ]; then
+            echo "DEMO supplement changed persistent publisher safety configuration." >&2
+            exit 1
+          fi
+          cat "$report_file"
+          exit "$script_status"
+          REMOTE
+          jq -e '
+            .ok == true
+            and .operation == "academy-demo-daily-topic8-supplement"
+            and .historicalReplay == true
+            and .mediaIncluded == true
+            and .visualContract == "telegram-editorial-card-v4"
+            and .previewLabel == "DEMO PREVIEW · FORMAT TEST"
+            and .product == "daily-market-brief"
+            and .target == {"chatId":"-1003710405969","threadId":8}
+            and .destinationCta == {"key":"telegram:-1003710405969","enabled":true,"source":"destination-registry"}
+            and .execution.productTypes == ["daily-market-brief"]
+            and .execution.target == {"chatId":"-1003710405969","threadId":8}
+            and (.execution.messageIds | length) == 2
+            and (.mediaPreflight | length) == 1
+            and .mediaPreflight[0].product == "daily-market-brief"
+            and .mediaPreflight[0].templateId == "daily-market-brief-v4"
+            and .mediaPreflight[0].version == 4
+            and .mediaPreflight[0].composition == "locked-master-fixed-field-overlay"
+            and .mediaPreflight[0].canvas == {"width":1200,"height":675}
+            and .mediaPreflight[0].status == 200
+            and (.mediaPreflight[0].contentType | startswith("image/png"))
+            and .mediaPreflight[0].byteLength >= 1024
+            and .mediaPreflight[0].byteLength <= 5242880
+            and .cleanup.deleted == true
+          ' "$report_path" >/dev/null
+          echo "### Academy DEMO Market Brief Topic 8 supplement" >>"$GITHUB_STEP_SUMMARY"
+          jq -r '"- Release: `\(.release.commitSha)`\n- Product: `\(.product)`\n- Telegram messages: `\(.execution.messageIds | join(","))`\n- Target topic: `\(.execution.target.threadId)`\n- Media included: `\(.mediaIncluded)`"' "$report_path" >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Academy DEMO Market Brief supplement evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: academy-demo-daily-supplement-${{ github.sha }}
+          path: ${{ runner.temp }}/academy-demo-daily-supplement.json
           if-no-files-found: error
           retention-days: 30
 

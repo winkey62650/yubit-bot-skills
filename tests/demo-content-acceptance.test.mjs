@@ -385,6 +385,22 @@ test("v4 format validation can use a new approved rule identity without inheriti
   }), /rule identity/i);
 });
 
+test("daily showcase can be supplemented into Topic 8 without opening arbitrary target overrides", () => {
+  const showcaseCase = DEMO_SHOWCASE_CASES.find((item) => item.key === "daily");
+  const rule = buildDemoShowcaseTemporaryRule(showcaseCase, {
+    ruleId: "academy-demo-showcase-daily-recovery-20260826-topic8-temporary",
+    threadId: 8,
+    topicName: "3. Market Events",
+  });
+
+  assert.equal(rule.targets[0].threadId, 8);
+  assert.equal(rule.targets[0].topicName, "3. Market Events");
+  assert.throws(() => buildDemoShowcaseTemporaryRule(showcaseCase, {
+    ruleId: "academy-demo-showcase-daily-recovery-20260826-topic16-temporary",
+    threadId: 16,
+  }), /target override is not approved/i);
+});
+
 test("versioned residual recovery identities are scoped to the missing content cases", () => {
   const weekly = DEMO_SHOWCASE_CASES.find((item) => item.key === "weekly");
   const release = DEMO_SHOWCASE_CASES.find((item) => item.key === "release");
