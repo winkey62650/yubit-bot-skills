@@ -199,7 +199,9 @@ test("run-now exists only in explicitly authorized live acceptance scripts", asy
   assert.match(acceptance, /new Set\(report\.mediaPreflight\.map\(\(item\) => item\.url\)\)\.size !== 4/);
   assert.match(acceptance, /assertDemoShowcasePosterUrls/);
   assert.match(acceptance, /ensureDemoDestinationCta/);
-  assert.match(acceptance, /verified-public-cta-archive/);
+  assert.match(acceptance, /verified-neutral-public-cta-archive/);
+  assert.match(acceptance, /LEGACY_DEMO_DESTINATION_CTA/);
+  assert.match(acceptance, /migratedFromLegacyBrand/);
   assert.match(acceptance, /https:\/\/www\.yubit\.com\/en-US\/register\?inviteCode=MJOD/);
   assert.ok(acceptance.indexOf("ensureDemoDestinationCta(api)") < acceptance.indexOf("const rules = []"));
   assert.ok(acceptance.indexOf("report.mediaPreflight.push") < acceptance.indexOf('action: "run-now"'));

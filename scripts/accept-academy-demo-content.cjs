@@ -12,13 +12,21 @@ const {
 const { authorizeLiveTelegramOperation } = require("../lib/release-gate.cjs");
 
 const MAX_POSTER_BYTES = 5 * 1024 * 1024;
-const DEMO_DESTINATION_CTA = [
+const LEGACY_DEMO_DESTINATION_CTA = [
   "_________________",
   "💎 **YUBIT | TRADE WITHOUT LIMITS**",
   "",
   "**Crypto · TradFi · One Exchange**",
   "",
   "👉 **[START TRADING NOW ↗](https://www.yubit.com/en-US/register?inviteCode=MJOD)**",
+].join("\n");
+const DEMO_DESTINATION_CTA = [
+  "_________________",
+  "**TRADE WITHOUT LIMITS**",
+  "",
+  "Crypto · TradFi · One Exchange",
+  "",
+  "**[START TRADING NOW ↗](https://www.yubit.com/en-US/register?inviteCode=MJOD)**",
 ].join("\n");
 
 const { baseUrl } = authorizeLiveTelegramOperation(process.env, {
@@ -72,7 +80,8 @@ async function ensureDemoDestinationCta(api) {
   const ctaKey = `telegram:${DEMO_CHAT_ID}`;
   const before = await readJson(await api.get("/api/destination-cta", { timeout: 30_000 }), "destination CTA");
   const existing = before.registry?.[ctaKey];
-  if (existing?.ctaEnabled === true && String(existing.ctaContent || "").trim()) {
+  const existingContent = String(existing?.ctaContent || "").trim();
+  if (existing?.ctaEnabled === true && existingContent && existingContent !== LEGACY_DEMO_DESTINATION_CTA) {
     return { restored: false, key: ctaKey, source: "destination-registry" };
   }
 
@@ -93,7 +102,12 @@ async function ensureDemoDestinationCta(api) {
   if (restored?.ctaEnabled !== true || String(restored.ctaContent || "").trim() !== DEMO_DESTINATION_CTA) {
     throw new Error("DEMO destination CTA restore did not persist exactly");
   }
-  return { restored: true, key: ctaKey, source: "verified-public-cta-archive" };
+  return {
+    restored: true,
+    migratedFromLegacyBrand: existingContent === LEGACY_DEMO_DESTINATION_CTA,
+    key: ctaKey,
+    source: "verified-neutral-public-cta-archive",
+  };
 }
 
 (async () => {

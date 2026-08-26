@@ -229,6 +229,24 @@ test("four-product showcase pairs each poster with its text, remains topic-scope
     posterIdentities: assertDemoShowcasePosterUrls([posterUrl("daily-market-brief")], showcaseCase),
   });
 
+  assert.doesNotThrow(() => assertDemoShowcasePreview({
+    publishable: true,
+    demoShowcase: true,
+    textOnly: false,
+    imageUrl: posterUrl("daily-market-brief"),
+    mediaDelivery: { byTemplateId: { "daily-market-brief-v4": posterUrl("daily-market-brief") } },
+    contentGovernance: { approved: true, products: [product] },
+    deliveryPlans: [{
+      ...plan,
+      steps: [plan.steps[0], {
+        method: "sendMessage",
+        payload: {
+          text: '<b>📊 MARKET BRIEF</b>\n\n<b>₿ BTC · NEUTRAL</b>\n\n<b><a href="https://www.yubit.com/en-US/register?inviteCode=MJOD">START TRADING NOW ↗</a></b>',
+        },
+      }],
+    }],
+  }, showcaseCase));
+
   assert.throws(() => assertDemoShowcasePreview({
     publishable: true,
     demoShowcase: true,
