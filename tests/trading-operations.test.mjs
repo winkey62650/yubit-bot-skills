@@ -312,6 +312,9 @@ test("Market Intelligence Demo workflow is exact-target, no-retry, and deploymen
   assert.match(script, /\/api\/automation-test/);
   assert.match(script, /demoAcceptance:\s*true/);
   assert.match(script, /market-intelligence-alert-v1/);
+  assert.match(script, /resolveSpeakerBot/);
+  assert.ok(script.indexOf('telegram.post("/getMe"') < script.indexOf('telegram.post("/sendPhoto"'));
+  assert.match(script, /report\.botIdentity/);
   assert.ok(script.indexOf("preflightPoster") < script.indexOf('telegram.post("/sendPhoto"'));
   assert.equal((script.match(/telegram\.post\("\/sendPhoto"/g) || []).length, 1);
   assert.doesNotMatch(script, /run-now|sendMessage/);
@@ -320,6 +323,8 @@ test("Market Intelligence Demo workflow is exact-target, no-retry, and deploymen
   assert.match(workflow, /inputs\.job == 'market-intelligence-demo'/);
   assert.match(workflow, /accept-market-intelligence-demo\.cjs/);
   assert.match(workflow, /EXPECTED_SHA/);
+  assert.match(workflow, /SPEAKER_BOT_TOKEN="\$speaker_bot_token"/);
+  assert.match(workflow, /TRADER1_BOT_TOKEN="\$trader1_bot_token"/);
   assert.match(workflow, /read_env ALLOW_LIVE_TELEGRAM\)" != "false"/);
   assert.match(workflow, /publisher_config_before/);
   assert.match(workflow, /publisher_config_after/);

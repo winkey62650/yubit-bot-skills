@@ -85,10 +85,9 @@ jobs:
           auth_username="$(read_env AUTH_USERNAME)"
           auth_password="$(read_env AUTH_PASSWORD)"
           speaker_bot_token="$(read_env SPEAKER_BOT_TOKEN)"
-          if [ -z "$speaker_bot_token" ]; then
-            speaker_bot_token="$(read_env TRADER1_BOT_TOKEN)"
-          fi
-          if [ -z "$auth_username" ] || [ -z "$auth_password" ] || [ -z "$speaker_bot_token" ]; then
+          trader1_bot_token="$(read_env TRADER1_BOT_TOKEN)"
+          if [ -z "$auth_username" ] || [ -z "$auth_password" ] \
+            || { [ -z "$speaker_bot_token" ] && [ -z "$trader1_bot_token" ]; }; then
             echo "Production application credentials or Speaker bot token are unavailable." >&2
             exit 1
           fi
@@ -109,6 +108,7 @@ jobs:
             TEST_USERNAME="$auth_username" \
             TEST_PASSWORD="$auth_password" \
             SPEAKER_BOT_TOKEN="$speaker_bot_token" \
+            TRADER1_BOT_TOKEN="$trader1_bot_token" \
             EXPECTED_COMMIT_SHA="$EXPECTED_SHA" \
             MARKET_INTELLIGENCE_DEMO_ACCEPTANCE_BATCH_ID="$ACCEPTANCE_BATCH_ID" \
             TEST_REPORT_PATH="$report_file" \
@@ -137,12 +137,14 @@ jobs:
             and .delivery.target.threadId == 16
             and (.delivery.messageId | numbers)
             and .delivery.templateVersion == "market-intelligence-alert-v1"
+            and (.botIdentity.id | numbers)
+            and (.botIdentity.role | startswith("SpeakerBot."))
             and (.mediaPreflight.contentType | startswith("image/png"))
             and .mediaPreflight.byteLength >= 1024
             and .mediaPreflight.byteLength <= 5242880
           ' "$report_path" >/dev/null
           echo "### Market Intelligence Alert Demo acceptance" >>"$GITHUB_STEP_SUMMARY"
-          jq -r '"- Release: `\(.release.commitSha)`\n- Topic: `\(.delivery.messageThreadId)`\n- Message: `\(.delivery.messageId)`\n- Template: `\(.delivery.templateVersion)`\n- Live gate: `\(.publicationGate.passed // false)`\n- Poster bytes: `\(.mediaPreflight.byteLength)`"' "$report_path" >>"$GITHUB_STEP_SUMMARY"
+          jq -r '"- Release: `\(.release.commitSha)`\n- Topic: `\(.delivery.messageThreadId)`\n- Message: `\(.delivery.messageId)`\n- Bot role: `\(.botIdentity.role)`\n- Template: `\(.delivery.templateVersion)`\n- Live gate: `\(.publicationGate.passed // false)`\n- Poster bytes: `\(.mediaPreflight.byteLength)`"' "$report_path" >>"$GITHUB_STEP_SUMMARY"
 
       - name: Upload Market Intelligence Demo evidence
         if: always()
