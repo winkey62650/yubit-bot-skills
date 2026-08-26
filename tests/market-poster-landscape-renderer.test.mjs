@@ -102,6 +102,34 @@ test("daily poster removes awkward title punctuation and does not repeat the lea
   assert.match(text, /Confirmation still matters before conviction rises/);
 });
 
+test("daily poster preserves the V4 editorial hierarchy instead of rendering source-name stickers", () => {
+  const model = {
+    visualTemplate: { id: "daily-market-brief-v4" },
+    primaryBias: "NEUTRAL",
+    stories: [{
+      title: "Bitcoin ETF flows remain the institutional anchor",
+      source: "CoinDesk",
+      affected: "BTC",
+      thesis: "Persistent flows still need spot volume confirmation.",
+    }],
+    footer,
+  };
+
+  const category = dynamicField(model, "daily-1-category");
+  const title = dynamicField(model, "daily-1-title");
+  const thesis = dynamicField(model, "daily-1-thesis");
+  const secondaryHeader = dynamicField(model, "daily-watch");
+
+  assert.equal(category.children[0], "ETF / INSTITUTIONAL");
+  assert.notEqual(category.children[0], "COINDESK");
+  assert.match(title.props.style.fontFamily, /Arial Narrow/);
+  assert.ok(title.props.style.fontSize >= 23);
+  assert.ok(thesis.props.style.fontSize >= 15);
+  assert.equal(title.props.style.backgroundColor, "#F3F4F7");
+  assert.equal(thesis.props.style.backgroundColor, "#F3F4F7");
+  assert.equal(secondaryHeader.children[0], "TAPE · WATCH");
+});
+
 test("all four V4 products keep identical dynamic-field geometry for sparse and dense input", () => {
   const cases = [
     ["daily-market-brief-v4",
