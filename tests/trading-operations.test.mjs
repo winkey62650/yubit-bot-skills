@@ -343,8 +343,8 @@ test("Market Intelligence Demo workflow is exact-target, no-retry, and deploymen
   assert.match(workflow, /inputs\.job == 'market-intelligence-demo'/);
   assert.match(workflow, /accept-market-intelligence-demo\.cjs/);
   assert.match(workflow, /EXPECTED_SHA/);
-  assert.match(workflow, /publisherIdentity\.mode == "user"/);
-  assert.match(workflow, /publisherIdentity\.username == "@Serenity_Crypto"/);
+  assert.match(workflow, /publisherIdentity\.mode == "bot"/);
+  assert.match(workflow, /publisherIdentity\.username == "@Satoshi_geniustrader_bot"/);
   assert.doesNotMatch(workflow, /SPEAKER_BOT_TOKEN="\$speaker_bot_token"|TRADER1_BOT_TOKEN="\$trader1_bot_token"/);
   assert.match(workflow, /read_env ALLOW_LIVE_TELEGRAM\)" != "false"/);
   assert.match(workflow, /publisher_config_before/);

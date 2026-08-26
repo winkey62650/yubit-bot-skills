@@ -132,8 +132,8 @@ jobs:
             and .delivery.target.threadId == 16
             and (.delivery.messageId | numbers)
             and .delivery.templateVersion == "market-intelligence-alert-v1"
-            and .publisherIdentity.mode == "user"
-            and .publisherIdentity.username == "@Serenity_Crypto"
+            and .publisherIdentity.mode == "bot"
+            and .publisherIdentity.username == "@Satoshi_geniustrader_bot"
             and .publisherIdentity.ready == true
             and .publisherIdentity.authorized == true
             and .receiptPersisted == true

@@ -30,9 +30,9 @@ export async function POST(request) {
     repository = await getDistributionRepository();
     const publisherEnv = await telegramDeliveryEnvironment("publish", process.env);
     const publisher = await telegramUserPublisherHealth({ repository, env: publisherEnv });
-    if (publisher.mode !== "user" || publisher.required !== true || publisher.ready !== true
-      || publisher.authorized !== true || publisher.username !== "@Serenity_Crypto") {
-      throw new Error("The authorized @Serenity_Crypto production publisher is not ready");
+    if (publisher.mode !== "bot" || publisher.ready !== true
+      || publisher.authorized !== true || publisher.username !== "@Satoshi_geniustrader_bot") {
+      throw new Error("The configured @Satoshi_geniustrader_bot production publisher is not ready");
     }
 
     claimKey = marketIntelligenceDemoClaimKey(validated.batchId);
