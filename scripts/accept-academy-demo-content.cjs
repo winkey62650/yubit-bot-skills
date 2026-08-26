@@ -12,6 +12,14 @@ const {
 const { authorizeLiveTelegramOperation } = require("../lib/release-gate.cjs");
 
 const MAX_POSTER_BYTES = 5 * 1024 * 1024;
+const DEMO_DESTINATION_CTA = [
+  "_________________",
+  "💎 **YUBIT | TRADE WITHOUT LIMITS**",
+  "",
+  "**Crypto · TradFi · One Exchange**",
+  "",
+  "👉 **[START TRADING NOW ↗](https://www.yubit.com/en-US/register?inviteCode=MJOD)**",
+].join("\n");
 
 const { baseUrl } = authorizeLiveTelegramOperation(process.env, {
   operation: "Academy DEMO 四种内容海报与正文验收",
@@ -60,6 +68,34 @@ async function preflightPosters(api, preview, showcaseCase) {
   return evidence;
 }
 
+async function ensureDemoDestinationCta(api) {
+  const ctaKey = `telegram:${DEMO_CHAT_ID}`;
+  const before = await readJson(await api.get("/api/destination-cta", { timeout: 30_000 }), "destination CTA");
+  const existing = before.registry?.[ctaKey];
+  if (existing?.ctaEnabled === true && String(existing.ctaContent || "").trim()) {
+    return { restored: false, key: ctaKey, source: "destination-registry" };
+  }
+
+  const saved = await readJson(await api.post("/api/destination-cta", {
+    data: {
+      config: {
+        platform: "telegram",
+        chatId: DEMO_CHAT_ID,
+        chatType: "supergroup",
+        groupName: "DEMO Academy",
+        ctaEnabled: true,
+        ctaContent: DEMO_DESTINATION_CTA,
+      },
+    },
+    timeout: 30_000,
+  }), "restore DEMO destination CTA");
+  const restored = saved.registry?.[ctaKey];
+  if (restored?.ctaEnabled !== true || String(restored.ctaContent || "").trim() !== DEMO_DESTINATION_CTA) {
+    throw new Error("DEMO destination CTA restore did not persist exactly");
+  }
+  return { restored: true, key: ctaKey, source: "verified-public-cta-archive" };
+}
+
 (async () => {
   const api = await request.newContext({ baseURL: baseUrl });
   const temporaryRuleIds = [];
@@ -85,6 +121,7 @@ async function preflightPosters(api, preview, showcaseCase) {
       timeout: 30_000,
     }), "login");
     report.release = await readJson(await api.get("/api/release-info", { timeout: 30_000 }), "release info");
+    report.destinationCta = await ensureDemoDestinationCta(api);
 
     const rules = [];
     for (const showcaseCase of DEMO_SHOWCASE_CASES) {

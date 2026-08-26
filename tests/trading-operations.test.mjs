@@ -198,6 +198,10 @@ test("run-now exists only in explicitly authorized live acceptance scripts", asy
   const acceptance = offenders.find((item) => item.file === "accept-academy-demo-content.cjs").source;
   assert.match(acceptance, /new Set\(report\.mediaPreflight\.map\(\(item\) => item\.url\)\)\.size !== 4/);
   assert.match(acceptance, /assertDemoShowcasePosterUrls/);
+  assert.match(acceptance, /ensureDemoDestinationCta/);
+  assert.match(acceptance, /verified-public-cta-archive/);
+  assert.match(acceptance, /https:\/\/www\.yubit\.com\/en-US\/register\?inviteCode=MJOD/);
+  assert.ok(acceptance.indexOf("ensureDemoDestinationCta(api)") < acceptance.indexOf("const rules = []"));
   assert.ok(acceptance.indexOf("report.mediaPreflight.push") < acceptance.indexOf('action: "run-now"'));
 
   const realtime = offenders.find((item) => item.file === "send-academy-realtime-demo.cjs").source;
