@@ -1636,6 +1636,34 @@ test("market planners mark only the CTA they append, not an identical non-final 
   assert.equal(plan.steps.at(-1).ctaBoundary.stepIndex, plan.steps.length - 1);
 });
 
+test("single-photo Telegram alerts bind the destination CTA to the signed caption boundary", () => {
+  const target = {
+    platform: "telegram",
+    chatId: "-1003710405969",
+    threadId: 16,
+    ctaEnabled: true,
+    ctaContent: "**Join the desk**\n[Open](https://example.com/join)",
+  };
+  const [plan] = automation.buildAutomationTelegramPlans("whale-hourly", {
+    caption: "LIQUIDITY ALERT",
+  }, [target], "https://example.com/alert.png");
+
+  assert.equal(plan.steps.length, 1);
+  assert.equal(plan.steps[0].method, "sendPhoto");
+  assert.match(plan.steps[0].payload.caption, /<b>Join the desk<\/b>/);
+  assert.deepEqual(plan.steps[0].ctaBoundary, {
+    kind: "destination-cta",
+    placement: "suffix",
+    platform: "telegram",
+    method: "sendPhoto",
+    field: "caption",
+    start: plan.steps[0].payload.caption.indexOf("<b>Join the desk</b>"),
+    end: plan.steps[0].payload.caption.length,
+    stepIndex: 0,
+    stepCount: 1,
+  });
+});
+
 for (const jobId of ["crypto-daily", "weekly-calendar", "data-release-updates"]) {
   test(`${jobId} plans preserve platform formatting and append one CTA to each destination final chunk`, () => {
     const document = {
