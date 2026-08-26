@@ -296,7 +296,7 @@ test("Discord agent updates use the same fixed X and YouTube templates", () => {
   ]);
 });
 
-test("whale alert turns a material order-book snapshot into approved English copy", () => {
+test("market intelligence alert turns verified persistent order-book liquidity into approved English copy", () => {
   assert.equal(typeof automation.buildWhaleAlert, "function");
   const alert = automation.buildWhaleAlert({
     bids: [["60000", "20"], ["59900", "2"]],
@@ -304,39 +304,72 @@ test("whale alert turns a material order-book snapshot into approved English cop
     openInterest: 420000,
     funding: 0.0123,
     markPrice: 60050,
-    source: "Binance"
+    source: "Binance Futures",
+    sourceTimestamp: "2026-07-15T08:00:00.000Z",
+    receivedAt: "2026-07-15T08:00:00.250Z",
+    persistenceSeconds: 25,
+    priceReactionConfirmed: true
   }, new Date("2026-07-15T08:00:00.000Z"));
 
   assert.equal(alert.imageKind, "whale");
-  assert.equal(alert.poster.signal, "LARGE BID");
+  assert.equal(alert.poster.signal, "APPEARED BID");
   assert.equal(alert.poster.pair, "BTC / USDT");
   assert.equal(alert.publishable, true);
-  assert.match(alert.caption, /WHALE ALERT · SMART MONEY SIGNAL/);
-  assert.match(alert.caption, /2026-07-15 08:00 UTC/);
-  assert.match(alert.caption, /Large bid added/);
-  assert.match(alert.caption, /Buy-wall support/);
-  assert.match(alert.caption, /What to watch next/);
-  assert.match(alert.caption, /does not mean a trade has been executed/);
+  assert.match(alert.caption, /LIQUIDITY ALERT/);
+  assert.match(alert.caption, /2026-07-15 08:00:00 UTC/);
+  assert.match(alert.caption, /FACT/);
+  assert.match(alert.caption, /INTERPRETATION/);
+  assert.match(alert.caption, /WATCH NEXT/);
+  assert.match(alert.caption, /not evidence of an executed trade/);
   assert.doesNotMatch(alert.caption, /Data source|binance\.com\/en\/futures\/BTCUSDT/i);
-  assert.doesNotMatch(alert.caption, /#BTC|#Binance|#WhaleAlert|#SmartMoney/i);
+  assert.doesNotMatch(alert.caption, /WHALE ALERT|SMART MONEY|Large bid added|#BTC|#WhaleAlert/i);
   assert.match(alert.caption, /not investment advice\.$/);
   assert.ok(alert.caption.length <= 1024);
 });
 
-test("whale alert suppresses ordinary order-book noise", () => {
+test("market intelligence alert suppresses ordinary order-book noise", () => {
   const alert = automation.buildWhaleAlert({
     bids: [["60000", "1"], ["59900", "1"]],
     asks: [["60100", "1"], ["60200", "1"]],
     openInterest: 420000,
     funding: 0.01,
     markPrice: 60050,
-    source: "Binance"
+    source: "Binance Futures",
+    sourceTimestamp: "2026-07-15T09:00:00.000Z",
+    receivedAt: "2026-07-15T09:00:00.250Z",
+    persistenceSeconds: 25
   }, new Date("2026-07-15T09:00:00.000Z"));
 
   assert.equal(alert.publishable, false);
-  assert.match(alert.suppressionReason, /threshold/i);
-  assert.match(alert.caption, /largest visible liquidity concentration/i);
-  assert.doesNotMatch(alert.caption, /material liquidity concentration/i);
+  assert.match(alert.suppressionReason, /absolute-size-below-threshold/i);
+  assert.match(alert.caption, /visible liquidity/i);
+  assert.doesNotMatch(alert.caption, /whale|smart money/i);
+});
+
+test("live market intelligence collection verifies persistence across two source snapshots", async () => {
+  const snapshots = [
+    {
+      bids: [["60000", "20"], ["59900", "2"]], asks: [["60100", "3"], ["60500", "1"]],
+      markPrice: "60050", source: "Binance Futures", endpoint: "/fapi/v1/depth",
+      sourceTimestamp: "2026-08-26T08:00:00.000Z", receivedAt: "2026-08-26T08:00:00.100Z", persistenceSeconds: 0,
+    },
+    {
+      bids: [["60000", "22"], ["59900", "2"]], asks: [["60100", "3"], ["60500", "1"]],
+      markPrice: "60050", source: "Binance Futures", endpoint: "/fapi/v1/depth",
+      sourceTimestamp: "2026-08-26T08:00:21.000Z", receivedAt: "2026-08-26T08:00:21.100Z", persistenceSeconds: 0,
+    },
+  ];
+  const waits = [];
+  const result = await automation.buildContent("whale-hourly", new Date("2026-08-26T08:00:00.000Z"), {
+    persist: true,
+    fetchWhaleMarketData: async () => snapshots.shift(),
+    waitFor: async (milliseconds) => waits.push(milliseconds),
+  });
+
+  assert.deepEqual(waits, [20_000]);
+  assert.equal(result.alert.persistenceSeconds, 21);
+  assert.equal(result.alert.lifecycle, "INCREASED");
+  assert.equal(result.publishable, true);
 });
 
 test("a one-time acceptance run can publish the real best available whale snapshot", () => {
@@ -451,6 +484,14 @@ test("desktop publisher plans keep analysis and whale copy attached to the poste
   assert.equal(plan.templateVersion, "editorial-template-v1");
   assert.equal(plan.steps[0].payload.caption, "<b>DAILY MARKET ANALYSIS</b>\n\nRegime: constructive");
   assert.equal(plan.steps[0].payload.message_thread_id, 10);
+
+  const [alertPlan] = automation.buildAutomationTelegramPlans("whale-hourly", {
+    caption: "<b>🚨 LIQUIDITY ALERT</b>\n\n<b>FACT</b>\nCurrent visible depth."
+  }, [{ id: "demo-alert", chatId: "-1003710405969", threadId: 16 }], "https://example.com/alert.png");
+  assert.deepEqual(alertPlan.steps.map((step) => step.method), ["sendPhoto"]);
+  assert.equal(alertPlan.templateVersion, "market-intelligence-alert-v1");
+  assert.match(alertPlan.steps[0].payload.caption, /LIQUIDITY ALERT/);
+  assert.equal(alertPlan.steps[0].payload.message_thread_id, 16);
 });
 
 test("channel delivery omits message_thread_id from every Telegram request", () => {
@@ -586,7 +627,7 @@ test("live automation previews expose the fixed editorial contract", () => {
     contentPolicy: "fixed-template"
   });
   assert.deepEqual(automation.automationTemplateMetadata("whale-hourly"), {
-    templateVersion: "editorial-template-v1",
+    templateVersion: "market-intelligence-alert-v1",
     contentPolicy: "fixed-template"
   });
 });

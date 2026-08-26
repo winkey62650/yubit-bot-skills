@@ -162,8 +162,9 @@ test("whale poster uses premium reusable artwork with dynamic order-book fields"
   const source = await readFile(new URL("../app/api/media/card/route.js", import.meta.url), "utf8");
   const artworkSource = await readFile(new URL("../lib/media-card-artwork.mjs", import.meta.url), "utf8");
   assert.match(artworkSource, /whale-alert-bg-v2\.png/);
-  assert.match(source, /WHALE ALERT/);
-  assert.match(source, /SMART MONEY SIGNAL/);
+  assert.match(source, /DEMO FORMAT PREVIEW/);
+  assert.match(source, /LIQUIDITY ALERT/);
+  assert.doesNotMatch(source, /SMART MONEY SIGNAL/);
   assert.match(source, /searchParams\.get\("signal"\)/);
   assert.match(source, /searchParams\.get\("pair"\)/);
   assert.match(source, /searchParams\.get\("amount"\)/);

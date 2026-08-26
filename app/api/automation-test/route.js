@@ -7,12 +7,14 @@ import {
 } from "../../../lib/automation-jobs.mjs";
 import { hydrateDestinationCtas } from "../../../lib/destination-cta.mjs";
 import { getDistributionRepository } from "../../../lib/distribution-repository.mjs";
+import { buildMarketIntelligenceDemoPreview } from "../../../lib/market-intelligence-alerts.mjs";
 import ctaPreviewEvidence from "../../../lib/cta-preview-evidence.cjs";
 
 const { signCtaPreviewPlans } = ctaPreviewEvidence;
 
-export const maxDuration = 30;
+export const maxDuration = 60;
 const MARKET_PREVIEW_JOBS = new Set(["crypto-daily", "weekly-calendar", "data-release-updates"]);
+const ALERT_DEMO_JOB = "whale-hourly";
 
 export async function POST(request) {
   const body = await request.json().catch(() => ({}));
@@ -35,10 +37,20 @@ export async function POST(request) {
       publicBaseUrl: resolveAutomationPreviewBaseUrl(request.url)
     });
     const jobId = String(body.jobId || "");
-    if (result?.preview?.publishable === true && MARKET_PREVIEW_JOBS.has(jobId) && hydratedTargets.length) {
+    const isAlertDemoAcceptance = jobId === ALERT_DEMO_JOB && body.demoAcceptance === true;
+    if (isAlertDemoAcceptance && result?.preview) {
+      result.preview = buildMarketIntelligenceDemoPreview(result.preview, {
+        acceptanceBatchId: body.demoAcceptanceBatchId,
+      });
+    }
+    const shouldBuildPlans = result?.preview
+      && hydratedTargets.length
+      && (isAlertDemoAcceptance || (result.preview.publishable === true && MARKET_PREVIEW_JOBS.has(jobId)));
+    if (shouldBuildPlans) {
+      const planMedia = isAlertDemoAcceptance ? result.preview.imageUrl : result.preview.mediaDelivery;
       const deliveryPlans = [
-        ...buildAutomationTelegramPlans(jobId, result.preview, hydratedTargets, result.preview.mediaDelivery),
-        ...buildAutomationDiscordPlans(jobId, result.preview, hydratedTargets, result.preview.mediaDelivery)
+        ...buildAutomationTelegramPlans(jobId, result.preview, hydratedTargets, planMedia),
+        ...buildAutomationDiscordPlans(jobId, result.preview, hydratedTargets, planMedia)
       ];
       result.preview = {
         ...result.preview,
@@ -50,7 +62,7 @@ export async function POST(request) {
           })
           : deliveryPlans
       };
-    } else if (result?.preview && MARKET_PREVIEW_JOBS.has(jobId)) {
+    } else if (result?.preview && (MARKET_PREVIEW_JOBS.has(jobId) || isAlertDemoAcceptance)) {
       result.preview = { ...result.preview, targets: hydratedTargets, deliveryPlans: [] };
     }
     return NextResponse.json({ ok: true, result });

@@ -292,9 +292,37 @@ test("operator workflow has an exact House topic send-delete connectivity probe"
 
 test("market preview maps every product to its own poster media delivery", async () => {
   const route = await readFile(new URL("app/api/automation-test/route.js", root), "utf8");
-  assert.match(route, /buildAutomationTelegramPlans\(jobId, result\.preview, hydratedTargets, result\.preview\.mediaDelivery\)/);
-  assert.match(route, /buildAutomationDiscordPlans\(jobId, result\.preview, hydratedTargets, result\.preview\.mediaDelivery\)/);
-  assert.doesNotMatch(route, /buildAutomationTelegramPlans\(jobId, result\.preview, hydratedTargets, result\.preview\.imageUrl\)/);
+  assert.match(route, /const isAlertDemoAcceptance/);
+  assert.match(route, /buildMarketIntelligenceDemoPreview/);
+  assert.match(route, /const planMedia = isAlertDemoAcceptance\s*\? result\.preview\.imageUrl\s*:\s*result\.preview\.mediaDelivery/);
+  assert.match(route, /buildAutomationTelegramPlans\(jobId, result\.preview, hydratedTargets, planMedia\)/);
+  assert.match(route, /buildAutomationDiscordPlans\(jobId, result\.preview, hydratedTargets, planMedia\)/);
+});
+
+test("Market Intelligence Demo workflow is exact-target, no-retry, and deployment-bound", async () => {
+  const script = await readFile(new URL("scripts/accept-market-intelligence-demo.cjs", root), "utf8");
+  const workflow = await readFile(new URL(".github/workflows/telegram-automations.yml", root), "utf8");
+
+  assert.match(script, /authorizeLiveTelegramOperation/);
+  assert.match(script, /chatId:\s*"-1003710405969"/);
+  assert.match(script, /threadId:\s*16/);
+  assert.match(script, /EXPECTED_COMMIT_SHA/);
+  assert.match(script, /MARKET_INTELLIGENCE_DEMO_ACCEPTANCE_BATCH_ID/);
+  assert.match(script, /\/api\/destination-cta/);
+  assert.match(script, /\/api\/automation-test/);
+  assert.match(script, /demoAcceptance:\s*true/);
+  assert.match(script, /market-intelligence-alert-v1/);
+  assert.ok(script.indexOf("preflightPoster") < script.indexOf('telegram.post("/sendPhoto"'));
+  assert.equal((script.match(/telegram\.post\("\/sendPhoto"/g) || []).length, 1);
+  assert.doesNotMatch(script, /run-now|sendMessage/);
+
+  assert.match(workflow, /- market-intelligence-demo/);
+  assert.match(workflow, /inputs\.job == 'market-intelligence-demo'/);
+  assert.match(workflow, /accept-market-intelligence-demo\.cjs/);
+  assert.match(workflow, /EXPECTED_SHA/);
+  assert.match(workflow, /read_env ALLOW_LIVE_TELEGRAM\)" != "false"/);
+  assert.match(workflow, /publisher_config_before/);
+  assert.match(workflow, /publisher_config_after/);
 });
 
 test("production distribution gates cover all six automations and seven broadcasts", async () => {

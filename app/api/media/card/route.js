@@ -12,6 +12,7 @@ export const runtime = "nodejs";
 export async function GET(request) {
   const url = new URL(request.url);
   const kind = url.searchParams.get("kind");
+  const demo = url.searchParams.get("demo") === "1";
   const card = getMediaCardTemplate(kind);
   const metrics = normalizePosterMetrics([url.searchParams.get("m1"), url.searchParams.get("m2"), url.searchParams.get("m3")]);
   const artworkUrl = await loadMediaCardArtwork(kind);
@@ -203,7 +204,7 @@ export async function GET(request) {
     );
   }
   if (kind === "whale") {
-    const signal = cleanPosterText(url.searchParams.get("signal"), "LARGE ORDER", 24);
+    const signal = cleanPosterText(url.searchParams.get("signal"), "APPEARED BID", 24);
     const pair = cleanPosterText(url.searchParams.get("pair"), "BTC / USDT", 24);
     const amount = cleanPosterText(url.searchParams.get("amount"), "$—", 24);
     const price = cleanPosterText(url.searchParams.get("price"), "$—", 24);
@@ -212,16 +213,17 @@ export async function GET(request) {
       e("div", { style: { position: "relative", width: "100%", height: "100%", display: "flex", overflow: "hidden", color: "#f5fbff", background: "#020914", fontFamily: "Arial" } },
         e("img", { src: artworkUrl, width: 1200, height: 675, style: { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" } }),
         e("div", { style: { position: "absolute", inset: 0, display: "flex", background: "linear-gradient(90deg,rgba(1,6,16,.94) 0%,rgba(1,7,18,.75) 35%,rgba(1,7,18,.12) 65%,rgba(1,7,18,.02) 100%)" } }),
+        demo ? e("div", { style: { position: "absolute", right: 42, top: 38, display: "flex", padding: "10px 16px", border: "1px solid rgba(255,255,255,.62)", borderRadius: 4, background: "rgba(2,9,20,.82)", color: "#f5fbff", fontSize: 12, fontWeight: 900, letterSpacing: 2.1 } }, "DEMO FORMAT PREVIEW") : null,
         e("div", { style: { position: "relative", width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: "52px 58px" } },
           e("div", { style: { display: "flex", alignItems: "center", gap: 14, color: "#6fcff2", fontSize: 13, fontWeight: 800, letterSpacing: 4.2 } },
             e("span", { style: { width: 38, height: 2, display: "flex", background: "#32dcff", boxShadow: "0 0 16px #32dcff" } }),
             e("span", null, "DATA-LED MARKET INTELLIGENCE")
           ),
           e("div", { style: { width: 560, marginTop: 26, display: "flex", flexDirection: "column" } },
-            e("div", { style: { display: "flex", fontSize: 86, lineHeight: .82, fontWeight: 900, letterSpacing: -4, textShadow: "0 7px 30px rgba(0,0,0,.9)" } }, "WHALE ALERT"),
+            e("div", { style: { display: "flex", fontSize: 72, lineHeight: .86, fontWeight: 900, letterSpacing: -3, textShadow: "0 7px 30px rgba(0,0,0,.9)" } }, "LIQUIDITY ALERT"),
             e("div", { style: { marginTop: 24, display: "flex", alignItems: "center", gap: 14, color: "#38ddff", fontSize: 22, fontWeight: 800, letterSpacing: 7, textShadow: "0 0 18px rgba(50,220,255,.5)" } },
               e("span", { style: { width: 42, height: 1, display: "flex", background: "#38ddff" } }),
-              e("span", null, "SMART MONEY SIGNAL")
+              e("span", null, "VISIBLE MARKET DEPTH")
             )
           ),
           e("div", { style: { position: "absolute", left: 58, bottom: 56, width: 560, display: "flex", flexDirection: "column", gap: 16 } },

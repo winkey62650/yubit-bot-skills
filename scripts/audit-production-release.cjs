@@ -177,7 +177,7 @@ async function runAudit(browser) {
     "weekly-calendar": {},
     "data-release-updates": {},
     "daily-analysis": { kind: "analysis", marker: /DAILY MARKET ANALYSIS/i },
-    "whale-hourly": { kind: "whale", marker: /WHALE ALERT · SMART MONEY SIGNAL/i },
+    "whale-hourly": { kind: "whale", marker: /LIQUIDITY ALERT|VISIBLE MARKET DEPTH/i },
     "agent-sync-4h": {},
   };
   const templatePreviews = [];
