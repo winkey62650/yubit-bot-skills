@@ -157,18 +157,48 @@ test("daily analysis poster uses the approved artwork with dynamic market fields
   assert.match(source, /searchParams\.get\("catalyst"\)/);
 });
 
-test("whale poster uses premium reusable artwork with dynamic order-book fields", async () => {
-  await access(new URL("../public/templates/whale-alert-bg-v2.png", import.meta.url));
+test("market intelligence poster renders the verified order-book snapshot as its evidence", async () => {
   const source = await readFile(new URL("../app/api/media/card/route.js", import.meta.url), "utf8");
-  const artworkSource = await readFile(new URL("../lib/media-card-artwork.mjs", import.meta.url), "utf8");
-  assert.match(artworkSource, /whale-alert-bg-v2\.png/);
-  assert.match(source, /DEMO FORMAT PREVIEW/);
-  assert.match(source, /LIQUIDITY ALERT/);
+  assert.match(source, /DEMO PREVIEW/);
+  assert.match(source, /ORDER BOOK SNAPSHOT/);
+  assert.match(source, /VISIBLE LIQUIDITY · VERIFIABLE MARKET EVIDENCE/);
+  assert.match(source, /VISIBLE ORDERS · NOT EXECUTED TRADES · CAN MOVE OR CANCEL/);
+  assert.match(source, /EVIDENCE SNAPSHOT UNAVAILABLE/);
+  assert.match(source, /poster\.evidenceSnapshot/);
   assert.doesNotMatch(source, /SMART MONEY SIGNAL/);
-  assert.match(source, /searchParams\.get\("signal"\)/);
-  assert.match(source, /searchParams\.get\("pair"\)/);
-  assert.match(source, /searchParams\.get\("amount"\)/);
-  assert.match(source, /searchParams\.get\("price"\)/);
+});
+
+test("market intelligence evidence poster completes a landscape PNG render", async () => {
+  const { GET } = await import("../app/api/media/card/route.js");
+  const poster = {
+    pair: "BTC / USDT",
+    signal: "VISIBLE BID",
+    amount: "$12M",
+    price: "$60,000",
+    status: "P1 · POSITIVE · SCORE 88",
+    interpretation: "Visible buy-side liquidity may reinforce nearby support while it remains.",
+    evidenceSnapshot: {
+      provider: "Binance Futures",
+      sourceTimestamp: "2026-08-26T08:00:00.000Z",
+      markPrice: "60050",
+      rows: [
+        { side: "ASK", price: "60130", quantity: "2", visibleNotional: "120260", visibleNotionalLabel: "$120.3K" },
+        { side: "ASK", price: "60120", quantity: "3", visibleNotional: "180360", visibleNotionalLabel: "$180.4K" },
+        { side: "ASK", price: "60110", quantity: "4", visibleNotional: "240440", visibleNotionalLabel: "$240.4K" },
+        { side: "ASK", price: "60100", quantity: "5", visibleNotional: "300500", visibleNotionalLabel: "$300.5K" },
+        { side: "BID", price: "60000", quantity: "200", visibleNotional: "12000000", visibleNotionalLabel: "$12M", isFocus: true },
+        { side: "BID", price: "59990", quantity: "6", visibleNotional: "359940", visibleNotionalLabel: "$359.9K" },
+        { side: "BID", price: "59980", quantity: "7", visibleNotional: "419860", visibleNotionalLabel: "$419.9K" },
+        { side: "BID", price: "59970", quantity: "8", visibleNotional: "479760", visibleNotionalLabel: "$479.8K" },
+      ],
+    },
+  };
+  const response = await GET(new Request(`${EDITORIAL_ORIGIN}/api/media/card?kind=whale&demo=1&data=${encodedPoster(poster)}`));
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") ?? "", /^image\/png/);
+  const png = Buffer.from(await response.arrayBuffer());
+  assert.equal(png.readUInt32BE(16), 1200);
+  assert.equal(png.readUInt32BE(20), 675);
 });
 
 test("poster artwork is embedded into the generated image instead of fetched back over HTTP", async () => {

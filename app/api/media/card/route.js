@@ -15,7 +15,7 @@ export async function GET(request) {
   const demo = url.searchParams.get("demo") === "1";
   const card = getMediaCardTemplate(kind);
   const metrics = normalizePosterMetrics([url.searchParams.get("m1"), url.searchParams.get("m2"), url.searchParams.get("m3")]);
-  const artworkUrl = await loadMediaCardArtwork(kind);
+  const artworkUrl = kind === "whale" ? null : await loadMediaCardArtwork(kind);
   const e = React.createElement;
   const poster = normalizeEditorialPreview(kind, decodePosterData(url.searchParams.get("data")));
   if (poster.visualTemplate?.composition === "locked-master-fixed-field-overlay") {
@@ -204,40 +204,92 @@ export async function GET(request) {
     );
   }
   if (kind === "whale") {
-    const signal = cleanPosterText(url.searchParams.get("signal"), "APPEARED BID", 24);
-    const pair = cleanPosterText(url.searchParams.get("pair"), "BTC / USDT", 24);
-    const amount = cleanPosterText(url.searchParams.get("amount"), "$—", 24);
-    const price = cleanPosterText(url.searchParams.get("price"), "$—", 24);
-    const status = cleanPosterText(url.searchParams.get("status"), "ORDER BOOK SNAPSHOT", 32);
+    const evidence = poster.evidenceSnapshot && typeof poster.evidenceSnapshot === "object"
+      ? poster.evidenceSnapshot
+      : {};
+    const rows = Array.isArray(evidence.rows)
+      ? evidence.rows.filter(isEvidenceRow).slice(0, 8)
+      : [];
+    const signal = cleanPosterText(poster.signal || url.searchParams.get("signal"), "MONITOR", 24);
+    const pair = cleanPosterText(poster.pair || url.searchParams.get("pair"), "BTC / USDT", 24);
+    const amount = cleanPosterText(poster.amount || url.searchParams.get("amount"), "$—", 24);
+    const price = cleanPosterText(poster.price || url.searchParams.get("price"), "$—", 24);
+    const status = cleanPosterText(poster.status || url.searchParams.get("status"), "MONITOR", 38);
+    const provider = cleanPosterText(evidence.provider, "SOURCE UNAVAILABLE", 34);
+    const timestamp = formatEvidenceTimestamp(evidence.sourceTimestamp);
+    const markPrice = formatEvidenceNumber(evidence.markPrice, 2);
+    const maxNotional = Math.max(1, ...rows.map((row) => Number(row.visibleNotional) || 0));
+    const focus = rows.find((row) => row.isFocus === true);
+    const focusColor = focus?.side === "ASK" ? "#ff6577" : "#2dd9a0";
+    const askRows = rows.filter((row) => row.side === "ASK");
+    const bidRows = rows.filter((row) => row.side === "BID");
+    const interpretation = cleanPosterText(
+      poster.interpretation,
+      focus?.side === "ASK"
+        ? "Visible sell-side liquidity may reinforce nearby resistance while it remains."
+        : "Visible buy-side liquidity may reinforce nearby support while it remains.",
+      128,
+    );
     return new ImageResponse(
-      e("div", { style: { position: "relative", width: "100%", height: "100%", display: "flex", overflow: "hidden", color: "#f5fbff", background: "#020914", fontFamily: "Arial" } },
-        e("img", { src: artworkUrl, width: 1200, height: 675, style: { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" } }),
-        e("div", { style: { position: "absolute", inset: 0, display: "flex", background: "linear-gradient(90deg,rgba(1,6,16,.94) 0%,rgba(1,7,18,.75) 35%,rgba(1,7,18,.12) 65%,rgba(1,7,18,.02) 100%)" } }),
-        demo ? e("div", { style: { position: "absolute", right: 42, top: 38, display: "flex", padding: "10px 16px", border: "1px solid rgba(255,255,255,.62)", borderRadius: 4, background: "rgba(2,9,20,.82)", color: "#f5fbff", fontSize: 12, fontWeight: 900, letterSpacing: 2.1 } }, "DEMO FORMAT PREVIEW") : null,
-        e("div", { style: { position: "relative", width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: "52px 58px" } },
-          e("div", { style: { display: "flex", alignItems: "center", gap: 14, color: "#6fcff2", fontSize: 13, fontWeight: 800, letterSpacing: 4.2 } },
-            e("span", { style: { width: 38, height: 2, display: "flex", background: "#32dcff", boxShadow: "0 0 16px #32dcff" } }),
-            e("span", null, "DATA-LED MARKET INTELLIGENCE")
-          ),
-          e("div", { style: { width: 560, marginTop: 26, display: "flex", flexDirection: "column" } },
-            e("div", { style: { display: "flex", fontSize: 72, lineHeight: .86, fontWeight: 900, letterSpacing: -3, textShadow: "0 7px 30px rgba(0,0,0,.9)" } }, "LIQUIDITY ALERT"),
-            e("div", { style: { marginTop: 24, display: "flex", alignItems: "center", gap: 14, color: "#38ddff", fontSize: 22, fontWeight: 800, letterSpacing: 7, textShadow: "0 0 18px rgba(50,220,255,.5)" } },
-              e("span", { style: { width: 42, height: 1, display: "flex", background: "#38ddff" } }),
-              e("span", null, "VISIBLE MARKET DEPTH")
-            )
-          ),
-          e("div", { style: { position: "absolute", left: 58, bottom: 56, width: 560, display: "flex", flexDirection: "column", gap: 16 } },
-            e("div", { style: { display: "flex", alignItems: "center", gap: 12 } },
-              e("div", { style: { display: "flex", padding: "10px 15px", border: "1px solid rgba(50,220,255,.7)", borderRadius: 5, background: "rgba(4,25,42,.72)", color: "#54e3ff", fontSize: 16, fontWeight: 900, letterSpacing: 2 } }, signal),
-              e("div", { style: { display: "flex", fontSize: 20, fontWeight: 800, letterSpacing: 2.4, color: "#eef9ff" } }, pair)
+      e("div", { style: { position: "relative", width: "100%", height: "100%", display: "flex", overflow: "hidden", color: "#e9eef6", background: "#071018", fontFamily: "Arial" } },
+        e("div", { style: { position: "absolute", inset: 0, display: "flex", background: "linear-gradient(135deg,#071018 0%,#0b1620 62%,#0c1b26 100%)" } }),
+        e("div", { style: { position: "relative", width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: "26px 34px 22px" } },
+          e("div", { style: { height: 72, display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #263541" } },
+            e("div", { style: { display: "flex", alignItems: "center", gap: 18 } },
+              e("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", width: 42, height: 42, border: "1px solid #3a4a57", borderRadius: 8, color: focusColor, fontSize: 13, fontWeight: 900, letterSpacing: .8 } }, "OB"),
+              e("div", { style: { display: "flex", flexDirection: "column" } },
+                e("span", { style: { display: "flex", color: "#f6f8fb", fontSize: 28, fontWeight: 900, letterSpacing: -.8 } }, "ORDER BOOK SNAPSHOT"),
+                e("span", { style: { display: "flex", marginTop: 3, color: "#7e91a1", fontSize: 10, fontWeight: 800, letterSpacing: 2.1 } }, "VISIBLE LIQUIDITY · VERIFIABLE MARKET EVIDENCE")
+              )
             ),
-            e("div", { style: { display: "flex", gap: 10 } },
-              ...[["VISIBLE SIZE", amount], ["KEY LEVEL", price]].map(([label, value]) => e("div", { key: label, style: { width: 190, display: "flex", flexDirection: "column", gap: 5, padding: "13px 16px", borderTop: "1px solid rgba(91,188,225,.36)", background: "linear-gradient(180deg,rgba(8,26,44,.72),rgba(4,14,27,.6))" } },
-                e("span", { style: { display: "flex", color: "#7397ab", fontSize: 10, fontWeight: 800, letterSpacing: 2.2 } }, label),
-                e("span", { style: { display: "flex", color: "#f7fcff", fontSize: 26, fontWeight: 900 } }, value)
-              )),
-              e("div", { style: { flex: 1, display: "flex", alignItems: "center", padding: "13px 14px", borderLeft: "3px solid #36dcff", background: "rgba(4,19,34,.7)", color: "#a7dced", fontSize: 12, lineHeight: 1.35, fontWeight: 800, letterSpacing: 1.4 } }, status)
+            e("div", { style: { display: "flex", alignItems: "center", gap: 20 } },
+              demo ? e("span", { style: { display: "flex", padding: "7px 10px", border: "1px solid #475866", borderRadius: 4, color: "#aab9c5", fontSize: 9, fontWeight: 900, letterSpacing: 1.6 } }, "DEMO PREVIEW") : null,
+              e("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-end" } },
+                e("span", { style: { display: "flex", color: "#dce4eb", fontSize: 12, fontWeight: 800 } }, provider),
+                e("span", { style: { display: "flex", marginTop: 4, color: "#748898", fontSize: 10, fontFamily: "monospace" } }, timestamp)
+              )
             )
+          ),
+          e("div", { style: { display: "flex", flex: 1, gap: 22, paddingTop: 20, minHeight: 0 } },
+            e("div", { style: { width: 760, display: "flex", flexDirection: "column", border: "1px solid #263541", borderRadius: 8, overflow: "hidden", background: "#08121b" } },
+              e("div", { style: { height: 38, display: "flex", alignItems: "center", padding: "0 16px", borderBottom: "1px solid #263541", color: "#6f8495", fontSize: 10, fontWeight: 800, letterSpacing: 1.4 } },
+                e("span", { style: { width: 76, display: "flex" } }, "SIDE"),
+                e("span", { style: { width: 190, display: "flex", justifyContent: "flex-end" } }, "PRICE (USDT)"),
+                e("span", { style: { width: 190, display: "flex", justifyContent: "flex-end" } }, "SIZE (BTC)"),
+                e("span", { style: { width: 250, display: "flex", justifyContent: "flex-end" } }, "VISIBLE VALUE")
+              ),
+              rows.length ? e("div", { style: { display: "flex", flexDirection: "column", flex: 1 } },
+                ...askRows.map((row, index) => renderEvidenceRow(e, row, `ask-${index}`, maxNotional, focusColor)),
+                askRows.length && bidRows.length
+                  ? e("div", { style: { height: 31, display: "flex", alignItems: "center", justifyContent: "center", borderTop: "1px solid #263541", borderBottom: "1px solid #263541", background: "#0d1a24", color: "#b8c5cf", fontFamily: "monospace", fontSize: 13, fontWeight: 800, letterSpacing: .8 } }, `MARK  ${markPrice}`)
+                  : null,
+                ...bidRows.map((row, index) => renderEvidenceRow(e, row, `bid-${index}`, maxNotional, focusColor))
+              ) : e("div", { style: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#748898", fontSize: 16, fontWeight: 800, letterSpacing: 1.4 } }, "EVIDENCE SNAPSHOT UNAVAILABLE")
+            ),
+            e("div", { style: { flex: 1, display: "flex", flexDirection: "column", padding: "2px 0" } },
+              e("div", { style: { display: "flex", alignItems: "center", gap: 10 } },
+                e("span", { style: { display: "flex", padding: "7px 10px", border: `1px solid ${focusColor}`, borderRadius: 4, color: focusColor, fontSize: 11, fontWeight: 900, letterSpacing: 1.3 } }, signal),
+                e("span", { style: { display: "flex", color: "#f5f7fa", fontSize: 17, fontWeight: 900, letterSpacing: 1.2 } }, pair)
+              ),
+              e("div", { style: { marginTop: 24, display: "flex", flexDirection: "column", paddingBottom: 20, borderBottom: "1px solid #263541" } },
+                e("span", { style: { display: "flex", color: "#748898", fontSize: 10, fontWeight: 900, letterSpacing: 1.8 } }, "VISIBLE SIZE"),
+                e("span", { style: { display: "flex", marginTop: 5, color: "#ffffff", fontSize: 43, fontWeight: 900, letterSpacing: -1.5 } }, amount),
+                e("span", { style: { display: "flex", marginTop: 10, color: "#748898", fontSize: 10, fontWeight: 900, letterSpacing: 1.8 } }, "AT KEY LEVEL"),
+                e("span", { style: { display: "flex", marginTop: 5, color: focusColor, fontSize: 25, fontFamily: "monospace", fontWeight: 900 } }, price)
+              ),
+              e("div", { style: { marginTop: 20, display: "flex", flexDirection: "column" } },
+                e("span", { style: { display: "flex", color: "#748898", fontSize: 10, fontWeight: 900, letterSpacing: 1.8 } }, "MARKET READ"),
+                e("span", { style: { display: "flex", marginTop: 8, color: "#d3dde5", fontSize: 15, lineHeight: 1.42, fontWeight: 650 } }, interpretation)
+              ),
+              e("div", { style: { marginTop: "auto", display: "flex", flexDirection: "column", gap: 8, padding: "13px 14px", borderLeft: `3px solid ${focusColor}`, background: "#0d1a24" } },
+                e("span", { style: { display: "flex", color: "#eef3f7", fontSize: 12, fontWeight: 900, letterSpacing: .8 } }, status),
+                e("span", { style: { display: "flex", color: "#748898", fontSize: 9, lineHeight: 1.35, fontWeight: 700, letterSpacing: .7 } }, "TRACK WHETHER THIS LEVEL REMAINS, MOVES OR IS REMOVED")
+              )
+            )
+          ),
+          e("div", { style: { height: 38, display: "flex", alignItems: "flex-end", justifyContent: "space-between", color: "#718493", fontSize: 9, fontWeight: 800, letterSpacing: 1.2 } },
+            e("span", null, `SOURCE · ${provider} · ${timestamp}`),
+            e("span", { style: { color: "#9aaab6" } }, "VISIBLE ORDERS · NOT EXECUTED TRADES · CAN MOVE OR CANCEL")
           )
         )
       ),
@@ -267,6 +319,41 @@ export async function GET(request) {
 function cleanPosterText(value, fallback, maxLength) {
   const text = String(value || fallback).replace(/[<>\r\n]/g, " ").replace(/\s+/g, " ").trim();
   return (text || fallback).slice(0, maxLength);
+}
+
+function isEvidenceRow(row) {
+  return row && ["ASK", "BID"].includes(row.side)
+    && Number.isFinite(Number(row.price))
+    && Number.isFinite(Number(row.quantity))
+    && Number.isFinite(Number(row.visibleNotional));
+}
+
+function formatEvidenceNumber(value, maximumFractionDigits = 2) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "—";
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits,
+  }).format(numeric);
+}
+
+function formatEvidenceTimestamp(value) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "UTC TIME UNAVAILABLE";
+  return `${parsed.toISOString().replace("T", " ").slice(0, 19)} UTC`;
+}
+
+function renderEvidenceRow(e, row, key, maxNotional, focusColor) {
+  const sideColor = row.side === "ASK" ? "#ff6577" : "#2dd9a0";
+  const priceColor = row.side === "ASK" ? "#ff8795" : "#55e5b5";
+  return e("div", { key, style: { position: "relative", minHeight: 48, display: "flex", alignItems: "center", padding: "0 16px", borderBottom: "1px solid rgba(38,53,65,.52)", background: row.isFocus ? "rgba(255,255,255,.035)" : "transparent" } },
+    e("div", { style: { position: "absolute", right: 0, top: 5, bottom: 5, width: `${Math.max(4, Math.round(((Number(row.visibleNotional) || 0) / maxNotional) * 43))}%`, display: "flex", background: row.side === "ASK" ? "rgba(255,101,119,.10)" : "rgba(45,217,160,.10)" } }),
+    row.isFocus ? e("div", { style: { position: "absolute", left: 0, top: 0, bottom: 0, width: 4, display: "flex", background: focusColor } }) : null,
+    e("span", { style: { position: "relative", width: 76, display: "flex", color: sideColor, fontSize: row.isFocus ? 9 : 11, fontWeight: 900, letterSpacing: row.isFocus ? .7 : 1.2 } }, row.isFocus ? `${row.side} FOCUS` : row.side),
+    e("span", { style: { position: "relative", width: 190, display: "flex", justifyContent: "flex-end", color: priceColor, fontFamily: "monospace", fontSize: 15, fontWeight: 700 } }, formatEvidenceNumber(row.price, 2)),
+    e("span", { style: { position: "relative", width: 190, display: "flex", justifyContent: "flex-end", color: "#dce4eb", fontFamily: "monospace", fontSize: 14 } }, formatEvidenceNumber(row.quantity, 4)),
+    e("span", { style: { position: "relative", width: 250, display: "flex", justifyContent: "flex-end", color: row.isFocus ? "#ffffff" : "#9fb0bd", fontFamily: "monospace", fontSize: 14, fontWeight: row.isFocus ? 900 : 600 } }, cleanPosterText(row.visibleNotionalLabel, "$—", 18))
+  );
 }
 
 function decodePosterData(value) {

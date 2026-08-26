@@ -58,6 +58,19 @@ test("a persistent material wall becomes a scored liquidity alert without whale 
   assert.equal(alert.priority, "P1");
   assert.match(alert.interpretation, /visible liquidity/i);
   assert.doesNotMatch(JSON.stringify(alert), /whale|smart money|executed trade/i);
+  assert.equal(alert.evidenceSnapshot.provider, "Binance Futures");
+  assert.equal(alert.evidenceSnapshot.sourceTimestamp, "2026-08-26T08:00:00.000Z");
+  assert.equal(alert.evidenceSnapshot.markPrice, "60050");
+  assert.equal(alert.evidenceSnapshot.rows.length, 4);
+  assert.equal(alert.evidenceSnapshot.rows.filter((row) => row.isFocus).length, 1);
+  assert.deepEqual(alert.evidenceSnapshot.rows.find((row) => row.isFocus), {
+    side: "BID",
+    price: "60000",
+    quantity: "200",
+    visibleNotional: "12000000.00",
+    visibleNotionalLabel: "$12M",
+    isFocus: true,
+  });
 });
 
 test("snapshot-only liquidity fails closed even when the visible order is large", () => {

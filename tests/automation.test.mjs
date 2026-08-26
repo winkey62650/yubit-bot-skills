@@ -312,8 +312,10 @@ test("market intelligence alert turns verified persistent order-book liquidity i
   }, new Date("2026-07-15T08:00:00.000Z"));
 
   assert.equal(alert.imageKind, "whale");
-  assert.equal(alert.poster.signal, "APPEARED BID");
+  assert.equal(alert.poster.signal, "VISIBLE BID");
   assert.equal(alert.poster.pair, "BTC / USDT");
+  assert.equal(alert.poster.evidenceSnapshot.provider, "Binance Futures");
+  assert.equal(alert.poster.evidenceSnapshot.rows.filter((row) => row.isFocus).length, 1);
   assert.equal(alert.publishable, true);
   assert.match(alert.caption, /LIQUIDITY ALERT/);
   assert.match(alert.caption, /2026-07-15 08:00:00 UTC/);
@@ -391,6 +393,30 @@ test("dynamic poster URLs pin the approved template version and content revision
   assert.equal(url.searchParams.get("date"), "JULY 17");
   assert.equal(url.searchParams.get("v"), "market-card-v5");
   assert.equal(url.searchParams.get("rev"), "abc123def4567890");
+});
+
+test("market intelligence poster URL carries the verified order-book snapshot instead of decorative artwork", () => {
+  const evidenceSnapshot = {
+    provider: "Binance Futures",
+    sourceTimestamp: "2026-08-26T08:00:00.000Z",
+    markPrice: "60050",
+    rows: [
+      { side: "ASK", price: "60100", quantity: "3", visibleNotional: "180300.00", visibleNotionalLabel: "$180.3K", isFocus: false },
+      { side: "BID", price: "60000", quantity: "20", visibleNotional: "1200000.00", visibleNotionalLabel: "$1.2M", isFocus: true },
+    ],
+  };
+  const url = new URL(automation.buildCardUrl("whale", [], {
+    pair: "BTC / USDT",
+    signal: "APPEARED BID",
+    amount: "$1.2M",
+    price: "$60,000",
+    status: "P1 · POSITIVE · SCORE 88",
+    evidenceSnapshot,
+  }, { baseUrl: "https://academy.example", cacheKey: "evidence-snapshot" }));
+
+  assert.equal(url.searchParams.has("data"), true);
+  const poster = JSON.parse(Buffer.from(url.searchParams.get("data"), "base64url").toString("utf8"));
+  assert.deepEqual(poster.evidenceSnapshot, evidenceSnapshot);
 });
 
 test("daily events normalize a flexible daily market brief instead of a fixed economic calendar", () => {
