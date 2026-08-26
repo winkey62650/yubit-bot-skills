@@ -591,6 +591,34 @@ test("crypto stories never fabricate missing provenance and retain stale source 
   assert.deepEqual(model.footer.sources, ["SEC archive · STALE SOURCE"]);
 });
 
+test("crypto daily poster headlines remain complete and historical replay keeps its evidence date", () => {
+  const model = buildCryptoDailyPosterModel({
+    title: "HISTORICAL REPLAY · Daily Market Brief",
+    generatedAt: "2026-08-26T08:00:00.000Z",
+    selectedStories: [
+      {
+        title: "Fed kept its target range at 4.25%–4.50%",
+        rationale: "Restrictive policy limited near-term liquidity easing.",
+        publishedAt: "2025-06-18T18:00:00.000Z",
+        affectedAssets: ["BTC", "DXY"],
+      },
+      {
+        title: "Spot bitcoin ETP access remained a structural anchor",
+        rationale: "Regulated access improved market structure.",
+        publishedAt: "2024-01-10T21:00:00.000Z",
+        affectedAssets: ["BTC"],
+      },
+    ],
+  });
+
+  assert.equal(model.historicalReplay, true);
+  assert.equal(model.date, "2025-06-18");
+  assert.equal(model.footer.updatedAt, "2025-06-18T18:00:00.000Z");
+  assert.equal(model.stories[0].posterTitle, "Fed target range: 4.25%–4.50%");
+  assert.equal(model.stories[1].posterTitle, "Spot BTC ETP access: structural anchor");
+  assert.doesNotMatch(model.stories.map(({ posterTitle }) => posterTitle).join(" "), /\b(?:AT|A|AN|THE|AS|TO|OF|FOR|WITH|AND|OR|IN|ON)$/iu);
+});
+
 test("poster builders preserve frozen inputs and return isolated JSON-serializable tokens", () => {
   const input = deepFreeze({
     weekStart: "2026-08-17",

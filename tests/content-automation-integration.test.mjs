@@ -291,9 +291,9 @@ test("the exact four-product Academy demo fits every fixed V4 poster slot withou
     "market-follow-up",
   ]);
   assert.deepEqual(daily.stories.map(({ posterThesis }) => posterThesis), [
-    "Above-target inflation keeps rates and USD sensitivity high.",
-    "Restrictive policy limits near-term liquidity easing.",
-    "Regulated access improves structure, not today's signal.",
+    "Inflation keeps rates and USD sensitivity high.",
+    "Restrictive policy limits near-term liquidity.",
+    "Regulated access improves structure, not a signal.",
   ]);
   const weeklyEvent = weekly.columns[1].events[0];
   assert.equal(weeklyEvent.posterMarkets, "BTC · DXY · US2Y");

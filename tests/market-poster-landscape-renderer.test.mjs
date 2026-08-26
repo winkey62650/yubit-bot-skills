@@ -71,7 +71,7 @@ test("the supplied VIP Wide Dense V4 template remains the visual source of truth
   assert.match(text, /data:image\/png;base64,AAAA/);
   assert.match(text, /DAILY MARKET BRIEF/);
   assert.match(text, /data-dynamic-field/);
-  assert.doesNotMatch(text, /linear-gradient|boxShadow/);
+  assert.doesNotMatch(text, /boxShadow/);
   assert.doesNotMatch(text, /#F4F0E7|YUBIT/i);
 });
 
@@ -125,9 +125,46 @@ test("daily poster preserves the V4 editorial hierarchy instead of rendering sou
   assert.match(title.props.style.fontFamily, /Arial Narrow/);
   assert.ok(title.props.style.fontSize >= 23);
   assert.ok(thesis.props.style.fontSize >= 15);
-  assert.equal(title.props.style.backgroundColor, "#F3F4F7");
-  assert.equal(thesis.props.style.backgroundColor, "#F3F4F7");
+  assert.equal(title.props.style.backgroundColor, "transparent");
+  assert.equal(thesis.props.style.backgroundColor, "transparent");
+  assert.match(dynamicField(model, "daily-1-title-mask").props.style.backgroundImage, /linear-gradient/);
+  assert.match(dynamicField(model, "daily-1-thesis-mask").props.style.backgroundImage, /linear-gradient/);
   assert.equal(secondaryHeader.children[0], "TAPE · WATCH");
+});
+
+test("daily copy surfaces blend into the locked master instead of covering its artwork with hard blocks", () => {
+  const model = {
+    visualTemplate: { id: "daily-market-brief-v4" },
+    stories: Array.from({ length: 3 }, (_, index) => ({
+      title: `Verified story ${index + 1}`,
+      thesis: "A concise market read.",
+      affected: "BTC",
+    })),
+    footer,
+  };
+
+  for (let index = 1; index <= 3; index += 1) {
+    const titleMask = dynamicField(model, `daily-${index}-title-mask`);
+    const thesisMask = dynamicField(model, `daily-${index}-thesis-mask`);
+    assert.equal(titleMask.props.style.backgroundColor, "transparent");
+    assert.equal(thesisMask.props.style.backgroundColor, "transparent");
+    assert.match(titleMask.props.style.backgroundImage, /rgba\(236, 239, 243, 0\)/);
+    assert.match(thesisMask.props.style.backgroundImage, /rgba\(236, 239, 243, 0\)/);
+    assert.ok(thesisMask.props.style.width <= 260);
+  }
+});
+
+test("historical daily posters expose replay status in the fixed header slots", () => {
+  const model = {
+    visualTemplate: { id: "daily-market-brief-v4" },
+    historicalReplay: true,
+    date: "2025-07-15",
+    stories: [{ title: "Historical CPI release", affected: "BTC", impact: "NEUTRAL" }],
+    footer: { sources: ["BLS"], updatedAt: "2025-07-15T12:30:00.000Z" },
+  };
+
+  assert.equal(dynamicField(model, "daily-date").children[0], "REPLAY · 2025-07-15");
+  assert.equal(dynamicField(model, "daily-market").children[0], "MARKET · REPLAY");
 });
 
 test("all four V4 products keep identical dynamic-field geometry for sparse and dense input", () => {
