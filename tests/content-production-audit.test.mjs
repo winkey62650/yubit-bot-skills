@@ -11,7 +11,7 @@ function healthyOptions(overrides = {}) {
     deployNoSend: "1",
     telegramDemoOnly: "true",
     tradingDemoOnly: "true",
-    approvedTelegramTargets: "-1003710405969:8,-1003710405969:10,-1003710405969:16,-1001702053978:309971",
+    approvedTelegramTargets: "-1003710405969:8,-1003710405969:10,-1003710405969:16,-1001702053978:309971,-1003332783916:3,-1003332783916:10,-1003332783916:13,-1003332783916:16,-1003332783916:19,-1003332783916:22,-1003332783916:25,-1004458467548:4,-1004458467548:11,-1004458467548:14,-1004458467548:17,-1004458467548:20,-1004458467548:23,-1004458467548:26",
     allowLiveTelegram: "false",
     deliveryCountBefore: "17",
     workerStateBefore: "ActiveState=inactive\nSubState=dead\nMainPID=0",
@@ -42,6 +42,20 @@ function healthyOptions(overrides = {}) {
         { platform: "telegram", chatId: "-1003710405969", threadId: "10" },
         { platform: "telegram", chatId: "-1003710405969", threadId: "16" },
         { platform: "telegram", chatId: "-1001702053978", threadId: "309971" },
+        { platform: "telegram", chatId: "-1003332783916", threadId: "3" },
+        { platform: "telegram", chatId: "-1003332783916", threadId: "10" },
+        { platform: "telegram", chatId: "-1003332783916", threadId: "13" },
+        { platform: "telegram", chatId: "-1003332783916", threadId: "16" },
+        { platform: "telegram", chatId: "-1003332783916", threadId: "19" },
+        { platform: "telegram", chatId: "-1003332783916", threadId: "22" },
+        { platform: "telegram", chatId: "-1003332783916", threadId: "25" },
+        { platform: "telegram", chatId: "-1004458467548", threadId: "4" },
+        { platform: "telegram", chatId: "-1004458467548", threadId: "11" },
+        { platform: "telegram", chatId: "-1004458467548", threadId: "14" },
+        { platform: "telegram", chatId: "-1004458467548", threadId: "17" },
+        { platform: "telegram", chatId: "-1004458467548", threadId: "20" },
+        { platform: "telegram", chatId: "-1004458467548", threadId: "23" },
+        { platform: "telegram", chatId: "-1004458467548", threadId: "26" },
         { platform: "discord", guildId: "guild", channelId: "one" },
         { platform: "discord", guildId: "guild", channelId: "two" },
       ];
@@ -69,8 +83,8 @@ test("read-only production audit validates exact SHA, vault, database, and recei
   assert.equal(report.database.ruleCount, 4);
   assert.equal(report.database.deliveryCount, 17);
   assert.equal(report.database.deliveryDelta, 0);
-  assert.deepEqual(report.database.enabledTargetsByPlatform, { discord: 2, telegram: 4 });
-  assert.deepEqual(report.database.effectiveTargetsByPlatform, { discord: 2, telegram: 4 });
+  assert.deepEqual(report.database.enabledTargetsByPlatform, { discord: 2, telegram: 18 });
+  assert.deepEqual(report.database.effectiveTargetsByPlatform, { discord: 2, telegram: 18 });
   assert.deepEqual(report.database.dormantTargetsByPlatform, {});
   assert.deepEqual(report.products, [
     "daily-market-brief",
@@ -142,7 +156,7 @@ test("audit rejects traversal-like vault paths and unsupported enabled platforms
   ]);
 });
 
-test("audit detects deployment mutations while reporting blocked legacy Telegram routes as dormant", async () => {
+test("audit fails when an enabled Telegram route is silently blocked by production policy", async () => {
   const report = await auditContentProduction(healthyOptions({
     deliveryCountBefore: "16",
     discordStateAfter: "ActiveState=inactive\nSubState=dead\nMainPID=0",
@@ -157,6 +171,7 @@ test("audit detects deployment mutations while reporting blocked legacy Telegram
   assert.deepEqual(report.failures.map((entry) => entry.code), [
     "PUBLISHER_RUNTIME_STATE_CHANGED",
     "DELIVERIES_CREATED_DURING_DEPLOY",
+    "ENABLED_TARGET_BLOCKED_BY_POLICY",
   ]);
   assert.deepEqual(report.database.effectiveTargetsByPlatform, {});
   assert.deepEqual(report.database.dormantTargetsByPlatform, { telegram: 1 });

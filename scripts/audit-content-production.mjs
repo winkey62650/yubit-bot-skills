@@ -14,6 +14,20 @@ const REQUIRED_TELEGRAM_TARGETS = new Set([
   "-1003710405969:10",
   "-1003710405969:16",
   "-1001702053978:309971",
+  "-1003332783916:3",
+  "-1003332783916:10",
+  "-1003332783916:13",
+  "-1003332783916:16",
+  "-1003332783916:19",
+  "-1003332783916:22",
+  "-1003332783916:25",
+  "-1004458467548:4",
+  "-1004458467548:11",
+  "-1004458467548:14",
+  "-1004458467548:17",
+  "-1004458467548:20",
+  "-1004458467548:23",
+  "-1004458467548:26",
 ]);
 const REQUIRED_APPROVED_TARGETS = [...REQUIRED_TELEGRAM_TARGETS].join(",");
 
@@ -50,7 +64,7 @@ export async function auditContentProduction({
   }
   if (telegramDemoOnly !== "true" || tradingDemoOnly !== "true"
       || approvedTelegramTargets !== REQUIRED_APPROVED_TARGETS || allowLiveTelegram === "true") {
-    pushFailure("TELEGRAM_SAFETY_POLICY_MISMATCH", "Telegram production policy is not locked to the governed DEMO and House Topic allowlist");
+    pushFailure("TELEGRAM_SAFETY_POLICY_MISMATCH", "Telegram production policy is not locked to the governed internal Topic allowlist");
   }
   if (workerStateBefore !== workerStateAfter || discordStateBefore !== discordStateAfter) {
     pushFailure("PUBLISHER_RUNTIME_STATE_CHANGED", "Worker or Discord runtime state changed during the no-send deployment");
@@ -117,6 +131,14 @@ export async function auditContentProduction({
       ? effectiveTargetsByPlatform
       : dormantTargetsByPlatform;
     bucket[platform] = (bucket[platform] ?? 0) + 1;
+  }
+  const dormantTargetCount = Object.values(dormantTargetsByPlatform)
+    .reduce((total, value) => total + Number(value || 0), 0);
+  if (dormantTargetCount > 0) {
+    pushFailure(
+      "ENABLED_TARGET_BLOCKED_BY_POLICY",
+      `${dormantTargetCount} enabled distribution target(s) are blocked by the active production policy`,
+    );
   }
   if (ruleCount < 1) {
     pushFailure("DISTRIBUTION_RULES_MISSING", "PostgreSQL contains no distribution rules");
