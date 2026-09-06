@@ -1,0 +1,456 @@
+{
+  "checkedAt": "2026-09-06T11:37:43.882Z",
+  "expectedCommit": "ddc2497fa3a3d393a8fd1f95625e5a4c50e7f769",
+  "api": [
+    {
+      "path": "/api/release-info",
+      "status": 200,
+      "durationMs": 238
+    },
+    {
+      "path": "/api/group-config",
+      "status": 200,
+      "durationMs": 367
+    },
+    {
+      "path": "/api/telegram/user-authorization",
+      "status": 200,
+      "durationMs": 238
+    },
+    {
+      "path": "/api/composer/target-folders",
+      "status": 200,
+      "durationMs": 238
+    },
+    {
+      "path": "/api/distribution",
+      "status": 200,
+      "durationMs": 709
+    },
+    {
+      "path": "/api/discord",
+      "status": 200,
+      "durationMs": 1373
+    },
+    {
+      "path": "/api/trading",
+      "status": 200,
+      "durationMs": 934
+    },
+    {
+      "path": "/api/site-analytics",
+      "status": 200,
+      "durationMs": 243
+    },
+    {
+      "path": "/api/telegram/dialogs",
+      "status": 200,
+      "durationMs": 1745
+    }
+  ],
+  "pages": [
+    {
+      "route": "/",
+      "status": 200,
+      "finalPath": "/distribution",
+      "heading": [
+        "内容分发中心"
+      ],
+      "errors": [],
+      "failedApis": []
+    },
+    {
+      "route": "/trading",
+      "status": 200,
+      "finalPath": "/trading",
+      "heading": [
+        "交易中心"
+      ],
+      "errors": [],
+      "failedApis": []
+    },
+    {
+      "route": "/telegram-user-authorization",
+      "status": 200,
+      "finalPath": "/telegram-user-authorization",
+      "heading": [
+        "发布账号状态检测"
+      ],
+      "errors": [],
+      "failedApis": []
+    },
+    {
+      "route": "/sources",
+      "status": 200,
+      "finalPath": "/group-config",
+      "heading": [
+        "群与 Topic 配置"
+      ],
+      "errors": [],
+      "failedApis": []
+    },
+    {
+      "route": "/signals",
+      "status": 200,
+      "finalPath": "/distribution",
+      "heading": [
+        "内容分发中心"
+      ],
+      "errors": [],
+      "failedApis": []
+    },
+    {
+      "route": "/settings",
+      "status": 200,
+      "finalPath": "/settings",
+      "heading": [
+        "系统设置"
+      ],
+      "errors": [],
+      "failedApis": []
+    },
+    {
+      "route": "/news",
+      "status": 200,
+      "finalPath": "/distribution",
+      "heading": [
+        "内容分发中心"
+      ],
+      "errors": [],
+      "failedApis": []
+    },
+    {
+      "route": "/new-group",
+      "status": 200,
+      "finalPath": "/new-group",
+      "heading": [
+        "新群初始化"
+      ],
+      "errors": [],
+      "failedApis": []
+    },
+    {
+      "route": "/login",
+      "status": 200,
+      "finalPath": "/login",
+      "heading": [
+        "YUBIT 后台"
+      ],
+      "errors": [],
+      "failedApis": []
+    },
+    {
+      "route": "/groups",
+      "status": 200,
+      "finalPath": "/group-config",
+      "heading": [
+        "群与 Topic 配置"
+      ],
+      "errors": [],
+      "failedApis": []
+    },
+    {
+      "route": "/group-config",
+      "status": 200,
+      "finalPath": "/group-config",
+      "heading": [
+        "群与 Topic 配置"
+      ],
+      "errors": [],
+      "failedApis": []
+    },
+    {
+      "route": "/forward-social",
+      "status": 200,
+      "finalPath": "/distribution",
+      "heading": [
+        "内容分发中心"
+      ],
+      "errors": [],
+      "failedApis": []
+    },
+    {
+      "route": "/forward-config",
+      "status": 200,
+      "finalPath": "/distribution",
+      "heading": [
+        "内容分发中心"
+      ],
+      "errors": [],
+      "failedApis": []
+    },
+    {
+      "route": "/forward-broadcast",
+      "status": 200,
+      "finalPath": "/distribution",
+      "heading": [
+        "内容分发中心"
+      ],
+      "errors": [],
+      "failedApis": []
+    },
+    {
+      "route": "/distribution",
+      "status": 200,
+      "finalPath": "/distribution",
+      "heading": [
+        "内容分发中心"
+      ],
+      "errors": [],
+      "failedApis": []
+    },
+    {
+      "route": "/dispatch",
+      "status": 200,
+      "finalPath": "/distribution",
+      "heading": [
+        "内容分发中心"
+      ],
+      "errors": [],
+      "failedApis": []
+    },
+    {
+      "route": "/discord",
+      "status": 200,
+      "finalPath": "/discord",
+      "heading": [
+        "Discord 社区"
+      ],
+      "errors": [],
+      "failedApis": []
+    },
+    {
+      "route": "/discord/manual",
+      "status": 200,
+      "finalPath": "/discord/manual",
+      "heading": [
+        "Discord 手动信息发布"
+      ],
+      "errors": [],
+      "failedApis": []
+    },
+    {
+      "route": "/discord/health",
+      "status": 200,
+      "finalPath": "/discord/health",
+      "heading": [
+        "Server 与 Channel 健康"
+      ],
+      "errors": [],
+      "failedApis": []
+    },
+    {
+      "route": "/discord/distribution",
+      "status": 200,
+      "finalPath": "/discord/distribution",
+      "heading": [
+        "Discord 内容分发中心"
+      ],
+      "errors": [],
+      "failedApis": []
+    },
+    {
+      "route": "/composer",
+      "status": 200,
+      "finalPath": "/composer",
+      "heading": [
+        "消息发布中心"
+      ],
+      "errors": [],
+      "failedApis": []
+    },
+    {
+      "route": "/bots",
+      "status": 200,
+      "finalPath": "/bots",
+      "heading": [
+        "后台能力"
+      ],
+      "errors": [],
+      "failedApis": []
+    },
+    {
+      "route": "/automations",
+      "status": 200,
+      "finalPath": "/distribution",
+      "heading": [
+        "内容分发中心"
+      ],
+      "errors": [],
+      "failedApis": []
+    },
+    {
+      "route": "/distribution?view=site-analytics",
+      "status": 200,
+      "finalPath": "/distribution",
+      "heading": [
+        "网站数据中心"
+      ],
+      "errors": [],
+      "failedApis": []
+    },
+    {
+      "route": "/distribution?view=automation",
+      "status": 200,
+      "finalPath": "/distribution",
+      "heading": [
+        "内容分发中心"
+      ],
+      "errors": [],
+      "failedApis": []
+    },
+    {
+      "route": "/distribution?view=destination-cta",
+      "status": 200,
+      "finalPath": "/distribution",
+      "heading": [
+        "内容分发中心"
+      ],
+      "errors": [],
+      "failedApis": []
+    },
+    {
+      "route": "/distribution?view=broadcast",
+      "status": 200,
+      "finalPath": "/distribution",
+      "heading": [
+        "内容分发中心"
+      ],
+      "errors": [],
+      "failedApis": []
+    },
+    {
+      "route": "/distribution?view=review",
+      "status": 200,
+      "finalPath": "/distribution",
+      "heading": [
+        "内容分发中心"
+      ],
+      "errors": [],
+      "failedApis": []
+    },
+    {
+      "route": "/distribution?view=logs",
+      "status": 200,
+      "finalPath": "/distribution",
+      "heading": [
+        "内容分发中心"
+      ],
+      "errors": [],
+      "failedApis": []
+    }
+  ],
+  "composer": [
+    {
+      "width": 1366,
+      "clippedControls": 0,
+      "visibleDirectoryGroups": 204
+    },
+    {
+      "width": 768,
+      "clippedControls": 0,
+      "visibleDirectoryGroups": 204
+    },
+    {
+      "width": 390,
+      "clippedControls": 0,
+      "visibleDirectoryGroups": 204
+    }
+  ],
+  "release": {
+    "ok": true,
+    "schemaVersion": "2026-07-16.trading-center.v1",
+    "commitSha": "ddc2497fa3a3d393a8fd1f95625e5a4c50e7f769",
+    "gitRef": "code/academy",
+    "environment": "production",
+    "deploymentUrl": "https://152-32-161-174.sslip.io",
+    "capabilities": [
+      "content-distribution",
+      "telegram-broadcast",
+      "multi-trader-trading-center"
+    ]
+  },
+  "directory": {
+    "visibleGroups": 204,
+    "writableGroups": 1,
+    "topics": 31,
+    "reasons": {
+      "official_identity_unsupported": 124,
+      "official_identity_unavailable": 44,
+      "available": 1,
+      "message_permission_unavailable": 35
+    },
+    "configuredGroups": [
+      {
+        "title": "JennaX Trading Academy",
+        "inAccountDirectory": true,
+        "canSendMessages": false,
+        "reason": "official_identity_unavailable",
+        "topics": 8
+      },
+      {
+        "title": "Team Nase Trading Academy",
+        "inAccountDirectory": true,
+        "canSendMessages": false,
+        "reason": "official_identity_unavailable",
+        "topics": 7
+      },
+      {
+        "title": "DEMO Academy",
+        "inAccountDirectory": true,
+        "canSendMessages": true,
+        "reason": "available",
+        "topics": 8
+      },
+      {
+        "title": "THE HOUSE OF CRYPTO",
+        "inAccountDirectory": true,
+        "canSendMessages": false,
+        "reason": "official_identity_unavailable",
+        "topics": 4
+      },
+      {
+        "title": "WiseAdvice Vip Volume + Signal Group",
+        "inAccountDirectory": true,
+        "canSendMessages": false,
+        "reason": "official_identity_unavailable",
+        "topics": 4
+      },
+      {
+        "title": "CryptoGuy Academy",
+        "inAccountDirectory": false,
+        "canSendMessages": false,
+        "reason": "not_returned_by_account_dialogs",
+        "topics": 0
+      }
+    ],
+    "verifiedRenderedGroups": 204,
+    "restrictedSelectableTargets": 0
+  },
+  "outcome": "passed: no-send deployment and read-only production verification",
+  "qaNotes": [
+    "First composer QA selector was ambiguous for duplicate group titles. Rechecked each entry against its current response order; application page scan remained passed."
+  ],
+  "completedAt": "2026-09-06T11:41:50.656Z",
+  "deploymentRun": "https://github.com/winkey62650/yubit-bot-skills/actions/runs/34030600164",
+  "serverAudit": {
+    "testsPassed": 1323,
+    "testsFailed": 0,
+    "productionBuild": "passed",
+    "ruleCount": 26,
+    "deliveryCountBefore": 635,
+    "deliveryCountAfter": 635,
+    "deliveryDelta": 0,
+    "effectiveTargets": {
+      "telegram": 27,
+      "discord": 6
+    },
+    "blockedEnabledTargets": 0,
+    "configurationPreserved": true,
+    "workerStatePreserved": "active/running",
+    "discordStatePreserved": "active/running",
+    "failures": []
+  },
+  "liveMessageDelivery": "not performed",
+  "overallBusinessAcceptance": "failed: account permissions restrict configured targets and actual external sending is unverified"
+}

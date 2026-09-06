@@ -14,7 +14,14 @@
   "productionFailedApis": 0,
   "manualComposer": "passed with simulated Telegram transport and real isolated folder storage",
   "loginAndRoles": "passed",
-  "deployment": "not performed",
+  "deployment": "passed",
   "liveMessageDelivery": "not performed",
-  "overallAcceptance": "failed: deployment and live delivery verification pending"
+  "overallAcceptance": "failed: live delivery and restricted account target permissions remain unverified or unavailable",
+  "deployedCommit": "ddc2497fa3a3d393a8fd1f95625e5a4c50e7f769",
+  "preservedProductionCommit": "d5a4d26dbed3345afb94a02129ba0f8a52044ff4",
+  "deploymentRun": "https://github.com/winkey62650/yubit-bot-skills/actions/runs/34030600164",
+  "productionComposerViewportChecks": 3,
+  "productionDirectoryRenderedGroups": 204,
+  "productionDirectoryRestrictedSelectableTargets": 0,
+  "productionVerificationCompletedAt": "2026-09-06T11:41:50.656Z"
 }
