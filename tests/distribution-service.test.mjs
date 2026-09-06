@@ -4051,7 +4051,7 @@ test("production no-send deployment preserves the existing Telegram and Discord 
   const workflow = await readFile(new URL("../.github/workflows/deploy-production-server.yml", import.meta.url), "utf8");
   const desktopRoute = await readFile(new URL("../app/api/cron/desktop-publisher/route.js", import.meta.url), "utf8");
 
-  assert.match(workflow, /expected_targets='-1003710405969:8,-1003710405969:10,-1003710405969:16,-1001702053978:309971'/);
+  assert.match(workflow, /expected_targets='-1003710405969:8,-1003710405969:10,-1003710405969:16,-1001702053978:309971,-1003332783916:3,-1003332783916:10,-1003332783916:13,-1003332783916:16,-1003332783916:19,-1003332783916:22,-1003332783916:25,-1004458467548:4,-1004458467548:11,-1004458467548:14,-1004458467548:17,-1004458467548:20,-1004458467548:23,-1004458467548:26'/);
   assert.match(workflow, /read_env TELEGRAM_DEMO_ONLY.*!= "true"/);
   assert.match(workflow, /read_env TRADING_DEMO_ONLY.*!= "true"/);
   assert.match(workflow, /read_env ALLOW_LIVE_TELEGRAM.*= "true"/);

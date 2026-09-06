@@ -80,20 +80,20 @@ test("read-only Academy audit reports the failing endpoint and sanitized HTTP re
   assert.match(workflow, /HTTP \{error\.code\}/);
 });
 
-test("governed Telegram target policy includes House and rolls back on deployment failure", () => {
+test("governed Telegram target policy includes enabled internal Topics and rolls back on deployment failure", () => {
   const workflow = read(".github/workflows/deploy-production-server.yml");
 
   assert.match(workflow, /env_backup="\$\(mktemp\)"/);
   assert.match(workflow, /sudo cp -p "\$env_file" "\$env_backup"/);
   assert.match(workflow, /set_env_value TELEGRAM_DEMO_ONLY true/);
   assert.match(workflow, /set_env_value TRADING_DEMO_ONLY true/);
-  assert.match(workflow, /expected_targets='-1003710405969:8,-1003710405969:10,-1003710405969:16,-1001702053978:309971'/);
+  assert.match(workflow, /expected_targets='-1003710405969:8,-1003710405969:10,-1003710405969:16,-1001702053978:309971,-1003332783916:3,-1003332783916:10,-1003332783916:13,-1003332783916:16,-1003332783916:19,-1003332783916:22,-1003332783916:25,-1004458467548:4,-1004458467548:11,-1004458467548:14,-1004458467548:17,-1004458467548:20,-1004458467548:23,-1004458467548:26'/);
   assert.match(workflow, /set_env_value TELEGRAM_DISTRIBUTION_APPROVED_TARGETS "\$expected_targets"/);
   assert.match(workflow, /set_env_value ALLOW_LIVE_TELEGRAM false/);
   assert.match(workflow, /systemctl restart yubit-academy-web\.service/);
   assert.match(workflow, /\[ -n "\$env_backup" \] && \[ "\$deployment_committed" != "1" \]/);
   const deployScript = read("deploy/server/deploy.sh");
-  assert.match(deployScript, /expected_distribution_targets='-1003710405969:8,-1003710405969:10,-1003710405969:16,-1001702053978:309971'/);
+  assert.match(deployScript, /expected_distribution_targets='-1003710405969:8,-1003710405969:10,-1003710405969:16,-1001702053978:309971,-1003332783916:3,-1003332783916:10,-1003332783916:13,-1003332783916:16,-1003332783916:19,-1003332783916:22,-1003332783916:25,-1004458467548:4,-1004458467548:11,-1004458467548:14,-1004458467548:17,-1004458467548:20,-1004458467548:23,-1004458467548:26'/);
   const auditScript = read("scripts/audit-content-production.mjs");
   assert.match(auditScript, /"-1001702053978:309971"/);
   assert.match(workflow, /sudo cp -p "\$env_backup" "\$env_file"/);

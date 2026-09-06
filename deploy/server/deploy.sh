@@ -120,12 +120,12 @@ fi
 read_production_env() {
   sudo awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "$ENV_FILE"
 }
-expected_distribution_targets='-1003710405969:8,-1003710405969:10,-1003710405969:16,-1001702053978:309971'
+expected_distribution_targets='-1003710405969:8,-1003710405969:10,-1003710405969:16,-1001702053978:309971,-1003332783916:3,-1003332783916:10,-1003332783916:13,-1003332783916:16,-1003332783916:19,-1003332783916:22,-1003332783916:25,-1004458467548:4,-1004458467548:11,-1004458467548:14,-1004458467548:17,-1004458467548:20,-1004458467548:23,-1004458467548:26'
 if [[ "$(read_production_env TELEGRAM_DEMO_ONLY)" != "true" \
   || "$(read_production_env TRADING_DEMO_ONLY)" != "true" \
   || "$(read_production_env TELEGRAM_DISTRIBUTION_APPROVED_TARGETS)" != "$expected_distribution_targets" \
   || "$(read_production_env ALLOW_LIVE_TELEGRAM)" == "true" ]]; then
-  echo "Production Telegram safety policy must remain locked to the governed DEMO and House Topic allowlist." >&2
+  echo "Production Telegram safety policy must remain locked to the governed internal Topic allowlist." >&2
   exit 1
 fi
 publisher_config_before="$(sudo grep -E '^(TELEGRAM_|TRADING_DEMO_ONLY|ALLOW_LIVE_TELEGRAM|DISCORD_)=' "$ENV_FILE" | sha256sum | awk '{print $1}')"
