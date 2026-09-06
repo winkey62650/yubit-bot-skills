@@ -167,16 +167,16 @@ export default function DiscordDistributionPage() {
     {error && <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{error}</div>}
 
     <div className="grid gap-6 xl:grid-cols-[minmax(320px,.75fr)_minmax(0,1.25fr)]">
-      <Card className="p-6">
+      <Card className="min-w-0 p-4 sm:p-6">
         <h2 className="text-xl font-black">选择内容模板</h2>
         <div className="mt-5 grid gap-4">
-          <Field label="模板"><select className={inputClass} value={contentType} onChange={(event) => { const nextContentType = event.target.value; setContentType(nextContentType); setSchedulePreset(resolveScheduleForContentType(nextContentType)); }}>{TEMPLATES.map((item) => <option key={item.value} value={item.value}>{item.label} · {item.detail}</option>)}</select></Field>
-          <Field label="任务名称（可选）"><input className={inputClass} value={taskName} onChange={(event) => setTaskName(event.target.value)} placeholder="未填写时使用模板名称" /></Field>
-          <Field label="定时频率"><select className={inputClass} value={resolveScheduleForContentType(contentType, schedulePreset)} disabled={template.scheduleLocked || contentType === "whale-signals"} onChange={(event) => setSchedulePreset(event.target.value)}>{SCHEDULES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>{template.scheduleLocked ? <p className="mt-1 text-xs text-ops-muted">此模板使用固定周期，保存时会自动校正。</p> : contentType === "whale-signals" ? <p className="mt-1 text-xs text-ops-muted">订单簿只生成流动性提醒；来源、规模、持续性与评分未达门槛时不发布。</p> : null}</Field>
+          <Field label="模板"><select className={`${inputClass} min-w-0 w-full`} value={contentType} onChange={(event) => { const nextContentType = event.target.value; setContentType(nextContentType); setSchedulePreset(resolveScheduleForContentType(nextContentType)); }}>{TEMPLATES.map((item) => <option key={item.value} value={item.value}>{item.label} · {item.detail}</option>)}</select></Field>
+          <Field label="任务名称（可选）"><input className={`${inputClass} min-w-0 w-full`} value={taskName} onChange={(event) => setTaskName(event.target.value)} placeholder="未填写时使用模板名称" /></Field>
+          <Field label="定时频率"><select className={`${inputClass} min-w-0 w-full`} value={resolveScheduleForContentType(contentType, schedulePreset)} disabled={template.scheduleLocked || contentType === "whale-signals"} onChange={(event) => setSchedulePreset(event.target.value)}>{SCHEDULES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>{template.scheduleLocked ? <p className="mt-1 text-xs text-ops-muted">此模板使用固定周期，保存时会自动校正。</p> : contentType === "whale-signals" ? <p className="mt-1 text-xs text-ops-muted">订单簿只生成流动性提醒；来源、规模、持续性与评分未达门槛时不发布。</p> : null}</Field>
           <label className="flex min-h-10 items-center gap-2 rounded-lg border border-ops-line px-4 text-sm font-bold"><input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />保存后立即启用</label>
         </div>
       </Card>
-      <Card className="p-6">
+      <Card className="min-w-0 p-4 sm:p-6">
         <div className="flex items-center justify-between"><h2 className="text-xl font-black">选择目标 Server / Channel</h2><StatusPill tone={sendableCount ? "green" : "amber"}>{sendableCount} 个可发送</StatusPill></div>
         <div className="mt-4 rounded-lg border border-[#cae5da] bg-[#f2faf6] px-4 py-3 text-sm text-[#41564d]">CTA 在频道级统一维护：Discord Channels 共用一个服务器 CTA，不新增 Channel 单独配置。</div>
         <p className="mt-3 text-xs leading-5 text-ops-muted">旧 Daily Events 已升级为可追溯的每日 Crypto 新闻、每周数据日历和数据公布快讯；Daily Analysis 与 Whale Signals 保持可用。</p>
@@ -223,7 +223,7 @@ export default function DiscordDistributionPage() {
 
     <Card className="mt-6 p-6">
       <h2 className="text-xl font-black">Demo → 目标同步规则</h2><p className="mt-2 text-sm text-ops-muted">同步与自动分发相互独立；路由按稳定的 Server ID + Channel ID 保存。</p>
-      <div className="mt-5 grid gap-4 md:grid-cols-[1fr_auto] md:items-end"><Field label="Discord Demo Server"><select className={inputClass} value={demoGuildId} onChange={(event) => setDemoGuildId(event.target.value)}><option value="">请选择已初始化 Server</option>{configuredGuilds.map((guild) => <option key={guild.guildId} value={guild.guildId}>{guild.guildName}</option>)}</select></Field><label className="flex min-h-10 items-center gap-2 rounded-lg border border-ops-line px-4 text-sm font-bold"><input type="checkbox" checked={syncEnabled} onChange={(event) => setSyncEnabled(event.target.checked)} />启用 Discord 同步</label></div>
+      <div className="mt-5 grid gap-4 md:grid-cols-[1fr_auto] md:items-end"><Field label="Discord Demo Server"><select className={`${inputClass} min-w-0 w-full`} value={demoGuildId} onChange={(event) => setDemoGuildId(event.target.value)}><option value="">请选择已初始化 Server</option>{configuredGuilds.map((guild) => <option key={guild.guildId} value={guild.guildId}>{guild.guildName}</option>)}</select></Field><label className="flex min-h-10 items-center gap-2 rounded-lg border border-ops-line px-4 text-sm font-bold"><input type="checkbox" checked={syncEnabled} onChange={(event) => setSyncEnabled(event.target.checked)} />启用 Discord 同步</label></div>
       <button type="button" disabled={busy} onClick={saveSettings} className="mt-4 rounded-lg bg-ops-accent px-4 py-2 text-sm font-black text-white disabled:opacity-50">保存基础设置</button>
       <div className="mt-6 grid gap-3">{(status.config.routes || []).map((route, index) => <div key={route.id || index} className="flex flex-col gap-2 rounded-lg border border-ops-line p-4 md:flex-row md:items-center md:justify-between"><div className="text-sm font-bold">{route.sourceGuildName || route.sourceGuildId} / #{route.sourceChannelName || route.sourceChannelId} → {route.targetGuildName || route.targetGuildId} / #{route.targetChannelName || route.targetChannelId}</div><StatusPill tone={route.enabled === false ? "gray" : "green"}>{route.enabled === false ? "已暂停" : "运行中"}</StatusPill></div>)}{!(status.config.routes || []).length && <div className="rounded-lg border border-dashed border-ops-line p-5 text-sm text-ops-muted">暂无 Demo → 目标同步规则。</div>}</div>
     </Card>

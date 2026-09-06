@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 
 import {
   HOME_BY_ROLE,
+  isPublicEditorialPath,
   canQueueComposerMessage,
   canAccessPath,
   filterNavigationForRole
@@ -85,4 +86,12 @@ test("restricted page redirects use the public application origin behind a proxy
     middleware,
     /process\.env\.APP_BASE_URL \? new URL\(process\.env\.APP_BASE_URL\) : request\.nextUrl\.clone\(\)/
   );
+});
+
+test("only exact editorial page paths qualify for public read access", () => {
+  assert.equal(isPublicEditorialPath("/market-calendar/2026-W34"), true);
+  assert.equal(isPublicEditorialPath("/data-updates/us-cpi/2026-08-12"), true);
+  for (const path of ["/composer", "/api/distribution", "/market-calendar/admin", "/data-updates/us-cpi/2026-08-12/edit"]) {
+    assert.equal(isPublicEditorialPath(path), false);
+  }
 });

@@ -18,12 +18,13 @@ export async function GET(req) {
       readJson("group-config.json", { groups: [] })
     ]);
     
-    // Only expose destinations the selected account can actually publish to.
-    const writableDialogs = dialogs.filter(
-      (dialog) => (dialog.isGroup || dialog.isChannel) && dialog.canSendMessages === true
+    // Keep joined destinations visible so permission failures are explainable.
+    // Sending still requires the independent live permission check.
+    const accountDialogs = dialogs.filter(
+      (dialog) => dialog.isGroup || dialog.isChannel
     );
     const groups = await hydrateTelegramTopicAvailability(
-      writableDialogs,
+      accountDialogs,
       topicIdsByChatFromConfiguredGroups(configured.groups || []),
       { userId }
     );

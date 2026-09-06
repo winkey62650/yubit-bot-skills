@@ -3,14 +3,16 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 
+import { isPublicEditorialPath } from "../../lib/access-control.mjs";
+
 const SessionContext = createContext({ loading: true, user: null });
 
 export function SessionProvider({ children }) {
   const pathname = usePathname();
-  const [state, setState] = useState({ loading: pathname !== "/login", user: null });
+  const [state, setState] = useState({ loading: pathname !== "/login" && !isPublicEditorialPath(pathname), user: null });
 
   useEffect(() => {
-    if (pathname === "/login") {
+    if (pathname === "/login" || isPublicEditorialPath(pathname)) {
       setState({ loading: false, user: null });
       return;
     }

@@ -511,3 +511,22 @@ test("inflight MTProto send and invoke boundaries reject promptly when aborted",
     assert.ok(Date.now() - started < 100, `${item.clientMethod} did not reject promptly`);
   }
 });
+
+test('forum discovery follows pagination even when Telegram returns a short page', async () => {
+  const harness = fakeClientHarness();
+  const invoke = harness.client.invoke.bind(harness.client);
+  const requests = [];
+  harness.client.invoke = async request => {
+    if (request.className !== 'messages.GetForumTopics') return invoke(request);
+    requests.push(request);
+    return request.offsetTopic === 0
+      ? {count:3,topics:[{id:9,title:'Newest',topMessage:90},{id:8,title:'Older',topMessage:80}],messages:[{id:80,date:123}]}
+      : {count:3,topics:[{id:7,title:'Oldest',topMessage:70}],messages:[{id:70,date:100}]};
+  };
+  const transport = createTelegramMtprotoTransport(configuredOptions(harness));
+  const topics = await transport(null,'getForumTopics',{chat_id:GROUP_ID},{userId:'42'});
+  assert.deepEqual(topics.map(t=>t.threadId),[9,8,7]);
+  assert.equal(requests[1].offsetTopic,8);
+  assert.equal(requests[1].offsetId,80);
+  assert.equal(requests[1].offsetDate,123);
+});

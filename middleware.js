@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { SESSION_COOKIE, verifySessionToken } from "./lib/session";
-import { HOME_BY_ROLE, canAccessPath } from "./lib/access-control.mjs";
+import { HOME_BY_ROLE, canAccessPath, isPublicEditorialPath } from "./lib/access-control.mjs";
 
 const publicPaths = new Set(["/login", "/api/auth/login"]);
 
 export async function middleware(request) {
   const { pathname } = request.nextUrl;
   if (publicPaths.has(pathname) || pathname === "/api/telegram/webhook" || pathname === "/api/telegram/speaker-webhook" || pathname.startsWith("/api/media/") || pathname.startsWith("/api/cron/") || pathname.startsWith("/templates/")) return NextResponse.next();
+
+  if (["GET", "HEAD"].includes(request.method) && isPublicEditorialPath(pathname)) return NextResponse.next();
 
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   const session = await verifySessionToken(token, process.env.AUTH_SECRET);

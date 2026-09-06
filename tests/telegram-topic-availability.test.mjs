@@ -99,3 +99,18 @@ test("topic id collectors normalize configured groups and selected targets", () 
     [["-100111", [7, 8]]]
   );
 });
+
+test("saved topics outside the discovery page are checked by exact id instead of marked missing", async () => {
+  const calls = [];
+  const [dialog] = await hydrateTelegramTopicAvailability(
+    [{ id: '-100111', isForum: true, canSendMessages: true }],
+    new Map([['-100111', [999]]]),
+    {userId:'42', call:async(_token,method,payload)=>{
+      calls.push({method,payload});
+      return method === 'getForumTopics' ? [{threadId:7,name:'Recent',canSendMessages:true}]
+        : [{threadId:999,name:'Saved older Topic',canSendMessages:true}];
+    }}
+  );
+  assert.equal(dialog.topics.find(t=>t.threadId===999).canSendMessages,true);
+  assert.deepEqual(calls[1],{method:'getForumTopicsById',payload:{chat_id:'-100111',thread_ids:[999]}});
+});

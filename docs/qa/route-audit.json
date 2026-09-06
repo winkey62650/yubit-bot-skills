@@ -1,0 +1,1005 @@
+[
+  {
+    "route": "/",
+    "status": 200,
+    "finalPath": "/distribution",
+    "heading": [
+      "内容分发中心"
+    ],
+    "tabs": [
+      "网站数据",
+      "自动发布",
+      "频道 CTA",
+      "内容同步",
+      "待审核",
+      "运行记录"
+    ],
+    "errors": [],
+    "failedApis": [],
+    "responsive": [
+      {
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "empty": false
+  },
+  {
+    "route": "/trading",
+    "status": 200,
+    "finalPath": "/trading",
+    "heading": [
+      "交易中心"
+    ],
+    "tabs": [
+      "交易日志",
+      "Trader 管理",
+      "发布目标"
+    ],
+    "errors": [],
+    "failedApis": [],
+    "responsive": [
+      {
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "empty": false
+  },
+  {
+    "route": "/telegram-user-authorization",
+    "status": 200,
+    "finalPath": "/telegram-user-authorization",
+    "heading": [
+      "发布账号状态检测"
+    ],
+    "tabs": [],
+    "errors": [],
+    "failedApis": [
+      {
+        "url": "/api/telegram/user-authorization",
+        "status": 503
+      }
+    ],
+    "responsive": [
+      {
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "empty": false
+  },
+  {
+    "route": "/sources",
+    "status": 200,
+    "finalPath": "/group-config",
+    "heading": [
+      "群与 Topic 配置"
+    ],
+    "tabs": [],
+    "errors": [],
+    "failedApis": [],
+    "responsive": [
+      {
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "empty": false
+  },
+  {
+    "route": "/signals",
+    "status": 200,
+    "finalPath": "/distribution",
+    "heading": [
+      "内容分发中心"
+    ],
+    "tabs": [
+      "网站数据",
+      "自动发布",
+      "频道 CTA",
+      "内容同步",
+      "待审核",
+      "运行记录"
+    ],
+    "errors": [],
+    "failedApis": [
+      {
+        "url": "/api/site-analytics",
+        "status": 503
+      },
+      {
+        "url": "/api/site-analytics",
+        "status": 503
+      }
+    ],
+    "responsive": [
+      {
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "empty": false
+  },
+  {
+    "route": "/settings",
+    "status": 200,
+    "finalPath": "/settings",
+    "heading": [
+      "系统设置"
+    ],
+    "tabs": [],
+    "errors": [],
+    "failedApis": [],
+    "responsive": [
+      {
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "empty": false
+  },
+  {
+    "route": "/news",
+    "status": 200,
+    "finalPath": "/distribution",
+    "heading": [
+      "内容分发中心"
+    ],
+    "tabs": [
+      "网站数据",
+      "自动发布",
+      "频道 CTA",
+      "内容同步",
+      "待审核",
+      "运行记录"
+    ],
+    "errors": [],
+    "failedApis": [],
+    "responsive": [
+      {
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "empty": false
+  },
+  {
+    "route": "/new-group",
+    "status": 200,
+    "finalPath": "/new-group",
+    "heading": [
+      "新群初始化"
+    ],
+    "tabs": [],
+    "errors": [],
+    "failedApis": [],
+    "responsive": [
+      {
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "empty": false
+  },
+  {
+    "route": "/market-calendar/2026-W34",
+    "status": 200,
+    "finalPath": "/market-calendar/2026-W34",
+    "heading": [
+      "QA FIXTURE — Weekly Market Risk Playbook | 2026-W34"
+    ],
+    "tabs": [],
+    "errors": [],
+    "failedApis": [],
+    "responsive": [
+      {
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "empty": false
+  },
+  {
+    "route": "/login",
+    "status": 200,
+    "finalPath": "/login",
+    "heading": [
+      "YUBIT 后台"
+    ],
+    "tabs": [],
+    "errors": [],
+    "failedApis": [],
+    "responsive": [
+      {
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "empty": false
+  },
+  {
+    "route": "/groups",
+    "status": 200,
+    "finalPath": "/group-config",
+    "heading": [
+      "群与 Topic 配置"
+    ],
+    "tabs": [],
+    "errors": [],
+    "failedApis": [],
+    "responsive": [
+      {
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "empty": false
+  },
+  {
+    "route": "/group-config",
+    "status": 200,
+    "finalPath": "/group-config",
+    "heading": [
+      "群与 Topic 配置"
+    ],
+    "tabs": [],
+    "errors": [],
+    "failedApis": [],
+    "responsive": [
+      {
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "empty": false
+  },
+  {
+    "route": "/forward-social",
+    "status": 200,
+    "finalPath": "/distribution",
+    "heading": [
+      "内容分发中心"
+    ],
+    "tabs": [
+      "网站数据",
+      "自动发布",
+      "频道 CTA",
+      "内容同步",
+      "待审核",
+      "运行记录"
+    ],
+    "errors": [],
+    "failedApis": [
+      {
+        "url": "/api/site-analytics",
+        "status": 503
+      },
+      {
+        "url": "/api/site-analytics",
+        "status": 503
+      }
+    ],
+    "responsive": [
+      {
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "empty": false
+  },
+  {
+    "route": "/forward-config",
+    "status": 200,
+    "finalPath": "/distribution",
+    "heading": [
+      "内容分发中心"
+    ],
+    "tabs": [
+      "网站数据",
+      "自动发布",
+      "频道 CTA",
+      "内容同步",
+      "待审核",
+      "运行记录"
+    ],
+    "errors": [],
+    "failedApis": [],
+    "responsive": [
+      {
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "empty": false
+  },
+  {
+    "route": "/forward-broadcast",
+    "status": 200,
+    "finalPath": "/distribution",
+    "heading": [
+      "内容分发中心"
+    ],
+    "tabs": [
+      "网站数据",
+      "自动发布",
+      "频道 CTA",
+      "内容同步",
+      "待审核",
+      "运行记录"
+    ],
+    "errors": [],
+    "failedApis": [],
+    "responsive": [
+      {
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "empty": false
+  },
+  {
+    "route": "/distribution",
+    "status": 200,
+    "finalPath": "/distribution",
+    "heading": [
+      "内容分发中心"
+    ],
+    "tabs": [
+      "网站数据",
+      "自动发布",
+      "频道 CTA",
+      "内容同步",
+      "待审核",
+      "运行记录"
+    ],
+    "errors": [],
+    "failedApis": [
+      {
+        "url": "/api/site-analytics",
+        "status": 503
+      },
+      {
+        "url": "/api/site-analytics",
+        "status": 503
+      }
+    ],
+    "responsive": [
+      {
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "empty": false
+  },
+  {
+    "route": "/dispatch",
+    "status": 200,
+    "finalPath": "/distribution",
+    "heading": [
+      "内容分发中心"
+    ],
+    "tabs": [
+      "网站数据",
+      "自动发布",
+      "频道 CTA",
+      "内容同步",
+      "待审核",
+      "运行记录"
+    ],
+    "errors": [],
+    "failedApis": [
+      {
+        "url": "/api/site-analytics",
+        "status": 503
+      },
+      {
+        "url": "/api/site-analytics",
+        "status": 503
+      }
+    ],
+    "responsive": [
+      {
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "empty": false
+  },
+  {
+    "route": "/discord",
+    "status": 200,
+    "finalPath": "/discord",
+    "heading": [
+      "Discord 社区"
+    ],
+    "tabs": [],
+    "errors": [],
+    "failedApis": [],
+    "responsive": [
+      {
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "empty": false
+  },
+  {
+    "route": "/discord/manual",
+    "status": 200,
+    "finalPath": "/discord/manual",
+    "heading": [
+      "Discord 手动信息发布"
+    ],
+    "tabs": [],
+    "errors": [],
+    "failedApis": [],
+    "responsive": [
+      {
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "empty": false
+  },
+  {
+    "route": "/discord/health",
+    "status": 200,
+    "finalPath": "/discord/health",
+    "heading": [
+      "Server 与 Channel 健康"
+    ],
+    "tabs": [],
+    "errors": [],
+    "failedApis": [
+      {
+        "url": "/api/discord",
+        "status": 400
+      }
+    ],
+    "responsive": [
+      {
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "empty": false
+  },
+  {
+    "route": "/discord/distribution",
+    "status": 200,
+    "finalPath": "/discord/distribution",
+    "heading": [
+      "Discord 内容分发中心"
+    ],
+    "tabs": [],
+    "errors": [],
+    "failedApis": [
+      {
+        "url": "/api/discord",
+        "status": 400
+      }
+    ],
+    "responsive": [
+      {
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "empty": false
+  },
+  {
+    "route": "/data-updates/us-cpi/2026-08-12",
+    "status": 200,
+    "finalPath": "/data-updates/us-cpi/2026-08-12",
+    "heading": [
+      "QA FIXTURE — US CPI | Data Update"
+    ],
+    "tabs": [],
+    "errors": [],
+    "failedApis": [],
+    "responsive": [
+      {
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "empty": false
+  },
+  {
+    "route": "/composer",
+    "status": 200,
+    "finalPath": "/composer",
+    "heading": [
+      "消息发布中心"
+    ],
+    "tabs": [],
+    "errors": [],
+    "failedApis": [
+      {
+        "url": "/api/telegram/user-authorization",
+        "status": 503
+      }
+    ],
+    "responsive": [
+      {
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "empty": false
+  },
+  {
+    "route": "/bots",
+    "status": 200,
+    "finalPath": "/bots",
+    "heading": [
+      "后台能力"
+    ],
+    "tabs": [],
+    "errors": [],
+    "failedApis": [],
+    "responsive": [
+      {
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "empty": false
+  },
+  {
+    "route": "/automations",
+    "status": 200,
+    "finalPath": "/distribution",
+    "heading": [
+      "内容分发中心"
+    ],
+    "tabs": [
+      "网站数据",
+      "自动发布",
+      "频道 CTA",
+      "内容同步",
+      "待审核",
+      "运行记录"
+    ],
+    "errors": [],
+    "failedApis": [
+      {
+        "url": "/api/site-analytics",
+        "status": 503
+      },
+      {
+        "url": "/api/site-analytics",
+        "status": 503
+      }
+    ],
+    "responsive": [
+      {
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "empty": false
+  },
+  {
+    "route": "/distribution?view=site-analytics",
+    "status": 200,
+    "finalPath": "/distribution",
+    "heading": [
+      "网站数据中心"
+    ],
+    "tabs": [
+      "网站数据",
+      "自动发布",
+      "频道 CTA",
+      "内容同步",
+      "待审核",
+      "运行记录"
+    ],
+    "errors": [],
+    "failedApis": [
+      {
+        "url": "/api/site-analytics",
+        "status": 503
+      }
+    ],
+    "responsive": [
+      {
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "empty": false
+  },
+  {
+    "route": "/distribution?view=automation",
+    "status": 200,
+    "finalPath": "/distribution",
+    "heading": [
+      "内容分发中心"
+    ],
+    "tabs": [
+      "网站数据",
+      "自动发布",
+      "频道 CTA",
+      "内容同步",
+      "待审核",
+      "运行记录"
+    ],
+    "errors": [],
+    "failedApis": [
+      {
+        "url": "/api/site-analytics",
+        "status": 503
+      },
+      {
+        "url": "/api/site-analytics",
+        "status": 503
+      }
+    ],
+    "responsive": [
+      {
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "empty": false
+  },
+  {
+    "route": "/distribution?view=destination-cta",
+    "status": 200,
+    "finalPath": "/distribution",
+    "heading": [
+      "内容分发中心"
+    ],
+    "tabs": [
+      "网站数据",
+      "自动发布",
+      "频道 CTA",
+      "内容同步",
+      "待审核",
+      "运行记录"
+    ],
+    "errors": [],
+    "failedApis": [],
+    "responsive": [
+      {
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "empty": false
+  },
+  {
+    "route": "/distribution?view=broadcast",
+    "status": 200,
+    "finalPath": "/distribution",
+    "heading": [
+      "内容分发中心"
+    ],
+    "tabs": [
+      "网站数据",
+      "自动发布",
+      "频道 CTA",
+      "内容同步",
+      "待审核",
+      "运行记录"
+    ],
+    "errors": [],
+    "failedApis": [
+      {
+        "url": "/api/site-analytics",
+        "status": 503
+      },
+      {
+        "url": "/api/site-analytics",
+        "status": 503
+      }
+    ],
+    "responsive": [
+      {
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "empty": false
+  },
+  {
+    "route": "/distribution?view=review",
+    "status": 200,
+    "finalPath": "/distribution",
+    "heading": [
+      "内容分发中心"
+    ],
+    "tabs": [
+      "网站数据",
+      "自动发布",
+      "频道 CTA",
+      "内容同步",
+      "待审核",
+      "运行记录"
+    ],
+    "errors": [],
+    "failedApis": [],
+    "responsive": [
+      {
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "empty": false
+  },
+  {
+    "route": "/distribution?view=logs",
+    "status": 200,
+    "finalPath": "/distribution",
+    "heading": [
+      "内容分发中心"
+    ],
+    "tabs": [
+      "网站数据",
+      "自动发布",
+      "频道 CTA",
+      "内容同步",
+      "待审核",
+      "运行记录"
+    ],
+    "errors": [],
+    "failedApis": [],
+    "responsive": [
+      {
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "empty": false
+  }
+]

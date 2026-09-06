@@ -22,6 +22,8 @@ export default function ComposerPage() {
   const [targetFolders, setTargetFolders] = useState([]);
   const [targetFolderName, setTargetFolderName] = useState("");
   const [targetFolderBusy, setTargetFolderBusy] = useState(false);
+  const [loadErrors, setLoadErrors] = useState([]);
+  const [loadVersion, setLoadVersion] = useState(0);
   const [targetsLoading, setTargetsLoading] = useState(false);
   const [lastCheckedAt, setLastCheckedAt] = useState("");
   
@@ -38,27 +40,37 @@ export default function ComposerPage() {
   
   const fileInputRef = useRef(null);
   const dialogRequestRef = useRef(0);
+  const dialogControllerRef = useRef(null);
+  const translateRef = useRef(t);
+  translateRef.current = t;
 
   const loadUserDialogs = useCallback(async (
     userId,
     currentConfiguredGroups = [],
     { resetSelection = true, silent = false } = {}
   ) => {
+    // A slow permission check must finish before the next background refresh.
+    if (silent && dialogControllerRef.current) return;
+    dialogControllerRef.current?.abort();
+    const controller = new AbortController();
+    dialogControllerRef.current = controller;
     const requestId = ++dialogRequestRef.current;
     if (resetSelection) setSelectedTargets([]);
     if (!silent) setGroups([]);
-    setError("");
+    if (!silent) setError("");
     if (!userId) {
       setTargetsLoading(false);
       setLastCheckedAt("");
+      dialogControllerRef.current = null;
       return;
     }
     if (!silent) setTargetsLoading(true);
+    const timeout = window.setTimeout(() => controller.abort(), 45_000);
     try {
-      const res = await fetch(`/api/telegram/dialogs?userId=${userId}`);
+      const res = await fetch(`/api/telegram/dialogs?userId=${encodeURIComponent(userId)}`, { signal: controller.signal });
       const data = await res.json();
       if (!res.ok || !data.ok || !Array.isArray(data.groups)) {
-        throw new Error(data.error || t("composer.dialogError"));
+        throw new Error(data.error || translateRef.current("composer.dialogError"));
       }
       if (requestId === dialogRequestRef.current) {
         const nextGroups = buildAccountTargetGroups(currentConfiguredGroups, data.groups);
@@ -82,51 +94,63 @@ export default function ComposerPage() {
         setGroups([]);
         setSelectedTargets([]);
         setLastCheckedAt("");
-        setError(err.message || t("composer.dialogError"));
+        setError(err.name === "AbortError" ? translateRef.current("composer.loadTimeout") : err.message || translateRef.current("composer.dialogError"));
       }
     } finally {
-      if (requestId === dialogRequestRef.current && !silent) setTargetsLoading(false);
-    }
-  }, [t]);
-
-  useEffect(() => {
-    async function loadData() {
-      try {
-        const [authRes, groupsRes, foldersRes] = await Promise.all([
-          fetch("/api/telegram/user-authorization"),
-          fetch("/api/group-config"),
-          fetch("/api/composer/target-folders")
-        ]);
-        
-        const authData = await authRes.json();
-        const groupsData = await groupsRes.json();
-        const foldersData = await foldersRes.json();
-        if (foldersRes.ok && foldersData.ok) setTargetFolders(foldersData.folders || []);
-        
-        let initialUserId = "";
-        if (authData.ok) {
-          setAccounts(authData.accounts || []);
-          if (authData.accounts?.length > 0) {
-            initialUserId = authData.accounts[0].userId;
-            setSelectedUserId(initialUserId);
-          }
-        }
-        
-        const savedGroups = groupsData.ok ? (groupsData.groups || []) : [];
-        setConfiguredGroups(savedGroups);
-        setGroups([]);
-
-        if (initialUserId) {
-          await loadUserDialogs(initialUserId, savedGroups);
-        }
-      } catch (err) {
-        console.error("Failed to load composer data", err);
-      } finally {
-        setLoading(false);
+      window.clearTimeout(timeout);
+      if (requestId === dialogRequestRef.current) {
+        dialogControllerRef.current = null;
+        setTargetsLoading(false);
       }
     }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 45_000);
+    async function loadData() {
+      setLoading(true);
+      setLoadErrors([]);
+      const endpoints = [
+        ["/api/telegram/user-authorization", "composer.accountLoadError"],
+        ["/api/group-config", "composer.groupsLoadError"],
+        ["/api/composer/target-folders", "composer.folderLoadError"]
+      ];
+      const results = await Promise.allSettled(endpoints.map(async ([url, errorKey]) => {
+        try {
+          const response = await fetch(url, { signal: controller.signal });
+          const data = await response.json();
+          if (!response.ok || !data.ok) throw new Error(data.error || translateRef.current(errorKey));
+          return data;
+        } catch (error) {
+          throw new Error(`${translateRef.current(errorKey)}: ${error.name === "AbortError" ? translateRef.current("composer.loadTimeout") : error.message}`);
+        }
+      }));
+      window.clearTimeout(timeout);
+      if (!active) return;
+      setLoadErrors(results.filter((result) => result.status === "rejected").map((result) => result.reason.message));
+      const [authData, groupsData, foldersData] = results.map((result) => result.status === "fulfilled" ? result.value : null);
+      const nextAccounts = Array.isArray(authData?.accounts) ? authData.accounts : [];
+      const savedGroups = Array.isArray(groupsData?.groups) ? groupsData.groups : [];
+      setAccounts(nextAccounts);
+      setConfiguredGroups(savedGroups);
+      if (foldersData) setTargetFolders(foldersData.folders || []);
+      const initialUserId = nextAccounts[0]?.userId || "";
+      setSelectedUserId(initialUserId);
+      await loadUserDialogs(initialUserId, savedGroups);
+      if (active) setLoading(false);
+    }
     loadData();
-  }, [loadUserDialogs]);
+    return () => {
+      active = false;
+      window.clearTimeout(timeout);
+      controller.abort();
+      ++dialogRequestRef.current;
+      dialogControllerRef.current?.abort();
+      dialogControllerRef.current = null;
+    };
+  }, [loadUserDialogs, loadVersion]);
 
   useEffect(() => {
     if (!selectedUserId || loading) return undefined;
@@ -138,9 +162,9 @@ export default function ComposerPage() {
 
   const targetGroups = groups.map(group => {
     const options = [];
-    if (group.isForum && group.topics && group.topics.length > 0) {
-      group.topics
-        .filter(topic => topic.threadId !== null && topic.threadId !== undefined && String(topic.threadId).trim() !== "")
+    if (group.isForum) {
+      (group.topics || [])
+        .filter(topic => topic.threadId !== null && topic.threadId !== undefined && Number.isInteger(Number(topic.threadId)) && Number(topic.threadId) > 0)
         .forEach(topic => {
         options.push({
           id: `${group.chatId}:${topic.threadId}`,
@@ -160,9 +184,11 @@ export default function ComposerPage() {
     return {
       chatId: group.chatId,
       title: group.title,
+      topicStatusError: group.topicStatusError,
+      publishUnavailableReason: group.publishUnavailableReason,
       options
     };
-  }).filter((group) => group.options.length > 0);
+  });
   const targetOptions = targetGroups.flatMap((group) => group.options);
   const filteredTargetGroups = useMemo(
     () => filterTelegramComposerTargets(targetGroups, targetSearch),
@@ -318,6 +344,10 @@ export default function ComposerPage() {
       const data = await res.json();
       
       if (!res.ok || !data.ok) {
+        if (data.partial && Array.isArray(data.results)) {
+          const delivered = new Set(data.results.map((result) => result.target));
+          setSelectedTargets((current) => current.filter((target) => !delivered.has(target)));
+        }
         throw new Error(data.error || t("composer.sendError"));
       }
       
@@ -339,13 +369,17 @@ export default function ComposerPage() {
         desc={t("composer.desc")}
       />
       
-      <div className="grid gap-6 md:grid-cols-[2fr_1fr] items-start">
-        <Card className="p-6">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(340px,2fr)] items-start">
+        <Card className="min-w-0 p-4 sm:p-6">
           {loading ? (
             <p className="text-ops-muted">{t("common.loading")}</p>
           ) : (
             <div className="space-y-5">
-              {error && <div className="p-3 bg-[#fef5f4] text-[#a04a3d] font-bold rounded-lg">{error}</div>}
+              {loadErrors.length > 0 && <div role="alert" className="rounded-lg bg-[#fef5f4] p-3 text-[#a04a3d]">
+                {loadErrors.map((message) => <p key={message}>{message}</p>)}
+                <button type="button" className="mt-2 font-bold underline" onClick={() => setLoadVersion((value) => value + 1)}>{t("composer.retryLoad")}</button>
+              </div>}
+              {error && <div role="alert" className="p-3 bg-[#fef5f4] text-[#a04a3d] font-bold rounded-lg">{error}</div>}
               {success && <div className="p-3 bg-[#f3f9f4] text-[#2c7a3f] font-bold rounded-lg">{success}</div>}
               
               <Field label={t("composer.account")}>
@@ -460,9 +494,9 @@ export default function ComposerPage() {
           )}
         </Card>
 
-        <Card className="p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-black">{t("composer.targets")}</h2>
+        <Card className="min-w-0 p-4 sm:p-5">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-lg font-black">{t("composer.targets")}</h2>
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -488,7 +522,7 @@ export default function ComposerPage() {
             <p className="mt-1 text-xs leading-5 text-[#41564d]">{t("composer.folderHint")}</p>
             <div className="mt-3 flex gap-2">
               <input
-                className={inputClass}
+                className={`${inputClass} min-w-0 flex-1`}
                 value={targetFolderName}
                 onChange={(event) => setTargetFolderName(event.target.value)}
                 placeholder={t("composer.folderNamePlaceholder")}
@@ -538,7 +572,7 @@ export default function ComposerPage() {
             <div className="text-sm text-ops-muted p-4 bg-gray-50 rounded-lg text-center">
               {t("composer.loadingTargets")}
             </div>
-          ) : targetOptions.length === 0 ? (
+          ) : targetGroups.length === 0 ? (
             <div className="text-sm text-ops-muted p-4 bg-gray-50 rounded-lg text-center">
               <p className="font-bold mb-2">{t("composer.noTargets")}</p>
               <p className="text-xs">{t("composer.noTargetsHint")}</p>
@@ -583,6 +617,9 @@ export default function ComposerPage() {
                     </summary>
 
                     <div className="border-t border-ops-line px-3 py-2">
+                      {group.publishUnavailableReason && <p className="py-2 text-xs text-[#a04a3d]">{t(`composer.permission.${group.publishUnavailableReason}`)}</p>}
+                      {group.options.length === 0 && <p className="py-2 text-xs text-[#a04a3d]">{t("composer.noVerifiedTopics")}</p>}
+                      {group.topicStatusError && <p role="alert" className="py-2 text-xs text-[#a04a3d]">{t("composer.topicCheckError")}: {group.topicStatusError}</p>}
                       {groupAvailableTargets.length > 1 ? (
                         <label className="mb-1 flex cursor-pointer items-center gap-3 rounded-lg px-2 py-2 hover:bg-[#f7faf8]">
                           <input

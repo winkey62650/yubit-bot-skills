@@ -43,7 +43,7 @@ const configuredGroups = [
   }
 ];
 
-test("composer targets contain only writable dialogs for the selected account", () => {
+test("composer directory contains only joined dialogs and keeps unwritable destinations disabled", () => {
   const groups = buildAccountTargetGroups(configuredGroups, [
     {
       id: "-100111",
@@ -57,7 +57,7 @@ test("composer targets contain only writable dialogs for the selected account", 
     { id: "-100444", title: "Read-only Channel", isChannel: true, type: "channel", canSendMessages: false }
   ]);
 
-  assert.deepEqual(groups.map((group) => group.chatId), ["-100111", "-100333"]);
+  assert.deepEqual(groups.map((group) => group.chatId), ["-100111", "-100333", "-100444"]);
   assert.deepEqual(groups[0].topics, [{
     threadId: 7,
     name: "Signals",
@@ -66,7 +66,7 @@ test("composer targets contain only writable dialogs for the selected account", 
     canSendMessages: true
   }]);
   assert.equal(groups.some((group) => group.chatId === "-100222"), false);
-  assert.equal(groups.some((group) => group.chatId === "-100444"), false);
+  assert.equal(groups.find((group) => group.chatId === "-100444").canSendMessages, false);
 });
 
 test("composer rejects targets that the selected account cannot write to", () => {
@@ -226,4 +226,14 @@ test("composer target search matches group and Topic names without mutating the 
   assert.deepEqual(filterTelegramComposerTargets(targetGroups, "missing"), []);
   assert.equal(filterTelegramComposerTargets(targetGroups, ""), targetGroups);
   assert.equal(targetGroups[1].options.length, 1);
+});
+
+test('composer retains joined but unwritable groups with an actionable reason', () => {
+  const groups = buildAccountTargetGroups([], [{
+    id:'-100777',title:'Joined restricted group',isForum:true,canSendMessages:false,
+    publishUnavailableReason:'official_identity_unavailable',topics:[]
+  }]);
+  assert.equal(groups.length,1);
+  assert.equal(groups[0].canSendMessages,false);
+  assert.equal(groups[0].publishUnavailableReason,'official_identity_unavailable');
 });

@@ -1,0 +1,20 @@
+{
+  "baseCommit": "fd0643abe0f15ae249257f6a1bc0da3f15de1b5d",
+  "unitTests": {
+    "passed": 1323,
+    "failed": 0
+  },
+  "syntax": "passed",
+  "productionBuild": "passed",
+  "localPages": 31,
+  "viewportChecks": 93,
+  "clippedControls": 0,
+  "productionReadonlyPages": 29,
+  "productionPageErrors": 0,
+  "productionFailedApis": 0,
+  "manualComposer": "passed with simulated Telegram transport and real isolated folder storage",
+  "loginAndRoles": "passed",
+  "deployment": "not performed",
+  "liveMessageDelivery": "not performed",
+  "overallAcceptance": "failed: deployment and live delivery verification pending"
+}

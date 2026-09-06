@@ -18,3 +18,5 @@ artifacts/
 skills-lock.json
 .vercel
 .env*
+
+.runtime-audit/
