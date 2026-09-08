@@ -97,7 +97,7 @@ export default function SocialSourceManager({ packages, targetOptions = [], publ
 
   return <Card className="overflow-hidden">
     <div className="flex flex-col gap-3 border-b border-ops-line p-5 lg:flex-row lg:items-start lg:justify-between">
-      <div><p className="text-xs font-black uppercase tracking-[.16em] text-ops-accent">代理内容来源</p><h2 className="mt-1 text-xl font-black">X / YouTube 帖子与直播</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-ops-muted">帖子每小时检查；X Spaces 每 5 分钟检查，YouTube 按启用来源数量分配搜索额度，单来源每 20 分钟检查。同场直播对同一目标只提醒一次。</p></div>
+      <div><p className="text-xs font-black uppercase tracking-[.16em] text-ops-accent">代理内容来源</p><h2 className="mt-1 text-xl font-black">X / YouTube 帖子与直播</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-ops-muted">帖子每小时检查；直播每 5 分钟检查并用官方接口确认开播。平台动态更新可能延迟，系统会定期补查。英文提醒包含直播主题、实际开始时间和观看入口，同场直播对同一目标只提醒一次。</p></div>
       <div className="flex flex-wrap gap-2"><StatusPill tone={readiness.ready ? "green" : "amber"}>{readiness.enabled} 条启用</StatusPill><StatusPill tone={routeReadiness.ready ? "green" : "amber"}>{routeReadiness.mapped}/{routeReadiness.enabled} 条已绑定目标</StatusPill><StatusPill tone={readiness.limited ? "amber" : "green"}>{readiness.stable} 条稳定 · {readiness.limited} 条有限</StatusPill></div>
     </div>
     <div className="grid gap-5 p-5 xl:grid-cols-[minmax(320px,.82fr)_minmax(0,1.18fr)]">

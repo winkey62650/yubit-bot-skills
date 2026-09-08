@@ -22,16 +22,30 @@ test('platform receipt settlement updates queued notices to success',async()=>{
  await runSocialLiveMonitor(options(repository,async()=>{throw new Error('must not repeat')},{now:new Date('2026-09-08T08:31:00Z')}));assert.equal((await repository.getMeta(liveDeliveryKey(broadcast,source.targets[0]))).status,'success');
 });
 
-test('YouTube discovery leaves daily search quota headroom while X retains five-minute checks',async()=>{
+test('all sources are checked every five minutes while YouTube search keeps its separate budget',async()=>{
  const youtube={...source,targets:[]};const x={...source,id:'x1',platform:'X',accountUrl:'https://x.com/academy',targets:[]};
  const repository=repo();const calls=[];const opts={repository,loadSources:async()=>[youtube,x],detect:async s=>{calls.push(s.id);return {broadcasts:[],provider:s.platform}},now:'2026-09-08T08:00:00Z'};
  await runSocialLiveMonitor(opts);await runSocialLiveMonitor({...opts,now:'2026-09-08T08:05:00Z'});await runSocialLiveMonitor({...opts,now:'2026-09-08T08:20:00Z'});
- assert.deepEqual(calls,['s1','x1','x1','s1','x1']);
- const states=await getSocialLiveStatus([youtube,x],{repository,env:{}});assert.equal(states[0].intervalMinutes,20);assert.equal(states[1].intervalMinutes,5);
+ assert.deepEqual(calls,['s1','x1','s1','x1','s1','x1']);
+ const states=await getSocialLiveStatus([youtube,x],{repository,env:{}});assert.equal(states[0].intervalMinutes,5);assert.equal(states[0].searchIntervalMinutes,20);assert.equal(states[1].intervalMinutes,5);
 });
 
 test('YouTube interval accounts for all active sources and ignores paused or disabled ones',async()=>{
  const sources=[source,{...source,id:'s2'},{...source,id:'paused',status:'已暂停'},{...source,id:'disabled',liveMonitoring:false}];
- const states=await getSocialLiveStatus(sources,{repository:repo(),env:{}});assert.equal(states[0].intervalMinutes,40);assert.equal(states[1].intervalMinutes,40);
- assert.ok(sources.filter(s=>s.status==='已启用'&&s.liveMonitoring).length*1440/states[0].intervalMinutes<100);
+ const states=await getSocialLiveStatus(sources,{repository:repo(),env:{}});assert.equal(states[0].intervalMinutes,5);assert.equal(states[1].intervalMinutes,5);assert.equal(states[0].searchIntervalMinutes,40);
+ assert.ok(sources.filter(s=>s.status==='已启用'&&s.liveMonitoring).length*1440/states[0].searchIntervalMinutes<100);
+});
+
+test('search attempts and known live IDs survive provider errors and monitor restarts',async()=>{
+ const repository=repo();const calls=[];let checks=0,sends=0;
+ const opts=options(repository,async()=>{sends++;return {status:'success',messageId:'1'};},{detect:async(s,{discovery})=>{calls.push(structuredClone(discovery));if(++checks===2)throw new Error('temporary outage');return {broadcasts:[broadcast],trackedVideoIds:[broadcast.id]};}});
+ await runSocialLiveMonitor(opts);
+ for(const now of ['2026-09-08T08:10:00Z','2026-09-08T08:15:00Z','2026-09-08T08:25:00Z'])await runSocialLiveMonitor({...opts,now});
+ assert.deepEqual(calls.map(c=>c.search),[true,false,false,true]);
+ assert.deepEqual(calls[2].knownVideoIds,[broadcast.id]);assert.equal(sends,2,'same stream still sent only once to each target');
+});
+
+test('failed search does not get retried in each fast polling cycle',async()=>{
+ const repository=repo();const searched=[];const opts=options(repository,async()=>{}, {detect:async(s,{discovery})=>{searched.push(discovery.search);throw new Error('quota exhausted');}});
+ await runSocialLiveMonitor(opts);await runSocialLiveMonitor({...opts,now:'2026-09-08T08:10:00Z'});assert.deepEqual(searched,[true,false]);
 });
