@@ -425,7 +425,7 @@ function DistributionPageContent() {
     router.replace(`/distribution?view=${next}`, { scroll: false });
   }
 
-  const automationRules = data.rules.filter((rule) => rule.kind === "automation");
+  const automationRules = data.rules.filter((rule) => rule.kind === "automation" && rule.importedFrom !== "social-live-monitor");
   const broadcastRules = data.rules.filter((rule) => rule.kind === "broadcast");
   const socialReadiness = buildSocialSourceReadiness(socialPackages);
   const publisherIsBot = data.publisher?.mode === "bot";

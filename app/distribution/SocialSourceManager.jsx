@@ -1,18 +1,43 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import SocialLiveStatus from "./SocialLiveStatus";
 import { buildSocialSourceReadiness, buildSocialSourceRouteReadiness } from "../../lib/distribution-ui.mjs";
 import { formatDiscordTargetLabel } from "../../lib/discord-distribution-ui.mjs";
 import { Card, Field, StatusPill, inputClass } from "../components/ui";
 
 function createEmptySource() {
-  return { id: "", name: "", agent: "", platform: "X", accountUrl: "", feedUrl: "", status: "已启用", targets: [] };
+  return { id: "", name: "", agent: "", platform: "X", accountUrl: "", feedUrl: "", status: "已启用", liveMonitoring: false, targets: [] };
 }
 
 export default function SocialSourceManager({ packages, targetOptions = [], publisherName = "当前发布身份", busy, onPersist, onNotice }) {
   const [form, setForm] = useState(createEmptySource);
   const [testing, setTesting] = useState(false);
   const [preview, setPreview] = useState(null);
+  const [livePreview, setLivePreview] = useState(null);
+  const [liveSources, setLiveSources] = useState([]);
+  const [liveStatusError, setLiveStatusError] = useState("");
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/social-live", { signal: controller.signal })
+      .then(async response => {
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.error || "直播状态读取失败");
+        setLiveSources(data.sources || []); setLiveStatusError("");
+      })
+      .catch(error => { if (!controller.signal.aborted) setLiveStatusError(error.message); });
+    return () => controller.abort();
+  }, [packages]);
+  async function testLiveSource() {
+    setTesting(true); setLivePreview(null); onNotice("");
+    try {
+      const response = await fetch("/api/social-live", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "test", source: form }), signal: AbortSignal.timeout(50_000) });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.error || "直播状态检测失败");
+      setLivePreview(data.preview); onNotice("直播检测完成，本次仅预览，不会发送消息。");
+    } catch (error) { onNotice(error.message); }
+    finally { setTesting(false); }
+  }
   const readiness = buildSocialSourceReadiness(packages);
   const routeReadiness = buildSocialSourceRouteReadiness(packages);
   const sourceValid = Boolean(form.name.trim() && form.agent.trim() && (form.accountUrl.trim() || form.feedUrl.trim()));
@@ -27,6 +52,7 @@ export default function SocialSourceManager({ packages, targetOptions = [], publ
     if (saved) {
       setForm(createEmptySource());
       setPreview(null);
+      setLivePreview(null);
     }
   }
 
@@ -71,7 +97,7 @@ export default function SocialSourceManager({ packages, targetOptions = [], publ
 
   return <Card className="overflow-hidden">
     <div className="flex flex-col gap-3 border-b border-ops-line p-5 lg:flex-row lg:items-start lg:justify-between">
-      <div><p className="text-xs font-black uppercase tracking-[.16em] text-ops-accent">代理内容来源</p><h2 className="mt-1 text-xl font-black">X / YouTube 自动抓取</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-ops-muted">后台抓取任务每小时检查一次，只在识别到新内容时共享。一个代理可以分别添加 X 和 YouTube 两条来源。</p></div>
+      <div><p className="text-xs font-black uppercase tracking-[.16em] text-ops-accent">代理内容来源</p><h2 className="mt-1 text-xl font-black">X / YouTube 帖子与直播</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-ops-muted">帖子每小时检查；直播每 5 分钟检查。同场直播对同一目标只提醒一次，预约和回放不触发开播提醒。</p></div>
       <div className="flex flex-wrap gap-2"><StatusPill tone={readiness.ready ? "green" : "amber"}>{readiness.enabled} 条启用</StatusPill><StatusPill tone={routeReadiness.ready ? "green" : "amber"}>{routeReadiness.mapped}/{routeReadiness.enabled} 条已绑定目标</StatusPill><StatusPill tone={readiness.limited ? "amber" : "green"}>{readiness.stable} 条稳定 · {readiness.limited} 条有限</StatusPill></div>
     </div>
     <div className="grid gap-5 p-5 xl:grid-cols-[minmax(320px,.82fr)_minmax(0,1.18fr)]">
@@ -94,6 +120,9 @@ export default function SocialSourceManager({ packages, targetOptions = [], publ
           </div>
           {form.targets.length ? <div className="flex flex-wrap gap-2">{form.targets.map((target) => <span className="rounded-full bg-[#eaf6f0] px-3 py-1 text-xs font-black text-[#315b49]" key={socialTargetKey(target)}>{routeLabel(target)}</span>)}</div> : <p className="text-xs font-bold text-[#a04a3d]">必须至少选择一个发送目标。</p>}
         </div>
+        <label className="flex min-h-10 items-start gap-3 rounded-lg border border-ops-line p-3 text-sm font-bold"><input className="mt-1" type="checkbox" checked={form.liveMonitoring === true} onChange={event => setForm({ ...form, liveMonitoring: event.target.checked })} /><span>同时监控直播开播<span className="mt-1 block text-xs font-normal text-ops-muted">沿用上方账号和发送目标。需要平台直播接口凭据；支持 YouTube Live 和 X Spaces 音频直播。</span></span></label>
+        <button className="min-h-11 rounded-lg border border-ops-accent px-4 text-sm font-black text-ops-accent disabled:opacity-40" disabled={!sourceValid || !form.accountUrl || testing || Boolean(busy)} onClick={testLiveSource} type="button">{testing ? "正在检测…" : "检测直播状态（不发送）"}</button>
+        {livePreview ? <div className="rounded-lg border border-ops-line p-3 text-sm" role="status"><strong>{livePreview.broadcasts.length ? `检测到 ${livePreview.broadcasts.length} 场正在直播` : "当前未检测到开播"}</strong>{livePreview.broadcasts.map(live => <a className="mt-2 block break-words text-ops-accent underline" href={live.url} target="_blank" rel="noreferrer" key={live.id}>{live.title}</a>)}{livePreview.scheduledCount > 0 ? <p className="mt-2 text-xs text-ops-muted">另有 {livePreview.scheduledCount} 场预约，开播后才提醒。</p> : null}</div> : null}
         <label className="flex min-h-10 items-center gap-3 text-sm font-bold"><input checked={form.status === "已启用"} onChange={(event) => setForm({ ...form, status: event.target.checked ? "已启用" : "已暂停" })} type="checkbox" />保存后立即启用</label>
         <div className="grid gap-2 sm:grid-cols-2"><button className="min-h-11 rounded-lg border border-ops-accent px-4 text-sm font-black text-ops-accent disabled:opacity-40" disabled={!sourceValid || testing || Boolean(busy)} onClick={testSource} type="button">{testing ? "正在抓取…" : "测试抓取"}</button><button className="min-h-11 rounded-lg bg-ops-accent px-4 text-sm font-black text-white disabled:opacity-40" disabled={!canSave || testing || Boolean(busy)} onClick={saveSource} type="button">保存来源</button></div>
         {form.id ? <button className="text-sm font-black text-ops-muted" onClick={() => { setForm(createEmptySource()); setPreview(null); }} type="button">取消编辑</button> : null}
@@ -102,11 +131,12 @@ export default function SocialSourceManager({ packages, targetOptions = [], publ
       </div>
       <div className="overflow-hidden rounded-lg border border-ops-line">
         <div className="border-b border-ops-line bg-[#f9fbfa] px-4 py-3"><h3 className="font-black">已保存来源</h3><p className="mt-1 text-xs text-ops-muted">配置会保存在服务端，刷新、换设备和重新部署后仍然存在。</p></div>
+        {liveStatusError ? <p role="alert" className="p-3 text-sm text-[#a04a3d]">{liveStatusError}</p> : null}
         <div className="divide-y divide-ops-line">{packages.length ? packages.map((item) => {
           const sourceLabel = item.feedUrl ? "自定义 Feed" : item.platform === "YouTube" ? "官方 Feed" : item.platform === "X" ? "公开时间线" : "有限检测";
           const usable = sourceLabel !== "有限检测";
           const targets = Array.isArray(item.targets) ? item.targets : [];
-          return <article className="p-4" key={item.id}><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><strong>{item.name}</strong><StatusPill tone={item.status === "已启用" ? "green" : "amber"}>{item.status}</StatusPill><StatusPill tone={usable ? "green" : "amber"}>{sourceLabel}</StatusPill><StatusPill tone={targets.length ? "green" : "amber"}>{targets.length ? `${targets.length} 个目标` : "未绑定目标"}</StatusPill></div><p className="mt-2 text-sm text-ops-muted">{item.agent} · {item.platform} · 每小时</p><p className="mt-1 truncate text-xs text-ops-muted">{item.feedUrl || item.accountUrl || "未填写地址"}</p><div className="mt-3 grid gap-1 text-xs font-bold text-[#41564d]">{targets.length ? targets.map((target) => <p key={socialTargetKey(target)}>{item.platform} @{item.agent} → {publisherName} → {routeLabel(target)}</p>) : <p className="text-[#a04a3d]">未设置发送目标，启用后也不会进入发送队列。</p>}</div></div><div className="flex shrink-0 flex-wrap gap-2"><SourceButton onClick={() => { setForm({ ...item, targets: targets.map((target) => ({ ...target })) }); setPreview(null); }}>编辑</SourceButton><SourceButton disabled={item.status !== "已启用" && !targets.length} onClick={() => persistMutation({ action: "set-status", id: item.id, status: item.status === "已启用" ? "已暂停" : "已启用" }, item.status === "已启用" ? "代理来源已暂停。" : "代理来源已启用。")}>{item.status === "已启用" ? "暂停" : "启用"}</SourceButton><SourceButton danger onClick={() => window.confirm("确认删除这条代理来源？") && persistMutation({ action: "delete", id: item.id }, "代理来源已删除。")}>删除</SourceButton></div></div></article>;
+          return <div key={item.id}><SocialLiveStatus source={item} status={liveSources.find(row => row.id === item.id)} /><article className="p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><strong>{item.name}</strong><StatusPill tone={item.status === "已启用" ? "green" : "amber"}>{item.status}</StatusPill><StatusPill tone={usable ? "green" : "amber"}>{sourceLabel}</StatusPill><StatusPill tone={targets.length ? "green" : "amber"}>{targets.length ? `${targets.length} 个目标` : "未绑定目标"}</StatusPill></div><p className="mt-2 text-sm text-ops-muted">{item.agent} · {item.platform} · 每小时</p><p className="mt-1 truncate text-xs text-ops-muted">{item.feedUrl || item.accountUrl || "未填写地址"}</p><div className="mt-3 grid gap-1 text-xs font-bold text-[#41564d]">{targets.length ? targets.map((target) => <p key={socialTargetKey(target)}>{item.platform} @{item.agent} → {publisherName} → {routeLabel(target)}</p>) : <p className="text-[#a04a3d]">未设置发送目标，启用后也不会进入发送队列。</p>}</div></div><div className="flex shrink-0 flex-wrap gap-2"><SourceButton onClick={() => { setForm({ ...item, targets: targets.map((target) => ({ ...target })) }); setPreview(null); setLivePreview(null); }}>编辑</SourceButton><SourceButton disabled={item.status !== "已启用" && !targets.length} onClick={() => persistMutation({ action: "set-status", id: item.id, status: item.status === "已启用" ? "已暂停" : "已启用" }, item.status === "已启用" ? "代理来源已暂停。" : "代理来源已启用。")}>{item.status === "已启用" ? "暂停" : "启用"}</SourceButton><SourceButton danger onClick={() => window.confirm("确认删除这条代理来源？") && persistMutation({ action: "delete", id: item.id }, "代理来源已删除。")}>删除</SourceButton></div></div></article></div>;
         }) : <div className="p-8 text-center text-sm font-bold text-ops-muted">之前的入口已恢复。现在还没有来源，请先在左侧添加代理的 X 或 YouTube。</div>}</div>
       </div>
     </div>

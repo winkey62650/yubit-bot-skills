@@ -1,0 +1,45 @@
+{
+  "routes": [
+    {
+      "route": "/distribution?view=automation",
+      "width": 1366,
+      "clipped": []
+    },
+    {
+      "route": "/distribution?view=automation",
+      "width": 768,
+      "clipped": []
+    },
+    {
+      "route": "/distribution?view=automation",
+      "width": 390,
+      "clipped": []
+    },
+    {
+      "route": "/discord/distribution",
+      "width": 1366,
+      "clipped": []
+    },
+    {
+      "route": "/discord/distribution",
+      "width": 768,
+      "clipped": []
+    },
+    {
+      "route": "/discord/distribution",
+      "width": 390,
+      "clipped": []
+    }
+  ],
+  "errors": [],
+  "checks": {
+    "legacyDefaultOff": true,
+    "persistAndReload": true,
+    "targetsPreserved": true,
+    "missingCredentials422": true,
+    "readOnlyLivePreview": true,
+    "anonymous401": true,
+    "manualPublisher403": true
+  },
+  "outcome": "passed"
+}
