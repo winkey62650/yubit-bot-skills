@@ -4,11 +4,11 @@
 
 ## 配置与运行
 
-在「内容分发中心 → 自动发布 → 代理群信息更新」或 Discord 内容分发中心编辑已有来源，勾选「同时监控直播开播」，保存后使用既有分发调度。X Spaces 每 5 分钟检查；YouTube 单来源每 20 分钟检查，多个启用来源按数量延长各自间隔。无需新增 Codex 自动化或重启原有 worker。
+在「内容分发中心 → 自动发布 → 代理群信息更新」或 Discord 内容分发中心编辑已有来源，勾选「监控直播开播」，保存后使用既有分发调度。需要仅直播时取消「监控普通帖子」。X Spaces 每 5 分钟检查；YouTube 单来源每 20 分钟检查，多个启用来源按数量延长各自间隔。无需新增 Codex 自动化或重启原有 worker。
 
 YouTube 官方默认每天 100 次 search.list。正常单页搜索时，自动检查合计约 72 次/日，为预览等请求留出余量；实际发现延迟受检查间隔和平台索引更新影响。多页结果、共用项目的其他应用或大量手动检测仍可能消耗剩余额度，配额不足会明确报错。不能承诺默认额度下每 5 分钟发现所有新开播。
 
-- 原帖子来源仍按每小时检查；已暂停来源的直播检查也暂停。
+- 普通帖子开关 `postMonitoring` 默认 true，显式 false 时不进入帖子抓取或更新队列。来源总「暂停」仍同时停止帖子与直播。仅直播配置为总状态启用、`postMonitoring=false`、`liveMonitoring=true`，不会恢复普通帖子推送。
 - 新字段 `liveMonitoring` 默认 false，部署不会自动扩大外发范围。
 - YouTube 凭据：服务器设置 `YOUTUBE_API_KEY`，启用 YouTube Data API v3，并确认搜索额度足够。
 - X 凭据：复用服务器 `X_BEARER_TOKEN`，其应用必须有读取 Spaces 的权限；普通网页 / RSS 访问能力不能证明 Spaces API 可用。
@@ -27,7 +27,13 @@ YouTube 官方默认每天 100 次 search.list。正常单页搜索时，自动�
 
 ## 验收与当前范围
 
-### 2026-09-08 凭据接入更新
+### 2026-09-08 YouTube 凭据接入
+
+用户完成 Google Cloud 首次账号确认后，已创建专用项目 `yubit-social-live-monitor`、启用 YouTube Data API v3，并创建 `Yubit YouTube Live Production` Key。Key 限定 `youtube.googleapis.com` 与正式服务器 IP，已保存 GitHub `YOUTUBE_API_KEY` Secret 并经[配置流程](https://github.com/winkey62650/yubit-bot-skills/actions/runs/34189464175)安装成功。正式服务器对现有 Wise Advice YouTube 账号的真实检测返回 HTTP 200、`ok=true`、0 场直播；不是仅判断环境字段非空。临时明文文件已清理，没有开通付费试用。
+
+为在普通帖子保持关闭时启用直播，新增独立帖子开关。两项回归覆盖旧配置兼容、仅直播不会抓取帖子、直播调度仍可运行、总暂停仍有效；全量 1351 项通过，浏览器两个入口 × 三视口通过且验证关闭帖子/开启直播后保存刷新仍保留。自动监控开启与首轮调度结果须以之后的激活记录为准，不能用这次只读探测替代。
+
+### 历史：X 凭据首次接入
 
 用户授权直接补齐凭据后，已在其现有 X 登录下创建专用 `Yubit Social Live Monitor` 项目和应用，原应用凭据没有改动。新 Bearer 已保存到 GitHub Secret 并通过[配置流程](https://github.com/winkey62650/yubit-bot-skills/actions/runs/34188067455)安装到正式服务器。线上 GET 状态确认 X ready=true；两个 X 来源的真实只读检测均返回 HTTP 402。控制台预付余额和免费额度均为零，最低充值 USD 5；充值授权尚未获得，没有付款或自动充值。
 

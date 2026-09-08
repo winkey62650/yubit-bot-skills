@@ -34,6 +34,7 @@
   "errors": [],
   "checks": {
     "legacyDefaultOff": true,
+    "liveOnlyPersists": true,
     "persistAndReload": true,
     "targetsPreserved": true,
     "missingCredentials422": true,
