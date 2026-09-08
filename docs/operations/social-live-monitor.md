@@ -13,6 +13,7 @@ YouTube 官方默认每天 100 次 search.list。正常单页搜索时，自动�
 - YouTube 凭据：服务器设置 `YOUTUBE_API_KEY`，启用 YouTube Data API v3，并确认搜索额度足够。
 - X 凭据：复用服务器 `X_BEARER_TOKEN`，其应用必须有读取 Spaces 的权限；普通网页 / RSS 访问能力不能证明 Spaces API 可用。
 - 凭据只能进入服务器环境文件 / Secret，不能粘贴进前端来源或仓库。后台仅展示是否就绪。
+- 已授权的运维可将凭据保存为本仓库同名 GitHub Actions Secret，执行 `Configure social live providers`。流程只更新非空的 X / YouTube 字段、重载 web 服务并检查登录页；不改来源开关、收件人或原 worker。凭据通过 SSH 标准输入传输，不放命令参数或发布包；写入前验证格式并原子替换。Google 凭据后补时也使用同一流程。
 - 先点「检测直播状态（不发送）」验证当前账号；接口无直播返回未开播，凭据/额度/平台错误返回失败。
 - Telegram 继续使用已配置发布身份和白名单；桌面模式进入既有发布桥。桌面桥不能在 10 分钟内投递时，该提醒过期，不能把排队当成发送成功。
 

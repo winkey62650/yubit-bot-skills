@@ -1,0 +1,51 @@
+name: Configure social live providers
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: yubit-academy-production-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  configure:
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate the credential installer
+        run: node --test tests/social-live-credentials.test.mjs
+      - name: Install SSH password helper
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq sshpass
+      - name: Configure provider secrets and reload the web service
+        env:
+          SSHPASS: ${{ secrets.YUBIT_SERVER_PASSWORD }}
+          X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$SSHPASS"
+          remote_helper="/tmp/yubit-live-credentials-${GITHUB_RUN_ID}.py"
+          ssh_options=(-o ConnectTimeout=20 -o ServerAliveInterval=10 -o StrictHostKeyChecking=accept-new)
+          cleanup() {
+            sshpass -e ssh "${ssh_options[@]}" ubuntu@152.32.161.174 "rm -f -- '$remote_helper'" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          sshpass -e scp "${ssh_options[@]}" scripts/install-social-live-credentials.py "ubuntu@152.32.161.174:$remote_helper"
+          # Credentials travel only over stdin inside SSH, never in process arguments.
+          python3 - <<'PY' | sshpass -e ssh "${ssh_options[@]}" ubuntu@152.32.161.174 "sudo python3 '$remote_helper'"
+          import json, os
+          keys = ("X_BEARER_TOKEN", "YOUTUBE_API_KEY")
+          payload = {key: os.environ[key] for key in keys if os.environ.get(key)}
+          if not payload:
+              raise SystemExit("No social live provider Secret is configured")
+          print(json.dumps(payload))
+          PY
+          sshpass -e ssh "${ssh_options[@]}" ubuntu@152.32.161.174 \
+            'sudo systemctl restart yubit-academy-web.service && sudo systemctl is-active --quiet yubit-academy-web.service && curl -fsS --retry 6 --retry-delay 2 --retry-connrefused --max-time 3 http://127.0.0.1:4174/login >/dev/null'
+          echo "Provider credentials installed. Source switches, recipients, and worker state were not changed."
