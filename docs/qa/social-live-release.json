@@ -1,0 +1,293 @@
+{
+  "expectedCommit": "e74fc1e2ea890c0f14f12403998d2ed54e61c221",
+  "checkedAt": "2026-09-08T03:14:41.338Z",
+  "release": {
+    "ok": true,
+    "schemaVersion": "2026-07-16.trading-center.v1",
+    "commitSha": "e74fc1e2ea890c0f14f12403998d2ed54e61c221",
+    "gitRef": "code/academy",
+    "environment": "production",
+    "deploymentUrl": "https://152-32-161-174.sslip.io",
+    "capabilities": [
+      "content-distribution",
+      "telegram-broadcast",
+      "multi-trader-trading-center"
+    ]
+  },
+  "workflow": {
+    "id": 34182306660,
+    "url": "https://github.com/winkey62650/yubit-bot-skills/actions/runs/34182306660",
+    "conclusion": "success"
+  },
+  "local": {
+    "tests": 1343,
+    "passed": 1343,
+    "failed": 0,
+    "check": "passed",
+    "build": "passed"
+  },
+  "productionReadOnly": {
+    "outcome": "passed",
+    "routes": [
+      {
+        "route": "/",
+        "errors": [],
+        "failedApis": [],
+        "status": 200,
+        "finalPath": "/distribution"
+      },
+      {
+        "route": "/trading",
+        "errors": [],
+        "failedApis": [],
+        "status": 200,
+        "finalPath": "/trading"
+      },
+      {
+        "route": "/telegram-user-authorization",
+        "errors": [],
+        "failedApis": [],
+        "status": 200,
+        "finalPath": "/telegram-user-authorization"
+      },
+      {
+        "route": "/sources",
+        "errors": [],
+        "failedApis": [],
+        "status": 200,
+        "finalPath": "/group-config"
+      },
+      {
+        "route": "/signals",
+        "errors": [],
+        "failedApis": [],
+        "status": 200,
+        "finalPath": "/distribution"
+      },
+      {
+        "route": "/settings",
+        "errors": [],
+        "failedApis": [],
+        "status": 200,
+        "finalPath": "/settings"
+      },
+      {
+        "route": "/news",
+        "errors": [],
+        "failedApis": [],
+        "status": 200,
+        "finalPath": "/distribution"
+      },
+      {
+        "route": "/new-group",
+        "errors": [],
+        "failedApis": [],
+        "status": 200,
+        "finalPath": "/new-group"
+      },
+      {
+        "route": "/login",
+        "errors": [],
+        "failedApis": [],
+        "status": 200,
+        "finalPath": "/login"
+      },
+      {
+        "route": "/groups",
+        "errors": [],
+        "failedApis": [],
+        "status": 200,
+        "finalPath": "/group-config"
+      },
+      {
+        "route": "/group-config",
+        "errors": [],
+        "failedApis": [],
+        "status": 200,
+        "finalPath": "/group-config"
+      },
+      {
+        "route": "/forward-social",
+        "errors": [],
+        "failedApis": [],
+        "status": 200,
+        "finalPath": "/distribution"
+      },
+      {
+        "route": "/forward-config",
+        "errors": [],
+        "failedApis": [],
+        "status": 200,
+        "finalPath": "/distribution"
+      },
+      {
+        "route": "/forward-broadcast",
+        "errors": [],
+        "failedApis": [],
+        "status": 200,
+        "finalPath": "/distribution"
+      },
+      {
+        "route": "/distribution",
+        "errors": [],
+        "failedApis": [],
+        "status": 200,
+        "finalPath": "/distribution"
+      },
+      {
+        "route": "/dispatch",
+        "errors": [],
+        "failedApis": [],
+        "status": 200,
+        "finalPath": "/distribution"
+      },
+      {
+        "route": "/discord",
+        "errors": [],
+        "failedApis": [],
+        "status": 200,
+        "finalPath": "/discord"
+      },
+      {
+        "route": "/discord/manual",
+        "errors": [],
+        "failedApis": [],
+        "status": 200,
+        "finalPath": "/discord/manual"
+      },
+      {
+        "route": "/discord/health",
+        "errors": [],
+        "failedApis": [],
+        "status": 200,
+        "finalPath": "/discord/health"
+      },
+      {
+        "route": "/discord/distribution",
+        "errors": [],
+        "failedApis": [],
+        "status": 200,
+        "finalPath": "/discord/distribution"
+      },
+      {
+        "route": "/composer",
+        "errors": [],
+        "failedApis": [],
+        "status": 200,
+        "finalPath": "/composer"
+      },
+      {
+        "route": "/bots",
+        "errors": [],
+        "failedApis": [],
+        "status": 200,
+        "finalPath": "/bots"
+      },
+      {
+        "route": "/automations",
+        "errors": [],
+        "failedApis": [],
+        "status": 200,
+        "finalPath": "/distribution"
+      },
+      {
+        "route": "/distribution?view=site-analytics",
+        "errors": [],
+        "failedApis": [],
+        "status": 200,
+        "finalPath": "/distribution"
+      },
+      {
+        "route": "/distribution?view=automation",
+        "errors": [],
+        "failedApis": [],
+        "status": 200,
+        "finalPath": "/distribution"
+      },
+      {
+        "route": "/distribution?view=destination-cta",
+        "errors": [],
+        "failedApis": [],
+        "status": 200,
+        "finalPath": "/distribution"
+      },
+      {
+        "route": "/distribution?view=broadcast",
+        "errors": [],
+        "failedApis": [],
+        "status": 200,
+        "finalPath": "/distribution"
+      },
+      {
+        "route": "/distribution?view=review",
+        "errors": [],
+        "failedApis": [],
+        "status": 200,
+        "finalPath": "/distribution"
+      },
+      {
+        "route": "/distribution?view=logs",
+        "errors": [],
+        "failedApis": [],
+        "status": 200,
+        "finalPath": "/distribution"
+      }
+    ],
+    "viewports": [
+      {
+        "route": "/distribution?view=automation",
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "route": "/distribution?view=automation",
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "route": "/distribution?view=automation",
+        "width": 390,
+        "clipped": []
+      },
+      {
+        "route": "/discord/distribution",
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "route": "/discord/distribution",
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "route": "/discord/distribution",
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "sourcesUnchanged": true
+  },
+  "externalTestMessages": 0,
+  "liveProbes": [
+    {
+      "name": "Jenna X",
+      "status": 422,
+      "ok": false,
+      "error": "直播检测尚未配置：X_BEARER_TOKEN"
+    },
+    {
+      "name": "Wise Advice YouTube",
+      "status": 422,
+      "ok": false,
+      "error": "直播检测尚未配置：YOUTUBE_API_KEY"
+    },
+    {
+      "name": "Wise Advice X",
+      "status": 422,
+      "ok": false,
+      "error": "直播检测尚未配置：X_BEARER_TOKEN"
+    }
+  ],
+  "completeMonitoringAcceptance": "failed",
+  "blocker": "Production lacks X_BEARER_TOKEN and YOUTUBE_API_KEY; monitoring disabled; real broadcast and delivery unverified"
+}
