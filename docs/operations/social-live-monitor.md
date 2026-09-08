@@ -29,9 +29,13 @@ YouTube 官方默认每天 100 次 search.list。正常单页搜索时，自动�
 
 ### 2026-09-08 YouTube 凭据接入
 
+YouTube 已在正式环境启用：现有 Wise Advice YouTube 来源保持原账号与原发送目标，`postMonitoring=false`、`liveMonitoring=true`、总状态启用。服务器定时任务于 **2026-09-08 05:19:49 UTC** 自动完成首次检查，结果 `offline`、无提醒；下次检查计划为 05:39:49 UTC。应用版本 `133409b938baa61b1b9c25c31f17c0c758f25a96`，[部署成功记录](https://github.com/winkey62650/yubit-bot-skills/actions/runs/34189950402)。普通帖子继续关闭，两个 X 来源与全部发送目标未变化。
+
+最终生产核验：两个入口 × 三种视口通过，页面真实展示帖子关闭、直播开启，检查前后来源不变。证据见 `docs/qa/social-live-youtube-activation.json`。YouTube 监控运行验收 passed；真实开播与外部送达尚未发生，送达验收仍 failed / 未验证；X API 仍返回 402，整体跨平台监控验收仍 failed。
+
 用户完成 Google Cloud 首次账号确认后，已创建专用项目 `yubit-social-live-monitor`、启用 YouTube Data API v3，并创建 `Yubit YouTube Live Production` Key。Key 限定 `youtube.googleapis.com` 与正式服务器 IP，已保存 GitHub `YOUTUBE_API_KEY` Secret 并经[配置流程](https://github.com/winkey62650/yubit-bot-skills/actions/runs/34189464175)安装成功。正式服务器对现有 Wise Advice YouTube 账号的真实检测返回 HTTP 200、`ok=true`、0 场直播；不是仅判断环境字段非空。临时明文文件已清理，没有开通付费试用。
 
-为在普通帖子保持关闭时启用直播，新增独立帖子开关。两项回归覆盖旧配置兼容、仅直播不会抓取帖子、直播调度仍可运行、总暂停仍有效；全量 1351 项通过，浏览器两个入口 × 三视口通过且验证关闭帖子/开启直播后保存刷新仍保留。自动监控开启与首轮调度结果须以之后的激活记录为准，不能用这次只读探测替代。
+为在普通帖子保持关闭时启用直播，新增独立帖子开关。两项回归覆盖旧配置兼容、仅直播不会抓取帖子、直播调度仍可运行、总暂停仍有效；全量 1351 项通过，浏览器两个入口 × 三视口通过且验证关闭帖子/开启直播后保存刷新仍保留。首轮自动调度结果已另外核对，见上方激活记录。
 
 ### 历史：X 凭据首次接入
 

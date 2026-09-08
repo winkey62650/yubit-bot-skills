@@ -1,0 +1,134 @@
+{
+  "checkedAt": "2026-09-08T05:22:14.683Z",
+  "applicationCommit": "133409b938baa61b1b9c25c31f17c0c758f25a96",
+  "deploymentRun": "https://github.com/winkey62650/yubit-bot-skills/actions/runs/34189950402",
+  "credentialConfigurationRun": "https://github.com/winkey62650/yubit-bot-skills/actions/runs/34189464175",
+  "googleProject": "yubit-social-live-monitor",
+  "keyRestrictions": {
+    "api": "youtube.googleapis.com",
+    "application": "production server IP only"
+  },
+  "sources": [
+    {
+      "name": "Jenna X",
+      "platform": "X",
+      "status": "已启用",
+      "postMonitoring": true,
+      "liveMonitoring": false,
+      "targets": 1
+    },
+    {
+      "name": "Wise Advice YouTube",
+      "platform": "YouTube",
+      "status": "已启用",
+      "postMonitoring": false,
+      "liveMonitoring": true,
+      "targets": 1
+    },
+    {
+      "name": "Wise Advice X",
+      "platform": "X",
+      "status": "已暂停",
+      "postMonitoring": true,
+      "liveMonitoring": false,
+      "targets": 1
+    }
+  ],
+  "youtube": {
+    "enabled": true,
+    "ready": true,
+    "intervalMinutes": 20,
+    "firstAutomaticCheck": {
+      "state": "offline",
+      "platform": "YouTube",
+      "provider": "YouTube Live",
+      "checkedAt": "2026-09-08T05:19:49.343Z",
+      "broadcasts": [],
+      "sourceName": "Wise Advice YouTube",
+      "nextCheckAt": "2026-09-08T05:39:49.343Z",
+      "notifications": [],
+      "scheduledCount": 0
+    }
+  },
+  "providerProbes": [
+    {
+      "name": "Jenna X",
+      "status": 422,
+      "ok": false,
+      "error": "X Spaces 直播接口 HTTP 402，请检查凭据、额度或平台状态"
+    },
+    {
+      "name": "Wise Advice YouTube",
+      "status": 200,
+      "ok": true,
+      "broadcastCount": 0
+    },
+    {
+      "name": "Wise Advice X",
+      "status": 422,
+      "ok": false,
+      "error": "X Spaces 直播接口 HTTP 402，请检查凭据、额度或平台状态"
+    }
+  ],
+  "validation": {
+    "regressionTestsPassed": 1351,
+    "regressionTestsFailed": 0,
+    "build": "passed",
+    "localBrowser": "passed",
+    "productionPages": [
+      {
+        "route": "/distribution?view=automation",
+        "errors": [],
+        "failedApis": [],
+        "status": 200,
+        "finalPath": "/distribution"
+      },
+      {
+        "route": "/discord/distribution",
+        "errors": [],
+        "failedApis": [],
+        "status": 200,
+        "finalPath": "/discord/distribution"
+      }
+    ],
+    "productionViewports": [
+      {
+        "route": "/distribution?view=automation",
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "route": "/distribution?view=automation",
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "route": "/distribution?view=automation",
+        "width": 390,
+        "clipped": []
+      },
+      {
+        "route": "/discord/distribution",
+        "width": 1366,
+        "clipped": []
+      },
+      {
+        "route": "/discord/distribution",
+        "width": 768,
+        "clipped": []
+      },
+      {
+        "route": "/discord/distribution",
+        "width": 390,
+        "clipped": []
+      }
+    ],
+    "youtubeLiveOnlyUi": true,
+    "sourcesUnchangedDuringAudit": true,
+    "activationPreservedTargetsAndOtherSources": true
+  },
+  "youtubeMonitoringAcceptance": "passed",
+  "realLiveEventDeliveryAcceptance": "failed / not yet observed; source is offline",
+  "fullMonitoringAcceptance": "failed; X API still returns HTTP 402",
+  "externalTestMessages": 0
+}
