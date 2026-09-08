@@ -48,3 +48,12 @@ test('budgeted search recovers from feed failure, while search outage does not d
 test('a feed entry never proves live status or ownership on its own', async () => {
   await assert.rejects(detectSocialLive(source, { env: { YOUTUBE_API_KEY: 'key' }, discovery: { search: false }, fetchImpl: async url => url.includes('/feeds/') ? feed(['live0000001']) : json({ items: [{ ...video('live0000001'), snippet: { ...video('live0000001').snippet, channelId: 'OTHER' } }] }) }), /归属/);
 });
+
+test('real YouTube feed headers may omit UC, but entry ownership must remain exact', async () => {
+  const original = await feed(['live0000001']).text();
+  const shortenedHeader = original.replace('<yt:channelId>UC123</yt:channelId>', '<yt:channelId>123</yt:channelId>');
+  const opts = { env: { YOUTUBE_API_KEY: 'key' }, discovery: { search: false }, fetchImpl: async url => url.includes('/feeds/') ? new Response(shortenedHeader) : json({ items: [video('live0000001')] }) };
+  assert.equal((await detectSocialLive(source, opts)).broadcasts[0].id, 'live0000001');
+  const wrongEntry = shortenedHeader.replace('<yt:channelId>UC123</yt:channelId>', '<yt:channelId>123</yt:channelId>');
+  await assert.rejects(detectSocialLive(source, { ...opts, fetchImpl: async () => new Response(wrongEntry) }), /条目归属/);
+});
