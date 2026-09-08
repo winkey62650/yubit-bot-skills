@@ -1,0 +1,43 @@
+{
+  "checkedAt": "2026-09-08T14:22:33.384Z",
+  "applicationCommit": "c45d2c687898cba53fbf69bc429e1920d3992649",
+  "deploymentRun": 34237119118,
+  "deploymentUrl": "https://github.com/winkey62650/yubit-bot-skills/actions/runs/34237119118",
+  "localTests": {
+    "passed": 1366,
+    "failed": 0,
+    "check": "passed",
+    "build": "passed",
+    "browser": "2 routes x 3 viewports passed",
+    "newNoticeRoutes": "anonymous401, manualPublisher403"
+  },
+  "production": {
+    "configurationAndFastDetection": "passed",
+    "ui": "passed",
+    "sourcesPreserved": true,
+    "receiptIdentityAndAttemptCountPreserved": true,
+    "activeYouTubeChecks": [
+      {
+        "sourceName": "Wise Advice YouTube",
+        "intervalMinutes": 5,
+        "strategy": "youtube-feed-api",
+        "state": "offline",
+        "checkedAt": "2026-09-08T14:20:12.273Z",
+        "nextCheckAt": "2026-09-08T14:25:12.273Z"
+      },
+      {
+        "sourceName": "Average Joe Crypto YouTube Live",
+        "intervalMinutes": 5,
+        "strategy": "youtube-feed-api",
+        "state": "offline",
+        "checkedAt": "2026-09-08T14:20:12.273Z",
+        "nextCheckAt": "2026-09-08T14:25:12.273Z"
+      }
+    ],
+    "englishCardPreview": "passed",
+    "historicalMessageEdit": "failed: Discord Unknown Message before PATCH",
+    "newCardActualLiveDelivery": "not observed; awaiting future live event",
+    "manualTestMessages": 0
+  },
+  "fullNewCardDeliveryAcceptance": "failed/unverified until actual live-event receipt"
+}

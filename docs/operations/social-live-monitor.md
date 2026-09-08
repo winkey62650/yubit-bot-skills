@@ -35,37 +35,15 @@ YouTube 官方默认每天 100 次 search.list。正常单页搜索时，自动�
 
 ## 验收与当前范围
 
-### 2026-09-08 YouTube 凭据接入
+当前正式版本为 `c45d2c687898cba53fbf69bc429e1920d3992649`，[部署记录](https://github.com/winkey62650/yubit-bot-skills/actions/runs/34237119118)成功。全量 1366 项测试、检查和构建通过；两个直播入口 × 三视口通过。新增消息格式修正入口已验证匿名 401、手动发布角色 403。
 
-当前正式应用为 `ea1568f1ed873fd712f23e4e73f3eea5de7998bf`，[最终部署记录](https://github.com/winkey62650/yubit-bot-skills/actions/runs/34190877905)成功。补充修复新增 X Key 导致旧帖子优先走收费接口的问题，真实 Jenna 帖子预览已通过 `x-reader-fallback` 返回 HTTP 200；Spaces 直播仍明确报 402。最终全量 1352 项测试、检查和构建通过，YouTube 开关、定时状态、两个页面 × 三视口重新验证通过。
+Average Joe Crypto 与 Wise Advice 的 YouTube 直播监控均已启用，普通帖子关闭。2026-09-08 14:20:12 UTC 两个来源的实际自动检查均使用 `youtube-feed-api` 成功返回未开播，下一轮为 14:25:12 UTC；不是仅调整界面的周期数字。随后两条生产只读快速检测也成功，四条既有来源配置、发送目标及历史投递去重记录保持一致。Feed 的根频道编号有时省略 UC 前缀，已通过真实 Feed 样本修正并回归；每条视频的频道编号和官方 API 归属仍严格匹配。
 
-YouTube 已在正式环境启用：现有 Wise Advice YouTube 来源保持原账号与原发送目标，`postMonitoring=false`、`liveMonitoring=true`、总状态启用。服务器定时任务于 **2026-09-08 05:19:49 UTC** 自动完成首次检查，结果 `offline`、无提醒；下次检查计划为 05:39:49 UTC。应用版本 `133409b938baa61b1b9c25c31f17c0c758f25a96`，[部署成功记录](https://github.com/winkey62650/yubit-bot-skills/actions/runs/34189950402)。普通帖子继续关闭，两个 X 来源与全部发送目标未变化。
+英文 Discord 卡片的生产预览通过，后续真实开播使用新样式。Average Joe 的初次直播曾于 13:38 UTC 自动送达；本次尝试原位更新历史提醒时，Discord 返回 `Unknown Message`，未能修改。没有创建替代消息或重置去重记录。**新样式的真实开播送达尚未发生，不能用预览代替真实送达证明。** 发布与快速检测验收通过；新版真实消息送达验收仍待下一场直播。
 
-最终生产核验：两个入口 × 三种视口通过，页面真实展示帖子关闭、直播开启，检查前后来源不变。证据见 `docs/qa/social-live-youtube-activation.json`。YouTube 监控运行验收 passed；真实开播与外部送达尚未发生，送达验收仍 failed / 未验证；X API 仍返回 402，整体跨平台监控验收仍 failed。
+YouTube Key 已安装并限定官方 API 与生产 IP，沿用现有免费额度。X Spaces 因账号余额不足仍返回 402，保持未启用；Jenna 普通帖子原有公开来源回退继续保留。
 
-用户完成 Google Cloud 首次账号确认后，已创建专用项目 `yubit-social-live-monitor`、启用 YouTube Data API v3，并创建 `Yubit YouTube Live Production` Key。Key 限定 `youtube.googleapis.com` 与正式服务器 IP，已保存 GitHub `YOUTUBE_API_KEY` Secret 并经[配置流程](https://github.com/winkey62650/yubit-bot-skills/actions/runs/34189464175)安装成功。正式服务器对现有 Wise Advice YouTube 账号的真实检测返回 HTTP 200、`ok=true`、0 场直播；不是仅判断环境字段非空。临时明文文件已清理，没有开通付费试用。
-
-为在普通帖子保持关闭时启用直播，新增独立帖子开关。两项回归覆盖旧配置兼容、仅直播不会抓取帖子、直播调度仍可运行、总暂停仍有效；全量 1351 项通过，浏览器两个入口 × 三视口通过且验证关闭帖子/开启直播后保存刷新仍保留。首轮自动调度结果已另外核对，见上方激活记录。
-
-### 历史：X 凭据首次接入
-
-用户授权直接补齐凭据后，已在其现有 X 登录下创建专用 `Yubit Social Live Monitor` 项目和应用，原应用凭据没有改动。新 Bearer 已保存到 GitHub Secret 并通过[配置流程](https://github.com/winkey62650/yubit-bot-skills/actions/runs/34188067455)安装到正式服务器。线上 GET 状态确认 X ready=true；两个 X 来源的真实只读检测均返回 HTTP 402。控制台预付余额和免费额度均为零，最低充值 USD 5；充值授权尚未获得，没有付款或自动充值。
-
-Google Cloud 停在账号所有者的首次国家/条款确认，YouTube Key 尚未创建。完整监控验收仍为 **failed**，三个直播开关均保持 false，未实际推送。下一步先完成账号确认与 X 额度准备，再由运维创建/配置 YouTube Key、逐来源确认接口成功，最后启用已核验目标内的直播监控。
-
-当前网页版本为 `f948bdff0c97c5828c152f55f06a07d5dc948bad`；其 YouTube 调度和 X 调度分别显示 20 / 5 分钟（当前来源数量）。运维配置版本 `8f4fdbe` 通过配置模式生效，没有重发网页版本。全量 1349 项回归通过，线上两个入口 × 三种视口检查通过、来源未变化。证据见 `docs/qa/social-live-credential-setup.json`。以下为初版发布历史，凭据状态以本更新为准。
-
-2026-09-08 已完成提供商契约、来源归属、状态分类、凭据错误、持久去重、并发、部分失败、暂停、回执更新和桌面过期测试。两个页面入口在 1366 / 768 / 390px 通过浏览器验证；配置持久化、只读预览、401/403 边界通过。
-
-实际生产来源已只读核对：Jenna X 启用；Wise Advice YouTube 和 Wise Advice X 暂停。沿用保存的启用状态与目标。
-
-发布版本 `e74fc1e2ea890c0f14f12403998d2ed54e61c221` 已推送 `code/academy` 并上线；[正式部署记录](https://github.com/winkey62650/yubit-bot-skills/actions/runs/34182306660) 为 success。全量 1343 项测试、检查、构建通过。正式网站 29 个页面/面板只读检查无页面错误和失败接口；两个直播入口 × 三种视口通过，检查前后来源配置一致。证据见 `docs/qa/social-live-release.json`。
-
-完整运行验收仍为 **failed**：正式服务器缺少 `X_BEARER_TOKEN` 和 `YOUTUBE_API_KEY`；三个真实来源的只读检测分别返回 422 及对应缺失项。GitHub 仓库和 Production 环境的 Secret 名称列表也未发现对应凭据。当前三个来源的直播开关均为 false，尚未开始实际直播监控，没有实际推送测试记录。
-
-下一步由服务器管理员在 `/etc/yubit-academy/production.env` 配置这两项平台凭据并重启 `yubit-academy-web.service` 使其生效。运营在原来源中执行「检测直播状态（不发送）」；只有接口成功确认账号与当前状态后才开启直播开关。继续保留已有暂停状态，启用 Wise Advice 来源须同时检查其原有帖子推送的启用意图。真实开播及已核验目标上的投递回执仍需后续验收。
-
-执行人：Jarvis。单轮边界为代码、隔离验证、部署与线上只读状态检查；真实投递只在既有授权范围和已核验目标内执行。
+本次证据：`docs/qa/social-live-english-fast.json`。先前部署与初始化证据保留于 `docs/qa/social-live-youtube-activation.json` 和 `docs/qa/social-live-release.json`，其中旧的周期/凭据缺失记录仅代表当时状态。
 
 ## 官方依据
 
