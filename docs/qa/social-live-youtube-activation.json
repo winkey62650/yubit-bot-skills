@@ -1,7 +1,7 @@
 {
-  "checkedAt": "2026-09-08T05:22:14.683Z",
-  "applicationCommit": "133409b938baa61b1b9c25c31f17c0c758f25a96",
-  "deploymentRun": "https://github.com/winkey62650/yubit-bot-skills/actions/runs/34189950402",
+  "checkedAt": "2026-09-08T05:35:20.820Z",
+  "applicationCommit": "ea1568f1ed873fd712f23e4e73f3eea5de7998bf",
+  "deploymentRun": "https://github.com/winkey62650/yubit-bot-skills/actions/runs/34190877905",
   "credentialConfigurationRun": "https://github.com/winkey62650/yubit-bot-skills/actions/runs/34189464175",
   "googleProject": "yubit-social-live-monitor",
   "keyRestrictions": {
@@ -71,7 +71,7 @@
     }
   ],
   "validation": {
-    "regressionTestsPassed": 1351,
+    "regressionTestsPassed": 1352,
     "regressionTestsFailed": 0,
     "build": "passed",
     "localBrowser": "passed",
@@ -130,5 +130,16 @@
   "youtubeMonitoringAcceptance": "passed",
   "realLiveEventDeliveryAcceptance": "failed / not yet observed; source is offline",
   "fullMonitoringAcceptance": "failed; X API still returns HTTP 402",
-  "externalTestMessages": 0
+  "externalTestMessages": 0,
+  "initialActivationApplicationCommit": "133409b938baa61b1b9c25c31f17c0c758f25a96",
+  "initialActivationDeploymentRun": "https://github.com/winkey62650/yubit-bot-skills/actions/runs/34189950402",
+  "xOrdinaryPostProbes": [
+    {
+      "name": "Jenna X",
+      "status": 200,
+      "ok": true,
+      "strategy": "x-reader-fallback",
+      "url": "https://x.com/JennaXCrypto/status/2097157454119444955"
+    }
+  ]
 }

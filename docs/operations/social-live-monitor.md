@@ -30,6 +30,8 @@ YouTube 官方默认每天 100 次 search.list。正常单页搜索时，自动�
 
 ### 2026-09-08 YouTube 凭据接入
 
+当前正式应用为 `ea1568f1ed873fd712f23e4e73f3eea5de7998bf`，[最终部署记录](https://github.com/winkey62650/yubit-bot-skills/actions/runs/34190877905)成功。补充修复新增 X Key 导致旧帖子优先走收费接口的问题，真实 Jenna 帖子预览已通过 `x-reader-fallback` 返回 HTTP 200；Spaces 直播仍明确报 402。最终全量 1352 项测试、检查和构建通过，YouTube 开关、定时状态、两个页面 × 三视口重新验证通过。
+
 YouTube 已在正式环境启用：现有 Wise Advice YouTube 来源保持原账号与原发送目标，`postMonitoring=false`、`liveMonitoring=true`、总状态启用。服务器定时任务于 **2026-09-08 05:19:49 UTC** 自动完成首次检查，结果 `offline`、无提醒；下次检查计划为 05:39:49 UTC。应用版本 `133409b938baa61b1b9c25c31f17c0c758f25a96`，[部署成功记录](https://github.com/winkey62650/yubit-bot-skills/actions/runs/34189950402)。普通帖子继续关闭，两个 X 来源与全部发送目标未变化。
 
 最终生产核验：两个入口 × 三种视口通过，页面真实展示帖子关闭、直播开启，检查前后来源不变。证据见 `docs/qa/social-live-youtube-activation.json`。YouTube 监控运行验收 passed；真实开播与外部送达尚未发生，送达验收仍 failed / 未验证；X API 仍返回 402，整体跨平台监控验收仍 failed。
