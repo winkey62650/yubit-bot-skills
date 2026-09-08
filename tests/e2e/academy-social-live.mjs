@@ -22,6 +22,7 @@ try {
  await page.getByRole('checkbox',{name:'同时监控直播开播',exact:false}).check();
  await page.getByRole('button',{name:'保存来源',exact:true}).click();
  await page.getByText(/QA Live YouTube · 直播接口未就绪/).waitFor();
+ await page.getByText('每 20 分钟检查 · 沿用帖子推送目标',{exact:true}).waitFor();
  const state=await (await context.request.get(base+'/api/social-packages')).json();
  assert.equal(state.packages.find(s=>s.id===source.id).liveMonitoring,true);
  assert.equal(state.packages.find(s=>s.id===source.id).targets[0].threadId,8);

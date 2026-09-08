@@ -4,7 +4,9 @@
 
 ## 配置与运行
 
-在「内容分发中心 → 自动发布 → 代理群信息更新」或 Discord 内容分发中心编辑已有来源，勾选「同时监控直播开播」，保存后由既有分发调度每 5 分钟检查。无需新增 Codex 自动化或重启原有 worker。
+在「内容分发中心 → 自动发布 → 代理群信息更新」或 Discord 内容分发中心编辑已有来源，勾选「同时监控直播开播」，保存后使用既有分发调度。X Spaces 每 5 分钟检查；YouTube 单来源每 20 分钟检查，多个启用来源按数量延长各自间隔。无需新增 Codex 自动化或重启原有 worker。
+
+YouTube 官方默认每天 100 次 search.list。正常单页搜索时，自动检查合计约 72 次/日，为预览等请求留出余量；实际发现延迟受检查间隔和平台索引更新影响。多页结果、共用项目的其他应用或大量手动检测仍可能消耗剩余额度，配额不足会明确报错。不能承诺默认额度下每 5 分钟发现所有新开播。
 
 - 原帖子来源仍按每小时检查；已暂停来源的直播检查也暂停。
 - 新字段 `liveMonitoring` 默认 false，部署不会自动扩大外发范围。
@@ -40,6 +42,7 @@
 
 - [X 按创作者查询 Spaces](https://docs.x.com/x-api/spaces/get-spaces-by-creator-ids)：按账号获取直播/预约状态，通过 creator_id 校验归属。
 - [YouTube 搜索接口](https://developers.google.com/youtube/v3/docs/search/list)：限定频道与 eventType=live。
+- [YouTube 配额说明](https://developers.google.com/youtube/v3/getting-started#quota)：默认每天 100 次 search.list。
 - [YouTube 视频直播详情](https://developers.google.com/youtube/v3/docs/videos#liveStreamingDetails)：以实际开始时间及是否已结束复核直播状态。
 
 ## 本次复盘与流程升级
