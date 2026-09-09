@@ -43,7 +43,7 @@ YouTube 同一创作者、同一精确目标，去除末尾 Portrait / Vertical 
 
 同时修复本次发现的持续 Feed 404：Feed 不可用时读取官方频道 uploads 视频列表，最多 50 个候选，保留已知直播跟踪，再用 videos.list 核验归属和实际状态。完整搜索仍按原预算补查。两种快速发现路径都失败时明确报错；恢复路径可用时展示说明。该路径不使用 search.list，但仍受平台收录延迟影响。官方依据：[频道 uploads 列表](https://developers.google.com/youtube/v3/docs/channels#contentDetails.relatedPlaylists.uploads)、[playlistItems.list](https://developers.google.com/youtube/v3/docs/playlistItems/list)。
 
-真实编号和时间已用于回归，覆盖晚发现、并发、重启、旧回执和独立直播。发布结果记录于 `docs/qa/social-live-simulcast.json`。下一场双路自然直播验收与本地回归分开记录。
+真实编号和时间已用于回归，覆盖晚发现、并发、重启、旧回执和独立直播。正式版本 `69999349c90061b193831a77f2a6d764a69c5f78` 已上线，[发布记录](https://github.com/winkey62650/yubit-bot-skills/actions/runs/34311431588)成功。1377 项测试、检查、构建及两个入口的三视口验收通过。2026-09-09 04:37:28 UTC 两个账号的实际自动检查均通过 `youtube-uploads-api` 返回未开播，下一轮为 04:42:28 UTC。四条来源、原目标和四条历史直播回执完全保留，发布期间无新增直播投递。证据见 `docs/qa/social-live-simulcast.json`。下一场双路自然直播尚未出现，其实际去重验收与回归结果分开记录。
 
 ## 先前版本验收与范围
 

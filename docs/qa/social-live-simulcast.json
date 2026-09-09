@@ -30,12 +30,52 @@
       768,
       390
     ],
-    "localExternalDeliveries": 0
+    "localExternalDeliveries": 0,
+    "productionReceiptPairReplay": "passed; other recorded shows remained separate"
   },
   "deployment": {
-    "status": "pending"
+    "status": "success",
+    "commit": "69999349c90061b193831a77f2a6d764a69c5f78",
+    "runId": 34311431588,
+    "url": "https://github.com/winkey62650/yubit-bot-skills/actions/runs/34311431588",
+    "productionCommitVerified": true
   },
   "naturalSimulcastDeliveryAfterFix": "not yet observed",
   "historyMessagesDeleted": 0,
-  "historyMessagesResent": 0
+  "historyMessagesResent": 0,
+  "production": {
+    "checkedAt": "2026-09-09T04:38:09.564Z",
+    "sourceConfigurationsPreserved": true,
+    "historicalReceiptsPreserved": true,
+    "additionalLiveDeliveries": 0,
+    "uiVerified": true,
+    "automaticChecks": [
+      {
+        "sourceId": "social-1786501736362",
+        "checkedAt": "2026-09-09T04:37:28.235Z",
+        "nextCheckAt": "2026-09-09T04:42:28.235Z",
+        "strategy": "youtube-uploads-api",
+        "state": "offline"
+      },
+      {
+        "sourceId": "social-average-joe-crypto-youtube-live",
+        "checkedAt": "2026-09-09T04:37:28.235Z",
+        "nextCheckAt": "2026-09-09T04:42:28.235Z",
+        "strategy": "youtube-uploads-api",
+        "state": "offline"
+      }
+    ],
+    "readOnlyProbes": [
+      {
+        "sourceId": "social-1786501736362",
+        "status": 200,
+        "strategy": "youtube-uploads-api"
+      },
+      {
+        "sourceId": "social-average-joe-crypto-youtube-live",
+        "status": 200,
+        "strategy": "youtube-uploads-api"
+      }
+    ]
+  }
 }
