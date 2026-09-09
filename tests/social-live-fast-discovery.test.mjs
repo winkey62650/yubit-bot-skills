@@ -57,3 +57,24 @@ test('real YouTube feed headers may omit UC, but entry ownership must remain exa
   const wrongEntry = shortenedHeader.replace('<yt:channelId>UC123</yt:channelId>', '<yt:channelId>123</yt:channelId>');
   await assert.rejects(detectSocialLive(source, { ...opts, fetchImpl: async () => new Response(wrongEntry) }), /条目归属/);
 });
+
+test('Feed 404 falls back to official uploads candidates plus live verification without search',async()=>{
+ const calls=[];
+ const result=await detectSocialLive(source,{env:{YOUTUBE_API_KEY:'key'},discovery:{search:false,knownVideoIds:['older000001']},fetchImpl:async url=>{
+  const u=new URL(url);calls.push(u.pathname);
+  if(u.pathname.includes('/feeds/'))return new Response('Not Found',{status:404});
+  if(u.pathname.endsWith('/channels'))return json({items:[{id:'UC123',contentDetails:{relatedPlaylists:{uploads:'UU123'}}}]});
+  if(u.pathname.endsWith('/playlistItems')){assert.equal(u.searchParams.get('playlistId'),'UU123');return json({items:[{snippet:{channelId:'UC123'},contentDetails:{videoId:'live0000001'}},{snippet:{channelId:'UC123'},contentDetails:{videoId:'ended000001'}}]});}
+  assert.ok(u.pathname.endsWith('/videos'));assert.ok(u.searchParams.get('id').includes('older000001'));return json({items:[video('older000001'),video('live0000001'),video('ended000001','none')]});
+ }});
+ assert.deepEqual(result.broadcasts.map(b=>b.id),['older000001','live0000001']);assert.equal(result.strategy,'youtube-uploads-api');assert.ok(result.warning);assert.equal(calls.some(p=>p.endsWith('/search')),false);
+});
+
+test('uploads fallback cannot accept a different channel or unchecked video ownership',async()=>{
+ for(const mismatch of ['channel','video'])await assert.rejects(detectSocialLive(source,{env:{YOUTUBE_API_KEY:'key'},discovery:{search:false},fetchImpl:async url=>{
+  if(url.includes('/feeds/'))return new Response('Not Found',{status:404});
+  if(url.includes('/channels'))return json({items:[{id:mismatch==='channel'?'OTHER':'UC123',contentDetails:{relatedPlaylists:{uploads:'UU123'}}}]});
+  if(url.includes('/playlistItems'))return json({items:[{snippet:{channelId:'UC123'},contentDetails:{videoId:'live0000001'}}]});
+  return json({items:[{...video('live0000001'),snippet:{...video('live0000001').snippet,channelId:'OTHER'}}]});
+ }}),/归属/);
+});

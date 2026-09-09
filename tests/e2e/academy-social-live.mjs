@@ -37,12 +37,15 @@ try {
  await page.getByRole('button',{name:'检测直播状态（不发送）',exact:true}).click();
  await page.getByText('检测到 1 场正在直播',{exact:true}).waitFor();
  assert.equal(await page.getByRole('link',{name:'QA market live'}).getAttribute('href'),'https://youtube.com/watch?v=qa-live');
+ await page.route('**/api/social-live',r=>r.request().method()==='GET'?r.fulfill({json:{ok:true,sources:[{id:source.id,enabled:true,ready:true,intervalMinutes:5,lastCheck:{state:'live',notifications:[{status:'success'},{status:'suppressed'}]}}]}}):r.fallback());
+ await page.reload();await page.locator('select').filter({has:page.locator('option[value="agent-sync"]')}).selectOption('agent-sync');
+ await page.getByText('同场横竖屏直播已合并，不重复提醒。',{exact:true}).waitFor();
  for(const route of ['/distribution?view=automation','/discord/distribution']) {
   if(route.includes('discord')){await page.goto(base+route);await page.getByRole('heading',{name:'X / YouTube 帖子与直播',exact:true}).waitFor();}
   for(const width of [1366,768,390]){await page.setViewportSize({width,height:900});const clipped=await page.evaluate(()=>[...document.querySelectorAll('main input,main button,main select,main textarea')].filter(e=>{const r=e.getBoundingClientRect();for(let parent=e.parentElement;parent&&parent.tagName!=='MAIN';parent=parent.parentElement){if(['auto','scroll'].includes(getComputedStyle(parent).overflowX))return false;}return r.width>0&&(r.right>innerWidth+1||r.left< -1)}).map(e=>e.tagName));report.routes.push({route,width,clipped});assert.equal(clipped.length,0,route+' clipped controls');}
  }
  const anonymous=await browser.newContext();assert.equal((await anonymous.request.get(base+'/api/social-live')).status(),401);await anonymous.close();
  const manual=await browser.newContext();assert.equal((await manual.request.post(base+'/api/auth/login',{data:{username:'manual-audit',password:'manual-local-audit'}})).status(),200);assert.equal((await manual.request.get(base+'/api/social-live')).status(),403);await manual.close();
- assert.equal(report.errors.length,0);report.checks={legacyDefaultOff:true,liveOnlyPersists:true,persistAndReload:true,targetsPreserved:true,missingCredentials422:true,readOnlyLivePreview:true,anonymous401:true,manualPublisher403:true};report.outcome='passed';
+ assert.equal(report.errors.length,0);report.checks={legacyDefaultOff:true,liveOnlyPersists:true,persistAndReload:true,targetsPreserved:true,missingCredentials422:true,readOnlyLivePreview:true,simulcastStatus:true,anonymous401:true,manualPublisher403:true};report.outcome='passed';
 } catch(e){report.outcome='failed';report.error=e.message;throw e;}
 finally{await mkdir('docs/qa',{recursive:true});await writeFile('docs/qa/social-live-browser.json',JSON.stringify(report,null,2));await browser.close();}

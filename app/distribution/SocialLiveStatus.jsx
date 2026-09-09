@@ -16,5 +16,6 @@ export default function SocialLiveStatus({ source, status }) {
     {check?.checkedAt ? <p className="mt-1">最近检查：{new Date(check.checkedAt).toLocaleString()}</p> : null}
     {check?.notifications?.some(n => ['manual-reconciliation', 'dispatching', 'failed'].includes(n.status)) ? <p className="mt-1 text-[#a04a3d]">存在需核对的投递，已停止自动重发。</p> : null}
     {check?.notifications?.some(n => n.status === 'queued') ? <p className="mt-1">等待桌面发布；10 分钟后仍未投递则过期。</p> : null}
+    {check?.notifications?.some(n => n.status === 'suppressed') ? <p className="mt-1">同场横竖屏直播已合并，不重复提醒。</p> : null}
   </div>;
 }

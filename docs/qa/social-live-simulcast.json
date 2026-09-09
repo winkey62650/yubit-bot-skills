@@ -1,0 +1,41 @@
+{
+  "checkedAt": "2026-09-09T04:32:51.592Z",
+  "owner": "Jarvis",
+  "issue": "AJC horizontal and Portrait video IDs produced two alerts for one show",
+  "productionCase": {
+    "mainVideo": "gjWwizvKGho",
+    "portraitVideo": "7ZpiwYIjfGY",
+    "actualStartDifferenceSeconds": 1,
+    "discoveryDifferenceMinutes": 10,
+    "attemptsPerVideo": 1
+  },
+  "fix": {
+    "sameOwnerAndExactDestination": true,
+    "explicitFormatSuffix": true,
+    "matchingNormalizedTitle": true,
+    "maxStartDifferenceMinutes": 5,
+    "preferMainWhenTogether": true,
+    "durableSuppression": true,
+    "legacyReceiptCompatibility": true,
+    "feed404Fallback": "Official channel uploads playlist followed by videos.list verification"
+  },
+  "validation": {
+    "tests": 1377,
+    "failed": 0,
+    "check": "passed",
+    "build": "passed",
+    "browser": "passed",
+    "viewports": [
+      1366,
+      768,
+      390
+    ],
+    "localExternalDeliveries": 0
+  },
+  "deployment": {
+    "status": "pending"
+  },
+  "naturalSimulcastDeliveryAfterFix": "not yet observed",
+  "historyMessagesDeleted": 0,
+  "historyMessagesResent": 0
+}

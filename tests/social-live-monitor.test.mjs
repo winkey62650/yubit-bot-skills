@@ -49,3 +49,66 @@ test('failed search does not get retried in each fast polling cycle',async()=>{
  const repository=repo();const searched=[];const opts=options(repository,async()=>{}, {detect:async(s,{discovery})=>{searched.push(discovery.search);throw new Error('quota exhausted');}});
  await runSocialLiveMonitor(opts);await runSocialLiveMonitor({...opts,now:'2026-09-08T08:10:00Z'});assert.deepEqual(searched,[true,false]);
 });
+
+// Production Sep9: one show had a main and a Portrait video, discovered ten minutes apart.
+const ajcMain={...broadcast,ownerId:'UCMsNbBn0XJKySH2sXnj53RA',id:'gjWwizvKGho',title:'DOGECOIN SQUEEZE & BITCOIN REBOUND LIVE | Levels + What Next',startedAt:'2026-09-09T01:39:11Z',url:'https://www.youtube.com/watch?v=gjWwizvKGho'};
+const ajcPortrait={...ajcMain,id:'7ZpiwYIjfGY',title:ajcMain.title+' (Portrait)',startedAt:'2026-09-09T01:39:12Z',url:'https://www.youtube.com/watch?v=7ZpiwYIjfGY'};
+const discordSource={...source,targets:[source.targets[1]]};
+function simulcastOptions(repository,sent,extra={}) {return options(repository,async({live})=>{sent.push(live.id);return {status:'success',messageId:'42',deliveryId:'delivery-'+live.id};},{loadSources:async()=>[discordSource],now:'2026-09-09T01:42:08Z',...extra});}
+
+test('same-check portrait and main streams alert once and prefer the main link',async()=>{
+ const repository=repo(),sent=[];
+ await runSocialLiveMonitor(simulcastOptions(repository,sent,{detect:async()=>({broadcasts:[ajcPortrait,ajcMain]})}));
+ assert.deepEqual(sent,[ajcMain.id]);
+ const duplicate=await repository.getMeta(liveDeliveryKey(ajcPortrait,source.targets[1]));
+ assert.equal(duplicate.status,'suppressed');assert.equal(duplicate.duplicateOf,liveDeliveryKey(ajcMain,source.targets[1]));
+});
+
+test('a portrait discovered ten minutes later remains suppressed across errors, restarts and source aliases',async()=>{
+ const repository=repo(),sent=[];
+ await runSocialLiveMonitor(simulcastOptions(repository,sent,{detect:async()=>({broadcasts:[ajcMain]})}));
+ await runSocialLiveMonitor(simulcastOptions(repository,sent,{now:'2026-09-09T01:47:08Z',detect:async()=>{throw new Error('feed unavailable')}}));
+ for(const now of ['2026-09-09T01:52:08Z','2026-09-09T02:02:08Z'])await runSocialLiveMonitor(simulcastOptions(repository,sent,{now,loadSources:async()=>[{...discordSource,id:'renamed-source'}],detect:async()=>({broadcasts:[ajcPortrait]})}));
+ assert.deepEqual(sent,[ajcMain.id]);
+});
+
+test('legacy per-video receipts suppress a newly discovered simulcast without resetting old receipts',async()=>{
+ const repository=repo(),sent=[];const key=liveDeliveryKey(ajcMain,source.targets[1]);
+ const legacy={sourceId:'s1',targetKey:'discord:g:c',broadcastKey:`YouTube:${ajcMain.ownerId}:${ajcMain.id}`,status:'success',deliveryId:'old',messageId:'900'};
+ await repository.setMeta(key,legacy);
+ repository.getDelivery=async()=>({eventId:'old-event'});repository.getEvent=async()=>({payload:{live:ajcMain}});
+ await runSocialLiveMonitor(simulcastOptions(repository,sent,{detect:async()=>({broadcasts:[ajcPortrait]})}));
+ assert.deepEqual(sent,[]);assert.deepEqual(await repository.getMeta(key),legacy);
+});
+
+test('portrait delivered first does not cause a second alert when the main video appears',async()=>{
+ const repository=repo(),sent=[];
+ await runSocialLiveMonitor(simulcastOptions(repository,sent,{detect:async()=>({broadcasts:[ajcPortrait]})}));
+ await runSocialLiveMonitor(simulcastOptions(repository,sent,{now:'2026-09-09T01:52:08Z',detect:async()=>({broadcasts:[ajcMain]})}));
+ assert.deepEqual(sent,[ajcPortrait.id]);
+});
+
+test('concurrent source aliases with different simulcast IDs cannot both send',async()=>{
+ const repository=repo(),sent=[];
+ await Promise.all([ajcMain,ajcPortrait].map((live,i)=>runSocialLiveMonitor(simulcastOptions(repository,sent,{loadSources:async()=>[{...discordSource,id:'alias-'+i}],detect:async()=>({broadcasts:[live]})}))));
+ assert.equal(sent.length,1);
+});
+
+test('uncertain primary send fences its simulcast too',async()=>{
+ const repository=repo(),sent=[];
+ const result=await runSocialLiveMonitor(simulcastOptions(repository,sent,{detect:async()=>({broadcasts:[ajcMain,ajcPortrait]}),deliver:async({live})=>{sent.push(live.id);throw new Error('response lost')}}));
+ assert.deepEqual(sent,[ajcMain.id]);assert.equal(result.status,'failed');
+});
+
+test('different shows, creators and target channels still receive their own alerts',async()=>{
+ const repository=repo(),sent=[];
+ const independent=[ajcMain,{...ajcPortrait,id:'later',startedAt:'2026-09-09T03:39:12Z'}, {...ajcPortrait,id:'other-topic',title:'Another show (Portrait)'},{...ajcPortrait,id:'other-creator',ownerId:'UC_other'}];
+ await runSocialLiveMonitor(simulcastOptions(repository,sent,{loadSources:async()=>[source],detect:async()=>({broadcasts:independent})}));
+ assert.equal(sent.length,8);
+});
+
+test('same title without a format suffix, missing start time, or X Spaces do not merge by inference',async()=>{
+ for(const alternate of [{...ajcMain,id:'unmarked'},{...ajcPortrait,startedAt:undefined},{...ajcPortrait,platform:'X'}]){
+  const repository=repo(),sent=[];await runSocialLiveMonitor(simulcastOptions(repository,sent,{detect:async()=>({broadcasts:[ajcMain,alternate]})}));assert.equal(sent.length,2);
+ }
+});

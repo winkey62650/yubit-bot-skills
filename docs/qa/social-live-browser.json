@@ -39,6 +39,7 @@
     "targetsPreserved": true,
     "missingCredentials422": true,
     "readOnlyLivePreview": true,
+    "simulcastStatus": true,
     "anonymous401": true,
     "manualPublisher403": true
   },
