@@ -1,0 +1,36 @@
+{
+  "checkedAt": "2026-09-14T09:34:03.999Z",
+  "target": "My Financial Friend VIP Academy",
+  "repairStatus": "passed",
+  "rootCause": "Standalone deployment omitted lib/telegram-topic-policy.mjs required by scripts/new-group-setup.mjs.",
+  "releaseCommit": "a56ff93caf8ea809bcd5cd8678e45e8c7178f549",
+  "deploymentRun": "https://github.com/winkey62650/yubit-bot-skills/actions/runs/34828174756",
+  "deploymentStatus": "success",
+  "verification": {
+    "oldProductionDryRunHttpStatus": 500,
+    "reproductionError": "ERR_MODULE_NOT_FOUND",
+    "oldBundleRegression": "failed as expected",
+    "fixedBundleEntrypoints": 2,
+    "targetedTestsPassed": 40,
+    "fullTestsPassed": 1388,
+    "check": "passed",
+    "build": "passed",
+    "productionDryRunHttpStatus": 200,
+    "productionDryRunExitCode": 0,
+    "plannedTopics": 7,
+    "productionUi": {
+      "url": "https://152-32-161-174.sslip.io/new-group",
+      "result": "安全检查完成",
+      "unsafeRequests": 0,
+      "errors": []
+    },
+    "realPermissionsVerified": true
+  },
+  "boundaries": {
+    "formalInitialization": "not executed",
+    "topicsCreated": 0,
+    "messagesSent": 0,
+    "setupStateReset": false
+  },
+  "processImprovement": "Run credential-free initialization entrypoints from the actual standalone deployment bundle after every build; source-only tests cannot catch omitted traced files."
+}
