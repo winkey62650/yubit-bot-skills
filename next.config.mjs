@@ -9,6 +9,7 @@ const nextConfig = {
       "./lib/json-store.js",
       "./lib/telegram-setup-state.mjs",
       "./lib/telegram-topic-icons.mjs",
+      "./lib/telegram-topic-policy.mjs",
       "./*.mjs",
       "./telegram-community.config.json",
       "./node_modules/@vercel/**/*",

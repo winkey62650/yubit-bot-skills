@@ -64,6 +64,8 @@ sudo --user=ubuntu env \
 
 Do not use `release:audit:production:validation`, `release:test:automations`, or any run-now endpoint for no-send acceptance.
 
+`npm run build` also starts both Telegram initialization entrypoints from `.next/standalone`, without credentials. This catches child-process dependencies omitted from the deployment bundle. When `/api/scripts` fails before producing a setup plan, inspect the actual Web process working directory and Node executable; the system `node` and repository root may differ from the service. On 2026-09-14, My Financial Friend initialization failed because `lib/telegram-topic-policy.mjs` was missing from the bundle. Include it in `outputFileTracingIncludes`, then verify the affected group's saved draft through the production dry-run route. A successful dry-run proves permissions and startup; it does not create Topics or publish their initial content.
+
 ## Runtime activation
 
 Worker and Discord activation is a separate controlled action. First inspect due rules and queued claims without leasing or updating them. If any rule can publish immediately, leave both services on the previous runtime and request an explicit production-send decision. A production run-now requires `exactTargets=true` and exact approved endpoints. Never infer send authorization from deployment authorization.
