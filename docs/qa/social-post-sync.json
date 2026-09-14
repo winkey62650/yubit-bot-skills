@@ -1,0 +1,34 @@
+{
+  "checkedAt": "2026-09-14T06:27:13.621Z",
+  "scope": "Average Joe Crypto only; X original posts and ordinary YouTube videos to existing ajc-updates",
+  "officialIdentity": {
+    "youtube": "UCMsNbBn0XJKySH2sXnj53RA",
+    "x": "AvrgJoeCrypto",
+    "evidenceVideo": "xrBzglllmb8"
+  },
+  "validation": {
+    "tests": 1388,
+    "failed": 0,
+    "check": "passed",
+    "build": "passed",
+    "browser": "passed",
+    "routes": 2,
+    "viewports": [
+      1366,
+      768,
+      390
+    ],
+    "legacySchedulerExclusion": true,
+    "externalTestMessages": 0
+  },
+  "deliveryPolicy": {
+    "englishOnly": true,
+    "intervalMinutes": 5,
+    "skipInitialHistory": true,
+    "excludeLiveAndReplays": true,
+    "perContentAndTargetReceipts": true
+  },
+  "xLimitation": "Public Reader fallback may have caching delay or omit posts; no paid credits purchased",
+  "deployment": "pending",
+  "actualNewPostDelivery": "not observed"
+}

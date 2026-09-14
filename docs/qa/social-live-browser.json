@@ -40,6 +40,8 @@
     "missingCredentials422": true,
     "readOnlyLivePreview": true,
     "simulcastStatus": true,
+    "postModePersists": true,
+    "postStatusAndAuth": true,
     "anonymous401": true,
     "manualPublisher403": true
   },

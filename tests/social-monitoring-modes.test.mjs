@@ -15,6 +15,7 @@ test('legacy sources retain posts while an explicit live-only source survives no
   assert.equal(legacy.postMonitoring, true);
   assert.equal(liveOnly.postMonitoring, false);
   assert.equal(normalizeSocialPackages([liveOnly])[0].postMonitoring, false);
+  assert.equal(normalizeSocialPackages([{ ...source, postSyncMode: 'verified' }])[0].frequency, '每 5 分钟');
 });
 
 test('a configured X key with no credits does not disable existing public post discovery', async () => {
@@ -56,6 +57,10 @@ test('live-only sources cannot enter ordinary post discovery but still enter the
     assert.equal(postCalls, 0);
     assert.deepEqual(posts.updates, []);
     assert.deepEqual(posts.items, []);
+    await writeJson('social-packages.json', { packages: [{ ...source, postMonitoring: true, postSyncMode: 'verified' }] });
+    const upgraded = await buildContent('agent-sync-4h', new Date('2026-09-08T08:00:00Z'), { persist: false });
+    assert.equal(postCalls, 0, 'Verified sources must not also run through the legacy post scheduler');
+    assert.deepEqual(upgraded.items, []);
     let liveCalls = 0;
     const live = await runSocialLiveMonitor({
       dryRun: true,

@@ -6,7 +6,7 @@ assert.ok(['localhost','127.0.0.1'].includes(new URL(base).hostname),'Local QA o
 const browser=await chromium.launch({headless:true});
 const context=await browser.newContext({viewport:{width:1366,height:900}});
 const report={routes:[],errors:[],checks:{}};
-const source={id:'qa-live',name:'QA Live YouTube',agent:'QA Academy',platform:'YouTube',accountUrl:'https://youtube.com/@qa_academy',status:'已启用',targets:[{chatId:'-1003710405969',threadId:8,groupName:'QA DEMO',topicName:'Market Events'}]};
+const source={postSyncMode:'verified',id:'qa-live',name:'QA Live YouTube',agent:'QA Academy',platform:'YouTube',accountUrl:'https://youtube.com/@qa_academy',status:'已启用',targets:[{chatId:'-1003710405969',threadId:8,groupName:'QA DEMO',topicName:'Market Events'}]};
 try {
  const login=await context.request.post(base+'/api/auth/login',{data:{username:'audit',password:'local-audit-only'}});assert.equal(login.status(),200);
  const saved=await context.request.post(base+'/api/social-packages',{data:{action:'upsert',source}});assert.equal(saved.status(),200);
@@ -27,6 +27,8 @@ try {
  const state=await (await context.request.get(base+'/api/social-packages')).json();
  assert.equal(state.packages.find(s=>s.id===source.id).liveMonitoring,true);
  assert.equal(state.packages.find(s=>s.id===source.id).postMonitoring,false);
+ assert.equal(state.packages.find(s=>s.id===source.id).postSyncMode,'verified');
+ await page.getByText('每 5 分钟检查 · 英文推送 · 逐条去重 · 首次启用不补发历史内容',{exact:true}).waitFor();
  assert.equal(state.packages.find(s=>s.id===source.id).targets[0].threadId,8);
  await page.reload();await page.locator('select').filter({has:page.locator('option[value="agent-sync"]')}).selectOption('agent-sync');
  await page.locator('article').filter({hasText:source.name}).getByRole('button',{name:'编辑',exact:true}).click();
@@ -44,8 +46,8 @@ try {
   if(route.includes('discord')){await page.goto(base+route);await page.getByRole('heading',{name:'X / YouTube 帖子与直播',exact:true}).waitFor();}
   for(const width of [1366,768,390]){await page.setViewportSize({width,height:900});const clipped=await page.evaluate(()=>[...document.querySelectorAll('main input,main button,main select,main textarea')].filter(e=>{const r=e.getBoundingClientRect();for(let parent=e.parentElement;parent&&parent.tagName!=='MAIN';parent=parent.parentElement){if(['auto','scroll'].includes(getComputedStyle(parent).overflowX))return false;}return r.width>0&&(r.right>innerWidth+1||r.left< -1)}).map(e=>e.tagName));report.routes.push({route,width,clipped});assert.equal(clipped.length,0,route+' clipped controls');}
  }
- const anonymous=await browser.newContext();assert.equal((await anonymous.request.get(base+'/api/social-live')).status(),401);await anonymous.close();
- const manual=await browser.newContext();assert.equal((await manual.request.post(base+'/api/auth/login',{data:{username:'manual-audit',password:'manual-local-audit'}})).status(),200);assert.equal((await manual.request.get(base+'/api/social-live')).status(),403);await manual.close();
- assert.equal(report.errors.length,0);report.checks={legacyDefaultOff:true,liveOnlyPersists:true,persistAndReload:true,targetsPreserved:true,missingCredentials422:true,readOnlyLivePreview:true,simulcastStatus:true,anonymous401:true,manualPublisher403:true};report.outcome='passed';
+ const anonymous=await browser.newContext();assert.equal((await anonymous.request.get(base+'/api/social-live')).status(),401);assert.equal((await anonymous.request.get(base+'/api/social-posts')).status(),401);await anonymous.close();
+ const manual=await browser.newContext();assert.equal((await manual.request.post(base+'/api/auth/login',{data:{username:'manual-audit',password:'manual-local-audit'}})).status(),200);assert.equal((await manual.request.get(base+'/api/social-live')).status(),403);assert.equal((await manual.request.get(base+'/api/social-posts')).status(),403);await manual.close();
+ assert.equal(report.errors.length,0);report.checks={legacyDefaultOff:true,liveOnlyPersists:true,persistAndReload:true,targetsPreserved:true,missingCredentials422:true,readOnlyLivePreview:true,simulcastStatus:true,postModePersists:true,postStatusAndAuth:true,anonymous401:true,manualPublisher403:true};report.outcome='passed';
 } catch(e){report.outcome='failed';report.error=e.message;throw e;}
 finally{await mkdir('docs/qa',{recursive:true});await writeFile('docs/qa/social-live-browser.json',JSON.stringify(report,null,2));await browser.close();}
