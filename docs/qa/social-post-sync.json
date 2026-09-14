@@ -19,7 +19,8 @@
       390
     ],
     "legacySchedulerExclusion": true,
-    "externalTestMessages": 0
+    "externalTestMessages": 0,
+    "productionConfigurationAndAutomaticChecks": "passed"
   },
   "deliveryPolicy": {
     "englishOnly": true,
@@ -29,6 +30,48 @@
     "perContentAndTargetReceipts": true
   },
   "xLimitation": "Public Reader fallback may have caching delay or omit posts; no paid credits purchased",
-  "deployment": "pending",
-  "actualNewPostDelivery": "not observed"
+  "deployment": {
+    "id": 34813623383,
+    "sha": "6bc836d440e6ee21502c4ee59e442afdec5fcd99",
+    "status": "completed",
+    "conclusion": "success",
+    "url": "https://github.com/winkey62650/yubit-bot-skills/actions/runs/34813623383",
+    "completedAt": "2026-09-14T06:32:29Z"
+  },
+  "actualNewPostDelivery": "not observed; activation intentionally does not backfill old content",
+  "production": {
+    "checkedAt": "2026-09-14T06:34:30.669Z",
+    "sourceCount": 5,
+    "otherKolSourcesUnchanged": 3,
+    "liveMonitoringPreserved": true,
+    "historicalReceiptsPreserved": 9,
+    "postDeliveriesDuringActivation": 0,
+    "uiVerified": true,
+    "publisher": {
+      "canSend": true,
+      "canEmbed": true
+    },
+    "automaticChecks": [
+      {
+        "id": "social-average-joe-crypto-youtube-live",
+        "strategy": "youtube-uploads-api",
+        "checkedAt": "2026-09-14T06:33:49.464Z",
+        "nextCheckAt": "2026-09-14T06:38:49.464Z",
+        "startedAt": "2026-09-14T06:33:49.464Z",
+        "visibleCount": 30,
+        "excludedLiveCount": 20,
+        "state": "ready"
+      },
+      {
+        "id": "social-average-joe-crypto-x",
+        "strategy": "x-reader-fallback",
+        "checkedAt": "2026-09-14T06:33:49.464Z",
+        "nextCheckAt": "2026-09-14T06:38:49.464Z",
+        "startedAt": "2026-09-14T06:33:49.464Z",
+        "visibleCount": 5,
+        "excludedLiveCount": 0,
+        "state": "ready"
+      }
+    ]
+  }
 }
