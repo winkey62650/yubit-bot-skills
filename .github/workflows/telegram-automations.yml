@@ -186,8 +186,8 @@ jobs:
               feedUrl: "https://www.youtube.com/feeds/videos.xml?channel_id=UCUr_YzOB7pp50F4r1KJ7Dag",
               chatId: "-1004498874895",
               groupName: "My Financial Friend VIP",
-              threadId: 23,
-              topicName: "7. YUBIT Updates"
+              threadId: 59,
+              topicName: "Sam's Updates"
             },
             {
               id: "youtube-b4crypto",
@@ -198,8 +198,8 @@ jobs:
               feedUrl: "https://www.youtube.com/feeds/videos.xml?channel_id=UCFgPBHf_8ZN9Pc7kkuO3rrQ",
               chatId: "-1004353302723",
               groupName: "B4CRYPTO VIP",
-              threadId: 21,
-              topicName: "7. YUBIT Updates"
+              threadId: 11,
+              topicName: "B4CRYPTO‘s Updates"
             }
           ];
           for (const item of definitions) {
