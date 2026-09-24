@@ -23,6 +23,7 @@ on:
           - discord-demo
           - youtube-content-demo
           - youtube-agent-source-audit
+          - youtube-agent-source-configure
           - agents
           - distribution
           - trading
@@ -32,6 +33,154 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  youtube_agent_source_configure:
+    if: inputs.job == 'youtube-agent-source-configure'
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - name: Install SSH password helper
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq sshpass
+
+      - name: Configure exact YouTube sources without sending
+        env:
+          SSHPASS: ${{ secrets.YUBIT_SERVER_PASSWORD }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -Eeuo pipefail
+          if [ -z "$SSHPASS" ]; then
+            echo "YUBIT_SERVER_PASSWORD is not configured." >&2
+            exit 1
+          fi
+          report_path="$RUNNER_TEMP/youtube-agent-source-configure.json"
+          sshpass -e ssh \
+            -o ConnectTimeout=20 \
+            -o ServerAliveInterval=10 \
+            -o StrictHostKeyChecking=accept-new \
+            ubuntu@152.32.161.174 \
+            "EXPECTED_SHA='$EXPECTED_SHA' bash -s" \
+            >"$report_path" <<'REMOTE'
+          set -Eeuo pipefail
+          release="$(readlink -f /opt/yubit-academy/current)"
+          case "$release" in
+            "/opt/yubit-academy/releases/$EXPECTED_SHA") ;;
+            *) echo "Production release does not match the requested commit." >&2; exit 1 ;;
+          esac
+          sudo /opt/yubit-node/bin/node --env-file=/etc/yubit-academy/production.env --input-type=module <<'NODE'
+          import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+          import { dirname, join } from "node:path";
+
+          const root = String(process.env.JSON_STORE_DIRECTORY || "").trim();
+          if (!root) throw new Error("JSON_STORE_DIRECTORY is unavailable");
+          const socialPath = join(root, "social-packages.json");
+          const groupPath = join(root, "group-config.json");
+          const read = async (path, fallback) => {
+            try { return JSON.parse(await readFile(path, "utf8")); }
+            catch (error) { if (error?.code === "ENOENT") return fallback; throw error; }
+          };
+          const groupsConfig = await read(groupPath, { groups: [] });
+          const socialConfig = await read(socialPath, { packages: [] });
+          const packages = Array.isArray(socialConfig) ? socialConfig : socialConfig.packages || [];
+          const approved = new Set(String(process.env.TELEGRAM_DISTRIBUTION_APPROVED_TARGETS || "").split(/[\s,;]+/).filter(Boolean));
+          const definitions = [
+            {
+              id: "youtube-my-financial-friend",
+              name: "My Financial Friend YouTube",
+              agent: "My Financial Friend",
+              userId: "UCUr_YzOB7pp50F4r1KJ7Dag",
+              accountUrl: "https://www.youtube.com/channel/UCUr_YzOB7pp50F4r1KJ7Dag",
+              feedUrl: "https://www.youtube.com/feeds/videos.xml?channel_id=UCUr_YzOB7pp50F4r1KJ7Dag",
+              chatId: "-1004498874895",
+              groupName: "My Financial Friend VIP",
+              threadId: 23,
+              topicName: "7. YUBIT Updates"
+            },
+            {
+              id: "youtube-b4crypto",
+              name: "B4CRYPTO YouTube",
+              agent: "B4CRYPTO",
+              userId: "UCFgPBHf_8ZN9Pc7kkuO3rrQ",
+              accountUrl: "https://www.youtube.com/channel/UCFgPBHf_8ZN9Pc7kkuO3rrQ",
+              feedUrl: "https://www.youtube.com/feeds/videos.xml?channel_id=UCFgPBHf_8ZN9Pc7kkuO3rrQ",
+              chatId: "-1004353302723",
+              groupName: "B4CRYPTO VIP",
+              threadId: 21,
+              topicName: "7. YUBIT Updates"
+            }
+          ];
+          for (const item of definitions) {
+            const group = (groupsConfig.groups || []).find((entry) => String(entry.chatId) === item.chatId);
+            const topic = (group?.topics || []).find((entry) => Number(entry.threadId || entry.id) === item.threadId);
+            if (!group || group.title !== item.groupName || group.isForum !== true || group.distributionReady !== true) {
+              throw new Error(`${item.agent} group identity or readiness changed`);
+            }
+            if (!topic || topic.name !== item.topicName) throw new Error(`${item.agent} Updates topic identity changed`);
+            if (!approved.has(`${item.chatId}:${item.threadId}`)) throw new Error(`${item.agent} target is not production-approved`);
+          }
+          const configured = definitions.map((item) => ({
+            id: item.id,
+            name: item.name,
+            agent: item.agent,
+            platform: "YouTube",
+            provider: "YouTube",
+            userId: item.userId,
+            accountUrl: item.accountUrl,
+            feedUrl: item.feedUrl,
+            contentType: "视频和直播",
+            frequency: "每小时",
+            postMonitoring: true,
+            liveMonitoring: true,
+            bot: "SpeakerBot",
+            targets: [{
+              chatId: item.chatId,
+              chatType: "supergroup",
+              threadId: item.threadId,
+              groupName: item.groupName,
+              topicName: item.topicName
+            }],
+            status: "已启用"
+          }));
+          const ids = new Set(configured.map((item) => item.id));
+          const agents = new Set(configured.map((item) => item.agent.toLowerCase()));
+          const preserved = packages.filter((item) => !ids.has(String(item.id)) && !agents.has(String(item.agent || "").toLowerCase()));
+          const next = { packages: [...preserved, ...configured], updatedAt: new Date().toISOString() };
+          const stamp = next.updatedAt.replace(/[:.]/g, "-");
+          const backupPath = join(root, "backups", "youtube-agent-sources", `${stamp}.json`);
+          await mkdir(dirname(backupPath), { recursive: true });
+          await writeFile(backupPath, JSON.stringify(socialConfig, null, 2));
+          const temporaryPath = `${socialPath}.${process.pid}.tmp`;
+          await writeFile(temporaryPath, JSON.stringify(next, null, 2));
+          await rename(temporaryPath, socialPath);
+          const saved = await read(socialPath, { packages: [] });
+          const savedById = new Map((saved.packages || []).map((item) => [item.id, item]));
+          for (const item of configured) {
+            const value = savedById.get(item.id);
+            if (!value || value.accountUrl !== item.accountUrl || value.targets?.[0]?.chatId !== item.targets[0].chatId || Number(value.targets?.[0]?.threadId) !== item.targets[0].threadId) {
+              throw new Error(`${item.agent} source verification failed`);
+            }
+          }
+          console.log(JSON.stringify({
+            ok: true,
+            operation: "youtube-agent-source-configure",
+            configuredAt: next.updatedAt,
+            backupPath,
+            sources: configured.map((item) => ({ id: item.id, agent: item.agent, accountUrl: item.accountUrl, postMonitoring: item.postMonitoring, liveMonitoring: item.liveMonitoring, target: item.targets[0] }))
+          }, null, 2));
+          NODE
+          sudo systemctl restart yubit-academy-worker.service
+          sudo systemctl is-active --quiet yubit-academy-worker.service
+          REMOTE
+          cat "$report_path"
+
+      - name: Upload YouTube agent configuration evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: youtube-agent-source-configure-${{ github.run_id }}
+          path: ${{ runner.temp }}/youtube-agent-source-configure.json
+          if-no-files-found: error
+          retention-days: 30
+
   youtube_agent_source_audit:
     if: inputs.job == 'youtube-agent-source-audit'
     runs-on: ubuntu-latest
