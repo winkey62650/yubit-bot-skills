@@ -23,6 +23,7 @@ on:
           - discord-demo
           - youtube-content-demo
           - youtube-agent-source-audit
+          - youtube-agent-topic-prepare
           - youtube-agent-source-configure
           - agents
           - distribution
@@ -33,6 +34,98 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  youtube_agent_topic_prepare:
+    if: inputs.job == 'youtube-agent-topic-prepare'
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - name: Install SSH password helper
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq sshpass
+
+      - name: Prepare the dedicated My Financial Friend Updates topic
+        env:
+          SSHPASS: ${{ secrets.YUBIT_SERVER_PASSWORD }}
+        run: |
+          set -Eeuo pipefail
+          if [ -z "$SSHPASS" ]; then
+            echo "YUBIT_SERVER_PASSWORD is not configured." >&2
+            exit 1
+          fi
+          report_path="$RUNNER_TEMP/youtube-agent-topic-prepare.json"
+          sshpass -e ssh \
+            -o ConnectTimeout=20 \
+            -o ServerAliveInterval=10 \
+            -o StrictHostKeyChecking=accept-new \
+            ubuntu@152.32.161.174 \
+            'sudo /opt/yubit-node/bin/node --env-file=/etc/yubit-academy/production.env --input-type=module' \
+            >"$report_path" <<'REMOTE'
+          import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+          import { dirname, join } from "node:path";
+
+          const chatId = "-1004498874895";
+          const groupName = "My Financial Friend VIP";
+          const topicName = "Sam's Updates";
+          const root = String(process.env.JSON_STORE_DIRECTORY || "").trim();
+          const token = String(process.env.YUBITADMIN_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || "").trim();
+          if (!root) throw new Error("JSON_STORE_DIRECTORY is unavailable");
+          if (!token) throw new Error("Telegram admin bot token is unavailable");
+          const groupPath = join(root, "group-config.json");
+          const groupsConfig = JSON.parse(await readFile(groupPath, "utf8"));
+          const groups = Array.isArray(groupsConfig.groups) ? groupsConfig.groups : [];
+          const groupIndex = groups.findIndex((entry) => String(entry.chatId) === chatId);
+          const group = groups[groupIndex];
+          if (!group || group.title !== groupName || group.isForum !== true || group.distributionReady !== true) {
+            throw new Error("My Financial Friend group identity or readiness changed");
+          }
+          const matches = (group.topics || []).filter((entry) => String(entry.name || "").trim() === topicName && Number(entry.threadId || entry.id) > 0);
+          if (matches.length > 1) throw new Error("Multiple Sam's Updates topics are recorded");
+          let threadId = Number(matches[0]?.threadId || matches[0]?.id || 0);
+          let created = false;
+          if (!threadId) {
+            const response = await fetch(`https://api.telegram.org/bot${token}/createForumTopic`, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ chat_id: chatId, name: topicName })
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload.ok !== true || Number(payload.result?.message_thread_id) <= 0) {
+              throw new Error(`Telegram createForumTopic failed: ${payload.description || response.status}`);
+            }
+            threadId = Number(payload.result.message_thread_id);
+            created = true;
+            const nextGroup = {
+              ...group,
+              topics: [...(group.topics || []), { id: threadId, threadId, name: topicName, source: "youtube-agent-topic-prepare", verified: true }]
+            };
+            const next = { ...groupsConfig, groups: groups.map((entry, index) => index === groupIndex ? nextGroup : entry), updatedAt: new Date().toISOString() };
+            const stamp = next.updatedAt.replace(/[:.]/g, "-");
+            const backupPath = join(root, "backups", "youtube-agent-topics", `${stamp}.json`);
+            await mkdir(dirname(backupPath), { recursive: true });
+            await writeFile(backupPath, JSON.stringify(groupsConfig, null, 2));
+            const temporaryPath = `${groupPath}.${process.pid}.tmp`;
+            await writeFile(temporaryPath, JSON.stringify(next, null, 2));
+            await rename(temporaryPath, groupPath);
+          }
+          console.log(JSON.stringify({
+            ok: true,
+            operation: "youtube-agent-topic-prepare",
+            created,
+            target: { chatId, groupName, threadId, topicName },
+            messagesSent: 0
+          }, null, 2));
+          REMOTE
+          cat "$report_path"
+
+      - name: Upload YouTube agent topic evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: youtube-agent-topic-prepare-${{ github.run_id }}
+          path: ${{ runner.temp }}/youtube-agent-topic-prepare.json
+          if-no-files-found: error
+          retention-days: 30
+
   youtube_agent_source_configure:
     if: inputs.job == 'youtube-agent-source-configure'
     runs-on: ubuntu-latest
