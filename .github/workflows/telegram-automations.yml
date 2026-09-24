@@ -238,6 +238,7 @@ jobs:
               ...item,
               groupMatchCount: groupMatches.length,
               group: group ? { chatId: String(group.chatId), title: group.title, isForum: group.isForum === true, distributionReady: group.distributionReady === true } : null,
+              allTopics: (group?.topics || []).map((entry) => ({ name: entry.name, threadId: Number(entry.threadId || entry.id) })),
               updateTopics: topics.map((entry) => ({ name: entry.name, threadId: Number(entry.threadId || entry.id) })),
               selectedTopic: topic ? { name: topic.name, threadId: Number(topic.threadId || topic.id) } : null,
               targetKey: key,
