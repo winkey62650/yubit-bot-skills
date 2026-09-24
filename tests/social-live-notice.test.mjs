@@ -9,7 +9,7 @@ test('English alerts use actual start time rather than disguising discovery dela
   assert.match(text, /Live now\./); assert.match(text, /Started: 2026-09-08 13:01 UTC/); assert.doesNotMatch(text, /13:38|[\u3400-\u9fff]/);
   const payload = renderDiscordLiveNotice(source, live, '2026-09-08T13:38:04Z');
   assert.equal(payload.embeds.length, 1); assert.equal(payload.embeds[0].url, live.url);
-  assert.match(payload.embeds[0].description, /Watch the stream/); assert.equal(payload.embeds[0].timestamp, live.startedAt);
+  assert.match(payload.embeds[0].description, /Watch live/); assert.equal(payload.embeds[0].timestamp, live.startedAt);
   assert.doesNotMatch(payload.content, /Average Joe Crypto|\| YouTube/); assert.match(payload.content, /BITCOIN GOLDEN CROSS · Tue 8th September/); assert.match(payload.content, /Click here to watch live/);
   assert.equal(payload.embeds[0].image.url, 'https://i.ytimg.com/vi/xrBzglllmb8/hqdefault.jpg'); assert.deepEqual(payload.allowedMentions, { parse: [] });
 });

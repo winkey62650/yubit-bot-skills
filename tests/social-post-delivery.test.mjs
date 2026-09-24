@@ -7,7 +7,7 @@ import {JsonDistributionRepository} from '../lib/distribution-repository.mjs';
 import {runSocialPostMonitor,deliverSocialPost} from '../lib/social-post-monitor.mjs';
 import {retryDistributionDelivery} from '../lib/distribution-service.mjs';
 const source={id:'ajc',name:'Average Joe Crypto YouTube',agent:'Average Joe Crypto',platform:'YouTube',accountUrl:'https://youtube.com/channel/UC123',status:'已启用',postMonitoring:true,postSyncMode:'verified',targets:[{platform:'discord',guildId:'g',channelId:'updates'}]};
-const post={platform:'YouTube',ownerId:'UC123',id:'video123',title:'New video',description:'Daily crypto overview.',url:'https://youtu.be/video123',publishedAt:'2026-09-14T02:01:00Z'};
+const post={platform:'YouTube',ownerId:'UC123',id:'video123456',title:'New video',description:'Daily crypto overview.',url:'https://youtu.be/video123456',publishedAt:'2026-09-14T02:01:00Z'};
 test('real repository persists one Discord receipt across restart; old notices cannot be replayed',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'social-post-'));const previous=process.env.JSON_STORE_DIRECTORY;process.env.JSON_STORE_DIRECTORY=dir;
  try{
