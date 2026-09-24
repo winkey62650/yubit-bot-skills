@@ -61,7 +61,7 @@ test("idempotency slots follow weekly, daily, minute and hourly windows", () => 
 
 test("agent YouTube updates use the channel, title, date, summary and CTA template", () => {
   assert.equal(typeof automation.renderAgentUpdateText, "function");
-  assert.equal(automation.renderAgentUpdateText({ agent: "Crypto Coach", package: { platform: "YouTube" }, title: "Morning markets", description: "Daily crypto overview.", publishedAt: "2026-08-03T23:20:00Z", url: "https://youtu.be/demo" }), "Crypto Coach | YouTube\n\nMorning markets · 2026-08-03\n\nDaily crypto overview.\n\nClick here to watch the video 👉 https://youtu.be/demo");
+  assert.equal(automation.renderAgentUpdateText({ agent: "Crypto Coach", package: { platform: "YouTube" }, title: "Morning markets", description: "Daily crypto overview.", publishedAt: "2026-08-03T23:20:00Z", url: "https://youtu.be/demo" }), "Morning markets · Mon 3rd August\n\nDaily crypto overview.\n\nClick here to watch the video 👉 https://youtu.be/demo\n\n@everyone");
 });
 
 test("agent sync health never reports failed or missing sources as success", () => {
@@ -288,7 +288,7 @@ test("Discord legacy agent updates retain the detailed YouTube template", () => 
     { agent: "Crypto Coach", platform: "YouTube", title: "Morning markets", publishedAt: "2026-08-04T02:20:00Z", url: "https://youtu.be/demo" }
   ], [{ platform: "discord", guildId: "guild-1", channelId: "channel-1" }]);
 
-  assert.match(plans[0].steps[0].payload.content, /Crypto Coach \| YouTube[\s\S]*Morning markets · 2026-08-04[\s\S]*watch the video/);
+  assert.match(plans[0].steps[0].payload.content, /^Morning markets · Tue 4th August[\s\S]*watch the video[\s\S]*@everyone$/);
 });
 
 test("market intelligence alert turns verified persistent order-book liquidity into approved English copy", () => {

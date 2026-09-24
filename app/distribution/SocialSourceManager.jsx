@@ -113,7 +113,7 @@ export default function SocialSourceManager({ packages, targetOptions = [], publ
 
   return <Card className="overflow-hidden">
     <div className="flex flex-col gap-3 border-b border-ops-line p-5 lg:flex-row lg:items-start lg:justify-between">
-      <div><p className="text-xs font-black uppercase tracking-[.16em] text-ops-accent">代理内容来源</p><h2 className="mt-1 text-xl font-black">YouTube 视频与直播同步</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-ops-muted">目前仅监控 YouTube 新视频和正在直播。Discord 使用频道标题、发布日期、摘要、观看入口和视频封面卡；Telegram 保留同样的信息层级与原生链接预览。直播由官方接口确认开播，同场直播对同一目标只提醒一次。</p></div>
+      <div><p className="text-xs font-black uppercase tracking-[.16em] text-ops-accent">代理内容来源</p><h2 className="mt-1 text-xl font-black">YouTube 视频与直播同步</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-ops-muted">目前仅监控 YouTube 新视频和正在直播。通知只显示视频标题与日期、摘要、观看入口和 @everyone，不再重复频道名或平台名；链接继续生成视频预览。直播由官方接口确认开播，同场直播对同一目标只提醒一次。</p></div>
       <div className="flex flex-wrap gap-2"><StatusPill tone={readiness.ready ? "green" : "amber"}>{readiness.enabled} 条启用</StatusPill><StatusPill tone={routeReadiness.ready ? "green" : "amber"}>{routeReadiness.mapped}/{routeReadiness.enabled} 条已绑定目标</StatusPill><StatusPill tone={readiness.limited ? "amber" : "green"}>{readiness.stable} 条稳定 · {readiness.limited} 条有限</StatusPill></div>
     </div>
     <div className="grid gap-5 p-5 xl:grid-cols-[minmax(320px,.82fr)_minmax(0,1.18fr)]">

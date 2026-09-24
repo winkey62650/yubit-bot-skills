@@ -84,10 +84,10 @@ jobs:
             throw new Error("The configured destination is not the expected Demo forum");
           }
           const text = [
-            "YUBIT Academy | YouTube",
             "YouTube Content Sync Demo · Thu 24th September",
             "This is a one-time layout test for new video and livestream notifications.",
-            `Click here to watch the video 👉 ${VIDEO_URL}`
+            `Click here to watch the video 👉 ${VIDEO_URL}`,
+            "@everyone"
           ].join("\n\n");
           const message = await telegram("sendMessage", {
             chat_id: CHAT_ID,
