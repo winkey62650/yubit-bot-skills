@@ -96,6 +96,8 @@ test("governed Telegram target policy includes enabled internal Topics and rolls
   assert.match(deployScript, /expected_distribution_targets='-1003710405969:8,-1003710405969:10,-1003710405969:16,-1001702053978:309971,-1003332783916:3,-1003332783916:10,-1003332783916:13,-1003332783916:16,-1003332783916:19,-1003332783916:22,-1003332783916:25,-1004458467548:4,-1004458467548:11,-1004458467548:14,-1004458467548:17,-1004458467548:20,-1004458467548:23,-1004458467548:26,-1004498874895:23,-1004353302723:21'/);
   const auditScript = read("scripts/audit-content-production.mjs");
   assert.match(auditScript, /"-1001702053978:309971"/);
+  assert.match(auditScript, /"-1004498874895:23"/);
+  assert.match(auditScript, /"-1004353302723:21"/);
   assert.match(workflow, /sudo cp -p "\$env_backup" "\$env_file"/);
   assert.doesNotMatch(workflow, /sudo systemctl restart yubit-academy\.service/);
   assert.match(workflow, /deployment_committed=1/);
