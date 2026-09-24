@@ -22,6 +22,7 @@ on:
           - discord-audit
           - discord-demo
           - youtube-content-demo
+          - youtube-agent-source-audit
           - agents
           - distribution
           - trading
@@ -31,6 +32,91 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  youtube_agent_source_audit:
+    if: inputs.job == 'youtube-agent-source-audit'
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - name: Install SSH password helper
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq sshpass
+
+      - name: Audit exact YouTube agent destinations
+        env:
+          SSHPASS: ${{ secrets.YUBIT_SERVER_PASSWORD }}
+        run: |
+          set -Eeuo pipefail
+          if [ -z "$SSHPASS" ]; then
+            echo "YUBIT_SERVER_PASSWORD is not configured." >&2
+            exit 1
+          fi
+          report_path="$RUNNER_TEMP/youtube-agent-source-audit.json"
+          sshpass -e ssh \
+            -o ConnectTimeout=20 \
+            -o ServerAliveInterval=10 \
+            -o StrictHostKeyChecking=accept-new \
+            ubuntu@152.32.161.174 \
+            'sudo /opt/yubit-node/bin/node --env-file=/etc/yubit-academy/production.env --input-type=module' \
+            >"$report_path" <<'REMOTE'
+          import { readFile } from "node:fs/promises";
+          import { join } from "node:path";
+
+          const root = String(process.env.JSON_STORE_DIRECTORY || "").trim();
+          if (!root) throw new Error("JSON_STORE_DIRECTORY is unavailable");
+          const read = async (name, fallback) => {
+            try { return JSON.parse(await readFile(join(root, name), "utf8")); }
+            catch (error) { if (error?.code === "ENOENT") return fallback; throw error; }
+          };
+          const normalize = (value) => String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+          const groupsConfig = await read("group-config.json", { groups: [] });
+          const socialConfig = await read("social-packages.json", { packages: [] });
+          const groups = Array.isArray(groupsConfig.groups) ? groupsConfig.groups : [];
+          const packages = Array.isArray(socialConfig) ? socialConfig : socialConfig.packages || [];
+          const requested = [
+            { agent: "My Financial Friend", groupToken: "myfinancialfriend", accountUrl: "https://www.youtube.com/channel/UCUr_YzOB7pp50F4r1KJ7Dag" },
+            { agent: "B4CRYPTO", groupToken: "b4crypto", accountUrl: "https://www.youtube.com/channel/UCFgPBHf_8ZN9Pc7kkuO3rrQ" }
+          ];
+          const approved = new Set(String(process.env.TELEGRAM_DISTRIBUTION_APPROVED_TARGETS || "").split(/[\s,;]+/).filter(Boolean));
+          const targets = requested.map((item) => {
+            const groupMatches = groups.filter((group) => normalize(group.title).includes(item.groupToken));
+            const group = groupMatches.length === 1 ? groupMatches[0] : null;
+            const topics = (group?.topics || []).filter((topic) => Number(topic.threadId || topic.id) > 0 && normalize(topic.name).includes("updates"));
+            const preferred = topics.filter((topic) => normalize(topic.name).includes(item.groupToken === "myfinancialfriend" ? "sam" : "b4crypto"));
+            const topic = preferred.length === 1 ? preferred[0] : topics.length === 1 ? topics[0] : null;
+            const key = group && topic ? `${group.chatId}:${Number(topic.threadId || topic.id)}` : null;
+            return {
+              ...item,
+              groupMatchCount: groupMatches.length,
+              group: group ? { chatId: String(group.chatId), title: group.title, isForum: group.isForum === true, distributionReady: group.distributionReady === true } : null,
+              updateTopics: topics.map((entry) => ({ name: entry.name, threadId: Number(entry.threadId || entry.id) })),
+              selectedTopic: topic ? { name: topic.name, threadId: Number(topic.threadId || topic.id) } : null,
+              targetKey: key,
+              approved: key ? approved.has(key) : false,
+              existingPackages: packages.filter((source) => normalize(`${source.agent} ${source.name} ${source.accountUrl}`).includes(item.groupToken)).map((source) => ({
+                id: source.id,
+                name: source.name,
+                agent: source.agent,
+                accountUrl: source.accountUrl,
+                status: source.status,
+                postMonitoring: source.postMonitoring !== false,
+                liveMonitoring: source.liveMonitoring === true,
+                targets: source.targets || []
+              }))
+            };
+          });
+          console.log(JSON.stringify({ ok: true, operation: "youtube-agent-source-audit", checkedAt: new Date().toISOString(), targets }, null, 2));
+          REMOTE
+          cat "$report_path"
+
+      - name: Upload YouTube agent audit evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: youtube-agent-source-audit-${{ github.run_id }}
+          path: ${{ runner.temp }}/youtube-agent-source-audit.json
+          if-no-files-found: error
+          retention-days: 30
+
   youtube_content_demo:
     if: inputs.job == 'youtube-content-demo'
     runs-on: ubuntu-latest
