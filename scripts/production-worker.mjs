@@ -8,6 +8,7 @@ const DEFAULTS = Object.freeze({
   composerIntervalMs: 15_000,
   tradingIntervalMs: 5 * 60_000,
   agentIntervalMs: 60 * 60_000,
+  socialLiveIntervalMs: 5 * 60_000,
   larkIntervalMs: 60_000,
   requestTimeoutMs: 90_000,
   maxDistributionClaims: 10,
@@ -39,6 +40,10 @@ export function buildWorkerConfig(env = process.env) {
     ),
     tradingIntervalMs: positiveInteger(env.WORKER_TRADING_INTERVAL_MS, DEFAULTS.tradingIntervalMs),
     agentIntervalMs: positiveInteger(env.WORKER_AGENT_INTERVAL_MS, DEFAULTS.agentIntervalMs),
+    socialLiveIntervalMs: positiveInteger(
+      env.WORKER_SOCIAL_LIVE_INTERVAL_MS,
+      DEFAULTS.socialLiveIntervalMs,
+    ),
     larkIntervalMs: positiveInteger(env.WORKER_LARK_INTERVAL_MS, DEFAULTS.larkIntervalMs),
     requestTimeoutMs: positiveInteger(env.WORKER_REQUEST_TIMEOUT_MS, DEFAULTS.requestTimeoutMs),
     maxDistributionClaims: positiveInteger(
@@ -144,6 +149,7 @@ export async function startProductionWorker({ env = process.env, fetchImpl = fet
     composerIntervalMs: config.composerIntervalMs,
     tradingIntervalMs: config.tradingIntervalMs,
     agentIntervalMs: config.agentIntervalMs,
+    socialLiveIntervalMs: config.socialLiveIntervalMs,
     larkIntervalMs: config.larkIntervalMs,
   });
 
@@ -174,6 +180,14 @@ export async function startProductionWorker({ env = process.env, fetchImpl = fet
       signal: controller.signal,
       logger,
       task: () => callEndpoint("/api/cron/agents"),
+    }),
+    runLoop({
+      name: "social-live",
+      intervalMs: config.socialLiveIntervalMs,
+      initialDelayMs: 120_000,
+      signal: controller.signal,
+      logger,
+      task: () => callEndpoint("/api/cron/social-live"),
     }),
     runLoop({
       name: "lark-monitor",
