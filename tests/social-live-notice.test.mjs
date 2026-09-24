@@ -10,13 +10,14 @@ test('English alerts use actual start time rather than disguising discovery dela
   const payload = renderDiscordLiveNotice(source, live, '2026-09-08T13:38:04Z');
   assert.equal(payload.embeds.length, 1); assert.equal(payload.embeds[0].url, live.url);
   assert.match(payload.embeds[0].description, /Watch live on YouTube/); assert.equal(payload.embeds[0].timestamp, live.startedAt);
-  assert.ok(!payload.content.includes(live.url), 'URL appears only in the card, avoiding duplicate automatic previews');
+  assert.match(payload.content, /Average Joe Crypto \| YouTube/); assert.match(payload.content, /Tue 8th September/); assert.match(payload.content, /Click here to watch live/);
+  assert.equal(payload.embeds[0].image.url, 'https://i.ytimg.com/vi/xrBzglllmb8/hqdefault.jpg'); assert.deepEqual(payload.allowedMentions, { parse: [] });
 });
 
 test('untrusted titles cannot create mentions, markdown links, or Chinese alert copy', () => {
   const payload = renderDiscordLiveNotice({ agent: '@everyone [click](https://evil.test)' }, { ...live, title: '比特币直播' }, new Date());
   assert.doesNotMatch(JSON.stringify(payload), /[\u3400-\u9fff]/);
-  assert.ok(!payload.content.includes('@everyone')); assert.ok(!payload.embeds[0].description.includes('https://evil.test'));
+  assert.equal((payload.content.match(/@everyone/g) || []).length, 1); assert.ok(!payload.embeds[0].description.includes('https://evil.test'));
   assert.equal(payload.embeds[0].title, 'YouTube livestream');
 });
 

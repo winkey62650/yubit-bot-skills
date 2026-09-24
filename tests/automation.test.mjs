@@ -59,10 +59,9 @@ test("idempotency slots follow weekly, daily, minute and hourly windows", () => 
   assert.equal(automationSlot("agent-sync-4h", now), "2026-08-19T10");
 });
 
-test("agent updates use the compact platform, date and link template", () => {
+test("agent YouTube updates use the channel, title, date, summary and CTA template", () => {
   assert.equal(typeof automation.renderAgentUpdateText, "function");
-  assert.equal(automation.renderAgentUpdateText({ platform: "X", publishedAt: "2026-08-04T01:20:00Z", url: "https://x.com/demo/status/1" }), "X Updated + 2026-08-04\nhttps://x.com/demo/status/1");
-  assert.equal(automation.renderAgentUpdateText({ package: { platform: "YouTube" }, publishedAt: "2026-08-03T23:20:00Z", url: "https://youtu.be/demo" }), "YouTube Updated + 2026-08-03\nhttps://youtu.be/demo");
+  assert.equal(automation.renderAgentUpdateText({ agent: "Crypto Coach", package: { platform: "YouTube" }, title: "Morning markets", description: "Daily crypto overview.", publishedAt: "2026-08-03T23:20:00Z", url: "https://youtu.be/demo" }), "Crypto Coach | YouTube\n\nMorning markets · 2026-08-03\n\nDaily crypto overview.\n\nClick here to watch the video 👉 https://youtu.be/demo");
 });
 
 test("agent sync health never reports failed or missing sources as success", () => {
@@ -284,16 +283,12 @@ test("Telegram plans reserve space for each target CTA when generated content re
   assert.match(analysisCaption, /<b>Join Channel Alpha<\/b>\nhttps:\/\/example\.com\/alpha\?source=demo&amp;topic=events$/);
 });
 
-test("Discord agent updates use the same fixed X and YouTube templates", () => {
+test("Discord legacy agent updates retain the detailed YouTube template", () => {
   const plans = automation.buildAgentUpdateDiscordPlans([
-    { platform: "X", publishedAt: "2026-08-04T01:20:00Z", url: "https://x.com/demo/status/1" },
-    { platform: "YouTube", publishedAt: "2026-08-04T02:20:00Z", url: "https://youtu.be/demo" }
+    { agent: "Crypto Coach", platform: "YouTube", title: "Morning markets", publishedAt: "2026-08-04T02:20:00Z", url: "https://youtu.be/demo" }
   ], [{ platform: "discord", guildId: "guild-1", channelId: "channel-1" }]);
 
-  assert.deepEqual(plans[0].steps.map((step) => step.payload.content), [
-    "X Updated + 2026-08-04\nhttps://x.com/demo/status/1",
-    "YouTube Updated + 2026-08-04\nhttps://youtu.be/demo"
-  ]);
+  assert.match(plans[0].steps[0].payload.content, /Crypto Coach \| YouTube[\s\S]*Morning markets · 2026-08-04[\s\S]*watch the video/);
 });
 
 test("market intelligence alert turns verified persistent order-book liquidity into approved English copy", () => {

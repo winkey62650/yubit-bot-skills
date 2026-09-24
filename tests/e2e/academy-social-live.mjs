@@ -17,10 +17,10 @@ try {
  const page=await context.newPage();page.on('pageerror',e=>report.errors.push(e.message));
  await page.goto(base+'/distribution?view=automation');
  await page.locator('select').filter({has:page.locator('option[value="agent-sync"]')}).selectOption('agent-sync');
- await page.getByRole('heading',{name:'X / YouTube 帖子与直播',exact:true}).waitFor();
+ await page.getByRole('heading',{name:'YouTube 视频与直播同步',exact:true}).waitFor();
  await page.locator('article').filter({hasText:source.name}).getByRole('button',{name:'编辑',exact:true}).click();
- await page.getByRole('checkbox',{name:'监控普通帖子',exact:false}).uncheck();
- await page.getByRole('checkbox',{name:'监控直播开播',exact:false}).check();
+ await page.getByRole('checkbox',{name:'监控 YouTube 新视频',exact:false}).uncheck();
+ await page.getByRole('checkbox',{name:'监控 YouTube 直播开播',exact:false}).check();
  await page.getByRole('button',{name:'保存来源',exact:true}).click();
  await page.getByText(/QA Live YouTube · 直播接口未就绪/).waitFor();
  await page.getByText('每 5 分钟检查 · 英文开播提醒 · 同场去重',{exact:true}).waitFor();
@@ -32,8 +32,8 @@ try {
  assert.equal(state.packages.find(s=>s.id===source.id).targets[0].threadId,8);
  await page.reload();await page.locator('select').filter({has:page.locator('option[value="agent-sync"]')}).selectOption('agent-sync');
  await page.locator('article').filter({hasText:source.name}).getByRole('button',{name:'编辑',exact:true}).click();
- assert.equal(await page.getByRole('checkbox',{name:'监控直播开播',exact:false}).isChecked(),true);
- assert.equal(await page.getByRole('checkbox',{name:'监控普通帖子',exact:false}).isChecked(),false);
+ assert.equal(await page.getByRole('checkbox',{name:'监控 YouTube 直播开播',exact:false}).isChecked(),true);
+ assert.equal(await page.getByRole('checkbox',{name:'监控 YouTube 新视频',exact:false}).isChecked(),false);
  const missing=await context.request.post(base+'/api/social-live',{data:{action:'test',source}});assert.equal(missing.status(),422);assert.match((await missing.json()).error,/YOUTUBE_API_KEY/);
  await page.route('**/api/social-live',r=>r.request().method()==='POST'?r.fulfill({json:{ok:true,preview:{provider:'YouTube Live',broadcasts:[{id:'qa-live',title:'QA market live',url:'https://youtube.com/watch?v=qa-live'}],scheduledCount:0}}}):r.continue());
  await page.getByRole('button',{name:'检测直播状态（不发送）',exact:true}).click();
