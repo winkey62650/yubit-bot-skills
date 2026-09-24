@@ -96,11 +96,17 @@ test("agent update plans support multiple groups and topics", () => {
     { chatId: "-1002", threadId: 11, chatType: "supergroup" }
   ];
   const plans = automation.buildAgentUpdateTelegramPlans([
-    { platform: "X", publishedAt: "2026-08-04T01:20:00Z", url: "https://x.com/demo/status/1" }
+    {
+      platform: "YouTube",
+      title: "Market update",
+      description: "Daily crypto overview.",
+      publishedAt: "2026-08-04T01:20:00Z",
+      url: "https://youtu.be/demo"
+    }
   ], targets);
   assert.equal(plans.length, 2);
   assert.deepEqual(plans.map((plan) => plan.target.chatId), ["-1001", "-1002"]);
-  assert.ok(plans.every((plan) => plan.steps[0].payload.text === "X Updated + 2026-08-04\nhttps://x.com/demo/status/1"));
+  assert.ok(plans.every((plan) => plan.steps[0].payload.text === "Market update · Tue 4th August\n\nDaily crypto overview.\n\nClick here to watch the video 👉 https://youtu.be/demo\n\n@everyone"));
 });
 
 test("agent updates use source-specific destinations before the legacy default target", () => {
